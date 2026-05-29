@@ -1,37 +1,42 @@
 """
 build_features.py
 
-Reads the two output files from clean_data.py and produces a per-provider
-fraud-signal feature table.
+Reads the output files from clean_data.py and produces a fraud-signal feature
+table at the (npi, year) grain — one row per billing NPI per service year.
 
 Inputs
 ------
---monthly      : data/processed/provider_monthly.parquet
-                   cols: npi, hcpcs_code, service_month, total_claims,
-                         total_beneficiaries, total_paid_amount
---providers    : data/processed/providers_clean.csv
-                   cols: npi, total_claims, total_beneficiaries, total_paid,
-                         first_billing_month, last_billing_month,
-                         n_distinct_hcpcs, n_active_months, taxonomy_code,
-                         practice_state, npi_registration_date,
-                         npi_deactivation_date, is_excluded
---taxonomy-map : data/reference/taxonomy_hcpcs_map.csv (optional)
-                   cols: taxonomy_code, hcpcs_code
+--monthly   : data/processed/provider_monthly.parquet
+                cols: npi, hcpcs_code, service_month, total_claims,
+                      total_beneficiaries, total_paid_amount
+--providers : data/processed/providers_clean.csv
+                cols: npi, first_billing_month, last_billing_month,
+                      taxonomy_code, practice_state, npi_registration_date,
+                      npi_deactivation_date, in_leie, excl_date, reinstate_date
+--annual    : data/processed/provider_annual.parquet (for temporal T1–T7)
 
-Features produced
+Static features (per provider-year)
+-----------------------------------
+avg_claims_per_beneficiary   Σclaims / Σbeneficiaries
+avg_paid_per_claim           Σpaid / Σclaims
+paid_vs_peer_ratio           per-HCPCS paid/claims vs same-specialty same-code
+                             median (>=20 peers), claims-weighted geo-mean
+claims_vs_peer_ratio         same machinery on claims/beneficiaries
+n_distinct_hcpcs_vs_peer     distinct HCPCS / specialty peer-median count
+hcpcs_concentration          Herfindahl index of claim shares (Σ share²)
+billing_on_deactivated_npi   binary: last claim month > NPI deactivation date
+npi_age_days_at_first_claim  (first-ever claim month − enumeration date), >=0
+
+Temporal features T1–T7 (per provider-year, from the monthly series)
+--------------------------------------------------------------------
+mom_paid_growth_volatility, cv_monthly_paid, peak_to_median_paid,
+onset_ramp_slope, post_peak_dropoff, new_hcpcs_fraction, excess_yoy_growth
+
+Non-model columns
 -----------------
-avg_claims_per_beneficiary  Phantom billing
-avg_paid_per_claim          Upcoding
-paid_vs_peer_ratio          Overcharging vs specialty norm
-claims_vs_peer_ratio        Volume anomaly vs peers
-billing_cv                  Erratic / burst billing pattern
-days_to_first_claim         Brand-new NPI billing at scale
-npi_age_days_at_first_claim NPI registration age at first claim
-n_distinct_hcpcs            HCPCS code diversity
-hcpcs_concentration         Single-code phantom billing (HHI)
-billing_on_deactivated_npi  Identity / NPI-theft fraud
-state_mismatch              Geographic implausibility (NaN if data unavailable)
-pct_hcpcs_outside_taxonomy  Specialty misclassification
+is_excluded   validation label (LEIE), never a model input
+total_paid    kept for triage sorting only
+taxonomy_code specialty, for reporting
 
 Note on beneficiary counts
 --------------------------
@@ -47,7 +52,7 @@ Usage
     python -m src.build_features \\
         --monthly   data/processed/provider_monthly.parquet \\
         --providers data/processed/providers_clean.csv \\
-        --taxonomy-map data/reference/taxonomy_hcpcs_map.csv \\
+        --annual    data/processed/provider_annual.parquet \\
         --output    data/processed/fraud_features.csv
 """
 
@@ -87,117 +92,124 @@ def load_monthly(path: str | Path) -> pd.DataFrame:
 
 
 def load_providers(path: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(
-        path,
-        dtype={"npi": str},
-        parse_dates=["npi_registration_date", "npi_deactivation_date",
-                     "first_billing_month",   "last_billing_month"],
-    )
+    date_cols = ["npi_registration_date", "npi_deactivation_date",
+                 "first_billing_month", "last_billing_month",
+                 "excl_date", "reinstate_date"]
+    head = pd.read_csv(path, nrows=0)
+    present_dates = [c for c in date_cols if c in head.columns]
+    df = pd.read_csv(path, dtype={"npi": str}, parse_dates=present_dates)
+
     required = {
-        "npi", "total_claims", "total_beneficiaries", "total_paid",
-        "first_billing_month", "n_distinct_hcpcs", "taxonomy_code", "practice_state",
-        "npi_registration_date",
+        "npi", "first_billing_month", "last_billing_month",
+        "taxonomy_code", "npi_registration_date",
     }
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"Providers file missing columns: {missing}")
 
-    if "npi_deactivation_date" not in df.columns:
-        df["npi_deactivation_date"] = pd.NaT
+    for c in date_cols:
+        if c not in df.columns:
+            df[c] = pd.NaT
 
     df["npi"] = df["npi"].str.strip()
     return df.set_index("npi")
 
 
-def load_taxonomy_map(path: str | Path) -> dict[str, set[str]]:
-    df = pd.read_csv(path, dtype=str)
-    if not {"taxonomy_code", "hcpcs_code"}.issubset(df.columns):
-        raise ValueError("Taxonomy map must have columns: taxonomy_code, hcpcs_code")
-    mapping: dict[str, set[str]] = {}
-    for tax, hcpcs in zip(df["taxonomy_code"], df["hcpcs_code"]):
-        mapping.setdefault(tax.strip(), set()).add(hcpcs.strip())
-    return mapping
-
-
 # ---------------------------------------------------------------------------
-# Peer-group helpers
+# Static features — all computed at the (npi, year) grain per the spec
+# ("one row per billing NPI per service year").
 # ---------------------------------------------------------------------------
 
-def _peer_ratio(provider_series: pd.Series, taxonomy_series: pd.Series) -> pd.Series:
+_MIN_PEERS = 20   # peer-group size floor for any peer-median benchmark
+
+
+def _hcpcs_year_cells(monthly: pd.DataFrame) -> pd.DataFrame:
     """
-    Divide each provider's value by the median of providers in the same
-    taxonomy group. Falls back to global median for unmatched taxonomies.
-    Clipped at 100× to prevent extreme values from outlier denominators.
+    Collapse the monthly table to one row per (npi, year, hcpcs_code) with
+    summed claims / beneficiaries / paid. This is the building block for the
+    per-HCPCS peer ratios and the within-year concentration index.
     """
-    combined = pd.DataFrame({"value": provider_series, "taxonomy": taxonomy_series})
-    combined["peer_median"] = combined.groupby("taxonomy")["value"].transform("median")
-    combined["peer_median"] = combined["peer_median"].fillna(combined["value"].median())
-    ratio = combined["value"] / combined["peer_median"].replace(0, np.nan)
-    return ratio.clip(upper=100).fillna(1.0)
-
-
-# ---------------------------------------------------------------------------
-# Feature functions
-# ---------------------------------------------------------------------------
-
-def feat_avg_claims_per_beneficiary(providers: pd.DataFrame) -> pd.Series:
-    ratio = providers["total_claims"] / providers["total_beneficiaries"].replace(0, np.nan)
-    return ratio.rename("avg_claims_per_beneficiary")
-
-
-def feat_avg_paid_per_claim(providers: pd.DataFrame) -> pd.Series:
-    ratio = providers["total_paid"] / providers["total_claims"].replace(0, np.nan)
-    return ratio.rename("avg_paid_per_claim")
-
-
-def feat_paid_vs_peer_ratio(avg_paid: pd.Series, providers: pd.DataFrame) -> pd.Series:
-    taxonomy = providers["taxonomy_code"].reindex(avg_paid.index)
-    return _peer_ratio(avg_paid, taxonomy).rename("paid_vs_peer_ratio")
-
-
-def feat_claims_vs_peer_ratio(
-    avg_claims: pd.Series, providers: pd.DataFrame
-) -> pd.Series:
-    taxonomy = providers["taxonomy_code"].reindex(avg_claims.index)
-    return _peer_ratio(avg_claims, taxonomy).rename("claims_vs_peer_ratio")
-
-
-def feat_billing_cv(monthly: pd.DataFrame) -> pd.Series:
-    """
-    Coefficient of variation of total monthly claim counts per provider.
-    High CV indicates erratic burst-and-stop billing — a common fraud pattern.
-    """
-    monthly_totals = (
-        monthly.groupby(["npi", "service_month"])["total_claims"]
-        .sum()
+    m = monthly[["npi", "hcpcs_code", "total_claims",
+                 "total_beneficiaries", "total_paid_amount"]].copy()
+    m["year"] = monthly["month_dt"].dt.year
+    cells = (
+        m.groupby(["npi", "year", "hcpcs_code"], dropna=True)
+        .agg(claims=("total_claims", "sum"),
+             beneficiaries=("total_beneficiaries", "sum"),
+             paid=("total_paid_amount", "sum"))
         .reset_index()
     )
-
-    def _cv(s: pd.Series) -> float:
-        m = s.mean()
-        return float(s.std() / m) if m > 0 and len(s) > 1 else 0.0
-
-    return monthly_totals.groupby("npi")["total_claims"].apply(_cv).rename("billing_cv")
+    return cells
 
 
-def feat_days_to_first_claim(providers: pd.DataFrame) -> pd.Series:
+def _winsorize(s: pd.Series, lo: float = 0.01, hi: float = 0.99) -> pd.Series:
+    if s.notna().sum() == 0:
+        return s
+    ql, qh = s.quantile([lo, hi])
+    return s.clip(ql, qh)
+
+
+def feat_avg_claims_per_beneficiary(cells: pd.DataFrame) -> pd.Series:
+    """Σtotal_claims / Σtotal_beneficiaries over the same (hcpcs × month) cells, per provider-year."""
+    g = cells.groupby(["npi", "year"]).agg(c=("claims", "sum"), b=("beneficiaries", "sum"))
+    return (g["c"] / g["b"].replace(0, np.nan)).rename("avg_claims_per_beneficiary")
+
+
+def feat_avg_paid_per_claim(cells: pd.DataFrame) -> pd.Series:
+    """Σtotal_paid / Σtotal_claims, per provider-year."""
+    g = cells.groupby(["npi", "year"]).agg(p=("paid", "sum"), c=("claims", "sum"))
+    return (g["p"] / g["c"].replace(0, np.nan)).rename("avg_paid_per_claim")
+
+
+def _peer_code_ratio(
+    cells: pd.DataFrame,
+    taxonomy: pd.Series,
+    numer: str,
+    denom: str,
+    name: str,
+    min_peers: int = _MIN_PEERS,
+) -> pd.Series:
     """
-    Days from the provider's first billing month to the start of their NPI
-    registration. A very small value means the provider began billing almost
-    immediately after receiving their NPI — high-volume instant billing is a
-    fraud signal.
+    Per-HCPCS rate (numer/denom) divided by the same-specialty same-code median
+    (requiring >= min_peers distinct providers for that taxonomy × year × code),
+    then aggregated to provider-year as a claims-weighted geometric mean.
+    Winsorized at the 1st/99th percentile. Implements paid_vs_peer_ratio
+    (paid/claims) and claims_vs_peer_ratio (claims/beneficiaries).
     """
-    days = (
-        providers["first_billing_month"] - providers["npi_registration_date"]
-    ).dt.days.clip(lower=0)
-    return days.rename("days_to_first_claim")
+    df = cells.copy()
+    df["taxonomy"] = df["npi"].map(taxonomy)
+    df["rate"] = df[numer] / df[denom].replace(0, np.nan)
+    df = df[df["rate"].notna() & (df["rate"] > 0) & df["taxonomy"].notna()]
+
+    grp = df.groupby(["taxonomy", "year", "hcpcs_code"])
+    df["peer_median"] = grp["rate"].transform("median")
+    df["n_peers"]     = grp["npi"].transform("nunique")
+
+    valid = (df["n_peers"] >= min_peers) & (df["peer_median"] > 0)
+    df = df[valid].copy()
+    df["ratio"] = df["rate"] / df["peer_median"]
+    df = df[df["ratio"] > 0]
+
+    # Claims-weighted geometric mean of the per-code ratios within provider-year.
+    df["wln"] = df["claims"] * np.log(df["ratio"])
+    agg = df.groupby(["npi", "year"]).agg(wln=("wln", "sum"), w=("claims", "sum"))
+    gm = np.exp(agg["wln"] / agg["w"].replace(0, np.nan))
+    return _winsorize(gm).rename(name)
+
+
+def feat_paid_vs_peer_ratio(cells: pd.DataFrame, taxonomy: pd.Series) -> pd.Series:
+    return _peer_code_ratio(cells, taxonomy, "paid", "claims", "paid_vs_peer_ratio")
+
+
+def feat_claims_vs_peer_ratio(cells: pd.DataFrame, taxonomy: pd.Series) -> pd.Series:
+    return _peer_code_ratio(cells, taxonomy, "claims", "beneficiaries", "claims_vs_peer_ratio")
 
 
 def feat_npi_age_days_at_first_claim(providers: pd.DataFrame) -> pd.Series:
     """
-    Absolute age of the NPI (in days since NPPES registration) at the time of
-    the provider's first claim. Complements days_to_first_claim by anchoring
-    to the NPI issuance date rather than the dataset window.
+    (first-ever claim month in data − NPPES enumeration date) in days, negatives
+    clamped to 0. Anchored to the provider's first-ever claim, so it is constant
+    across that provider's service years.
     """
     days = (
         providers["first_billing_month"] - providers["npi_registration_date"]
@@ -205,101 +217,61 @@ def feat_npi_age_days_at_first_claim(providers: pd.DataFrame) -> pd.Series:
     return days.rename("npi_age_days_at_first_claim")
 
 
-def feat_n_distinct_hcpcs(providers: pd.DataFrame) -> pd.Series:
-    return providers["n_distinct_hcpcs"].rename("n_distinct_hcpcs")
-
-
-def feat_hcpcs_concentration(monthly: pd.DataFrame) -> pd.Series:
+def feat_n_distinct_hcpcs_vs_peer(cells: pd.DataFrame, taxonomy: pd.Series) -> pd.Series:
     """
-    HHI of HCPCS codes weighted by total_claims per code.
-    Score of 1.0 means every claim was for a single code — a hallmark of
+    Distinct HCPCS count for the provider-year divided by the same-specialty
+    median distinct-count for that year. Requires >= MIN_PEERS providers in the
+    taxonomy × year group, else NaN.
+    """
+    n_codes = (
+        cells.groupby(["npi", "year"])["hcpcs_code"].nunique().rename("n_distinct_hcpcs")
+    )
+    df = n_codes.reset_index()
+    df["taxonomy"] = df["npi"].map(taxonomy)
+    grp = df.groupby(["taxonomy", "year"])
+    df["peer_median"] = grp["n_distinct_hcpcs"].transform("median")
+    df["n_peers"]     = grp["npi"].transform("nunique")
+    ratio = np.where(
+        (df["n_peers"] >= _MIN_PEERS) & (df["peer_median"] > 0),
+        df["n_distinct_hcpcs"] / df["peer_median"],
+        np.nan,
+    )
+    out = pd.Series(ratio, index=pd.MultiIndex.from_frame(df[["npi", "year"]]))
+    return out.rename("n_distinct_hcpcs_vs_peer")
+
+
+def feat_hcpcs_concentration(cells: pd.DataFrame) -> pd.Series:
+    """
+    Herfindahl index of claim shares across codes within a provider-year
+    (Σ share²). 1.0 means every claim was for a single code — a hallmark of
     single-code phantom billing.
     """
-    hcpcs_totals = (
-        monthly.groupby(["npi", "hcpcs_code"])["total_claims"]
-        .sum()
-        .reset_index()
-    )
-
     def _hhi(s: pd.Series) -> float:
-        shares = s / s.sum() if s.sum() > 0 else s
+        total = s.sum()
+        if total <= 0:
+            return np.nan
+        shares = s / total
         return float((shares ** 2).sum())
 
     return (
-        hcpcs_totals.groupby("npi")["total_claims"]
-        .apply(_hhi)
-        .rename("hcpcs_concentration")
+        cells.groupby(["npi", "year"])["claims"].apply(_hhi).rename("hcpcs_concentration")
     )
 
 
 def feat_billing_on_deactivated_npi(
-    monthly: pd.DataFrame, providers: pd.DataFrame
+    providers: pd.DataFrame, index: pd.MultiIndex
 ) -> pd.Series:
     """
-    Fraction of total claims submitted in months on or after the NPI
-    deactivation date. Any non-zero value is a hard NPI-theft / identity
-    fraud signal.
+    Binary flag: 1 if the NPI has an NPPES deactivation date AND the provider's
+    last claim month is after that date. Provider-level signal broadcast to each
+    of the provider's service-years.
     """
     deact = providers["npi_deactivation_date"]
-
-    # Vectorised path: join deactivation date onto monthly rows then aggregate
-    monthly_aug = monthly.join(deact.rename("deact_date"), on="npi")
-    monthly_aug["after_deact"] = (
-        monthly_aug["month_dt"] >= monthly_aug["deact_date"]
-    ) & monthly_aug["deact_date"].notna()
-
-    total_by_npi = monthly_aug.groupby("npi")["total_claims"].sum()
-    after_by_npi = (
-        monthly_aug[monthly_aug["after_deact"]]
-        .groupby("npi")["total_claims"]
-        .sum()
-        .reindex(total_by_npi.index, fill_value=0)
-    )
-
-    ratio = after_by_npi / total_by_npi.replace(0, np.nan)
-    return ratio.fillna(0.0).rename("billing_on_deactivated_npi")
-
-
-def feat_state_mismatch(providers: pd.DataFrame) -> pd.Series:
-    """
-    Placeholder — geographic state comparison requires a service-level state
-    column not present in the CMS aggregate spending data. Returns NaN for
-    all providers; populate if a claims extract with service_state is joined.
-    """
-    return pd.Series(np.nan, index=providers.index, name="state_mismatch")
-
-
-def feat_pct_hcpcs_outside_taxonomy(
-    monthly: pd.DataFrame,
-    providers: pd.DataFrame,
-    taxonomy_map: dict[str, set[str]] | None,
-) -> pd.Series:
-    """
-    Fraction of a provider's billed HCPCS codes (weighted by claims) that fall
-    outside the expected set for their taxonomy. Requires taxonomy_map.
-    """
-    if taxonomy_map is None:
-        npis = monthly["npi"].unique()
-        return pd.Series(np.nan, index=npis, name="pct_hcpcs_outside_taxonomy")
-
-    hcpcs_totals = (
-        monthly.groupby(["npi", "hcpcs_code"])["total_claims"]
-        .sum()
-        .reset_index()
-    )
-
-    result = {}
-    for npi, grp in hcpcs_totals.groupby("npi"):
-        taxonomy = providers["taxonomy_code"].get(npi)
-        if not taxonomy or taxonomy not in taxonomy_map:
-            result[npi] = np.nan
-            continue
-        allowed     = taxonomy_map[taxonomy]
-        total       = grp["total_claims"].sum()
-        outside     = grp.loc[~grp["hcpcs_code"].isin(allowed), "total_claims"].sum()
-        result[npi] = float(outside / total) if total > 0 else 0.0
-
-    return pd.Series(result, name="pct_hcpcs_outside_taxonomy")
+    last  = providers["last_billing_month"]
+    flag = (deact.notna() & (last > deact)).astype(int)
+    npi_level = index.get_level_values("npi")
+    return pd.Series(flag.reindex(npi_level).fillna(0).astype(int).values,
+                     index=index, name="billing_on_deactivated_npi")
 
 
 # ---------------------------------------------------------------------------
@@ -617,7 +589,7 @@ def build_temporal_features(
     print("  T7 — excess_yoy_growth …")
     t7 = feat_T7_excess_yoy_growth(provider_annual, providers)
 
-    return pd.DataFrame({
+    temporal = pd.DataFrame({
         "mom_paid_growth_volatility": t1,
         "cv_monthly_paid":            t2,
         "peak_to_median_paid":        t3,
@@ -626,67 +598,89 @@ def build_temporal_features(
         "new_hcpcs_fraction":         t6,
         "excess_yoy_growth":          t7,
     })
+    # T6/T7 build their index from dict-of-tuples, which drops the level names;
+    # normalise so the (npi, year) join in build_fraud_features lines up.
+    temporal.index = temporal.index.set_names(["npi", "year"])
+    return temporal
 
 
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
+def label_is_excluded(providers: pd.DataFrame, index: pd.MultiIndex) -> pd.Series:
+    """
+    Validation label (kept separate, never a model input):
+    1 if the NPI is in LEIE with EXCLDATE <= end of the service year AND
+    (REINDATE is null OR REINDATE > end of the service year). Computed per
+    (npi, year) because exclusion status depends on the service year.
+    """
+    idx_df = index.to_frame(index=False)
+    eoy = pd.to_datetime(idx_df["year"].astype(int).astype(str) + "-12-31")
+    excl = idx_df["npi"].map(providers["excl_date"]) if "excl_date" in providers else pd.Series(pd.NaT, index=idx_df.index)
+    rein = idx_df["npi"].map(providers["reinstate_date"]) if "reinstate_date" in providers else pd.Series(pd.NaT, index=idx_df.index)
+    cond = excl.notna() & (excl <= eoy) & (rein.isna() | (rein > eoy))
+    return pd.Series(cond.astype(int).values, index=index, name="is_excluded")
+
+
 def build_fraud_features(
     monthly: pd.DataFrame,
     providers: pd.DataFrame,
-    taxonomy_map: dict[str, set[str]] | None = None,
     provider_annual: pd.DataFrame | None = None,
-    target_year: int | None = None,
 ) -> pd.DataFrame:
     """
-    Build the full feature table — static features (1–9) plus temporal
-    features T1–T7 if provider_annual is supplied.
+    Build the full feature table at the (npi, year) grain — static features
+    plus temporal features T1–T7 if provider_annual is supplied.
 
-    target_year: which year's temporal features to join onto the static
-    table. Defaults to the most recent year present in provider_annual.
+    The returned table carries three non-model columns:
+      is_excluded   — validation label (never fed to the model)
+      total_paid    — kept for triage sorting only
+      taxonomy_code — specialty, for reporting / optional peer grouping
     """
-    avg_paid   = feat_avg_paid_per_claim(providers)
-    avg_claims = feat_avg_claims_per_beneficiary(providers)
+    taxonomy = providers["taxonomy_code"]
 
-    features = pd.DataFrame(index=providers.index)
-    features.index.name = "npi"
+    print("  Aggregating (npi, year, hcpcs) cells …")
+    cells = _hcpcs_year_cells(monthly)
 
-    # Static features (unchanged)
-    features["avg_claims_per_beneficiary"]  = avg_claims
-    features["avg_paid_per_claim"]          = avg_paid
-    features["paid_vs_peer_ratio"]          = feat_paid_vs_peer_ratio(avg_paid, providers)
-    features["claims_vs_peer_ratio"]        = feat_claims_vs_peer_ratio(avg_claims, providers)
-    features["billing_cv"]                  = feat_billing_cv(monthly).reindex(features.index)
-    features["days_to_first_claim"]         = feat_days_to_first_claim(providers)
-    features["npi_age_days_at_first_claim"] = feat_npi_age_days_at_first_claim(providers)
-    features["n_distinct_hcpcs"]            = feat_n_distinct_hcpcs(providers)
-    features["hcpcs_concentration"]         = feat_hcpcs_concentration(monthly).reindex(features.index)
-    features["billing_on_deactivated_npi"]  = feat_billing_on_deactivated_npi(monthly, providers)
-    features["state_mismatch"]              = feat_state_mismatch(providers)
-    features["pct_hcpcs_outside_taxonomy"]  = feat_pct_hcpcs_outside_taxonomy(
-                                                 monthly, providers, taxonomy_map
-                                             ).reindex(features.index)
+    # The (npi, year) universe is every provider-year with billing activity.
+    base_index = pd.MultiIndex.from_frame(
+        cells[["npi", "year"]].drop_duplicates().sort_values(["npi", "year"])
+    )
+    features = pd.DataFrame(index=base_index)
 
-    # Temporal features T1–T7
+    print("  Static features (per provider-year) …")
+    features["avg_claims_per_beneficiary"]  = feat_avg_claims_per_beneficiary(cells)
+    features["avg_paid_per_claim"]          = feat_avg_paid_per_claim(cells)
+    features["paid_vs_peer_ratio"]          = feat_paid_vs_peer_ratio(cells, taxonomy)
+    features["claims_vs_peer_ratio"]        = feat_claims_vs_peer_ratio(cells, taxonomy)
+    features["n_distinct_hcpcs_vs_peer"]    = feat_n_distinct_hcpcs_vs_peer(cells, taxonomy)
+    features["hcpcs_concentration"]         = feat_hcpcs_concentration(cells)
+    features["billing_on_deactivated_npi"]  = feat_billing_on_deactivated_npi(providers, base_index)
+
+    # npi_age_days_at_first_claim is provider-level; broadcast to each year.
+    age = feat_npi_age_days_at_first_claim(providers)
+    features["npi_age_days_at_first_claim"] = age.reindex(
+        base_index.get_level_values("npi")
+    ).values
+
+    # Temporal features T1–T7 (already at the (npi, year) grain)
     if provider_annual is not None:
         temporal = build_temporal_features(monthly, provider_annual, providers)
+        features = features.join(temporal, how="left")
 
-        # Select target year and join — default to most recent year
-        if target_year is None:
-            target_year = int(temporal.index.get_level_values("year").max())
+    # --- Non-model columns -------------------------------------------------
+    # Label (kept separate, never modelled).
+    features["is_excluded"] = label_is_excluded(providers, base_index)
+    # total_paid for triage sorting only (NOT a model input).
+    features["total_paid"] = (
+        cells.groupby(["npi", "year"])["paid"].sum().reindex(base_index)
+    )
+    # Specialty for reporting.
+    features["taxonomy_code"] = pd.Series(taxonomy).reindex(
+        base_index.get_level_values("npi")
+    ).values
 
-        year_slice = (
-            temporal.xs(target_year, level="year")
-            if target_year in temporal.index.get_level_values("year")
-            else pd.DataFrame(index=features.index, columns=temporal.columns)
-        )
-        for col in year_slice.columns:
-            features[col] = year_slice[col].reindex(features.index)
-
-    # Carry taxonomy through for peer-group scoring in analyze_anomalies.py
-    features["taxonomy_code"] = providers["taxonomy_code"]
-
+    features.index.names = ["npi", "year"]
     return features
 
 
@@ -714,13 +708,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build fraud-signal features from cleaned Medicaid provider data."
     )
-    parser.add_argument("--monthly",      required=True, help="provider_monthly.parquet from clean_data.py")
-    parser.add_argument("--providers",    required=True, help="providers_clean.csv from clean_data.py")
-    parser.add_argument("--annual",       default=None,  help="provider_annual.parquet for T1–T7 temporal features")
-    parser.add_argument("--target-year",  default=None,  type=int,
-                        help="Service year to extract temporal features for (default: most recent year)")
-    parser.add_argument("--taxonomy-map", default=None,  help="CSV mapping taxonomy_code → hcpcs_code")
-    parser.add_argument("--output",       default="data/processed/fraud_features.csv")
+    parser.add_argument("--monthly",   required=True, help="provider_monthly.parquet from clean_data.py")
+    parser.add_argument("--providers", required=True, help="providers_clean.csv from clean_data.py")
+    parser.add_argument("--annual",    default=None,  help="provider_annual.parquet for T1–T7 temporal features")
+    parser.add_argument("--output",    default="data/processed/fraud_features.csv")
     args = parser.parse_args()
 
     print(f"Loading monthly data from {args.monthly} …")
@@ -738,18 +729,8 @@ def main() -> None:
         provider_annual = pd.read_parquet(p) if p.suffix == ".parquet" else pd.read_csv(p)
         print(f"  {len(provider_annual):,} provider-year rows")
 
-    taxonomy_map = None
-    if args.taxonomy_map:
-        print(f"Loading taxonomy map from {args.taxonomy_map} …")
-        taxonomy_map = load_taxonomy_map(args.taxonomy_map)
-        print(f"  {len(taxonomy_map):,} taxonomy codes")
-
     print("Computing fraud features …")
-    features = build_fraud_features(
-        monthly, providers, taxonomy_map,
-        provider_annual=provider_annual,
-        target_year=args.target_year,
-    )
+    features = build_fraud_features(monthly, providers, provider_annual=provider_annual)
 
     save_features(features, args.output)
 

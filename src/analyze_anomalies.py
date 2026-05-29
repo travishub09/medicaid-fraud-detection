@@ -1,22 +1,24 @@
 """
 analyze_anomalies.py
 
-Scores Medicaid providers for fraudulent or anomalous billing behaviour using
-an Isolation Forest, then explains each provider's score with DIFFI
-(Depth-based Isolation Forest Feature Importance).
+Scores Medicaid provider-years for anomalous billing behaviour using an
+Isolation Forest, then explains each score with DIFFI (Depth-based Isolation
+Forest Feature Importance).
 
-Providers are first grouped into specialty peer groups so that, for example,
-oncologists are compared to oncologists — not to primary care physicians.
-Within each peer group the Isolation Forest is fit independently, and scores
-are then unified onto a single 0–1 scale for the final ranking.
+Per the project spec:
+  * The model is fit on all static + temporal features EXCEPT the validation
+    label (is_excluded) and raw total_paid (kept for triage sorting only).
+  * Heavy-tailed features are log1p-transformed and all features are
+    standardised before fitting.
+  * After scoring, is_excluded is used to report precision@k against the known
+    LEIE exclusions — it is never an input to the model.
 
-Output: a ranked table of all providers with their anomaly score and a
-plain-English description of the billing dimensions that drove the score.
+Output: a ranked provider-year table with the anomaly score, the top
+contributing features (DIFFI), total_paid for triage, and the validation label.
 
 Usage:
-    python -m src.analyze_anomalies data/processed/provider_features.csv
-    python -m src.analyze_anomalies data/processed/provider_features.csv \
-        --providers data/raw/providers.csv \
+    python -m src.analyze_anomalies data/processed/fraud_features.csv
+    python -m src.analyze_anomalies data/processed/fraud_features.csv \
         --output    data/processed/provider_rankings.csv \
         --contamination 0.05
 """
@@ -27,48 +29,66 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler
 
 
 # ---------------------------------------------------------------------------
 # Feature metadata
 # ---------------------------------------------------------------------------
 
-FEATURE_LABELS = {
-    "claim_rate_per_day":           "claims submitted per active day",
-    "unique_beneficiary_ratio":     "ratio of unique beneficiaries to total claims",
-    "procedure_concentration":      "concentration of billing on a narrow set of procedure codes",
-    "avg_units_per_claim":          "average units billed per claim",
-    "units_cv":                     "volatility of units billed across claims",
-    "upcoding_index":               "share of evaluation & management claims at highest complexity",
-    "weekend_service_ratio":        "proportion of services billed on weekends",
-    "lag_cv":                       "irregularity of claim submission timing",
-    "denial_rate":                  "claim denial rate",
-    "avg_payment_ratio":            "average paid-to-allowed ratio",
-    "avg_billed_to_allowed":        "average billed-to-allowed markup ratio",
-    "controlled_rx_ratio":          "proportion of prescriptions for controlled substances",
-    "avg_days_supply":              "average days supply per prescription",
-    "rx_cost_cv":                   "volatility of prescription costs",
-    "unique_drug_ratio":            "variety of drugs prescribed relative to script volume",
+# Columns that are NOT model inputs: the validation label, the triage-only
+# raw dollar amount, and the specialty string. Index columns are handled
+# separately.
+NON_MODEL_COLS = {"is_excluded", "total_paid", "taxonomy_code"}
+INDEX_COLS     = ["npi", "year"]
+
+# Strictly non-negative, heavy-tailed features → log1p before standardising.
+HEAVY_TAILED = {
+    "avg_claims_per_beneficiary",
+    "avg_paid_per_claim",
+    "paid_vs_peer_ratio",
+    "claims_vs_peer_ratio",
+    "n_distinct_hcpcs_vs_peer",
+    "npi_age_days_at_first_claim",
+    "peak_to_median_paid",
+    "cv_monthly_paid",
 }
 
-# True = high value relative to peers is suspicious
+FEATURE_LABELS = {
+    "avg_claims_per_beneficiary":  "claims billed per beneficiary",
+    "avg_paid_per_claim":          "average paid per claim",
+    "paid_vs_peer_ratio":          "paid-per-claim vs same-specialty peers",
+    "claims_vs_peer_ratio":        "claims-per-beneficiary vs same-specialty peers",
+    "n_distinct_hcpcs_vs_peer":    "distinct procedure codes vs peers",
+    "hcpcs_concentration":         "concentration of billing on a few procedure codes",
+    "billing_on_deactivated_npi":  "billing after the NPI was deactivated",
+    "npi_age_days_at_first_claim": "NPI age (days) at first claim",
+    "mom_paid_growth_volatility":  "month-on-month paid growth volatility",
+    "cv_monthly_paid":             "volatility of monthly paid amounts",
+    "peak_to_median_paid":         "peak-to-median monthly paid ratio",
+    "onset_ramp_slope":            "ramp-up slope of billing at onset",
+    "post_peak_dropoff":           "drop-off in billing after a peak",
+    "new_hcpcs_fraction":          "fraction of procedure codes new this year",
+    "excess_yoy_growth":           "year-over-year paid growth vs peers",
+}
+
+# True = a value above the peer/median direction is the suspicious one.
 _HIGH_IS_SUSPICIOUS = {
-    "claim_rate_per_day":           True,
-    "unique_beneficiary_ratio":     False,
-    "procedure_concentration":      True,
-    "avg_units_per_claim":          True,
-    "units_cv":                     True,
-    "upcoding_index":               True,
-    "weekend_service_ratio":        True,
-    "lag_cv":                       True,
-    "denial_rate":                  True,
-    "avg_payment_ratio":            False,
-    "avg_billed_to_allowed":        True,
-    "controlled_rx_ratio":          True,
-    "avg_days_supply":              True,
-    "rx_cost_cv":                   True,
-    "unique_drug_ratio":            False,
+    "avg_claims_per_beneficiary":  True,
+    "avg_paid_per_claim":          True,
+    "paid_vs_peer_ratio":          True,
+    "claims_vs_peer_ratio":        True,
+    "n_distinct_hcpcs_vs_peer":    True,
+    "hcpcs_concentration":         True,
+    "billing_on_deactivated_npi":  True,
+    "npi_age_days_at_first_claim": False,
+    "mom_paid_growth_volatility":  True,
+    "cv_monthly_paid":             True,
+    "peak_to_median_paid":         True,
+    "onset_ramp_slope":            True,
+    "post_peak_dropoff":           True,
+    "new_hcpcs_fraction":          True,
+    "excess_yoy_growth":           True,
 }
 
 
@@ -77,14 +97,46 @@ _HIGH_IS_SUSPICIOUS = {
 # ---------------------------------------------------------------------------
 
 def load_features(path: str | Path) -> pd.DataFrame:
-    df = pd.read_csv(path, index_col=0)
+    df = pd.read_csv(path, dtype={"npi": str})
     if df.empty:
         raise ValueError(f"No data in {path}")
-    return df
+    missing = [c for c in INDEX_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(f"Feature file missing index columns {missing}")
+    return df.set_index(INDEX_COLS)
 
 
-def load_providers(path: str | Path) -> pd.DataFrame:
-    return pd.read_csv(path, dtype={"npi": str})
+def select_feature_columns(df: pd.DataFrame) -> list[str]:
+    """All numeric columns that are not the label, triage, or index columns."""
+    cols = []
+    for c in df.columns:
+        if c in NON_MODEL_COLS:
+            continue
+        if pd.api.types.is_numeric_dtype(df[c]):
+            cols.append(c)
+    return cols
+
+
+# ---------------------------------------------------------------------------
+# Preprocessing: log1p heavy-tailed → median-impute → standardise
+# ---------------------------------------------------------------------------
+
+def preprocess(df: pd.DataFrame, feature_names: list[str]) -> np.ndarray:
+    X = df[feature_names].astype(float).copy()
+
+    for col in feature_names:
+        if col in HEAVY_TAILED:
+            # log1p needs values > -1; these columns are non-negative by design,
+            # but clip defensively against tiny negative floating-point noise.
+            X[col] = np.log1p(X[col].clip(lower=0))
+
+    # Guard-induced NaNs (e.g. <6 active months) are imputed at the column
+    # median so the Isolation Forest can consume every provider-year.
+    X = X.fillna(X.median(numeric_only=True))
+    # Any column that is entirely NaN (no signal at all) → 0.
+    X = X.fillna(0.0)
+
+    return StandardScaler().fit_transform(X.values)
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +157,8 @@ def fit_isolation_forest(
     model.fit(X)
     raw = model.score_samples(X)
     lo, hi = raw.min(), raw.max()
+    # Higher score == more anomalous (invert score_samples, which is higher for
+    # inliers) and rescale to [0, 1].
     scores = 1.0 - (raw - lo) / (hi - lo) if hi > lo else np.zeros_like(raw)
     return model, scores
 
@@ -115,14 +169,12 @@ def fit_isolation_forest(
 
 def compute_diffi_scores(model: IsolationForest, X: np.ndarray) -> np.ndarray:
     """
-    Return (n_samples, n_features) importance matrix.
+    Return an (n_samples, n_features) importance matrix.
 
-    For each tree, walks the isolation path for each sample and accumulates
-    1/(depth+1) for every feature used at a split node. Features that
-    isolate a sample early (shallow depth) receive higher weight — these
-    are the dimensions that most distinguish the sample from its peers.
-
-    Averaged across all trees, then row-normalised to [0,1].
+    For each tree, walk the isolation path of each sample and accumulate
+    1/(depth+1) for every feature used at a split node. Features that isolate a
+    sample early (shallow depth) receive higher weight. Averaged across trees
+    then row-normalised to [0, 1].
     """
     n_samples, n_features = X.shape
     importance = np.zeros((n_samples, n_features))
@@ -154,60 +206,12 @@ def compute_diffi_scores(model: IsolationForest, X: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Peer-group scoring
-# ---------------------------------------------------------------------------
-
-def score_by_peer_group(
-    features_df: pd.DataFrame,
-    feature_names: list[str],
-    contamination: float,
-    n_estimators: int,
-    peer_col: str = "specialty_code",
-) -> tuple[np.ndarray, np.ndarray, list[IsolationForest]]:
-    """
-    Fit a separate Isolation Forest per specialty peer group so that
-    high-volume specialists are not unfairly flagged relative to GPs.
-
-    Returns arrays aligned to features_df's index order.
-    """
-    n = len(features_df)
-    all_scores  = np.zeros(n)
-    all_diffi   = np.zeros((n, len(feature_names)))
-
-    if peer_col not in features_df.columns:
-        # Fall back to a single global model
-        X = RobustScaler().fit_transform(features_df[feature_names].values)
-        model, scores = fit_isolation_forest(X, contamination, n_estimators)
-        diffi = compute_diffi_scores(model, X)
-        return scores, diffi
-
-    for group, idx in features_df.groupby(peer_col).groups.items():
-        positions  = [features_df.index.get_loc(i) for i in idx]
-        group_data = features_df.loc[idx, feature_names].values
-
-        if len(group_data) < 10:
-            # Too few providers to fit a meaningful model; score at 0.5
-            all_scores[positions] = 0.5
-            continue
-
-        X = RobustScaler().fit_transform(group_data)
-        model, scores = fit_isolation_forest(X, contamination, n_estimators)
-        diffi = compute_diffi_scores(model, X)
-
-        for i, pos in enumerate(positions):
-            all_scores[pos]   = scores[i]
-            all_diffi[pos, :] = diffi[i, :]
-
-    return all_scores, all_diffi
-
-
-# ---------------------------------------------------------------------------
 # Description generation
 # ---------------------------------------------------------------------------
 
-def _direction(feature: str, company_val: float, peer_median: float) -> str:
+def _direction(feature: str, provider_val: float, peer_median: float) -> str:
     high_suspicious = _HIGH_IS_SUSPICIOUS.get(feature, True)
-    is_high = company_val > peer_median
+    is_high = provider_val > peer_median
     if (high_suspicious and is_high) or (not high_suspicious and not is_high):
         return "unusually high"
     return "unusually low"
@@ -217,7 +221,7 @@ def build_description(
     feature_importances: np.ndarray,
     feature_names: list[str],
     provider_values: pd.Series,
-    global_medians: pd.Series,
+    medians: pd.Series,
     top_n: int = 3,
 ) -> str:
     ranked = sorted(zip(feature_importances, feature_names), reverse=True)[:top_n]
@@ -225,16 +229,16 @@ def build_description(
     for importance, feat in ranked:
         if importance < 0.05:
             continue
-        label   = FEATURE_LABELS.get(feat, feat)
-        p_val   = provider_values.get(feat, np.nan)
-        g_med   = global_medians.get(feat, np.nan)
-        if np.isnan(p_val) or np.isnan(g_med):
+        label = FEATURE_LABELS.get(feat, feat)
+        p_val = provider_values.get(feat, np.nan)
+        med   = medians.get(feat, np.nan)
+        if pd.isna(p_val) or pd.isna(med):
             parts.append(f"{label} (importance {importance:.2f})")
             continue
-        direction = _direction(feat, p_val, g_med)
+        direction = _direction(feat, p_val, med)
         parts.append(
             f"{label} is {direction} "
-            f"(provider: {p_val:.3g}, peer median: {g_med:.3g}, importance: {importance:.2f})"
+            f"(value: {p_val:.3g}, median: {med:.3g}, importance: {importance:.2f})"
         )
     return "; ".join(parts) if parts else "no dominant driver identified"
 
@@ -245,36 +249,30 @@ def build_description(
 
 def rank_providers(
     features_df: pd.DataFrame,
+    feature_names: list[str],
     anomaly_scores: np.ndarray,
     diffi_matrix: np.ndarray,
-    feature_names: list[str],
-    providers_df: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    global_medians = features_df[feature_names].median()
+    medians = features_df[feature_names].median()
 
     rows = []
-    for i, npi in enumerate(features_df.index):
+    for i, (npi, year) in enumerate(features_df.index):
         description = build_description(
             feature_importances=diffi_matrix[i],
             feature_names=feature_names,
-            provider_values=features_df.loc[npi, feature_names],
-            global_medians=global_medians,
+            provider_values=features_df.iloc[i][feature_names],
+            medians=medians,
         )
-        row = {
+        rows.append({
             "rank":          0,
             "npi":           npi,
+            "year":          year,
             "anomaly_score": round(float(anomaly_scores[i]), 4),
-            "n_claims":      int(features_df.loc[npi, "n_claims"])
-                             if "n_claims" in features_df.columns else None,
+            "total_paid":    round(float(features_df.iloc[i].get("total_paid", np.nan)), 2),
+            "is_excluded":   int(features_df.iloc[i].get("is_excluded", 0)),
             "top_driver":    feature_names[int(diffi_matrix[i].argmax())],
             "description":   description,
-        }
-        if providers_df is not None and "npi" in providers_df.columns:
-            match = providers_df[providers_df["npi"] == str(npi)]
-            if not match.empty:
-                row["provider_name"] = match.iloc[0].get("provider_name", "")
-                row["specialty"]     = match.iloc[0].get("specialty_desc", "")
-        rows.append(row)
+        })
 
     ranking = (
         pd.DataFrame(rows)
@@ -286,21 +284,54 @@ def rank_providers(
 
 
 # ---------------------------------------------------------------------------
+# Validation — precision@k against known exclusions
+# ---------------------------------------------------------------------------
+
+def precision_at_k(ranking: pd.DataFrame, ks=(50, 100, 200, 500, 1000)) -> pd.DataFrame:
+    total_pos = int(ranking["is_excluded"].sum())
+    base_rate = total_pos / len(ranking) if len(ranking) else 0.0
+    out = []
+    for k in ks:
+        if k > len(ranking):
+            continue
+        top_k = ranking.head(k)
+        hits  = int(top_k["is_excluded"].sum())
+        out.append({
+            "k": k,
+            "precision@k": round(hits / k, 4),
+            "recall@k":    round(hits / total_pos, 4) if total_pos else 0.0,
+            "hits":        hits,
+            "lift":        round((hits / k) / base_rate, 2) if base_rate else float("nan"),
+        })
+    return pd.DataFrame(out)
+
+
+# ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
 
-def print_report(ranking: pd.DataFrame, top_n: int = 20) -> None:
+def print_report(ranking: pd.DataFrame, pak: pd.DataFrame, top_n: int = 20) -> None:
     print(f"\n{'='*80}")
-    print(f"  PROVIDER FRAUD RISK RANKINGS  —  top {top_n} of {len(ranking)}")
+    print(f"  PROVIDER-YEAR FRAUD RISK RANKINGS  —  top {top_n} of {len(ranking)}")
     print(f"{'='*80}\n")
     for _, row in ranking.head(top_n).iterrows():
-        name      = row.get("provider_name", "")
-        specialty = row.get("specialty", "")
-        n_claims  = f"({row['n_claims']:,} claims)" if row.get("n_claims") else ""
-        print(f"#{row['rank']:>3}  NPI {row['npi']}  {name}  {specialty}  {n_claims}")
+        flag = "  [LEIE-EXCLUDED]" if row["is_excluded"] else ""
+        paid = f"${row['total_paid']:,.0f}" if pd.notna(row["total_paid"]) else "n/a"
+        print(f"#{row['rank']:>3}  NPI {row['npi']}  ({row['year']})  paid={paid}{flag}")
         print(f"      Score : {row['anomaly_score']:.4f}")
         print(f"      Why   : {row['description']}")
         print()
+
+    total_pos = int(ranking["is_excluded"].sum())
+    print(f"{'='*80}")
+    print(f"  PRECISION@K vs {total_pos} known LEIE exclusions "
+          f"(base rate {total_pos/len(ranking):.4%})")
+    print(f"{'='*80}")
+    if pak.empty:
+        print("  (too few rows to compute precision@k)")
+    else:
+        print(pak.to_string(index=False))
+    print()
 
 
 def save_ranking(ranking: pd.DataFrame, path: str | Path) -> None:
@@ -315,39 +346,37 @@ def save_ranking(ranking: pd.DataFrame, path: str | Path) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Score and rank Medicaid providers using DIFFI Isolation Forest."
+        description="Score and rank Medicaid provider-years with a DIFFI Isolation Forest."
     )
-    parser.add_argument("input",          help="Path to provider_features.csv")
-    parser.add_argument("--providers",    default=None, help="Optional providers CSV for name/specialty lookup")
-    parser.add_argument("--output",       default="data/processed/provider_rankings.csv")
+    parser.add_argument("input",           help="Path to fraud_features.csv from build_features.py")
+    parser.add_argument("--output",        default="data/processed/provider_rankings.csv")
     parser.add_argument("--contamination", type=float, default=0.05)
     parser.add_argument("--n-estimators",  type=int,   default=300)
-    parser.add_argument("--top",           type=int,   default=20, help="Providers shown in console report")
+    parser.add_argument("--top",           type=int,   default=20, help="Rows shown in console report")
     args = parser.parse_args()
 
     print(f"Loading provider features from {args.input} …")
     features_df = load_features(args.input)
-    print(f"  {len(features_df)} providers, {features_df.shape[1]} features")
+    feature_names = select_feature_columns(features_df)
+    print(f"  {len(features_df):,} provider-years, {len(feature_names)} model features")
+    print(f"  Features: {', '.join(feature_names)}")
 
-    providers_df = None
-    if args.providers:
-        providers_df = load_providers(args.providers)
+    print("Preprocessing (log1p heavy-tailed → impute → standardise) …")
+    X = preprocess(features_df, feature_names)
 
-    skip_cols   = {"n_claims", "specialty_code"}
-    feature_names = [c for c in features_df.columns if c not in skip_cols]
-
-    print("Scoring providers within specialty peer groups …")
-    anomaly_scores, diffi_matrix = score_by_peer_group(
-        features_df,
-        feature_names,
-        contamination=args.contamination,
-        n_estimators=args.n_estimators,
+    print("Fitting Isolation Forest …")
+    model, anomaly_scores = fit_isolation_forest(
+        X, contamination=args.contamination, n_estimators=args.n_estimators
     )
 
-    print("Building provider rankings …")
-    ranking = rank_providers(features_df, anomaly_scores, diffi_matrix, feature_names, providers_df)
+    print("Computing DIFFI feature attributions …")
+    diffi_matrix = compute_diffi_scores(model, X)
 
-    print_report(ranking, top_n=args.top)
+    print("Building provider rankings …")
+    ranking = rank_providers(features_df, feature_names, anomaly_scores, diffi_matrix)
+
+    pak = precision_at_k(ranking)
+    print_report(ranking, pak, top_n=args.top)
     save_ranking(ranking, args.output)
 
 

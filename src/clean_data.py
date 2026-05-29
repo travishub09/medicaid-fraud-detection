@@ -77,24 +77,70 @@ def load_leie(path: str) -> pd.DataFrame:
     df = pd.read_csv(path, dtype=str)
     df.columns = df.columns.str.strip()
 
-    npi_col  = next((c for c in df.columns if c.upper() == "NPI"),  None)
-    type_col = next((c for c in df.columns if "EXCLTYPE" in c.upper()), None)
-    date_col = next((c for c in df.columns if "EXCLDATE" in c.upper()), None)
+    npi_col   = next((c for c in df.columns if c.upper() == "NPI"),  None)
+    type_col  = next((c for c in df.columns if "EXCLTYPE" in c.upper()), None)
+    excl_col  = next((c for c in df.columns if "EXCLDATE" in c.upper()), None)
+    rein_col  = next((c for c in df.columns if "REINDATE" in c.upper()), None)
+
+    # LEIE date columns are YYYYMMDD strings; "0"/"00000000"/blank == no date.
+    def _parse_leie_date(s: pd.Series) -> pd.Series:
+        s = s.astype(str).str.strip()
+        s = s.where(~s.isin(["0", "00000000", "", "nan", "NaN"]))
+        return pd.to_datetime(s, format="%Y%m%d", errors="coerce")
 
     keep = {}
-    if npi_col:  keep["npi"]       = df[npi_col].str.strip()
-    if type_col: keep["excl_type"] = df[type_col]
-    if date_col: keep["excl_date"] = pd.to_datetime(df[date_col], errors="coerce")
+    if npi_col:  keep["npi"]            = df[npi_col].str.strip()
+    if type_col: keep["excl_type"]      = df[type_col]
+    if excl_col: keep["excl_date"]      = _parse_leie_date(df[excl_col])
+    if rein_col: keep["reinstate_date"] = _parse_leie_date(df[rein_col])
 
     leie = pd.DataFrame(keep).dropna(subset=["npi"])
     leie = leie[leie["npi"] != ""]
-    leie["is_excluded"] = 1
-    return leie.drop_duplicates("npi")
+    # NPIs reported as "0" in LEIE have no usable identifier — drop them.
+    leie = leie[leie["npi"] != "0"]
+    if "reinstate_date" not in leie.columns:
+        leie["reinstate_date"] = pd.NaT
+    leie["in_leie"] = 1
+    # Keep the earliest exclusion per NPI so the service-year label is conservative.
+    leie = leie.sort_values("excl_date").drop_duplicates("npi", keep="first")
+    return leie
 
 
 # ---------------------------------------------------------------------------
 # DuckDB processing
 # ---------------------------------------------------------------------------
+
+# Column aliases per source format. The HHS T-MSIS export uses upper-case
+# names; the legacy/spec CSV uses lower-case. DuckDB binds every referenced
+# column at parse time, so we cannot COALESCE across both unconditionally —
+# we sniff the header first and reference only columns that actually exist.
+_SPENDING_ALIASES = {
+    "npi":                 ["BILLING_PROVIDER_NPI_NUM", "billing_provider_npi"],
+    "hcpcs_code":          ["HCPCS_CODE", "hcpcs_code"],
+    "service_month":       ["CLAIM_FROM_MONTH", "service_month"],
+    "total_beneficiaries": ["TOTAL_PATIENTS", "total_beneficiaries"],
+    "total_claims":        ["TOTAL_CLAIM_LINES", "total_claims"],
+    "total_paid_amount":   ["TOTAL_PAID", "total_paid_amount"],
+}
+
+
+def _spending_columns(con: duckdb.DuckDBPyConnection, spending_path: str) -> list[str]:
+    desc = con.execute(
+        f"DESCRIBE SELECT * FROM read_csv_auto('{spending_path}', ignore_errors=true)"
+    ).df()
+    return desc["column_name"].tolist()
+
+
+def _pick_expr(available: list[str], candidates: list[str], cast: str) -> str | None:
+    """First candidate column that exists in the file, wrapped in TRY_CAST."""
+    avail_lower = {c.lower(): c for c in available}
+    for cand in candidates:
+        if cand in available:
+            return f'TRY_CAST("{cand}" AS {cast})'
+        if cand.lower() in avail_lower:
+            return f'TRY_CAST("{avail_lower[cand.lower()]}" AS {cast})'
+    return None
+
 
 def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
     # Normalise column names from either source format:
@@ -102,30 +148,32 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
     #                TOTAL_PATIENTS, TOTAL_CLAIM_LINES, TOTAL_PAID
     #   Legacy CSV:  billing_provider_npi, hcpcs_code, service_month,
     #                total_beneficiaries, total_claims, total_paid_amount
-    con.execute(f"""
+    available = _spending_columns(con, spending_path)
+
+    npi_expr = _pick_expr(available, _SPENDING_ALIASES["npi"], "VARCHAR")
+    if npi_expr is None:
+        raise ValueError(
+            "Spending file has no recognised billing NPI column "
+            f"(looked for {_SPENDING_ALIASES['npi']}); found: {available}"
+        )
+
+    def col(name: str, cast: str, default: str) -> str:
+        expr = _pick_expr(available, _SPENDING_ALIASES[name], cast)
+        return f"COALESCE({expr}, {default})" if expr else default
+
+    select_sql = f"""
         CREATE OR REPLACE TABLE medicaid AS
         SELECT
-            CAST(COALESCE(
-                TRY_CAST("BILLING_PROVIDER_NPI_NUM" AS VARCHAR),
-                TRY_CAST(billing_provider_npi       AS VARCHAR)
-            ) AS VARCHAR) AS npi,
-            CAST(COALESCE("HCPCS_CODE", hcpcs_code) AS VARCHAR) AS hcpcs_code,
-            CAST(COALESCE("CLAIM_FROM_MONTH", service_month) AS VARCHAR) AS service_month,
-            COALESCE(
-                TRY_CAST("TOTAL_PATIENTS"    AS DOUBLE),
-                TRY_CAST(total_beneficiaries AS DOUBLE), 0
-            ) AS total_beneficiaries,
-            COALESCE(
-                TRY_CAST("TOTAL_CLAIM_LINES" AS DOUBLE),
-                TRY_CAST(total_claims        AS DOUBLE), 0
-            ) AS total_claims,
-            COALESCE(
-                TRY_CAST("TOTAL_PAID"        AS DOUBLE),
-                TRY_CAST(total_paid_amount   AS DOUBLE), 0
-            ) AS total_paid_amount
+            CAST({npi_expr} AS VARCHAR)                            AS npi,
+            CAST({col('hcpcs_code',    'VARCHAR', "''")} AS VARCHAR) AS hcpcs_code,
+            CAST({col('service_month', 'VARCHAR', "''")} AS VARCHAR) AS service_month,
+            {col('total_beneficiaries', 'DOUBLE', '0')}           AS total_beneficiaries,
+            {col('total_claims',        'DOUBLE', '0')}           AS total_claims,
+            {col('total_paid_amount',   'DOUBLE', '0')}           AS total_paid_amount
         FROM read_csv_auto('{spending_path}', ignore_errors=true)
-        WHERE COALESCE("BILLING_PROVIDER_NPI_NUM", billing_provider_npi) IS NOT NULL
-    """)
+        WHERE {npi_expr} IS NOT NULL
+    """
+    con.execute(select_sql)
 
     con.execute("""
         CREATE OR REPLACE TABLE provider_monthly AS
@@ -178,12 +226,13 @@ def join_metadata(
     summary["npi"] = summary["npi"].astype(str).str.strip()
 
     merged = summary.merge(nppes, on="npi", how="left")
-    merged = merged.merge(
-        leie[["npi", "is_excluded", "excl_type", "excl_date"]],
-        on="npi",
-        how="left",
-    )
-    merged["is_excluded"] = merged["is_excluded"].fillna(0).astype(int)
+    # Carry the raw LEIE dates through — is_excluded is a per-service-year label
+    # (EXCLDATE <= end of year AND (REINDATE null OR > end of year)) and is
+    # therefore computed downstream in build_features, not here.
+    leie_cols = [c for c in ["npi", "in_leie", "excl_type", "excl_date", "reinstate_date"]
+                 if c in leie.columns]
+    merged = merged.merge(leie[leie_cols], on="npi", how="left")
+    merged["in_leie"] = merged["in_leie"].fillna(0).astype(int)
 
     # Parse billing months to dates for downstream date arithmetic
     merged["first_billing_month"] = pd.to_datetime(
