@@ -97,17 +97,34 @@ def load_leie(path: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
+    # Normalise column names from either source format:
+    #   HHS T-MSIS:  BILLING_PROVIDER_NPI_NUM, HCPCS_CODE, CLAIM_FROM_MONTH,
+    #                TOTAL_PATIENTS, TOTAL_CLAIM_LINES, TOTAL_PAID
+    #   Legacy CSV:  billing_provider_npi, hcpcs_code, service_month,
+    #                total_beneficiaries, total_claims, total_paid_amount
     con.execute(f"""
         CREATE OR REPLACE TABLE medicaid AS
         SELECT
-            CAST(billing_provider_npi AS VARCHAR) AS npi,
-            CAST(hcpcs_code           AS VARCHAR) AS hcpcs_code,
-            CAST(service_month        AS VARCHAR) AS service_month,
-            CAST(total_beneficiaries  AS DOUBLE)  AS total_beneficiaries,
-            CAST(total_claims         AS DOUBLE)  AS total_claims,
-            CAST(total_paid_amount    AS DOUBLE)  AS total_paid_amount
-        FROM read_csv_auto('{spending_path}')
-        WHERE billing_provider_npi IS NOT NULL
+            CAST(COALESCE(
+                TRY_CAST("BILLING_PROVIDER_NPI_NUM" AS VARCHAR),
+                TRY_CAST(billing_provider_npi       AS VARCHAR)
+            ) AS VARCHAR) AS npi,
+            CAST(COALESCE("HCPCS_CODE", hcpcs_code) AS VARCHAR) AS hcpcs_code,
+            CAST(COALESCE("CLAIM_FROM_MONTH", service_month) AS VARCHAR) AS service_month,
+            COALESCE(
+                TRY_CAST("TOTAL_PATIENTS"    AS DOUBLE),
+                TRY_CAST(total_beneficiaries AS DOUBLE), 0
+            ) AS total_beneficiaries,
+            COALESCE(
+                TRY_CAST("TOTAL_CLAIM_LINES" AS DOUBLE),
+                TRY_CAST(total_claims        AS DOUBLE), 0
+            ) AS total_claims,
+            COALESCE(
+                TRY_CAST("TOTAL_PAID"        AS DOUBLE),
+                TRY_CAST(total_paid_amount   AS DOUBLE), 0
+            ) AS total_paid_amount
+        FROM read_csv_auto('{spending_path}', ignore_errors=true)
+        WHERE COALESCE("BILLING_PROVIDER_NPI_NUM", billing_provider_npi) IS NOT NULL
     """)
 
     con.execute("""
@@ -138,6 +155,19 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
         GROUP BY npi
     """)
 
+    # Annual aggregates — one row per NPI × year, used by T7 (excess YoY growth)
+    con.execute("""
+        CREATE OR REPLACE TABLE provider_annual AS
+        SELECT
+            npi,
+            LEFT(service_month, 4)        AS service_year,
+            SUM(total_claims)             AS total_claims,
+            SUM(total_beneficiaries)      AS total_beneficiaries,
+            SUM(total_paid_amount)        AS total_paid_amount
+        FROM medicaid
+        GROUP BY npi, LEFT(service_month, 4)
+    """)
+
 
 def join_metadata(
     con: duckdb.DuckDBPyConnection,
@@ -163,6 +193,11 @@ def join_metadata(
         merged["last_billing_month"], format="%Y-%m", errors="coerce"
     )
 
+    # left_censored: provider was already active at the start of the dataset.
+    # T4 and T6 require a visible onset — these providers have none.
+    dataset_start = merged["first_billing_month"].min()
+    merged["left_censored"] = (merged["first_billing_month"] == dataset_start).astype(int)
+
     return merged
 
 
@@ -180,6 +215,10 @@ def save_outputs(
     monthly_path = out_dir / "provider_monthly.parquet"
     con.execute(f"COPY provider_monthly TO '{monthly_path}' (FORMAT PARQUET)")
     print(f"Saved provider_monthly → {monthly_path}")
+
+    annual_path = out_dir / "provider_annual.parquet"
+    con.execute(f"COPY provider_annual TO '{annual_path}' (FORMAT PARQUET)")
+    print(f"Saved provider_annual  → {annual_path}")
 
     clean_path = out_dir / "providers_clean.csv"
     providers_clean.to_csv(clean_path, index=False)

@@ -56,6 +56,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import linregress
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +303,322 @@ def feat_pct_hcpcs_outside_taxonomy(
 
 
 # ---------------------------------------------------------------------------
+# Temporal features (T1–T7)
+# All computed per (npi, year). Joined onto the static feature table by the
+# caller after selecting the target year.
+# ---------------------------------------------------------------------------
+
+_EPS = 1.0          # dollar/claim floor so ln() and ratios survive zeros
+_MIN_ACTIVE  = 6    # months with activity required for volatility features
+_MIN_ACTIVE3 = 3    # minimum for peak_to_median_paid
+_MIN_ONSET   = 4    # minimum active months for onset_ramp_slope
+_MIN_PEERS   = 20   # peer-group size floor for T7 benchmark
+
+
+def _build_monthly_vectors(monthly: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aggregate raw monthly data to (npi, year, month_num) and build
+    12-slot zero-filled paid/claims arrays stored as one row per (npi, year).
+
+    Returns a DataFrame indexed by (npi, year) with columns:
+      paid_vec     list[float]  length-12, zero-filled, Jan=index 0
+      claims_vec   list[float]  same
+      active_months int         count of months with any positive paid
+      first_month  int          calendar month of first active month in year
+    """
+    m = monthly.copy()
+    m["month_dt"]  = pd.to_datetime(m["service_month"], format="%Y-%m", errors="coerce")
+    m["year"]      = m["month_dt"].dt.year
+    m["month_num"] = m["month_dt"].dt.month
+
+    agg = (
+        m.groupby(["npi", "year", "month_num"])
+        .agg(paid=("total_paid_amount", "sum"),
+             claims=("total_claims", "sum"))
+        .reset_index()
+    )
+
+    records = []
+    for (npi, year), grp in agg.groupby(["npi", "year"]):
+        paid_vec   = [0.0] * 12
+        claims_vec = [0.0] * 12
+        for _, row in grp.iterrows():
+            idx = int(row["month_num"]) - 1
+            paid_vec[idx]   = float(row["paid"])
+            claims_vec[idx] = float(row["claims"])
+        active = sum(1 for p in paid_vec if p > 0)
+        first_active = next((i + 1 for i, p in enumerate(paid_vec) if p > 0), None)
+        records.append({
+            "npi": npi, "year": year,
+            "paid_vec": paid_vec, "claims_vec": claims_vec,
+            "active_months": active, "first_active_month": first_active,
+        })
+
+    return pd.DataFrame(records).set_index(["npi", "year"])
+
+
+def _provider_temporal_meta(monthly: pd.DataFrame) -> pd.DataFrame:
+    """Return per-NPI first_obs_month (Timestamp) and left_censored flag."""
+    m = monthly.copy()
+    m["month_dt"] = pd.to_datetime(m["service_month"], format="%Y-%m", errors="coerce")
+    first_obs    = m.groupby("npi")["month_dt"].min()
+    dataset_start = first_obs.min()
+    return pd.DataFrame({
+        "first_obs_month": first_obs,
+        "left_censored":   (first_obs == dataset_start),
+    })
+
+
+def feat_T1_mom_paid_growth_volatility(vecs: pd.DataFrame) -> pd.Series:
+    """
+    T1: std of month-on-month log differences of paid within each provider-year.
+    g[m] = ln(paid[m] + EPS) − ln(paid[m-1] + EPS),  m = 2..12
+    Guard: active_months >= 6.
+    """
+    results = {}
+    for (npi, year), row in vecs.iterrows():
+        if row["active_months"] < _MIN_ACTIVE:
+            results[(npi, year)] = np.nan
+            continue
+        log_paid = np.log(np.array(row["paid_vec"]) + _EPS)
+        g = np.diff(log_paid)
+        results[(npi, year)] = float(np.std(g, ddof=1)) if len(g) > 1 else np.nan
+    return pd.Series(results, name="mom_paid_growth_volatility")
+
+
+def feat_T2_cv_monthly_paid(vecs: pd.DataFrame) -> pd.Series:
+    """
+    T2: std(paid[1..12]) / (mean(paid[1..12]) + EPS) — scale-invariant erraticness.
+    Uses the full 12-slot zero-filled vector.
+    Guard: active_months >= 6.
+    """
+    results = {}
+    for (npi, year), row in vecs.iterrows():
+        if row["active_months"] < _MIN_ACTIVE:
+            results[(npi, year)] = np.nan
+            continue
+        p = np.array(row["paid_vec"], dtype=float)
+        results[(npi, year)] = float(np.std(p, ddof=1) / (np.mean(p) + _EPS))
+    return pd.Series(results, name="cv_monthly_paid")
+
+
+def feat_T3_peak_to_median_paid(vecs: pd.DataFrame) -> pd.Series:
+    """
+    T3: max(paid over active months) / (median(paid over active months) + EPS).
+    Median is over active months only so suppressed gaps don't inflate the ratio.
+    Guard: active_months >= 3. Winsorized at 99th percentile by caller.
+    """
+    results = {}
+    for (npi, year), row in vecs.iterrows():
+        if row["active_months"] < _MIN_ACTIVE3:
+            results[(npi, year)] = np.nan
+            continue
+        active_paid = [p for p in row["paid_vec"] if p > 0]
+        peak   = max(active_paid)
+        median = float(np.median(active_paid))
+        results[(npi, year)] = peak / (median + _EPS)
+    s = pd.Series(results, name="peak_to_median_paid")
+    p99 = s.quantile(0.99)
+    return s.clip(upper=p99)
+
+
+def feat_T4_onset_ramp_slope(
+    vecs: pd.DataFrame,
+    meta: pd.DataFrame,
+) -> pd.Series:
+    """
+    T4: OLS slope of ln(paid + EPS) on month index over first 6 active months
+    at onset. Computed ONLY for first observed year and NOT for left-censored
+    providers (no visible start).
+    Guard: left_censored → NaN; fewer than 4 active months → NaN.
+    """
+    results = {}
+    for (npi, year), row in vecs.iterrows():
+        provider_meta = meta.loc[npi] if npi in meta.index else None
+        if provider_meta is None:
+            results[(npi, year)] = np.nan
+            continue
+        first_year = provider_meta["first_obs_month"].year
+        if year != first_year or provider_meta["left_censored"]:
+            results[(npi, year)] = np.nan
+            continue
+        # Take first 6 active months starting from first_active_month
+        paid_vec = row["paid_vec"]
+        start    = (row["first_active_month"] or 1) - 1
+        active_slice = [(i, paid_vec[i]) for i in range(start, 12) if paid_vec[i] > 0][:6]
+        if len(active_slice) < _MIN_ONSET:
+            results[(npi, year)] = np.nan
+            continue
+        t    = np.array([s[0] for s in active_slice], dtype=float)
+        logp = np.array([np.log(s[1] + _EPS) for s in active_slice])
+        slope, *_ = linregress(t, logp)
+        results[(npi, year)] = float(slope)
+    return pd.Series(results, name="onset_ramp_slope")
+
+
+def feat_T5_post_peak_dropoff(vecs: pd.DataFrame) -> pd.Series:
+    """
+    T5: 1 − (mean of last 3 calendar months / (peak + EPS)).
+    ~0 = steady billing; ~1 = collapsed after a peak.
+    Guard: active_months >= 6.
+    """
+    results = {}
+    for (npi, year), row in vecs.iterrows():
+        if row["active_months"] < _MIN_ACTIVE:
+            results[(npi, year)] = np.nan
+            continue
+        p    = np.array(row["paid_vec"], dtype=float)
+        peak = float(p.max())
+        last3_mean = float(p[-3:].mean())
+        results[(npi, year)] = 1.0 - last3_mean / (peak + _EPS)
+    return pd.Series(results, name="post_peak_dropoff")
+
+
+def feat_T6_new_hcpcs_fraction(
+    monthly: pd.DataFrame,
+    meta: pd.DataFrame,
+) -> pd.Series:
+    """
+    T6: fraction of HCPCS codes billed in year y that were never billed before y.
+    Guard: first observed year or left_censored → NaN (no prior baseline).
+    """
+    m = monthly.copy()
+    m["month_dt"] = pd.to_datetime(m["service_month"], format="%Y-%m", errors="coerce")
+    m["year"]     = m["month_dt"].dt.year
+
+    # All codes per NPI per year
+    codes_by_year = (
+        m.groupby(["npi", "year"])["hcpcs_code"]
+        .apply(set)
+        .reset_index()
+        .rename(columns={"hcpcs_code": "codes"})
+        .sort_values(["npi", "year"])
+    )
+
+    results = {}
+    for npi, grp in codes_by_year.groupby("npi"):
+        grp = grp.sort_values("year")
+        prov_meta = meta.loc[npi] if npi in meta.index else None
+        prior_codes: set = set()
+        for _, row in grp.iterrows():
+            year  = row["year"]
+            codes = row["codes"]
+            if prov_meta is None or year == prov_meta["first_obs_month"].year or prov_meta["left_censored"]:
+                results[(npi, year)] = np.nan
+            else:
+                new = codes - prior_codes
+                results[(npi, year)] = len(new) / len(codes) if codes else np.nan
+            prior_codes |= codes
+    return pd.Series(results, name="new_hcpcs_fraction")
+
+
+def feat_T7_excess_yoy_growth(
+    provider_annual: pd.DataFrame,
+    providers: pd.DataFrame,
+) -> pd.Series:
+    """
+    T7: provider log YoY growth minus specialty-median log YoY growth.
+    provider_annual must have columns: npi, service_year, total_paid_amount.
+    Requires taxonomy_code in providers (NPPES join).
+    Guard: prior year absent → NaN; fewer than MIN_PEERS specialty peers → NaN.
+    """
+    ann = provider_annual.copy()
+    ann["year"] = ann["service_year"].astype(int)
+
+    # Pivot to (npi) × (year) for easy diff
+    paid_wide = ann.pivot_table(index="npi", columns="year",
+                                values="total_paid_amount", aggfunc="sum")
+
+    # Log-growth per provider per year
+    years = sorted(paid_wide.columns)
+    log_growth = pd.DataFrame(index=paid_wide.index)
+    for i in range(1, len(years)):
+        y, y_prev = years[i], years[i - 1]
+        prev = paid_wide[y_prev].replace(0, np.nan)
+        curr = paid_wide[y].replace(0, np.nan)
+        log_growth[y] = np.log(curr + _EPS) - np.log(prev + _EPS)
+
+    # Join taxonomy for specialty benchmarking
+    taxonomy = providers["taxonomy_code"].reindex(log_growth.index)
+    log_growth["_tax"] = taxonomy
+
+    results = {}
+    for year_col in log_growth.columns:
+        if year_col == "_tax":
+            continue
+        col = log_growth[[year_col, "_tax"]].dropna(subset=[year_col])
+        # Specialty peer median (require MIN_PEERS)
+        peer_med = (
+            col.groupby("_tax")[year_col]
+            .filter(lambda s: len(s) >= _MIN_PEERS)
+        )
+        if peer_med.empty:
+            for npi in col.index:
+                results[(npi, year_col)] = np.nan
+            continue
+        spec_median = col.groupby("_tax")[year_col].median()
+        for npi, row in col.iterrows():
+            tax = row["_tax"]
+            if pd.isna(tax) or tax not in spec_median.index:
+                results[(npi, year_col)] = np.nan
+            else:
+                n_peers = (col["_tax"] == tax).sum()
+                if n_peers < _MIN_PEERS:
+                    results[(npi, year_col)] = np.nan
+                else:
+                    results[(npi, year_col)] = float(row[year_col] - spec_median[tax])
+
+    s = pd.Series(results, name="excess_yoy_growth")
+    p1, p99 = s.quantile([0.01, 0.99])
+    return s.clip(p1, p99)
+
+
+def build_temporal_features(
+    monthly: pd.DataFrame,
+    provider_annual: pd.DataFrame,
+    providers: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute T1–T7 and return a DataFrame indexed by (npi, year).
+    Caller should select the target year before joining onto the static features.
+    """
+    print("  Building monthly vectors …")
+    vecs = _build_monthly_vectors(monthly)
+    meta = _provider_temporal_meta(monthly)
+
+    print("  T1 — mom_paid_growth_volatility …")
+    t1 = feat_T1_mom_paid_growth_volatility(vecs)
+
+    print("  T2 — cv_monthly_paid …")
+    t2 = feat_T2_cv_monthly_paid(vecs)
+
+    print("  T3 — peak_to_median_paid …")
+    t3 = feat_T3_peak_to_median_paid(vecs)
+
+    print("  T4 — onset_ramp_slope …")
+    t4 = feat_T4_onset_ramp_slope(vecs, meta)
+
+    print("  T5 — post_peak_dropoff …")
+    t5 = feat_T5_post_peak_dropoff(vecs)
+
+    print("  T6 — new_hcpcs_fraction …")
+    t6 = feat_T6_new_hcpcs_fraction(monthly, meta)
+
+    print("  T7 — excess_yoy_growth …")
+    t7 = feat_T7_excess_yoy_growth(provider_annual, providers)
+
+    return pd.DataFrame({
+        "mom_paid_growth_volatility": t1,
+        "cv_monthly_paid":            t2,
+        "peak_to_median_paid":        t3,
+        "onset_ramp_slope":           t4,
+        "post_peak_dropoff":          t5,
+        "new_hcpcs_fraction":         t6,
+        "excess_yoy_growth":          t7,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -309,13 +626,23 @@ def build_fraud_features(
     monthly: pd.DataFrame,
     providers: pd.DataFrame,
     taxonomy_map: dict[str, set[str]] | None = None,
+    provider_annual: pd.DataFrame | None = None,
+    target_year: int | None = None,
 ) -> pd.DataFrame:
+    """
+    Build the full feature table — static features (1–9) plus temporal
+    features T1–T7 if provider_annual is supplied.
+
+    target_year: which year's temporal features to join onto the static
+    table. Defaults to the most recent year present in provider_annual.
+    """
     avg_paid   = feat_avg_paid_per_claim(providers)
     avg_claims = feat_avg_claims_per_beneficiary(providers)
 
     features = pd.DataFrame(index=providers.index)
     features.index.name = "npi"
 
+    # Static features (unchanged)
     features["avg_claims_per_beneficiary"]  = avg_claims
     features["avg_paid_per_claim"]          = avg_paid
     features["paid_vs_peer_ratio"]          = feat_paid_vs_peer_ratio(avg_paid, providers)
@@ -330,6 +657,22 @@ def build_fraud_features(
     features["pct_hcpcs_outside_taxonomy"]  = feat_pct_hcpcs_outside_taxonomy(
                                                  monthly, providers, taxonomy_map
                                              ).reindex(features.index)
+
+    # Temporal features T1–T7
+    if provider_annual is not None:
+        temporal = build_temporal_features(monthly, provider_annual, providers)
+
+        # Select target year and join — default to most recent year
+        if target_year is None:
+            target_year = int(temporal.index.get_level_values("year").max())
+
+        year_slice = (
+            temporal.xs(target_year, level="year")
+            if target_year in temporal.index.get_level_values("year")
+            else pd.DataFrame(index=features.index, columns=temporal.columns)
+        )
+        for col in year_slice.columns:
+            features[col] = year_slice[col].reindex(features.index)
 
     # Carry taxonomy through for peer-group scoring in analyze_anomalies.py
     features["taxonomy_code"] = providers["taxonomy_code"]
@@ -363,6 +706,9 @@ def main() -> None:
     )
     parser.add_argument("--monthly",      required=True, help="provider_monthly.parquet from clean_data.py")
     parser.add_argument("--providers",    required=True, help="providers_clean.csv from clean_data.py")
+    parser.add_argument("--annual",       default=None,  help="provider_annual.parquet for T1–T7 temporal features")
+    parser.add_argument("--target-year",  default=None,  type=int,
+                        help="Service year to extract temporal features for (default: most recent year)")
     parser.add_argument("--taxonomy-map", default=None,  help="CSV mapping taxonomy_code → hcpcs_code")
     parser.add_argument("--output",       default="data/processed/fraud_features.csv")
     args = parser.parse_args()
@@ -375,6 +721,13 @@ def main() -> None:
     providers = load_providers(args.providers)
     print(f"  {len(providers):,} providers")
 
+    provider_annual = None
+    if args.annual:
+        print(f"Loading annual aggregates from {args.annual} …")
+        p = Path(args.annual)
+        provider_annual = pd.read_parquet(p) if p.suffix == ".parquet" else pd.read_csv(p)
+        print(f"  {len(provider_annual):,} provider-year rows")
+
     taxonomy_map = None
     if args.taxonomy_map:
         print(f"Loading taxonomy map from {args.taxonomy_map} …")
@@ -382,7 +735,11 @@ def main() -> None:
         print(f"  {len(taxonomy_map):,} taxonomy codes")
 
     print("Computing fraud features …")
-    features = build_fraud_features(monthly, providers, taxonomy_map)
+    features = build_fraud_features(
+        monthly, providers, taxonomy_map,
+        provider_annual=provider_annual,
+        target_year=args.target_year,
+    )
 
     save_features(features, args.output)
 
