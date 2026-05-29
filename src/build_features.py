@@ -317,14 +317,15 @@ _MIN_PEERS   = 20   # peer-group size floor for T7 benchmark
 
 def _build_monthly_vectors(monthly: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggregate raw monthly data to (npi, year, month_num) and build
-    12-slot zero-filled paid/claims arrays stored as one row per (npi, year).
+    Aggregate raw monthly data to (npi, year, month_num) and pivot into
+    12-column wide matrices — one row per (npi, year).  Fully vectorised;
+    no Python loops over providers.
 
     Returns a DataFrame indexed by (npi, year) with columns:
-      paid_vec     list[float]  length-12, zero-filled, Jan=index 0
-      claims_vec   list[float]  same
-      active_months int         count of months with any positive paid
-      first_month  int          calendar month of first active month in year
+      p1..p12       float  zero-filled monthly paid (Jan=p1)
+      c1..c12       float  zero-filled monthly claims
+      active_months int    months with paid > 0
+      first_active_month int  1-based index of first active month in year
     """
     m = monthly.copy()
     m["month_dt"]  = pd.to_datetime(m["service_month"], format="%Y-%m", errors="coerce")
@@ -338,23 +339,33 @@ def _build_monthly_vectors(monthly: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
 
-    records = []
-    for (npi, year), grp in agg.groupby(["npi", "year"]):
-        paid_vec   = [0.0] * 12
-        claims_vec = [0.0] * 12
-        for _, row in grp.iterrows():
-            idx = int(row["month_num"]) - 1
-            paid_vec[idx]   = float(row["paid"])
-            claims_vec[idx] = float(row["claims"])
-        active = sum(1 for p in paid_vec if p > 0)
-        first_active = next((i + 1 for i, p in enumerate(paid_vec) if p > 0), None)
-        records.append({
-            "npi": npi, "year": year,
-            "paid_vec": paid_vec, "claims_vec": claims_vec,
-            "active_months": active, "first_active_month": first_active,
-        })
+    # Pivot: rows = (npi, year), cols = month_num 1..12, fill missing with 0
+    paid_wide = (
+        agg.pivot_table(index=["npi", "year"], columns="month_num",
+                        values="paid", aggfunc="sum", fill_value=0.0)
+        .reindex(columns=range(1, 13), fill_value=0.0)
+    )
+    paid_wide.columns = [f"p{c}" for c in paid_wide.columns]
 
-    return pd.DataFrame(records).set_index(["npi", "year"])
+    claims_wide = (
+        agg.pivot_table(index=["npi", "year"], columns="month_num",
+                        values="claims", aggfunc="sum", fill_value=0.0)
+        .reindex(columns=range(1, 13), fill_value=0.0)
+    )
+    claims_wide.columns = [f"c{c}" for c in claims_wide.columns]
+
+    vecs = paid_wide.join(claims_wide)
+
+    paid_arr = paid_wide.values  # (N, 12)
+    vecs["active_months"]      = (paid_arr > 0).sum(axis=1)
+    # first active month: argmax on boolean mask gives index of first True
+    has_any = (paid_arr > 0)
+    vecs["first_active_month"] = np.where(
+        has_any.any(axis=1),
+        has_any.argmax(axis=1) + 1,   # 1-based
+        np.nan,
+    )
+    return vecs
 
 
 def _provider_temporal_meta(monthly: pd.DataFrame) -> pd.DataFrame:
@@ -375,15 +386,13 @@ def feat_T1_mom_paid_growth_volatility(vecs: pd.DataFrame) -> pd.Series:
     g[m] = ln(paid[m] + EPS) − ln(paid[m-1] + EPS),  m = 2..12
     Guard: active_months >= 6.
     """
-    results = {}
-    for (npi, year), row in vecs.iterrows():
-        if row["active_months"] < _MIN_ACTIVE:
-            results[(npi, year)] = np.nan
-            continue
-        log_paid = np.log(np.array(row["paid_vec"]) + _EPS)
-        g = np.diff(log_paid)
-        results[(npi, year)] = float(np.std(g, ddof=1)) if len(g) > 1 else np.nan
-    return pd.Series(results, name="mom_paid_growth_volatility")
+    P = vecs[[f"p{i}" for i in range(1, 13)]].values  # (N, 12)
+    log_P = np.log(P + _EPS)
+    g = np.diff(log_P, axis=1)                         # (N, 11)
+    std_g = np.std(g, axis=1, ddof=1)
+    mask = vecs["active_months"].values < _MIN_ACTIVE
+    std_g[mask] = np.nan
+    return pd.Series(std_g, index=vecs.index, name="mom_paid_growth_volatility")
 
 
 def feat_T2_cv_monthly_paid(vecs: pd.DataFrame) -> pd.Series:
@@ -392,32 +401,28 @@ def feat_T2_cv_monthly_paid(vecs: pd.DataFrame) -> pd.Series:
     Uses the full 12-slot zero-filled vector.
     Guard: active_months >= 6.
     """
-    results = {}
-    for (npi, year), row in vecs.iterrows():
-        if row["active_months"] < _MIN_ACTIVE:
-            results[(npi, year)] = np.nan
-            continue
-        p = np.array(row["paid_vec"], dtype=float)
-        results[(npi, year)] = float(np.std(p, ddof=1) / (np.mean(p) + _EPS))
-    return pd.Series(results, name="cv_monthly_paid")
+    P    = vecs[[f"p{i}" for i in range(1, 13)]].values
+    cv   = np.std(P, axis=1, ddof=1) / (np.mean(P, axis=1) + _EPS)
+    mask = vecs["active_months"].values < _MIN_ACTIVE
+    cv[mask] = np.nan
+    return pd.Series(cv, index=vecs.index, name="cv_monthly_paid")
 
 
 def feat_T3_peak_to_median_paid(vecs: pd.DataFrame) -> pd.Series:
     """
     T3: max(paid over active months) / (median(paid over active months) + EPS).
     Median is over active months only so suppressed gaps don't inflate the ratio.
-    Guard: active_months >= 3. Winsorized at 99th percentile by caller.
+    Guard: active_months >= 3. Winsorized at 99th percentile.
     """
-    results = {}
-    for (npi, year), row in vecs.iterrows():
-        if row["active_months"] < _MIN_ACTIVE3:
-            results[(npi, year)] = np.nan
-            continue
-        active_paid = [p for p in row["paid_vec"] if p > 0]
-        peak   = max(active_paid)
-        median = float(np.median(active_paid))
-        results[(npi, year)] = peak / (median + _EPS)
-    s = pd.Series(results, name="peak_to_median_paid")
+    P = vecs[[f"p{i}" for i in range(1, 13)]].values.copy().astype(float)
+    # Mask inactive months with NaN for median calculation
+    P_active = np.where(P > 0, P, np.nan)
+    peak      = np.nanmax(P_active, axis=1)
+    median    = np.nanmedian(P_active, axis=1)
+    ratio     = peak / (median + _EPS)
+    mask      = vecs["active_months"].values < _MIN_ACTIVE3
+    ratio[mask] = np.nan
+    s   = pd.Series(ratio, index=vecs.index, name="peak_to_median_paid")
     p99 = s.quantile(0.99)
     return s.clip(upper=p99)
 
@@ -431,29 +436,37 @@ def feat_T4_onset_ramp_slope(
     at onset. Computed ONLY for first observed year and NOT for left-censored
     providers (no visible start).
     Guard: left_censored → NaN; fewer than 4 active months → NaN.
+    T4 is inherently per-provider-onset so a small Python loop is unavoidable;
+    it applies only to first-year, non-censored rows (a small fraction).
     """
-    results = {}
-    for (npi, year), row in vecs.iterrows():
-        provider_meta = meta.loc[npi] if npi in meta.index else None
-        if provider_meta is None:
-            results[(npi, year)] = np.nan
+    # Pre-filter to only onset rows — avoids iterating over 7M rows
+    onset_idx = []
+    for npi, pm in meta.iterrows():
+        if pm["left_censored"]:
             continue
-        first_year = provider_meta["first_obs_month"].year
-        if year != first_year or provider_meta["left_censored"]:
-            results[(npi, year)] = np.nan
+        first_year = pm["first_obs_month"].year
+        key = (npi, first_year)
+        if key in vecs.index:
+            onset_idx.append(key)
+
+    results = pd.Series(np.nan, index=vecs.index, name="onset_ramp_slope")
+    if not onset_idx:
+        return results
+
+    onset_vecs = vecs.loc[onset_idx]
+    for (npi, year), row in onset_vecs.iterrows():
+        start = int(row["first_active_month"] or 1) - 1
+        paid_cols = [f"p{i+1}" for i in range(start, 12)]
+        active_pts = [(i + start, row[f"p{i+start+1}"])
+                      for i in range(12 - start)
+                      if row[f"p{i+start+1}"] > 0][:6]
+        if len(active_pts) < _MIN_ONSET:
             continue
-        # Take first 6 active months starting from first_active_month
-        paid_vec = row["paid_vec"]
-        start    = (row["first_active_month"] or 1) - 1
-        active_slice = [(i, paid_vec[i]) for i in range(start, 12) if paid_vec[i] > 0][:6]
-        if len(active_slice) < _MIN_ONSET:
-            results[(npi, year)] = np.nan
-            continue
-        t    = np.array([s[0] for s in active_slice], dtype=float)
-        logp = np.array([np.log(s[1] + _EPS) for s in active_slice])
+        t    = np.array([p[0] for p in active_pts], dtype=float)
+        logp = np.array([np.log(p[1] + _EPS) for p in active_pts])
         slope, *_ = linregress(t, logp)
-        results[(npi, year)] = float(slope)
-    return pd.Series(results, name="onset_ramp_slope")
+        results.loc[(npi, year)] = float(slope)
+    return results
 
 
 def feat_T5_post_peak_dropoff(vecs: pd.DataFrame) -> pd.Series:
@@ -462,16 +475,13 @@ def feat_T5_post_peak_dropoff(vecs: pd.DataFrame) -> pd.Series:
     ~0 = steady billing; ~1 = collapsed after a peak.
     Guard: active_months >= 6.
     """
-    results = {}
-    for (npi, year), row in vecs.iterrows():
-        if row["active_months"] < _MIN_ACTIVE:
-            results[(npi, year)] = np.nan
-            continue
-        p    = np.array(row["paid_vec"], dtype=float)
-        peak = float(p.max())
-        last3_mean = float(p[-3:].mean())
-        results[(npi, year)] = 1.0 - last3_mean / (peak + _EPS)
-    return pd.Series(results, name="post_peak_dropoff")
+    P          = vecs[[f"p{i}" for i in range(1, 13)]].values
+    peak       = P.max(axis=1)
+    last3_mean = P[:, -3:].mean(axis=1)
+    dropoff    = 1.0 - last3_mean / (peak + _EPS)
+    mask       = vecs["active_months"].values < _MIN_ACTIVE
+    dropoff[mask] = np.nan
+    return pd.Series(dropoff, index=vecs.index, name="post_peak_dropoff")
 
 
 def feat_T6_new_hcpcs_fraction(
