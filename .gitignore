@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Environment / credentials
+.env
+*.env.local
+
+# HIPAA — raw data is NEVER committed
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.xlsx
+*.json.gz
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
