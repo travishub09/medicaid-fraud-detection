@@ -7,6 +7,10 @@ and writes two output files consumed by build_features.py:
   provider_monthly.parquet  — one row per NPI × HCPCS × service_month
   providers_clean.csv       — one row per NPI with summary stats + NPPES + LEIE metadata
 
+Only providers whose LIFETIME Medicaid payments (summed across the whole
+2018-2024 window, not any single year) exceed --min-total-paid (default $10M)
+are kept; every output table is restricted to that cohort.
+
 Raw inputs (paths configurable via CLI):
   --spending  : CMS Medicaid provider spending CSV
                   key cols: billing_provider_npi, hcpcs_code, service_month,
@@ -175,7 +179,11 @@ def _pick_expr(available: list[str], candidates: list[str], cast: str) -> str | 
     return None
 
 
-def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
+def build_tables(
+    con: duckdb.DuckDBPyConnection,
+    spending_path: str,
+    min_total_paid: float = 10_000_000,
+) -> None:
     # Normalise column names from either source format:
     #   HHS T-MSIS:  BILLING_PROVIDER_NPI_NUM, HCPCS_CODE, CLAIM_FROM_MONTH,
     #                TOTAL_PATIENTS, TOTAL_CLAIM_LINES, TOTAL_PAID
@@ -208,6 +216,17 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
     """
     con.execute(select_sql)
 
+    # Keep only providers whose LIFETIME Medicaid payments (summed across every
+    # year, not any single year) exceed the threshold. Every downstream table is
+    # restricted to this set, so the whole pipeline sees only these providers.
+    con.execute(f"""
+        CREATE OR REPLACE TABLE qualifying_npis AS
+        SELECT npi
+        FROM medicaid
+        GROUP BY npi
+        HAVING SUM(total_paid_amount) > {min_total_paid}
+    """)
+
     con.execute("""
         CREATE OR REPLACE TABLE provider_monthly AS
         SELECT
@@ -218,6 +237,7 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
             SUM(total_beneficiaries) AS total_beneficiaries,
             SUM(total_paid_amount)   AS total_paid_amount
         FROM medicaid
+        WHERE npi IN (SELECT npi FROM qualifying_npis)
         GROUP BY npi, hcpcs_code, service_month
     """)
 
@@ -233,6 +253,7 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
             MIN(service_month)            AS first_billing_month,
             MAX(service_month)            AS last_billing_month
         FROM medicaid
+        WHERE npi IN (SELECT npi FROM qualifying_npis)
         GROUP BY npi
     """)
 
@@ -246,6 +267,7 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
             SUM(total_beneficiaries)      AS total_beneficiaries,
             SUM(total_paid_amount)        AS total_paid_amount
         FROM medicaid
+        WHERE npi IN (SELECT npi FROM qualifying_npis)
         GROUP BY npi, LEFT(service_month, 4)
     """)
 
@@ -320,16 +342,21 @@ def main() -> None:
     parser.add_argument("--leie",     required=True, help="OIG LEIE exclusion list CSV")
     parser.add_argument("--db",       default="medicaid.duckdb", help="DuckDB database path")
     parser.add_argument("--output",   default="data/processed", help="Output directory")
+    parser.add_argument("--min-total-paid", type=float, default=10_000_000,
+                        help="Keep only providers whose lifetime Medicaid payments exceed this (default $10M)")
     args = parser.parse_args()
 
     print(f"Opening DuckDB at {args.db} …")
     con = duckdb.connect(args.db)
 
     print(f"Loading spending data from {args.spending} …")
-    build_tables(con, args.spending)
+    build_tables(con, args.spending, min_total_paid=args.min_total_paid)
     n_rows = con.execute("SELECT COUNT(*) FROM medicaid").fetchone()[0]
     n_npis = con.execute("SELECT COUNT(DISTINCT npi) FROM medicaid").fetchone()[0]
+    n_keep = con.execute("SELECT COUNT(*) FROM qualifying_npis").fetchone()[0]
     print(f"  {n_rows:,} rows, {n_npis:,} unique NPIs")
+    print(f"  Keeping {n_keep:,} providers with lifetime paid > ${args.min_total_paid:,.0f} "
+          f"({n_keep/n_npis:.1%} of providers)")
 
     print(f"Loading NPPES from {args.nppes} …")
     nppes = load_nppes(args.nppes)
