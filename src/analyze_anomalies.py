@@ -360,7 +360,7 @@ def print_report(ranking: pd.DataFrame, pak: pd.DataFrame, top_n: int = 20) -> N
 def save_ranking(ranking: pd.DataFrame, path: str | Path) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     ranking.to_csv(path, index=False)
-    print(f"Full ranking saved → {path}")
+    print(f"Saved top {len(ranking):,} provider-years → {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -376,8 +376,10 @@ def main():
     parser.add_argument("--contamination", type=float, default=0.05)
     parser.add_argument("--n-estimators",  type=int,   default=300)
     parser.add_argument("--top",           type=int,   default=20, help="Rows shown in console report")
+    parser.add_argument("--save-top",      type=int,   default=5_000,
+                        help="Write only this many top-ranked rows to the output file (<=0 for all)")
     parser.add_argument("--describe-top",  type=int,   default=50_000,
-                        help="Generate verbose descriptions for this many top-ranked rows")
+                        help="Verbose descriptions for this many rows when --save-top<=0")
     args = parser.parse_args()
 
     print(f"Loading provider features from {args.input} …")
@@ -398,12 +400,18 @@ def main():
     diffi_matrix = compute_diffi_scores(model, X)
 
     print("Building provider rankings …")
+    # Only the rows we keep need descriptions.
+    describe_top = args.save_top if args.save_top > 0 else args.describe_top
     ranking = rank_providers(features_df, feature_names, anomaly_scores, diffi_matrix,
-                             describe_top=args.describe_top)
+                             describe_top=describe_top)
 
+    # precision@k is computed over the FULL ranking (the whole population), then
+    # we save only the top slice to the output file.
     pak = precision_at_k(ranking)
     print_report(ranking, pak, top_n=args.top)
-    save_ranking(ranking, args.output)
+
+    to_save = ranking.head(args.save_top) if args.save_top > 0 else ranking
+    save_ranking(to_save, args.output)
 
 
 if __name__ == "__main__":
