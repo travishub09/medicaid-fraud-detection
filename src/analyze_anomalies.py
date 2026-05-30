@@ -418,13 +418,13 @@ def main():
     parser.add_argument("--contamination", type=float, default=0.05)
     parser.add_argument("--n-estimators",  type=int,   default=300)
     parser.add_argument("--top",           type=int,   default=20, help="Rows shown in console report")
-    parser.add_argument("--save-top",      type=int,   default=5_000,
+    parser.add_argument("--save-top",      type=int,   default=200,
                         help="Write only this many top-ranked rows to the output file (<=0 for all)")
     parser.add_argument("--describe-top",  type=int,   default=50_000,
                         help="Verbose descriptions for this many rows when --save-top<=0")
     parser.add_argument("--provider-summary", default=None,
                         help="If set, also write a one-row-per-provider rollup CSV here")
-    parser.add_argument("--summary-top",   type=int,   default=5_000,
+    parser.add_argument("--summary-top",   type=int,   default=200,
                         help="Write only this many top providers to the summary file (<=0 for all)")
     args = parser.parse_args()
 
