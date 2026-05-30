@@ -29,26 +29,36 @@ import duckdb
 import pandas as pd
 
 
-# NPPES columns we actually need — the full file is 300+ columns
-NPPES_COLS = [
-    "NPI",
-    "Entity_Type_Code",
-    "Provider_Business_Practice_Location_Address_State_Name",
-    "Provider_Enumeration_Date",
-    "NPI_Deactivation_Date",
-    "Healthcare_Provider_Taxonomy_Code_1",
-    "Is_Sole_Proprietor",
-]
-
-NPPES_RENAME = {
-    "NPI":                                                         "npi",
-    "Entity_Type_Code":                                            "entity_type",
-    "Provider_Business_Practice_Location_Address_State_Name":      "practice_state",
-    "Provider_Enumeration_Date":                                   "npi_registration_date",
-    "NPI_Deactivation_Date":                                       "npi_deactivation_date",
-    "Healthcare_Provider_Taxonomy_Code_1":                         "taxonomy_code",
-    "Is_Sole_Proprietor":                                          "is_sole_proprietor",
+# NPPES columns we actually need — the full file is 300+ columns. The public
+# dissemination file uses space-separated headers ("Provider Enumeration Date");
+# some derived extracts use underscores. We match each logical field by a
+# normalised key (lower-case, spaces/underscores stripped) so either works.
+NPPES_FIELDS = {
+    "npi":                   "NPI",
+    "entity_type":           "Entity Type Code",
+    "practice_state":        "Provider Business Practice Location Address State Name",
+    "npi_registration_date": "Provider Enumeration Date",
+    "npi_deactivation_date": "NPI Deactivation Date",
+    "taxonomy_code":         "Healthcare Provider Taxonomy Code_1",
+    "is_sole_proprietor":    "Is Sole Proprietor",
 }
+
+
+def _norm(col: str) -> str:
+    return col.strip().strip('"').lower().replace(" ", "").replace("_", "")
+
+
+def _resolve_nppes_columns(header: list[str]) -> dict[str, str]:
+    """Map canonical field name → actual column name present in the file."""
+    by_norm = {_norm(c): c for c in header}
+    resolved = {}
+    for canonical, expected in NPPES_FIELDS.items():
+        actual = by_norm.get(_norm(expected))
+        if actual is not None:
+            resolved[canonical] = actual
+    if "npi" not in resolved:
+        raise ValueError("NPPES file has no recognisable NPI column")
+    return resolved
 
 
 # ---------------------------------------------------------------------------
@@ -56,15 +66,19 @@ NPPES_RENAME = {
 # ---------------------------------------------------------------------------
 
 def load_nppes(path: str) -> pd.DataFrame:
+    header = pd.read_csv(path, nrows=0).columns.tolist()
+    resolved = _resolve_nppes_columns(header)      # field → actual column name
+    rename = {actual: canonical for canonical, actual in resolved.items()}
+
     chunks = pd.read_csv(
         path,
-        usecols=NPPES_COLS,
+        usecols=list(resolved.values()),
         chunksize=500_000,
         low_memory=False,
         dtype=str,
     )
     df = pd.concat(chunks, ignore_index=True)
-    df = df.rename(columns=NPPES_RENAME)
+    df = df.rename(columns=rename)
     df["npi"] = df["npi"].str.strip()
     df["npi_registration_date"] = pd.to_datetime(df["npi_registration_date"], errors="coerce")
     df["npi_deactivation_date"] = pd.to_datetime(df["npi_deactivation_date"], errors="coerce")
@@ -124,9 +138,16 @@ _SPENDING_ALIASES = {
 }
 
 
+def _read_spending(spending_path: str) -> str:
+    """DuckDB table-function call for the spending file, by extension."""
+    if spending_path.lower().endswith((".parquet", ".pq")):
+        return f"read_parquet('{spending_path}')"
+    return f"read_csv_auto('{spending_path}', ignore_errors=true)"
+
+
 def _spending_columns(con: duckdb.DuckDBPyConnection, spending_path: str) -> list[str]:
     desc = con.execute(
-        f"DESCRIBE SELECT * FROM read_csv_auto('{spending_path}', ignore_errors=true)"
+        f"DESCRIBE SELECT * FROM {_read_spending(spending_path)}"
     ).df()
     return desc["column_name"].tolist()
 
@@ -170,7 +191,7 @@ def build_tables(con: duckdb.DuckDBPyConnection, spending_path: str) -> None:
             {col('total_beneficiaries', 'DOUBLE', '0')}           AS total_beneficiaries,
             {col('total_claims',        'DOUBLE', '0')}           AS total_claims,
             {col('total_paid_amount',   'DOUBLE', '0')}           AS total_paid_amount
-        FROM read_csv_auto('{spending_path}', ignore_errors=true)
+        FROM {_read_spending(spending_path)}
         WHERE {npi_expr} IS NOT NULL
     """
     con.execute(select_sql)

@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.sparse import csr_matrix
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 
@@ -167,36 +168,48 @@ def fit_isolation_forest(
 # DIFFI — per-sample feature importance
 # ---------------------------------------------------------------------------
 
+def _node_depths(t) -> np.ndarray:
+    """Depth of every node in a fitted sklearn tree (root = 0)."""
+    depth = np.zeros(t.node_count, dtype=float)
+    stack = [(0, 0)]
+    while stack:
+        node, d = stack.pop()
+        depth[node] = d
+        if t.children_left[node] != -1:
+            stack.append((t.children_left[node],  d + 1))
+            stack.append((t.children_right[node], d + 1))
+    return depth
+
+
 def compute_diffi_scores(model: IsolationForest, X: np.ndarray) -> np.ndarray:
     """
     Return an (n_samples, n_features) importance matrix.
 
-    For each tree, walk the isolation path of each sample and accumulate
-    1/(depth+1) for every feature used at a split node. Features that isolate a
-    sample early (shallow depth) receive higher weight. Averaged across trees
-    then row-normalised to [0, 1].
+    For each tree, every sample's isolation path accumulates 1/(depth+1) for each
+    feature used at a split node it passes through. Features that isolate a sample
+    early (shallow depth) get higher weight. Averaged across trees, row-normalised.
+
+    Vectorised via decision_path: a sparse (n_samples × n_nodes) path-indicator is
+    multiplied by a (n_nodes × n_features) node→feature weight matrix. This is
+    orders of magnitude faster than walking every path in Python and scales to
+    millions of provider-years.
     """
     n_samples, n_features = X.shape
     importance = np.zeros((n_samples, n_features))
+    Xf = X.astype(np.float32)
 
-    for tree_estimator in model.estimators_:
-        t = tree_estimator.tree_
-        children_left  = t.children_left
-        children_right = t.children_right
-        split_feature  = t.feature
-        threshold      = t.threshold
-
-        for i in range(n_samples):
-            node, depth = 0, 0
-            while split_feature[node] != -2:
-                feat = split_feature[node]
-                importance[i, feat] += 1.0 / (depth + 1)
-                node = (
-                    children_left[node]
-                    if X[i, feat] <= threshold[node]
-                    else children_right[node]
-                )
-                depth += 1
+    for est in model.estimators_:
+        t = est.tree_
+        depth    = _node_depths(t)
+        internal = t.feature >= 0                     # leaves have feature == -2
+        rows     = np.flatnonzero(internal)
+        cols     = t.feature[internal]
+        weights  = 1.0 / (depth[internal] + 1.0)
+        node_to_feat = csr_matrix(
+            (weights, (rows, cols)), shape=(t.node_count, n_features)
+        )
+        path = est.decision_path(Xf)                  # (n_samples × n_nodes) sparse
+        importance += path.dot(node_to_feat).toarray()
 
     importance /= len(model.estimators_)
     row_sums = importance.sum(axis=1, keepdims=True)
@@ -252,35 +265,45 @@ def rank_providers(
     feature_names: list[str],
     anomaly_scores: np.ndarray,
     diffi_matrix: np.ndarray,
+    describe_top: int = 50_000,
 ) -> pd.DataFrame:
-    medians = features_df[feature_names].median()
+    """
+    Assemble the ranked table. Scores, ranks, top_driver and all feature values
+    are produced for every provider-year (vectorised). The verbose `description`
+    is only generated for the top `describe_top` rows — at millions of rows a
+    per-row Python explanation for all of them is needless and bloats the file.
+    """
+    feat_names_arr = np.asarray(feature_names)
 
-    rows = []
-    for i, (npi, year) in enumerate(features_df.index):
-        description = build_description(
-            feature_importances=diffi_matrix[i],
+    # Vectorised assembly: start from the feature frame, attach score + top driver.
+    out = features_df.reset_index().copy()
+    out["anomaly_score"] = np.round(anomaly_scores, 4)
+    out["top_driver"]    = feat_names_arr[diffi_matrix.argmax(axis=1)]
+    out["_pos"]          = np.arange(len(out))      # original row → diffi alignment
+
+    out = out.sort_values("anomaly_score", ascending=False).reset_index(drop=True)
+    out["rank"] = out.index + 1
+
+    # Verbose descriptions for the top slice only.
+    medians = features_df[feature_names].median()
+    descriptions = np.full(len(out), "", dtype=object)
+    for new_i in range(min(describe_top, len(out))):
+        orig_i = int(out.at[new_i, "_pos"])
+        descriptions[new_i] = build_description(
+            feature_importances=diffi_matrix[orig_i],
             feature_names=feature_names,
-            provider_values=features_df.iloc[i][feature_names],
+            provider_values=features_df.iloc[orig_i][feature_names],
             medians=medians,
         )
-        rows.append({
-            "rank":          0,
-            "npi":           npi,
-            "year":          year,
-            "anomaly_score": round(float(anomaly_scores[i]), 4),
-            "total_paid":    round(float(features_df.iloc[i].get("total_paid", np.nan)), 2),
-            "is_excluded":   int(features_df.iloc[i].get("is_excluded", 0)),
-            "top_driver":    feature_names[int(diffi_matrix[i].argmax())],
-            "description":   description,
-        })
+    out["description"] = descriptions
+    out = out.drop(columns="_pos")
 
-    ranking = (
-        pd.DataFrame(rows)
-        .sort_values("anomaly_score", ascending=False)
-        .reset_index(drop=True)
-    )
-    ranking["rank"] = ranking.index + 1
-    return ranking
+    # Order columns: report header, then every underlying feature value.
+    head_cols = ["rank", "npi", "year", "anomaly_score", "total_paid",
+                 "is_excluded", "taxonomy_code", "top_driver", "description"]
+    head_cols = [c for c in head_cols if c in out.columns]
+    feat_cols = [c for c in out.columns if c not in head_cols]
+    return out[head_cols + feat_cols]
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +376,8 @@ def main():
     parser.add_argument("--contamination", type=float, default=0.05)
     parser.add_argument("--n-estimators",  type=int,   default=300)
     parser.add_argument("--top",           type=int,   default=20, help="Rows shown in console report")
+    parser.add_argument("--describe-top",  type=int,   default=50_000,
+                        help="Generate verbose descriptions for this many top-ranked rows")
     args = parser.parse_args()
 
     print(f"Loading provider features from {args.input} …")
@@ -373,7 +398,8 @@ def main():
     diffi_matrix = compute_diffi_scores(model, X)
 
     print("Building provider rankings …")
-    ranking = rank_providers(features_df, feature_names, anomaly_scores, diffi_matrix)
+    ranking = rank_providers(features_df, feature_names, anomaly_scores, diffi_matrix,
+                             describe_top=args.describe_top)
 
     pak = precision_at_k(ranking)
     print_report(ranking, pak, top_n=args.top)
