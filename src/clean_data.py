@@ -36,6 +36,9 @@ import pandas as pd
 NPPES_FIELDS = {
     "npi":                   "NPI",
     "entity_type":           "Entity Type Code",
+    "org_name":              "Provider Organization Name (Legal Business Name)",
+    "last_name":             "Provider Last Name (Legal Name)",
+    "first_name":            "Provider First Name",
     "practice_state":        "Provider Business Practice Location Address State Name",
     "npi_registration_date": "Provider Enumeration Date",
     "npi_deactivation_date": "NPI Deactivation Date",
@@ -82,6 +85,15 @@ def load_nppes(path: str) -> pd.DataFrame:
     df["npi"] = df["npi"].str.strip()
     df["npi_registration_date"] = pd.to_datetime(df["npi_registration_date"], errors="coerce")
     df["npi_deactivation_date"] = pd.to_datetime(df["npi_deactivation_date"], errors="coerce")
+
+    # Build a display name: organisation legal name for entities, else "LAST, FIRST".
+    org   = df.get("org_name",   pd.Series("", index=df.index)).fillna("").str.strip()
+    last  = df.get("last_name",  pd.Series("", index=df.index)).fillna("").str.strip()
+    first = df.get("first_name", pd.Series("", index=df.index)).fillna("").str.strip()
+    person = (last + ", " + first).str.strip(", ")
+    df["provider_name"] = org.where(org != "", person)
+    df = df.drop(columns=[c for c in ["org_name", "last_name", "first_name"] if c in df.columns])
+
     # Keep only individual providers with a valid NPI
     df = df[df["npi"].notna() & (df["npi"] != "")]
     return df.drop_duplicates("npi")

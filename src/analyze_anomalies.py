@@ -372,6 +372,8 @@ def main():
         description="Score and rank Medicaid provider-years with a DIFFI Isolation Forest."
     )
     parser.add_argument("input",           help="Path to fraud_features.csv from build_features.py")
+    parser.add_argument("--names",         default=None,
+                        help="providers_clean.csv (or any npi,provider_name CSV) to add provider names")
     parser.add_argument("--output",        default="data/processed/provider_rankings.csv")
     parser.add_argument("--contamination", type=float, default=0.05)
     parser.add_argument("--n-estimators",  type=int,   default=300)
@@ -410,7 +412,19 @@ def main():
     pak = precision_at_k(ranking)
     print_report(ranking, pak, top_n=args.top)
 
-    to_save = ranking.head(args.save_top) if args.save_top > 0 else ranking
+    to_save = ranking.head(args.save_top).copy() if args.save_top > 0 else ranking
+
+    if args.names:
+        print(f"Adding provider names from {args.names} …")
+        names = pd.read_csv(args.names, dtype={"npi": str})
+        if "provider_name" in names.columns:
+            name_map = dict(zip(names["npi"].str.strip(), names["provider_name"]))
+            npi_col = to_save["npi"].astype(str).str.strip()
+            to_save.insert(to_save.columns.get_loc("npi") + 1,
+                           "provider_name", npi_col.map(name_map))
+        else:
+            print("  (no provider_name column found — skipping)")
+
     save_ranking(to_save, args.output)
 
 
