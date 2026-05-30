@@ -265,13 +265,15 @@ def rank_providers(
     feature_names: list[str],
     anomaly_scores: np.ndarray,
     diffi_matrix: np.ndarray,
+    is_anomaly: np.ndarray | None = None,
     describe_top: int = 50_000,
 ) -> pd.DataFrame:
     """
-    Assemble the ranked table. Scores, ranks, top_driver and all feature values
-    are produced for every provider-year (vectorised). The verbose `description`
-    is only generated for the top `describe_top` rows — at millions of rows a
-    per-row Python explanation for all of them is needless and bloats the file.
+    Assemble the ranked table. Scores, ranks, top_driver, the is_anomaly flag and
+    all feature values are produced for every provider-year (vectorised). The
+    verbose `description` is only generated for the top `describe_top` rows — at
+    millions of rows a per-row Python explanation for all is needless and bloats
+    the file.
     """
     feat_names_arr = np.asarray(feature_names)
 
@@ -279,6 +281,8 @@ def rank_providers(
     out = features_df.reset_index().copy()
     out["anomaly_score"] = np.round(anomaly_scores, 4)
     out["top_driver"]    = feat_names_arr[diffi_matrix.argmax(axis=1)]
+    if is_anomaly is not None:
+        out["is_anomaly"] = is_anomaly.astype(int)
     out["_pos"]          = np.arange(len(out))      # original row → diffi alignment
 
     out = out.sort_values("anomaly_score", ascending=False).reset_index(drop=True)
@@ -299,11 +303,47 @@ def rank_providers(
     out = out.drop(columns="_pos")
 
     # Order columns: report header, then every underlying feature value.
-    head_cols = ["rank", "npi", "year", "anomaly_score", "total_paid",
+    head_cols = ["rank", "npi", "year", "anomaly_score", "is_anomaly", "total_paid",
                  "is_excluded", "taxonomy_code", "top_driver", "description"]
     head_cols = [c for c in head_cols if c in out.columns]
     feat_cols = [c for c in out.columns if c not in head_cols]
     return out[head_cols + feat_cols]
+
+
+def build_provider_summary(ranking: pd.DataFrame) -> pd.DataFrame:
+    """
+    Collapse the full per-(npi, year) ranking into one row per provider for triage.
+    Detection stays per-year; this is an additive reporting rollup. Providers are
+    ranked by their single worst year (max anomaly_score), with dollar exposure and
+    a flagged-year count alongside for re-sorting.
+    """
+    g = ranking.groupby("npi", sort=False)
+    worst = ranking.loc[g["anomaly_score"].idxmax()].set_index("npi")
+
+    summary = pd.DataFrame({
+        "max_anomaly_score":     g["anomaly_score"].max(),
+        "mean_anomaly_score":    g["anomaly_score"].mean().round(4),
+        "worst_year":            worst["year"],
+        "worst_year_top_driver": worst["top_driver"],
+        "n_years":               g.size(),
+        "n_years_flagged":       g["is_anomaly"].sum() if "is_anomaly" in ranking.columns else 0,
+        "total_paid_all_years":  g["total_paid"].sum().round(2),
+        "ever_excluded":         g["is_excluded"].max() if "is_excluded" in ranking.columns else 0,
+    })
+    if "provider_name" in ranking.columns:
+        summary["provider_name"] = worst["provider_name"]
+    if "taxonomy_code" in ranking.columns:
+        summary["taxonomy_code"] = worst["taxonomy_code"]
+
+    summary = summary.reset_index().sort_values(
+        "max_anomaly_score", ascending=False).reset_index(drop=True)
+    summary.insert(0, "rank", summary.index + 1)
+
+    head = ["rank", "npi", "provider_name", "max_anomaly_score", "mean_anomaly_score",
+            "worst_year", "worst_year_top_driver", "n_years", "n_years_flagged",
+            "total_paid_all_years", "ever_excluded", "taxonomy_code"]
+    head = [c for c in head if c in summary.columns]
+    return summary[head + [c for c in summary.columns if c not in head]]
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +422,10 @@ def main():
                         help="Write only this many top-ranked rows to the output file (<=0 for all)")
     parser.add_argument("--describe-top",  type=int,   default=50_000,
                         help="Verbose descriptions for this many rows when --save-top<=0")
+    parser.add_argument("--provider-summary", default=None,
+                        help="If set, also write a one-row-per-provider rollup CSV here")
+    parser.add_argument("--summary-top",   type=int,   default=5_000,
+                        help="Write only this many top providers to the summary file (<=0 for all)")
     args = parser.parse_args()
 
     print(f"Loading provider features from {args.input} …")
@@ -400,32 +444,47 @@ def main():
 
     print("Computing DIFFI feature attributions …")
     diffi_matrix = compute_diffi_scores(model, X)
+    # The Isolation Forest's own contamination threshold flags each provider-year.
+    is_anomaly = model.predict(X) == -1
 
     print("Building provider rankings …")
     # Only the rows we keep need descriptions.
     describe_top = args.save_top if args.save_top > 0 else args.describe_top
     ranking = rank_providers(features_df, feature_names, anomaly_scores, diffi_matrix,
-                             describe_top=describe_top)
+                             is_anomaly=is_anomaly, describe_top=describe_top)
 
-    # precision@k is computed over the FULL ranking (the whole population), then
-    # we save only the top slice to the output file.
-    pak = precision_at_k(ranking)
-    print_report(ranking, pak, top_n=args.top)
-
-    to_save = ranking.head(args.save_top).copy() if args.save_top > 0 else ranking
-
+    # Names join onto the FULL ranking so both the per-year file and the provider
+    # rollup inherit provider_name.
     if args.names:
         print(f"Adding provider names from {args.names} …")
         names = pd.read_csv(args.names, dtype={"npi": str})
         if "provider_name" in names.columns:
             name_map = dict(zip(names["npi"].str.strip(), names["provider_name"]))
-            npi_col = to_save["npi"].astype(str).str.strip()
-            to_save.insert(to_save.columns.get_loc("npi") + 1,
-                           "provider_name", npi_col.map(name_map))
+            ranking.insert(ranking.columns.get_loc("npi") + 1,
+                           "provider_name", ranking["npi"].astype(str).str.strip().map(name_map))
         else:
             print("  (no provider_name column found — skipping)")
 
+    # precision@k over the FULL per-year ranking, then save only the top slice.
+    pak = precision_at_k(ranking)
+    print_report(ranking, pak, top_n=args.top)
+    to_save = ranking.head(args.save_top) if args.save_top > 0 else ranking
     save_ranking(to_save, args.output)
+
+    # Provider-level rollup (additive — detection stays per-year).
+    if args.provider_summary:
+        print("Building provider-level summary …")
+        summary = build_provider_summary(ranking)
+        spak = precision_at_k(
+            summary.rename(columns={"ever_excluded": "is_excluded"})
+        )
+        print(f"\n  Provider-level precision@k vs {int(summary['ever_excluded'].sum())} "
+              f"ever-excluded providers:")
+        print(spak.to_string(index=False) if not spak.empty else "  (too few rows)")
+        to_save_s = summary.head(args.summary_top) if args.summary_top > 0 else summary
+        Path(args.provider_summary).parent.mkdir(parents=True, exist_ok=True)
+        to_save_s.to_csv(args.provider_summary, index=False)
+        print(f"Saved top {len(to_save_s):,} providers → {args.provider_summary}")
 
 
 if __name__ == "__main__":
