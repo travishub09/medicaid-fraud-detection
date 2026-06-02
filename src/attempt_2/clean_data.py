@@ -13,35 +13,35 @@ Design rules (see README / DATA_DICTIONARY for the rationale):
     canonicaliser (10 digits + Luhn check on the "80840"-prefixed value).
     Rows that fail are quarantined, never silently dropped.
 
+Inputs (defaults point at ~/Desktop/data/preclean/, override via flags):
+    Spending.csv  CMS Medicaid provider spending (fact table)
+    NPPES.csv     full NPPES dissemination file (identity)
+    Caught.csv    OIG LEIE exclusion list (ground truth)
+    PECOS.csv     PECOS enrollment base (NPI↔PAC↔enrollment) — also the owners crosswalk
+    owners/*.csv  All-Owners files (FQHC / HHA / Hospice / Hospital / Nursing)
+
 Flow:
 
     raw/*.csv ──csv_to_parquet──►  interim/raw_parquet/*.parquet   (raw stays immutable)
                   │
     parquet ──clean_spending──►  interim/spending.parquet      (+ spending_nonnpi)
-    raw/  ──clean_nppes────►  interim/identity.parquet
-    raw/  ──clean_pecos────►  interim/network_edges.parquet  (optional source)
-    raw/  ──clean_owners───►  interim/owner_edges.parquet     (optional source)
-    raw/  ──clean_leie─────►  interim/exclusions.parquet
+    parquet ──clean_nppes────►  interim/identity.parquet
+    parquet ──clean_pecos────►  interim/enrollment.parquet     (→ owners crosswalk)
+    parquet ──clean_owners───►  interim/owner_edges.parquet
+    parquet ──clean_leie─────►  interim/exclusions.parquet
                               │
     interim/  ──assemble────►  processed/provider_dim.parquet
                                processed/spending_fact.parquet
                                processed/exclusions.parquet
-                               processed/network_edges.parquet
+                               processed/enrollment.parquet
                                processed/owner_edges.parquet
 
-Usage:
-    python -m src.attempt_2.clean_data \\
-        --spending data/raw/spending.csv \\
-        --nppes    data/raw/nppes.csv \\
-        --leie     data/raw/leie.csv \\
-        --pecos    data/raw/pecos_reassignment.csv \\
-        --owners   data/raw/all_owners_snf.csv data/raw/all_owners_hha.csv \\
-        --interim  data/interim \\
-        --processed data/processed
+Usage (defaults resolve to the preclean drop, so this is often enough):
+    python -m src.attempt_2.clean_data --interim data/interim --processed data/processed
 
 Every CSV input is converted to Parquet (into --parquet-dir) before cleaning;
 pass --skip-convert if the inputs are already Parquet. --pecos and --owners are
-optional; if omitted, those edge tables are skipped (assemble tolerates it).
+optional; if omitted, those tables are skipped (assemble tolerates it).
 """
 
 import argparse
@@ -49,7 +49,11 @@ import re
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
+
+# Where Travis's raw extracts live (the "preclean" drop). CLI flags override.
+PRECLEAN_DIR = Path.home() / "Desktop" / "data" / "preclean"
 
 # Most recent N months of claims are incomplete ("run-out"); flag them so they
 # never feed a trend/outlier feature. CMS guidance is ~6-12 months; 12 is safe.
@@ -112,6 +116,37 @@ def canonicalize_npi(raw) -> str | None:
     if len(digits) == 10 and is_valid_npi(digits):
         return digits
     return None
+
+
+def _valid_npi_mask(digits: pd.Series) -> np.ndarray:
+    """Vectorised Luhn validation over a Series of digit-only strings.
+
+    Builds an (n, 10) digit matrix and applies the NPI check in numpy so it
+    scales to the millions of distinct NPIs in the real spending/NPPES files.
+    The '80840' prefix contributes a constant 24 to the Luhn sum (its five
+    digits at fixed positions), and within the first nine NPI digits the
+    even-indexed ones are the doubled positions.
+    """
+    is10 = digits.str.len().eq(10).to_numpy()
+    padded = digits.where(digits.str.len().eq(10), "0000000000")
+    joined = "".join(padded.tolist())
+    if not joined:
+        return np.zeros(len(digits), dtype=bool)
+    mat = (np.frombuffer(joined.encode("ascii"), dtype=np.uint8)
+           .reshape(-1, 10).astype(np.int16) - ord("0"))
+    first9 = mat[:, :9].copy()
+    first9[:, [0, 2, 4, 6, 8]] *= 2          # doubled positions
+    first9[first9 > 9] -= 9
+    total = 24 + first9.sum(axis=1)           # 24 = constant from "80840"
+    check = (10 - total % 10) % 10
+    return (check == mat[:, 9]) & is10
+
+
+def canonicalize_series(raw: pd.Series) -> pd.Series:
+    """Vectorised canonicalize_npi over a Series; invalid values become None."""
+    s = raw.fillna("").astype(str).str.strip().str.strip("'\"")
+    digits = s.str.replace(r"\D", "", regex=True)
+    return digits.where(_valid_npi_mask(digits), other=None)
 
 
 # ---------------------------------------------------------------------------
@@ -281,7 +316,10 @@ def clean_spending(
     def src(name, default="NULL"):
         return f'"{cols[name]}"' if name in cols else default
 
-    # Pull a typed projection; raw NPI kept as text so we can canonicalise it.
+    # The real spending file is hundreds of millions of rows, so everything
+    # stays in DuckDB — we never pull the fact table into pandas. Only the set
+    # of DISTINCT raw NPI strings (a few hundred thousand) goes to pandas for
+    # the Luhn check, then comes back as a join table.
     con.execute(f"""
         CREATE OR REPLACE TABLE spending_raw AS
         SELECT
@@ -291,55 +329,69 @@ def clean_spending(
             TRY_CAST({src('total_recipients')} AS DOUBLE)     AS total_recipients,
             TRY_CAST({src('total_claims')} AS DOUBLE)         AS total_claims,
             TRY_CAST({src('total_paid_amount')} AS DOUBLE)    AS total_paid_amount,
-            CAST({src('suppressed', "''")} AS VARCHAR)        AS suppressed_raw
+            CASE WHEN UPPER(TRIM(CAST({src('suppressed', "''")} AS VARCHAR)))
+                      IN ('1','Y','YES','TRUE','*','S') THEN 1 ELSE 0 END AS is_suppressed
         FROM {_read_any(spending_path)}
     """)
 
-    # Canonicalise in pandas (Luhn check is awkward in pure SQL), then split.
-    raw = con.execute("SELECT * FROM spending_raw").df()
-    raw["npi"] = raw["npi_raw"].map(canonicalize_npi)
+    distinct = con.execute(
+        "SELECT DISTINCT npi_raw FROM spending_raw").df()
+    distinct["npi"] = canonicalize_series(distinct["npi_raw"])
+    con.register("npi_map", distinct)
 
-    # Suppression → missing (NOT zero). A suppressed cell means "small, hidden",
-    # so its dollars/counts are unknown; carry a flag so aggregates can inherit
-    # a "partial" marker downstream.
-    supp = raw["suppressed_raw"].fillna("").str.strip().str.upper()
-    raw["is_suppressed"] = supp.isin(["1", "Y", "YES", "TRUE", "*", "S"]).astype(int)
-    for c in ["total_recipients", "total_claims", "total_paid_amount"]:
-        raw.loc[raw["is_suppressed"] == 1, c] = pd.NA
+    # Build the cleaned fact rows in SQL:
+    #   * canonical NPI joined in (NULL ⇒ non-NPI / aggregate-only row)
+    #   * suppressed cells set to NULL, never 0 (carry the flag separately)
+    #   * run-out: flag the most recent `runout_months` via integer month index
+    #   * broad-HCPCS flag for the personal-care problem
+    broad = ",".join(f"'{c}'" for c in sorted(BROAD_HCPCS_CODES))
+    con.execute(f"""
+        CREATE OR REPLACE TABLE spending_clean AS
+        WITH joined AS (
+            SELECT
+                m.npi AS npi,
+                s.hcpcs_code,
+                s.service_month,
+                CASE WHEN s.is_suppressed = 1 THEN NULL ELSE s.total_recipients END AS total_recipients,
+                CASE WHEN s.is_suppressed = 1 THEN NULL ELSE s.total_claims END      AS total_claims,
+                CASE WHEN s.is_suppressed = 1 THEN NULL ELSE s.total_paid_amount END AS total_paid_amount,
+                s.is_suppressed,
+                CASE WHEN s.service_month ~ '^\\d{{4}}-\\d{{2}}'
+                     THEN CAST(substr(s.service_month, 1, 4) AS INTEGER) * 12
+                          + CAST(substr(s.service_month, 6, 2) AS INTEGER)
+                     END AS month_idx
+            FROM spending_raw s
+            LEFT JOIN npi_map m USING (npi_raw)
+        )
+        SELECT
+            npi, hcpcs_code, service_month,
+            total_recipients, total_claims, total_paid_amount, is_suppressed,
+            CASE WHEN month_idx > (SELECT MAX(month_idx) FROM joined) - {runout_months}
+                 THEN 1 ELSE 0 END AS is_runout,
+            CASE WHEN hcpcs_code IN ({broad}) THEN 1 ELSE 0 END AS is_broad_hcpcs
+        FROM joined
+    """)
 
-    # Run-out: flag the most recent `runout_months` of the window as immature.
-    months = pd.to_datetime(raw["service_month"], errors="coerce", format="mixed")
-    raw["service_month"] = months.dt.strftime("%Y-%m")
-    if months.notna().any():
-        cutoff = months.max() - pd.DateOffset(months=runout_months)
-        raw["is_runout"] = (months > cutoff).astype(int)
-    else:
-        raw["is_runout"] = 0
-
-    raw["is_broad_hcpcs"] = raw["hcpcs_code"].isin(BROAD_HCPCS_CODES).astype(int)
-
-    # Split: join-eligible (valid NPI) vs aggregate-only (A/M-prefixed & friends).
-    eligible = raw[raw["npi"].notna()].copy()
-    nonnpi = raw[raw["npi"].isna()].copy()
-
-    keep_cols = ["npi", "hcpcs_code", "service_month", "total_recipients",
-                 "total_claims", "total_paid_amount", "is_suppressed",
-                 "is_runout", "is_broad_hcpcs"]
     spending_path_out = interim_dir / "spending.parquet"
     nonnpi_path_out = interim_dir / "spending_nonnpi.parquet"
-    eligible[keep_cols].to_parquet(spending_path_out, index=False)
-    nonnpi.drop(columns=["npi"]).to_parquet(nonnpi_path_out, index=False)
+    con.execute(f"COPY (SELECT * FROM spending_clean WHERE npi IS NOT NULL) "
+                f"TO '{spending_path_out}' (FORMAT PARQUET)")
+    con.execute(f"COPY (SELECT * EXCLUDE (npi) FROM spending_clean WHERE npi IS NULL) "
+                f"TO '{nonnpi_path_out}' (FORMAT PARQUET)")
+
+    n_elig, paid_elig = con.execute(
+        "SELECT COUNT(*), COALESCE(SUM(total_paid_amount),0) "
+        "FROM spending_clean WHERE npi IS NOT NULL").fetchone()
+    n_non, paid_non = con.execute(
+        "SELECT COUNT(*), COALESCE(SUM(total_paid_amount),0) "
+        "FROM spending_clean WHERE npi IS NULL").fetchone()
 
     stats = {
-        "rows_total": len(raw),
-        "rows_eligible": len(eligible),
-        "rows_nonnpi": len(nonnpi),
-        "npi_role": npi_role,
-        "paid_total_eligible": float(eligible["total_paid_amount"].fillna(0).sum()),
-        "paid_total_nonnpi": float(nonnpi["total_paid_amount"].fillna(0).sum()),
+        "rows_eligible": n_elig, "rows_nonnpi": n_non, "npi_role": npi_role,
+        "paid_total_eligible": float(paid_elig), "paid_total_nonnpi": float(paid_non),
     }
-    print(f"  spending: {stats['rows_eligible']:,} join-eligible rows, "
-          f"{stats['rows_nonnpi']:,} non-NPI rows quarantined → {spending_path_out.name}")
+    print(f"  spending: {n_elig:,} join-eligible rows, "
+          f"{n_non:,} non-NPI rows quarantined → {spending_path_out.name}")
     return stats
 
 
@@ -401,7 +453,7 @@ def clean_nppes(nppes_path: str, interim_dir: Path,
     rename = {actual: canon for canon, actual in resolved.items()}
     df = _read_table_df(nppes_path, columns=list(resolved.values())).rename(columns=rename)
 
-    df["npi"] = df["npi"].map(canonicalize_npi)
+    df["npi"] = canonicalize_series(df["npi"])
     quarantined = int(df["npi"].isna().sum())
     df = df[df["npi"].notna()].drop_duplicates("npi")
 
@@ -444,124 +496,170 @@ def clean_nppes(nppes_path: str, interim_dir: Path,
 
 
 # ---------------------------------------------------------------------------
-# 3. PECOS reassignment  → interim/network_edges.parquet   (optional)
+# 3. PECOS enrollment  → interim/enrollment.parquet
 # ---------------------------------------------------------------------------
+#
+# NOTE on the file we actually have: PECOS.csv is the base *enrollment* file
+# (one row per NPI × enrollment: NPI, PAC ID, enrollment id, provider type,
+# org name) — not the separate reassignment sub-file. So we cannot build the
+# individual→org *reassignment* edge list from it directly. What we build is:
+#   1. the enrollment table itself (resolving enrollment ids back to NPIs), and
+#   2. the PAC-ID / enrollment-id → NPI crosswalk that the All-Owners files
+#      need (they key on PAC/enrollment ids, not NPIs).
+# True reassignment edges would require the PECOS reassignment extract.
 
 _PECOS_ALIASES = {
-    "individual_npi":   ["INDIVIDUAL_NPI", "reassignor_npi", "individual_npi", "npi"],
-    "org_npi":          ["ORG_NPI", "GROUP_NPI", "reassignee_npi", "org_npi"],
-    "enrollment_id":    ["ENROLLMENT_ID", "individual_enrollment_id"],
-    "org_enrollment":   ["GROUP_ENROLLMENT_ID", "org_enrollment_id"],
+    "npi":                 ["NPI"],
+    "pac_id":              ["PECOS_ASCT_CNTL_ID", "associate_id"],
+    "enrollment_id":       ["ENRLMT_ID", "enrollment_id"],
+    "provider_type_code":  ["PROVIDER_TYPE_CD"],
+    "provider_type_desc":  ["PROVIDER_TYPE_DESC"],
+    "state":               ["STATE_CD", "state"],
+    "org_name":            ["ORG_NAME"],
+    "first_name":          ["FIRST_NAME"],
+    "last_name":           ["LAST_NAME"],
 }
 
 
-def clean_pecos(pecos_path: str, interim_dir: Path) -> dict:
-    """Build the directed billing-network edge list: individual NPI → org NPI.
+def clean_pecos(pecos_path: str, interim_dir: Path) -> pd.DataFrame:
+    """Clean the PECOS enrollment base into one row per (NPI, enrollment).
 
-    One NPI can hold several enrollments, so enrollment ids are resolved back to
-    NPIs and the edge is keyed on canonical NPIs. Pin the quarterly snapshot
-    closest to the spending window in the manifest (recorded by the caller).
+    Returns the cleaned enrollment frame so the owners step can use it as the
+    PAC-ID/enrollment-id → NPI crosswalk. One NPI can hold several enrollments
+    (different provider types), so we keep enrollment-level rows.
     """
     df = _read_table_df(pecos_path)
     resolved = _resolve_columns(df.columns.tolist(), _PECOS_ALIASES)
-    if "individual_npi" not in resolved or "org_npi" not in resolved:
-        raise ValueError(
-            "PECOS file needs both an individual and an org NPI column; "
-            f"resolved only {list(resolved)}")
+    if "npi" not in resolved:
+        raise ValueError(f"PECOS file has no NPI column; found {list(df.columns)[:12]}")
 
     df = df.rename(columns={v: k for k, v in resolved.items()})
-    df["individual_npi"] = df["individual_npi"].map(canonicalize_npi)
-    df["org_npi"] = df["org_npi"].map(canonicalize_npi)
-    edges = df.dropna(subset=["individual_npi", "org_npi"]).copy()
-    edges["edge_type"] = "reassignment"
-    keep = [c for c in ["individual_npi", "org_npi", "enrollment_id",
-                        "org_enrollment", "edge_type"] if c in edges.columns]
-    edges = edges[keep].drop_duplicates()
+    df = df[[c for c in _PECOS_ALIASES if c in df.columns]].copy()
+    df["npi"] = canonicalize_series(df["npi"])
+    df = df.dropna(subset=["npi"])
 
-    out_path = interim_dir / "network_edges.parquet"
-    edges.to_parquet(out_path, index=False)
-    print(f"  pecos: {len(edges):,} reassignment edges → {out_path.name}")
-    return {"edges": len(edges)}
+    # enrollment id prefix encodes the enrollee kind: I=individual, O=organisation
+    if "enrollment_id" in df.columns:
+        df["enrollment_type"] = (df["enrollment_id"].fillna("").str[:1]
+                                 .map({"I": "individual", "O": "organization"})
+                                 .fillna("unknown"))
+    df = df.drop_duplicates()
+
+    out_path = interim_dir / "enrollment.parquet"
+    df.to_parquet(out_path, index=False)
+    print(f"  pecos: {len(df):,} enrollment rows, "
+          f"{df['npi'].nunique():,} distinct NPIs → {out_path.name}")
+    return df
 
 
 # ---------------------------------------------------------------------------
-# 4. "All Owners" files  → interim/owner_edges.parquet     (optional)
+# 4. "All Owners" files  → interim/owner_edges.parquet
 # ---------------------------------------------------------------------------
+#
+# Real CMS All-Owners schema (FQHC / HHA / Hospice / Hospital / Nursing). These
+# files key the FACILITY on its enrollment id + PAC ("ASSOCIATE ID"), and the
+# OWNER on the owner's PAC ("ASSOCIATE ID - OWNER"). Neither carries an NPI, so
+# we crosswalk both back to NPIs via the PECOS enrollment table. Owners with no
+# matching enrollment (individuals, holding companies, PE firms) keep a
+# name/address key and are routed to entity resolution.
 
 _OWNER_ALIASES = {
-    "ccn":            ["CCN", "PROVIDER_CCN", "enrollment_id", "ccn"],
-    "facility_npi":   ["FACILITY_NPI", "ORGANIZATION_NPI", "npi"],
-    "owner_name":     ["OWNER_NAME", "ASSOCIATE_NAME", "owner_name", "organization_name"],
-    "owner_type":     ["OWNER_TYPE", "TYPE_OWNER", "ROLE_TEXT", "owner_type"],
-    "owner_npi":      ["OWNER_NPI", "ASSOCIATE_NPI"],
-    "addr_line1":     ["OWNER_ADDRESS", "ADDRESS_LINE_1", "address"],
-    "addr_city":      ["OWNER_CITY", "CITY"],
-    "addr_state":     ["OWNER_STATE", "STATE"],
-    "addr_zip":       ["OWNER_ZIP", "ZIP_CODE"],
-    "effective_date": ["EFFECTIVE_DATE", "ASSOCIATION_DATE"],
+    "facility_enrollment_id": ["ENROLLMENT ID"],
+    "facility_pac_id":        ["ASSOCIATE ID"],
+    "facility_name":          ["ORGANIZATION NAME"],
+    "owner_pac_id":           ["ASSOCIATE ID - OWNER"],
+    "owner_type":             ["TYPE - OWNER"],          # I = individual, O = org
+    "owner_role":             ["ROLE TEXT - OWNER"],
+    "association_date":       ["ASSOCIATION DATE - OWNER"],
+    "owner_first_name":       ["FIRST NAME - OWNER"],
+    "owner_last_name":        ["LAST NAME - OWNER"],
+    "owner_org_name":         ["ORGANIZATION NAME - OWNER"],
+    "owner_dba":              ["DOING BUSINESS AS NAME - OWNER"],
+    "pct_ownership":          ["PERCENTAGE OWNERSHIP"],
+    "addr_line1":             ["ADDRESS LINE 1 - OWNER"],
+    "addr_city":              ["CITY - OWNER"],
+    "addr_state":             ["STATE - OWNER"],
+    "addr_zip":               ["ZIP CODE - OWNER"],
 }
 
-# The five All-Owners facility types; SNF carries extra disclosable-parties
-# columns the others don't, so we keep those in side columns when present.
-_SNF_EXTRA_HINTS = ["DISCLOSABLE", "ROLE_CODE_GROUP", "PERCENTAGE_OWNERSHIP"]
+# Disclosable-party detail only some files (notably the SNF/Nursing extract)
+# carry; kept in side columns when present rather than forced into the union.
+_OWNER_EXTRA_ALIASES = {
+    "trust_or_trustee": ["TRUST OR TRUSTEE - OWNER"],
+    "parent_company":   ["PARENT COMPANY - OWNER"],
+}
+
+
+def _facility_type_from_name(stem: str) -> str:
+    """fqhc / hha / hospice / hospital / nursing from a filename stem."""
+    label = re.sub(r"[_\s-]*all[_\s-]*owners.*$", "", stem, flags=re.I)
+    label = re.sub(r"owners.*$", "", label, flags=re.I)
+    return (label.strip("_- .").lower() or stem.lower())
 
 
 def clean_owners(owner_paths: list[str], interim_dir: Path,
-                 ccn_npi_xwalk: pd.DataFrame | None = None) -> dict:
-    """Union the facility-type owner files into one schema → owner edges.
+                 enrollment: pd.DataFrame | None = None) -> dict:
+    """Union the facility-type owner files and resolve PAC ids back to NPIs."""
+    # Build the PAC/enrollment-id → NPI crosswalks from the PECOS enrollment table.
+    pac2npi = enr2npi = None
+    if enrollment is not None and len(enrollment):
+        if "pac_id" in enrollment.columns:
+            pac2npi = (enrollment.dropna(subset=["npi"])
+                       .drop_duplicates("pac_id").set_index("pac_id")["npi"])
+        if "enrollment_id" in enrollment.columns:
+            enr2npi = (enrollment.dropna(subset=["npi"])
+                       .drop_duplicates("enrollment_id").set_index("enrollment_id")["npi"])
 
-    Each file may key on CCN rather than NPI, so a CCN↔NPI crosswalk (if
-    supplied with columns ccn, npi) ties facilities back to the spine. Owners
-    without an NPI (individuals, holding companies) keep a name/address key and
-    are routed to the entity-resolution layer downstream.
-    """
+    all_aliases = {**_OWNER_ALIASES, **_OWNER_EXTRA_ALIASES}
     frames = []
     for path in owner_paths:
         df = _read_table_df(path)
-        facility_type = Path(path).stem.replace("all_owners_", "")
-        resolved = _resolve_columns(df.columns.tolist(), _OWNER_ALIASES)
+        resolved = _resolve_columns(df.columns.tolist(), all_aliases)
         norm = df.rename(columns={v: k for k, v in resolved.items()})
-        norm = norm[[c for c in _OWNER_ALIASES if c in norm.columns]].copy()
-        norm["facility_type"] = facility_type
-        # preserve SNF-only disclosable-party detail in side columns
-        for col in df.columns:
-            if any(h in col.upper() for h in _SNF_EXTRA_HINTS):
-                norm[f"snf__{_norm(col)}"] = df[col]
+        norm = norm[[c for c in all_aliases if c in norm.columns]].copy()
+        norm["facility_type"] = _facility_type_from_name(Path(path).stem)
         frames.append(norm)
-
     owners = pd.concat(frames, ignore_index=True)
 
-    # canonicalise facility & owner NPIs where present
-    if "facility_npi" in owners.columns:
-        owners["facility_npi"] = owners["facility_npi"].map(canonicalize_npi)
-    if "owner_npi" in owners.columns:
-        owners["owner_npi"] = owners["owner_npi"].map(canonicalize_npi)
-    else:
-        owners["owner_npi"] = None
+    # Facility NPI: prefer the precise enrollment-id match, fall back to PAC id.
+    owners["facility_npi"] = None
+    if enr2npi is not None and "facility_enrollment_id" in owners.columns:
+        owners["facility_npi"] = owners["facility_enrollment_id"].map(enr2npi)
+    if pac2npi is not None and "facility_pac_id" in owners.columns:
+        owners["facility_npi"] = owners["facility_npi"].fillna(
+            owners["facility_pac_id"].map(pac2npi))
 
-    # CCN → NPI crosswalk to recover facility NPI where the file keyed on CCN
-    if ccn_npi_xwalk is not None and "ccn" in owners.columns:
-        x = ccn_npi_xwalk.rename(columns=str.lower)[["ccn", "npi"]].copy()
-        x["npi"] = x["npi"].map(canonicalize_npi)
-        owners = owners.merge(x, on="ccn", how="left", suffixes=("", "_xwalk"))
-        owners["facility_npi"] = owners.get("facility_npi").fillna(owners["npi"])
-        owners = owners.drop(columns=["npi"], errors="ignore")
+    # Owner NPI: owners are keyed only by their PAC id, so use the PAC crosswalk.
+    owners["owner_npi"] = None
+    if pac2npi is not None and "owner_pac_id" in owners.columns:
+        owners["owner_npi"] = owners["owner_pac_id"].map(pac2npi)
 
-    owners["owner_name_key"] = _normalize_name(owners.get("owner_name", ""))
+    # Owner display name: organisation name if present, else person name.
+    org = owners.get("owner_org_name", pd.Series("", index=owners.index)).fillna("").str.strip()
+    last = owners.get("owner_last_name", pd.Series("", index=owners.index)).fillna("").str.strip()
+    first = owners.get("owner_first_name", pd.Series("", index=owners.index)).fillna("").str.strip()
+    person = (last + ", " + first).str.strip(", ")
+    owners["owner_name"] = org.where(org != "", person)
+    owners["owner_name_key"] = _normalize_name(owners["owner_name"])
     owners["owner_addr_key"] = _standardize_address(owners.rename(columns={
         "addr_line1": "line1", "addr_city": "city",
         "addr_state": "state", "addr_zip": "zip"}))
-    # owners lacking any NPI must be resolved by name/address downstream
+
+    # Owners we could not tie to an NPI must be resolved by name/address.
     owners["needs_entity_resolution"] = owners["owner_npi"].isna().astype(int)
-    if "effective_date" in owners.columns:
-        owners["effective_date"] = pd.to_datetime(owners["effective_date"], errors="coerce")
+    if "association_date" in owners.columns:
+        owners["association_date"] = pd.to_datetime(
+            owners["association_date"], errors="coerce", format="mixed")
 
     out_path = interim_dir / "owner_edges.parquet"
     owners.to_parquet(out_path, index=False)
-    n_resolved = int((owners["needs_entity_resolution"] == 0).sum())
+    n_owner_npi = int((owners["owner_npi"].notna()).sum())
+    n_fac_npi = int((owners["facility_npi"].notna()).sum())
     print(f"  owners: {len(owners):,} owner edges from {len(owner_paths)} file(s); "
-          f"{n_resolved:,} have an owner NPI → {out_path.name}")
-    return {"edges": len(owners), "owner_npi_resolved": n_resolved}
+          f"facility NPI resolved {n_fac_npi:,}, owner NPI resolved {n_owner_npi:,} "
+          f"→ {out_path.name}")
+    return {"edges": len(owners), "facility_npi_resolved": n_fac_npi,
+            "owner_npi_resolved": n_owner_npi}
 
 
 # ---------------------------------------------------------------------------
@@ -587,24 +685,28 @@ def clean_leie(leie_path: str, interim_dir: Path) -> dict:
     excl_col = find(lambda u: "EXCLDATE" in u)
     rein_col = find(lambda u: "REINDATE" in u)
     type_col = find(lambda u: "EXCLTYPE" in u)
-    lname_col = find(lambda u: "LASTNAME" in u or u == "BUSNAME")
+    lname_col = find(lambda u: "LASTNAME" in u)
     fname_col = find(lambda u: "FIRSTNAME" in u)
+    busname_col = find(lambda u: u == "BUSNAME")
 
     def parse_date(s):
         s = s.astype(str).str.strip()
         s = s.where(~s.isin(["0", "00000000", "", "nan", "NaN"]))
         return pd.to_datetime(s, format="%Y%m%d", errors="coerce")
 
-    out = pd.DataFrame()
-    out["npi"] = df[npi_col].map(canonicalize_npi) if npi_col else None
+    out = pd.DataFrame(index=df.index)
+    out["npi"] = canonicalize_series(df[npi_col]) if npi_col else None
     out["excl_date"] = parse_date(df[excl_col]) if excl_col else pd.NaT
     out["reinstate_date"] = parse_date(df[rein_col]) if rein_col else pd.NaT
     out["excl_type"] = df[type_col] if type_col else None
 
-    # entity name for the name/address resolution path
+    # entity name for the name/address resolution path: "LAST, FIRST" for
+    # individuals, else the business name (BUSNAME) for excluded entities.
     last = df[lname_col].fillna("") if lname_col else pd.Series("", index=df.index)
     first = df[fname_col].fillna("") if fname_col else pd.Series("", index=df.index)
-    out["entity_name"] = (last.astype(str) + " " + first.astype(str)).str.strip()
+    busname = df[busname_col].fillna("").str.strip() if busname_col else pd.Series("", index=df.index)
+    person = (last.astype(str).str.strip() + ", " + first.astype(str).str.strip()).str.strip(", ")
+    out["entity_name"] = person.where(person != "", busname)
     out["name_key"] = _normalize_name(out["entity_name"])
 
     # confidence tier: high = a real NPI present; probable = name only
@@ -643,10 +745,6 @@ def assemble(con: duckdb.DuckDBPyConnection, interim_dir: Path, processed_dir: P
     def interim(name):
         return f"read_parquet('{interim_dir / name}')"
 
-    identity_p = interim_dir / "identity.parquet"
-    spending_p = interim_dir / "spending.parquet"
-    excl_p = interim_dir / "exclusions.parquet"
-
     # provider dimension: identity ⟕ exclusion flag (high-confidence NPI matches)
     con.execute(f"""
         CREATE OR REPLACE TABLE provider_dim AS
@@ -671,8 +769,8 @@ def assemble(con: duckdb.DuckDBPyConnection, interim_dir: Path, processed_dir: P
     con.execute(f"COPY (SELECT * FROM {interim('exclusions.parquet')}) "
                 f"TO '{processed_dir / 'exclusions.parquet'}' (FORMAT PARQUET)")
 
-    # optional edge tables, copied if their interim files exist
-    for name in ["network_edges.parquet", "owner_edges.parquet"]:
+    # optional tables, copied through if their interim files exist
+    for name in ["enrollment.parquet", "owner_edges.parquet"]:
         if (interim_dir / name).exists():
             con.execute(f"COPY (SELECT * FROM {interim(name)}) "
                         f"TO '{processed_dir / name}' (FORMAT PARQUET)")
@@ -716,12 +814,17 @@ def main() -> None:
     p = argparse.ArgumentParser(
         description="Clean CMS spending, NPPES, PECOS, All-Owners and LEIE into "
                     "typed Parquet tables keyed on canonical NPI (raw→interim→processed).")
-    p.add_argument("--spending", required=True, help="CMS Medicaid provider spending file (CSV/Parquet)")
-    p.add_argument("--nppes", required=True, help="NPPES NPI data file")
-    p.add_argument("--leie", required=True, help="OIG LEIE exclusion list CSV")
-    p.add_argument("--pecos", help="PECOS reassignment file (optional)")
-    p.add_argument("--owners", nargs="*", default=[], help="All-Owners facility files (optional, space-separated)")
-    p.add_argument("--ccn-npi-xwalk", help="CCN↔NPI crosswalk CSV (cols: ccn, npi) for owner files")
+    owners_default = sorted(str(p) for p in (PRECLEAN_DIR / "owners").glob("*.csv")) \
+        if (PRECLEAN_DIR / "owners").is_dir() else []
+    p.add_argument("--spending", default=str(PRECLEAN_DIR / "Spending.csv"),
+                   help="CMS Medicaid provider spending file (CSV/Parquet)")
+    p.add_argument("--nppes", default=str(PRECLEAN_DIR / "NPPES.csv"), help="NPPES NPI data file")
+    p.add_argument("--leie", default=str(PRECLEAN_DIR / "Caught.csv"),
+                   help="OIG LEIE (exclusions) CSV — 'Caught.csv'")
+    p.add_argument("--pecos", default=str(PRECLEAN_DIR / "PECOS.csv"),
+                   help="PECOS enrollment file (NPI↔PAC↔enrollment); also the owners crosswalk")
+    p.add_argument("--owners", nargs="*", default=owners_default,
+                   help="All-Owners facility files (space-separated; defaults to preclean/owners/*.csv)")
     p.add_argument("--npi-role", choices=["billing", "servicing"], default="billing",
                    help="Which spending NPI to key on (default billing = who got paid)")
     p.add_argument("--runout-months", type=int, default=DEFAULT_RUNOUT_MONTHS,
@@ -752,8 +855,6 @@ def main() -> None:
         if args.pecos:
             args.pecos = _maybe_convert(con, args.pecos, parquet_dir)
         args.owners = [_maybe_convert(con, o, parquet_dir) for o in args.owners]
-        if args.ccn_npi_xwalk:
-            args.ccn_npi_xwalk = _maybe_convert(con, args.ccn_npi_xwalk, parquet_dir)
 
     print("Cleaning spending (fact table) …")
     clean_spending(con, args.spending, interim_dir,
@@ -765,14 +866,15 @@ def main() -> None:
     print("Cleaning LEIE (exclusions) …")
     clean_leie(args.leie, interim_dir)
 
+    # PECOS must run before owners: it is the PAC/enrollment-id → NPI crosswalk.
+    enrollment = None
     if args.pecos:
-        print("Cleaning PECOS (network edges) …")
-        clean_pecos(args.pecos, interim_dir)
+        print("Cleaning PECOS (enrollment + owners crosswalk) …")
+        enrollment = clean_pecos(args.pecos, interim_dir)
 
     if args.owners:
         print("Cleaning All-Owners (owner edges) …")
-        xwalk = _read_table_df(args.ccn_npi_xwalk) if args.ccn_npi_xwalk else None
-        clean_owners(args.owners, interim_dir, ccn_npi_xwalk=xwalk)
+        clean_owners(args.owners, interim_dir, enrollment=enrollment)
 
     print("Assembling processed tables + QA …")
     assemble(con, interim_dir, processed_dir)
