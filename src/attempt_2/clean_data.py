@@ -15,7 +15,9 @@ Design rules (see README / DATA_DICTIONARY for the rationale):
 
 Flow:
 
-    raw/  ──clean_spending──►  interim/spending.parquet      (+ spending_nonnpi)
+    raw/*.csv ──csv_to_parquet──►  interim/raw_parquet/*.parquet   (raw stays immutable)
+                  │
+    parquet ──clean_spending──►  interim/spending.parquet      (+ spending_nonnpi)
     raw/  ──clean_nppes────►  interim/identity.parquet
     raw/  ──clean_pecos────►  interim/network_edges.parquet  (optional source)
     raw/  ──clean_owners───►  interim/owner_edges.parquet     (optional source)
@@ -29,7 +31,7 @@ Flow:
 
 Usage:
     python -m src.attempt_2.clean_data \\
-        --spending data/raw/spending.parquet \\
+        --spending data/raw/spending.csv \\
         --nppes    data/raw/nppes.csv \\
         --leie     data/raw/leie.csv \\
         --pecos    data/raw/pecos_reassignment.csv \\
@@ -37,8 +39,9 @@ Usage:
         --interim  data/interim \\
         --processed data/processed
 
---pecos and --owners are optional; if omitted, those interim/processed edge
-tables are skipped (the assemble step tolerates their absence).
+Every CSV input is converted to Parquet (into --parquet-dir) before cleaning;
+pass --skip-convert if the inputs are already Parquet. --pecos and --owners are
+optional; if omitted, those edge tables are skipped (assemble tolerates it).
 """
 
 import argparse
@@ -136,11 +139,66 @@ def _resolve_columns(header: list[str], wanted: dict[str, list[str]]) -> dict[st
     return resolved
 
 
+def _is_parquet(path: str) -> bool:
+    return path.lower().endswith((".parquet", ".pq"))
+
+
 def _read_any(path: str) -> str:
     """DuckDB table-function call selected by file extension."""
-    if path.lower().endswith((".parquet", ".pq")):
+    if _is_parquet(path):
         return f"read_parquet('{path}')"
     return f"read_csv_auto('{path}', ignore_errors=true, all_varchar=true)"
+
+
+def _table_header(path: str) -> list[str]:
+    """Column names of a CSV or Parquet file without reading the body."""
+    if _is_parquet(path):
+        import pyarrow.parquet as pq
+        return list(pq.ParquetFile(path).schema_arrow.names)
+    return pd.read_csv(path, nrows=0).columns.tolist()
+
+
+def _read_table_df(path: str, columns: list[str] | None = None) -> pd.DataFrame:
+    """Read a CSV or Parquet file into an all-string DataFrame.
+
+    Parquet reads are column-selective (cheap on the wide NPPES file); CSV reads
+    are chunked. We keep everything as strings so the canonicaliser and the rest
+    of the cleaning see identical values regardless of source format.
+    """
+    if _is_parquet(path):
+        return pd.read_parquet(path, columns=columns)
+    if columns is None:
+        chunks = pd.read_csv(path, dtype=str, chunksize=500_000, low_memory=False)
+    else:
+        chunks = pd.read_csv(path, usecols=columns, dtype=str,
+                             chunksize=500_000, low_memory=False)
+    return pd.concat(chunks, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
+# CSV → Parquet conversion  (runs before cleaning; raw stays immutable)
+# ---------------------------------------------------------------------------
+
+def csv_to_parquet(con: duckdb.DuckDBPyConnection, csv_path: str, out_dir: Path) -> str:
+    """Convert a raw CSV to typed-but-all-string Parquet, returning the new path.
+
+    Reads every column as VARCHAR (all_varchar) so the conversion is lossless
+    and the downstream string-based cleaning behaves exactly as on the CSV.
+    The original CSV in data/raw/ is never modified.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / (Path(csv_path).stem + ".parquet")
+    con.execute(f"""
+        COPY (SELECT * FROM read_csv_auto('{csv_path}', all_varchar=true, ignore_errors=true))
+        TO '{out}' (FORMAT PARQUET)
+    """)
+    print(f"  {Path(csv_path).name} → {out}")
+    return str(out)
+
+
+def _maybe_convert(con: duckdb.DuckDBPyConnection, path: str, out_dir: Path) -> str:
+    """Convert to Parquet unless the input is already Parquet."""
+    return path if _is_parquet(path) else csv_to_parquet(con, path, out_dir)
 
 
 def _normalize_name(s: pd.Series) -> pd.Series:
@@ -327,7 +385,7 @@ def clean_nppes(nppes_path: str, interim_dir: Path,
     (type 2), derives a single readable specialty, and builds an address key.
     """
     taxonomy_xwalk = taxonomy_xwalk or _TAXONOMY_SEED
-    header = pd.read_csv(nppes_path, nrows=0).columns.tolist()
+    header = _table_header(nppes_path)
     resolved = _resolve_columns(header, _NPPES_ALIASES)
     if "npi" not in resolved:
         raise ValueError("NPPES file has no recognisable NPI column")
@@ -341,9 +399,7 @@ def clean_nppes(nppes_path: str, interim_dir: Path,
         print(f"  WARNING: NPPES export missing expected fields: {missing}")
 
     rename = {actual: canon for canon, actual in resolved.items()}
-    chunks = pd.read_csv(nppes_path, usecols=list(resolved.values()),
-                         dtype=str, chunksize=500_000, low_memory=False)
-    df = pd.concat(chunks, ignore_index=True).rename(columns=rename)
+    df = _read_table_df(nppes_path, columns=list(resolved.values())).rename(columns=rename)
 
     df["npi"] = df["npi"].map(canonicalize_npi)
     quarantined = int(df["npi"].isna().sum())
@@ -406,7 +462,7 @@ def clean_pecos(pecos_path: str, interim_dir: Path) -> dict:
     NPIs and the edge is keyed on canonical NPIs. Pin the quarterly snapshot
     closest to the spending window in the manifest (recorded by the caller).
     """
-    df = pd.read_csv(pecos_path, dtype=str)
+    df = _read_table_df(pecos_path)
     resolved = _resolve_columns(df.columns.tolist(), _PECOS_ALIASES)
     if "individual_npi" not in resolved or "org_npi" not in resolved:
         raise ValueError(
@@ -461,7 +517,7 @@ def clean_owners(owner_paths: list[str], interim_dir: Path,
     """
     frames = []
     for path in owner_paths:
-        df = pd.read_csv(path, dtype=str)
+        df = _read_table_df(path)
         facility_type = Path(path).stem.replace("all_owners_", "")
         resolved = _resolve_columns(df.columns.tolist(), _OWNER_ALIASES)
         norm = df.rename(columns={v: k for k, v in resolved.items()})
@@ -521,7 +577,7 @@ def clean_leie(leie_path: str, interim_dir: Path) -> dict:
     unreliable (NPI sparse; SSN/EIN not public), so we tier match confidence:
     exact-NPI = high; name/address only = probable (route to review).
     """
-    df = pd.read_csv(leie_path, dtype=str)
+    df = _read_table_df(leie_path)
     df.columns = df.columns.str.strip()
 
     def find(pred):
@@ -672,6 +728,10 @@ def main() -> None:
                    help="Flag the most recent N months as incomplete claims run-out")
     p.add_argument("--interim", default="data/interim", help="Interim output directory")
     p.add_argument("--processed", default="data/processed", help="Processed output directory")
+    p.add_argument("--parquet-dir", default="data/interim/raw_parquet",
+                   help="Where raw CSVs are converted to Parquet before cleaning")
+    p.add_argument("--skip-convert", action="store_true",
+                   help="Inputs are already Parquet — skip the CSV→Parquet step")
     p.add_argument("--db", default=":memory:", help="DuckDB database path (default in-memory)")
     args = p.parse_args()
 
@@ -680,6 +740,20 @@ def main() -> None:
     interim_dir.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect(args.db)
+
+    # Convert every raw CSV to Parquet first (raw stays immutable). Everything
+    # downstream reads the Parquet copies; already-Parquet inputs pass through.
+    if not args.skip_convert:
+        print("Converting raw CSVs → Parquet …")
+        parquet_dir = Path(args.parquet_dir)
+        args.spending = _maybe_convert(con, args.spending, parquet_dir)
+        args.nppes = _maybe_convert(con, args.nppes, parquet_dir)
+        args.leie = _maybe_convert(con, args.leie, parquet_dir)
+        if args.pecos:
+            args.pecos = _maybe_convert(con, args.pecos, parquet_dir)
+        args.owners = [_maybe_convert(con, o, parquet_dir) for o in args.owners]
+        if args.ccn_npi_xwalk:
+            args.ccn_npi_xwalk = _maybe_convert(con, args.ccn_npi_xwalk, parquet_dir)
 
     print("Cleaning spending (fact table) …")
     clean_spending(con, args.spending, interim_dir,
@@ -697,7 +771,7 @@ def main() -> None:
 
     if args.owners:
         print("Cleaning All-Owners (owner edges) …")
-        xwalk = pd.read_csv(args.ccn_npi_xwalk, dtype=str) if args.ccn_npi_xwalk else None
+        xwalk = _read_table_df(args.ccn_npi_xwalk) if args.ccn_npi_xwalk else None
         clean_owners(args.owners, interim_dir, ccn_npi_xwalk=xwalk)
 
     print("Assembling processed tables + QA …")
