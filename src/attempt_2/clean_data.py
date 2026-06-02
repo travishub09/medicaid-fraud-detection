@@ -793,12 +793,18 @@ def assemble(con: duckdb.DuckDBPyConnection, interim_dir: Path, processed_dir: P
     """).df().iloc[0]
     paid_in = float(recon["paid_in"] or 0)
     paid_out = float(recon["paid_out"] or 0)
-    reconciled = abs(paid_in - paid_out) < 0.01
+    diff = abs(paid_in - paid_out)
+    # Relative tolerance: summing hundreds of millions of float64 dollars in two
+    # different orders accumulates a few dollars of rounding on a trillion-dollar
+    # total. A fixed $0.01 gate is meaningless at that scale, so allow ~1e-9 of
+    # the total (≈ $1k on $1T) — far above float noise, far below any real loss.
+    tol = max(0.01, 1e-9 * abs(paid_in))
+    reconciled = diff <= tol
 
     print(f"  QA join hit-rate : {hit_rate:.1%} "
           f"({int(hit['matched_npis']):,}/{int(hit['spending_npis']):,} spending NPIs in NPPES)")
     print(f"  QA dollars recon : in=${paid_in:,.0f}  out=${paid_out:,.0f}  "
-          f"{'OK' if reconciled else 'MISMATCH — dollars lost in cleaning!'}")
+          f"diff=${diff:,.2f}  {'OK' if reconciled else 'MISMATCH — dollars lost in cleaning!'}")
     if hit_rate < 0.90:
         print("  WARNING: join hit-rate below 90% — investigate unmatched spending NPIs.")
 
