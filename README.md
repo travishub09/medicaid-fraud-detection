@@ -55,7 +55,8 @@ a Markdown report next to each stage's data outputs.
 | 9 | `refine_layer2_v3.py` | Adds a **claim-volume reliability gate** and **de-correlated concept** scoring | `fraud_leads_v3`, `LAYER2_V3_REPORT.md` |
 | 10 | `company_rollup.py` | Consolidates per-NPI leads to the **owning company** (PAC > shared-owner > exact-name linkage); surfaces companies that cross $10M only when consolidated | `company_rollup`, `company_leads_over_10m.csv`, `npi_to_company_map`, `COMPANY_ROLLUP_REPORT.md` |
 | 11 | `company_lead_tracker.py` | **Real company-vs-company v3 anomaly** (reuses `rate_features` + `score_concepts` at company grain) + combined direct/ownership signals + fragmentation flag, ranked | `company_lead_tracker.csv` (≥$10M), `company_tracker_direct_under_10m.csv`, `COMPANY_TRACKER_REPORT.md` |
-| 12 | `export_csv.py` / `export_final_leads.py` | Render leads as spreadsheet-friendly CSVs (lists flattened, names joined, NPI as text) | `*.csv` |
+| 12 | `finalize_tracker.py` | **Cleanup for triage** — resolve names, add `specialty`, fix fragmentation to genuine spreads, flag under-merges, consolidate `review_flags`, readable `reasons`, `rank` + `tier_label` | `company_leads_clean.csv`, `triage_priority.csv`, `probable_owner_backlog.csv` |
+| 13 | `export_csv.py` / `export_final_leads.py` | Render leads as spreadsheet-friendly CSVs (lists flattened, names joined, NPI as text) | `*.csv` |
 
 ### The three detection layers (`detect.py`, refined in 8–9)
 
@@ -99,6 +100,13 @@ Everything lands under `~/Desktop/data/detection/` (configurable):
 - **`company_tracker_direct_under_10m.csv`** — sub-$10 M billed-while-excluded / on-LEIE companies,
   preserved (highest precision, naturally small).
 - `company_leads_over_10m.csv` — the simpler rollup leads (per-NPI signals aggregated).
+
+**Triage-ready (cleaned, the agent starts here):**
+- **`triage_priority.csv`** — the focused queue: Direct (billed-while-excluded + on-LEIE) and
+  Company-anomaly tiers only, ranked, with resolved names, `specialty`, complete `reasons`, and
+  `review_flags`.
+- `company_leads_clean.csv` — all leads, cleaned/ranked/ordered (triage columns first).
+- `probable_owner_backlog.csv` — the noisy probable-owner name-match tier, kept off the priority queue.
 
 Work the list **top-down by tier**: Layer-1 rows first (deterministic), then Layer-2 (ranked
 anomalies), then the lower-confidence Layer-3 ownership track.
@@ -157,7 +165,8 @@ python -m src.attempt_2.leads.refine_layer2         # 8. Layer-2 v2 (entity-awar
 python -m src.attempt_2.leads.refine_layer2_v3      # 9. Layer-2 v3 (volume gate + concepts)
 python -m src.attempt_2.leads.company_rollup        # 10. consolidate NPIs → companies
 python -m src.attempt_2.leads.company_lead_tracker --min-net-paid 10000000  # 11. company-level v3 tracker
-python -m src.attempt_2.export.export_final_leads --min-net-paid 10000000   # 12. final CSVs
+python -m src.attempt_2.leads.finalize_tracker      # 12. clean/rank for triage
+python -m src.attempt_2.export.export_final_leads --min-net-paid 10000000   # 13. final CSVs
 ```
 
 (`clean_data.py` is step 1; `integrate.py` re-converts the raw CSVs itself, so the integration
@@ -170,7 +179,7 @@ src/attempt_2/
 ├── clean_data.py     # stage 1 + shared helpers (NPI canonicalize, normalizers, readers)
 ├── ingest/           # integrate.py, features.py
 ├── audit/            # diagnose_coverage.py, audit_corruption.py
-├── leads/            # detect, verify_layer1, refine_layer2, refine_layer2_v3, company_rollup, company_lead_tracker
+├── leads/            # detect, verify_layer1, refine_layer2, refine_layer2_v3, company_rollup, company_lead_tracker, finalize_tracker
 └── export/           # export_csv.py, export_final_leads.py
 ```
 

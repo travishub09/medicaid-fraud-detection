@@ -192,3 +192,16 @@ company grain).
 ### `company_tracker_direct_under_10m.csv` (`company_lead_tracker.py`)
 Same columns; the sub-$10 M billed-while-excluded / on-LEIE direct leads, preserved (highest precision,
 naturally below the threshold).
+
+### `company_leads_clean.csv` / `triage_priority.csv` / `probable_owner_backlog.csv` (`finalize_tracker.py`)
+Cleanup of the tracker for agent triage (no score changes). **Grain:** one row per company lead,
+triage columns first: `rank`, `company_name` (resolved — never a raw `npi:` id), `tier_label`,
+`specialty` (dominant-taxonomy description), `states`, `company_total_billing_size_proxy_not_case_value`,
+`reasons` (complete sentence), `review_flags` (`low_merge_confidence` / `possible_same_operator` /
+`genuine_fragmentation` / `name_unresolved`), `npi_count`, `company_anomaly_score`, `n_concept_signals`,
+`fragmentation_signal` (corrected: genuine distributed billing only — max single NPI < 50% of company),
+the `any_*` direct/ownership flags, `paid_after`, `related_entities` (likely same-operator companies),
+`merge_basis`, `merge_confidence`, `npi_list`.
+- `company_leads_clean.csv` — all leads.
+- `triage_priority.csv` — Direct + Company-anomaly tiers only (the queue agents start on).
+- `probable_owner_backlog.csv` — the probable-owner tier alone (noisy name-match backlog).
