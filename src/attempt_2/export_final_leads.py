@@ -53,8 +53,14 @@ def main() -> None:
     if v3 is None:
         raise FileNotFoundError(f"fraud_leads_v3.parquet not found under {det}")
     cc = _find("layer1_candidate_cases.parquet", det)   # optional enrichment
+    # provider_name (covers individuals + orgs) lives in provider_dim
+    data = PRECLEAN_DIR.parent
+    pdim = next((d / "provider_dim.parquet" for d in
+                 [data / "integrated", data, data / "features"]
+                 if (d / "provider_dim.parquet").exists()), None)
     print(f"Leads source : {v3}")
     print(f"Layer-1 cases: {cc if cc else '(none — using v3 Layer-1 fields)'}")
+    print(f"Name source  : {pdim if pdim else '(none — falling back to org_legal_name)'}")
 
     con = duckdb.connect()
     # taxonomy description crosswalk (small seed from clean_data; blank otherwise)
@@ -65,6 +71,10 @@ def main() -> None:
     cc_join = (f"LEFT JOIN (SELECT npi, disposition AS layer1_disposition, paid_after, "
                f"excl_months AS excl_date, excltype AS excl_type FROM read_parquet('{cc}')) cc "
                f"USING (npi)") if cc else ""
+    name_expr = ("COALESCE(NULLIF(nd.provider_name,''), NULLIF(l.org_legal_name,''))"
+                 if pdim else "l.org_legal_name")
+    name_join = (f"LEFT JOIN (SELECT npi, provider_name FROM read_parquet('{pdim}')) nd "
+                 f"USING (npi)") if pdim else ""
     cc_cols = ("cc.layer1_disposition, cc.paid_after, cc.excl_date, cc.excl_type"
                if cc else "NULL AS layer1_disposition, NULL AS paid_after, "
                           "NULL AS excl_date, NULL AS excl_type")
@@ -73,6 +83,7 @@ def main() -> None:
     base = f"""
         SELECT
             l.npi,
+            {name_expr}                                        AS provider_name,
             CASE l.entity_type WHEN '1' THEN 'individual' WHEN '2' THEN 'organization'
                  ELSE '(unknown)' END                         AS entity_type,
             l.primary_taxonomy,
@@ -95,6 +106,7 @@ def main() -> None:
             l.priority_rank, l.net_paid AS _net
         FROM read_parquet('{v3}') l
         LEFT JOIN tax_xwalk x ON l.primary_taxonomy = x.code
+        {name_join}
         {cc_join}
     """
 
