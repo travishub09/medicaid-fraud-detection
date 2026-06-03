@@ -67,6 +67,84 @@ def require(name: str, ok: bool, detail: str = "") -> None:
         raise AssertionError(f"ASSERTION FAILED: {name} — {detail}")
 
 
+def score_concepts(df: pd.DataFrame) -> pd.DataFrame:
+    """The EXACT v3 anomaly methodology, factored out so other grains (e.g. company)
+    reuse it verbatim. Input df must carry primary_taxonomy, entity_type, gross_paid,
+    service_volume, total_claim_lines, every feature in ALL_FEATS (incl rare_share_te)
+    and CONTEXT_FEAT (log_max_single_month). Adds: peer_basis, not_scored,
+    not_scored_reason, n_concept_signals, anomaly_score_v3, anomaly_lead_v3,
+    anomaly_contributing_concepts, iforest_score_secondary."""
+    # ---- volume gate + entity-aware peer with PROPER taxonomy fallback ----
+    has_tax = df["primary_taxonomy"] != ""
+    gate_ok = (df["service_volume"] >= SVC_MIN) & (df["total_claim_lines"] >= LINES_MIN)
+    scorable_base = (df["gross_paid"] > 0) & has_tax & gate_ok
+    df["te"] = df["primary_taxonomy"] + "|" + df["entity_type"]
+    size_te = df["te"].map(df.loc[scorable_base, "te"].value_counts()).fillna(0)
+    size_tax = df["primary_taxonomy"].map(
+        df.loc[scorable_base, "primary_taxonomy"].value_counts()).fillna(0)
+    use_te = size_te >= MIN_PEER
+    df["scorable"] = scorable_base & (use_te | (size_tax >= MIN_PEER))
+    df["peer_basis"] = np.where(use_te, "taxonomy_x_entity",
+                                np.where(size_tax >= MIN_PEER, "taxonomy_only", "too_small"))
+    df["not_scored"] = ~df["scorable"]
+    df["not_scored_reason"] = np.select(
+        [df["gross_paid"] <= 0, ~has_tax, ~gate_ok],
+        ["degenerate_zero_gross_paid", "missing_taxonomy", "low_volume_unreliable"],
+        default=np.where(df["scorable"], "", "peer_group_too_small(<30)"))
+
+    # ---- rank within te (cell>=30) else FULL-taxonomy baseline (fixes the v2 bug) ----
+    sc = df["scorable"]
+    pct = {}
+    for f in ALL_FEATS + [CONTEXT_FEAT]:
+        masked = df[f].where(sc)
+        p_te = masked.groupby([df["primary_taxonomy"], df["entity_type"]]).rank(pct=True)
+        p_tax = masked.groupby(df["primary_taxonomy"]).rank(pct=True)
+        pct[f] = np.where(use_te.to_numpy(), p_te.to_numpy(), p_tax.to_numpy())
+
+    # ---- collapse correlated features into independent concepts (max pct) ----
+    concept_pct = {}
+    for concept, feats in CONCEPTS.items():
+        stack = np.column_stack([pct[f] for f in feats])
+        with np.errstate(all="ignore"):
+            concept_pct[concept] = np.where(np.all(np.isnan(stack), axis=1), np.nan,
+                                            np.nanmax(stack, axis=1))
+    ctx_pct = pct[CONTEXT_FEAT]
+    cmat = np.column_stack([concept_pct[c] for c in CONCEPTS])
+    scn = sc.to_numpy()
+    exceed = cmat >= P99
+    n_sig = np.where(scn, np.nansum(exceed, axis=1), 0).astype(int)
+    with np.errstate(all="ignore"):
+        score = np.where(scn, np.nanmean(cmat, axis=1), np.nan)
+    df["n_concept_signals"] = n_sig
+    df["anomaly_score_v3"] = score
+    df["anomaly_lead_v3"] = scn & (n_sig >= MIN_CONCEPT_SIGNALS)
+
+    concept_names = list(CONCEPTS)
+    contrib = []
+    for i in range(len(df)):
+        if not scn[i]:
+            contrib.append([]); continue
+        items = [f"{concept_names[j]}(pct={cmat[i, j]:.3f})"
+                 for j in range(len(concept_names)) if exceed[i, j]]
+        if ctx_pct[i] >= P99:
+            items.append(f"{CONTEXT_FEAT}(pct={ctx_pct[i]:.3f},context)")
+        contrib.append(items)
+    df["anomaly_contributing_concepts"] = contrib
+
+    # ---- secondary cross-check: IsolationForest on the concept percentiles ----
+    try:
+        from sklearn.ensemble import IsolationForest
+        X = np.where(np.isnan(cmat), 0.5, cmat)
+        iso = np.full(len(df), np.nan)
+        iso[scn] = -IsolationForest(n_estimators=120, random_state=0, n_jobs=-1
+                                    ).fit(X[scn]).score_samples(X[scn])
+        df["iforest_score_secondary"] = iso
+    except Exception as e:
+        log(f"    (isolation forest skipped: {e})")
+        df["iforest_score_secondary"] = np.nan
+    return df
+
+
 def main() -> None:
     argparse.ArgumentParser(description=__doc__).parse_args()
     data = PRECLEAN_DIR.parent
@@ -118,76 +196,9 @@ def main() -> None:
     df["log_max_single_month"] = np.log1p(df["max_single_month_net_paid"].where(
         df["max_single_month_net_paid"] > 0))
 
-    # ---- Fix 1: volume gate + entity-aware peer with PROPER taxonomy fallback ----
-    has_tax = df["primary_taxonomy"] != ""
-    gate_ok = (df["service_volume"] >= SVC_MIN) & (df["total_claim_lines"] >= LINES_MIN)
-    scorable_base = (df["gross_paid"] > 0) & has_tax & gate_ok
-    df["te"] = df["primary_taxonomy"] + "|" + df["entity_type"]
-    size_te = df["te"].map(df.loc[scorable_base, "te"].value_counts()).fillna(0)
-    size_tax = df["primary_taxonomy"].map(
-        df.loc[scorable_base, "primary_taxonomy"].value_counts()).fillna(0)
-    use_te = size_te >= MIN_PEER
-    df["scorable"] = scorable_base & (use_te | (size_tax >= MIN_PEER))
-    df["peer_basis"] = np.where(use_te, "taxonomy_x_entity",
-                                np.where(size_tax >= MIN_PEER, "taxonomy_only", "too_small"))
-    df["not_scored"] = ~df["scorable"]
-    df["not_scored_reason"] = np.select(
-        [df["gross_paid"] <= 0, ~has_tax, ~gate_ok],
-        ["degenerate_zero_gross_paid", "missing_taxonomy", "low_volume_unreliable"],
-        default=np.where(df["scorable"], "", "peer_group_too_small(<30)"))
-
-    # ---- Fix to the v2 fallback bug: rank within te AND within taxonomy, pick per-row ----
-    log("Percentile-ranking (te baseline where cell>=30, else FULL-taxonomy baseline) …")
-    sc = df["scorable"]
-    pct = {}
-    for f in ALL_FEATS + [CONTEXT_FEAT]:
-        masked = df[f].where(sc)                                   # baseline = scorable only
-        p_te = masked.groupby([df["primary_taxonomy"], df["entity_type"]]).rank(pct=True)
-        p_tax = masked.groupby(df["primary_taxonomy"]).rank(pct=True)  # full taxonomy (fixes v2 bug)
-        pct[f] = np.where(use_te.to_numpy(), p_te.to_numpy(), p_tax.to_numpy())
-
-    # ---- Fix 2: collapse correlated features into independent concepts (max pct) ----
-    concept_pct = {}
-    for concept, feats in CONCEPTS.items():
-        stack = np.column_stack([pct[f] for f in feats])
-        with np.errstate(all="ignore"):
-            concept_pct[concept] = np.where(np.all(np.isnan(stack), axis=1), np.nan,
-                                            np.nanmax(stack, axis=1))
-    ctx_pct = pct[CONTEXT_FEAT]
-    cmat = np.column_stack([concept_pct[c] for c in CONCEPTS])      # (n, 5)
-    scn = sc.to_numpy()
-    exceed = cmat >= P99                                           # NaN>=x ⇒ False
-    n_sig = np.where(scn, np.nansum(exceed, axis=1), 0).astype(int)
-    with np.errstate(all="ignore"):
-        score = np.where(scn, np.nanmean(cmat, axis=1), np.nan)
-    df["n_concept_signals"] = n_sig
-    df["anomaly_score_v3"] = score
-    df["anomaly_lead_v3"] = scn & (n_sig >= MIN_CONCEPT_SIGNALS)
-
-    concept_names = list(CONCEPTS)
-    contrib = []
-    for i in range(len(df)):
-        if not scn[i]:
-            contrib.append([]); continue
-        items = [f"{concept_names[j]}(pct={cmat[i, j]:.3f})"
-                 for j in range(len(concept_names)) if exceed[i, j]]
-        if ctx_pct[i] >= P99:
-            items.append(f"{CONTEXT_FEAT}(pct={ctx_pct[i]:.3f},context)")
-        contrib.append(items)
-    df["anomaly_contributing_concepts"] = contrib
-
-    # ---- secondary cross-check: IsolationForest on the concept percentiles ----
-    log("Fitting IsolationForest on concept percentiles (secondary) …")
-    try:
-        from sklearn.ensemble import IsolationForest
-        X = np.where(np.isnan(cmat), 0.5, cmat)
-        iso = np.full(len(df), np.nan)
-        iso[scn] = -IsolationForest(n_estimators=120, random_state=0, n_jobs=-1
-                                    ).fit(X[scn]).score_samples(X[scn])
-        df["iforest_score_secondary"] = iso
-    except Exception as e:
-        log(f"    (isolation forest skipped: {e})")
-        df["iforest_score_secondary"] = np.nan
+    # ---- v3 anomaly scoring (volume gate + entity-aware peers + concepts) ----
+    log("Scoring with the v3 concept methodology …")
+    df = score_concepts(df)
 
     # ---- re-merge UNCHANGED Layer-1 / Layer-3 flags from v2 ----
     log("Re-merging unchanged Layer-1/Layer-3 flags from v2 …")

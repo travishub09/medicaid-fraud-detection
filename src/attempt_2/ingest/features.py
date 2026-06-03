@@ -65,6 +65,66 @@ def require(name: str, ok: bool, detail: str = "") -> None:
         raise AssertionError(f"ASSERTION FAILED: {name} — {detail}")
 
 
+def rate_features(con, base_rel: str, key: str):
+    """Compute the size-normalized rate features at an arbitrary grain (factored
+    from main so other grains — e.g. company — reuse the SAME formulas). `base_rel`
+    is a SQL relation exposing {key}, hcpcs_code, service_month, total_paid,
+    total_claim_lines, total_patients. Returns one row per `key` with: gross_paid,
+    net_paid, total_claim_lines, service_volume, n_distinct_hcpcs,
+    paid_per_claim_line, paid_per_patient_instance, lines_per_patient_instance,
+    top_hcpcs_paid_share, hcpcs_hhi, max_single_month_net_paid,
+    month_to_month_volatility, yoy_growth_net_paid. (Concentration over positive
+    dollars; temporal on MATURE months only — identical to main's NPI-grain SQL.)"""
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _rf_hcpcs AS
+        SELECT {key} AS k, hcpcs_code,
+               SUM(CASE WHEN total_paid>0 THEN total_paid ELSE 0 END) AS gross_code
+        FROM {base_rel} GROUP BY 1,2""")
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _rf_month AS
+        SELECT {key} AS k, TRY_CAST(service_month||'-01' AS DATE) AS month_date,
+               SUM(total_paid) AS net_paid
+        FROM {base_rel} GROUP BY 1,2""")
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _rf_core AS
+        SELECT {key} AS k,
+               SUM(CASE WHEN total_paid>0 THEN total_paid ELSE 0 END) AS gross_paid,
+               SUM(total_paid) AS net_paid,
+               SUM(total_claim_lines) AS total_claim_lines,
+               SUM(total_patients) AS service_volume,
+               COUNT(DISTINCT hcpcs_code) AS n_distinct_hcpcs
+        FROM {base_rel} GROUP BY 1""")
+    con.execute("""CREATE OR REPLACE TEMP TABLE _rf_conc AS
+        WITH tot AS (SELECT k, SUM(gross_code) g FROM _rf_hcpcs GROUP BY 1)
+        SELECT h.k, MAX(h.gross_code)/NULLIF(t.g,0) AS top_hcpcs_paid_share,
+               CASE WHEN t.g>0 THEN SUM(POWER(h.gross_code/t.g,2)) END AS hcpcs_hhi
+        FROM _rf_hcpcs h JOIN tot t USING(k) GROUP BY h.k, t.g""")
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _rf_temporal AS
+        SELECT k, max_single_month_net_paid, month_to_month_volatility,
+               recent12/NULLIF(prior12,0)-1 AS yoy_growth_net_paid
+        FROM (WITH b AS (SELECT MAX(month_date) dmax FROM _rf_month),
+              mat AS (SELECT m.* FROM _rf_month m, b
+                      WHERE m.month_date <= b.dmax - INTERVAL {MATURITY_MONTHS} MONTH)
+              SELECT k, MAX(net_paid) AS max_single_month_net_paid,
+                     CASE WHEN AVG(net_paid)<>0 THEN stddev_samp(net_paid)/abs(AVG(net_paid)) END
+                         AS month_to_month_volatility,
+                     SUM(net_paid) FILTER (
+                         WHERE month_date > (SELECT dmax FROM b) - INTERVAL {MATURITY_MONTHS+12} MONTH) AS recent12,
+                     SUM(net_paid) FILTER (
+                         WHERE month_date <= (SELECT dmax FROM b) - INTERVAL {MATURITY_MONTHS+12} MONTH
+                           AND month_date >  (SELECT dmax FROM b) - INTERVAL {MATURITY_MONTHS+24} MONTH) AS prior12
+              FROM mat GROUP BY k)""")
+    return con.execute("""
+        SELECT c.k AS key, c.gross_paid, c.net_paid, c.total_claim_lines, c.service_volume,
+               c.n_distinct_hcpcs,
+               c.net_paid/NULLIF(c.total_claim_lines,0)  AS paid_per_claim_line,
+               c.net_paid/NULLIF(c.service_volume,0)     AS paid_per_patient_instance,
+               c.total_claim_lines/NULLIF(c.service_volume,0) AS lines_per_patient_instance,
+               conc.top_hcpcs_paid_share, conc.hcpcs_hhi,
+               t.max_single_month_net_paid, t.month_to_month_volatility, t.yoy_growth_net_paid
+        FROM _rf_core c
+        LEFT JOIN _rf_conc conc USING(k)
+        LEFT JOIN _rf_temporal t USING(k)
+    """).df()
+
+
 def _n(con, table: str) -> int:
     return con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
 
