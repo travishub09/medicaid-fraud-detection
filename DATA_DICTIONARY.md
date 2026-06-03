@@ -1,158 +1,157 @@
-# Data Dictionary
+# Data Dictionary (attempt_2)
 
-This describes every dataset the pipeline reads and produces, in the order they flow through the
-three stages. "Grain" means *what one row represents*.
+Every dataset the attempt_2 pipeline reads and produces, in flow order. **Grain** = what one row
+represents. All identifier columns (NPI, PAC ID, enrollment ID, ZIP) are kept as **strings**.
 
----
-
-## Inputs (Stage 1 reads these)
-
-### Medicaid provider spending
-Source: HHS/CMS Medicaid provider-spending extract (Parquet or CSV). **Grain:** one row per
-provider, procedure code, and month.
-
-| Field | Description |
-|-------|-------------|
-| `npi` | National Provider Identifier (10-digit) of the billing provider |
-| `hcpcs_code` | Procedure code billed (HCPCS/CPT) |
-| `service_month` | Month of service (`YYYY-MM`) |
-| `total_beneficiaries` | Unique patients billed |
-| `total_claims` | Number of claims |
-| `total_paid_amount` | Dollars paid |
-
-### NPPES provider registry
-Source: CMS NPPES public file (`npidata_pfile.csv`). **Grain:** one row per provider. Only a handful
-of its 300+ columns are used:
-
-| Field | Description |
-|-------|-------------|
-| `npi` | National Provider Identifier |
-| `entity_type` | Individual vs. organization |
-| `provider_name` | Organization name, or "LAST, FIRST" for individuals |
-| `practice_state` | Provider's practice-location state |
-| `taxonomy_code` | Specialty code (used to define peer groups) |
-| `npi_registration_date` | When the provider's NPI was issued |
-| `npi_deactivation_date` | When the NPI was deactivated (if ever) |
-
-### OIG LEIE exclusion list
-Source: OIG List of Excluded Individuals/Entities. **Grain:** one row per excluded provider. This is
-the "known bad" reference used only to *measure* the model — never to train it.
-
-| Field | Description |
-|-------|-------------|
-| `npi` | NPI of the excluded provider |
-| `excl_type` | Type/reason of exclusion |
-| `excl_date` | Date the exclusion took effect |
-| `reinstate_date` | Date reinstated (if applicable) |
+> The original attempt_1 tables (`provider_monthly`, `fraud_features`, `provider_rankings`, …) are
+> superseded; see git history if needed.
 
 ---
 
-## Intermediate tables (Stage 1 writes, Stage 2 reads)
+## 1. Raw inputs (`~/Desktop/data/preclean/`)
 
-All three are restricted to providers paid more than the `--min-total-paid` threshold (default $10M).
-
-### `provider_monthly.parquet`
-**Grain:** one row per provider, procedure code, and month. The cleaned, de-duplicated spending table.
+### `Spending.csv` — Medicaid provider spending (the fact table)
+**Grain:** one row per billing NPI × servicing NPI × HCPCS × month.
 
 | Field | Description |
 |-------|-------------|
-| `npi` | Provider NPI |
-| `hcpcs_code` | Procedure code |
-| `service_month` | Month of service (`YYYY-MM`) |
-| `total_claims` | Claims that month |
-| `total_beneficiaries` | Patients that month |
-| `total_paid_amount` | Dollars paid that month |
+| `BILLING_PROVIDER_NPI_NUM` | NPI that was paid — **the only key used to attribute dollars** |
+| `SERVICING_PROVIDER_NPI_NUM` | NPI that performed the service — attribute only, never used for attribution |
+| `HCPCS_CODE` | Procedure code billed |
+| `CLAIM_FROM_MONTH` | Month of service (`YYYY-MM`) |
+| `TOTAL_PATIENTS` | Distinct patients **within that row** (never summed as distinct patients) |
+| `TOTAL_CLAIM_LINES` | Claim lines |
+| `TOTAL_PAID` | Dollars paid |
 
-### `provider_annual.parquet`
-**Grain:** one row per provider per year. Used to compute the year-over-year growth signal (T7).
+### `NPPES.csv` — national provider registry
+**Grain:** one row per NPI (330 columns; only ~12 read): NPI, entity type, legal/last/first name,
+primary taxonomy, practice address, deactivation/reactivation dates.
 
-| Field | Description |
-|-------|-------------|
-| `npi` | Provider NPI |
-| `service_year` | Year (`YYYY`) |
-| `total_claims` | Claims that year |
-| `total_beneficiaries` | Patients that year |
-| `total_paid_amount` | Dollars paid that year |
+### `PECOS.csv` — Medicare enrollment base
+**Grain:** one row per NPI × enrollment. Carries `NPI`, `PECOS_ASCT_CNTL_ID` (PAC ID),
+`ENRLMT_ID`, provider type, state, names — the **crosswalk** that ties owners/facilities to NPIs.
 
-### `providers_clean.csv`
-**Grain:** one row per provider. Provider metadata joined from NPPES and LEIE, plus a few derived flags.
+### `Caught.csv` — OIG LEIE exclusion list
+**Grain:** one row per exclusion record (a provider may have several). Columns include `NPI`,
+`EXCLTYPE`, `EXCLDATE`, `REINDATE`, `WAIVERDATE`, `WVRSTATE`, and name fields.
 
-| Field | Description |
-|-------|-------------|
-| `npi` | Provider NPI |
-| `provider_name` | Provider or organization name |
-| `entity_type` | Individual vs. organization |
-| `practice_state` | Practice-location state |
-| `taxonomy_code` | Specialty code (defines peer groups) |
-| `total_paid` | Lifetime Medicaid dollars paid |
-| `n_distinct_hcpcs` | Distinct procedure codes ever billed |
-| `n_active_months` | Distinct months with billing |
-| `first_billing_month` / `last_billing_month` | First and last months seen in the data |
-| `npi_registration_date` / `npi_deactivation_date` | NPI issue / deactivation dates |
-| `in_leie` | 1 if the provider appears on the OIG exclusion list |
-| `excl_date` / `reinstate_date` / `excl_type` | Exclusion details (if excluded) |
-| `left_censored` | 1 if the provider was already billing on the first day of the data (so its "onset" and growth signals can't be measured) |
+### `owners/*.csv` — CMS "All-Owners" (FQHC / HHA / Hospice / Hospital / Nursing)
+**Grain:** one row per facility × owner. Facilities keyed by `ENROLLMENT ID` / `ASSOCIATE ID`;
+owners by `ASSOCIATE ID - OWNER`, with owner type/role, name, address, and ownership-type flags.
 
 ---
 
-## Feature table (Stage 2 writes, Stage 3 reads)
+## 2. Integration outputs (`integrate.py` → `~/Desktop/data/integrated/`)
 
-### `fraud_features.csv`
-**Grain:** one row per provider per year. The 15 signals fed to the model, plus three reference columns
-that are **not** used for scoring.
-
-**The 15 model signals** (see the README for plain-English meanings):
-`avg_claims_per_beneficiary`, `avg_paid_per_claim`, `paid_vs_peer_ratio`, `claims_vs_peer_ratio`,
-`n_distinct_hcpcs_vs_peer`, `hcpcs_concentration`, `billing_on_deactivated_npi`,
-`npi_age_days_at_first_claim`, `mom_paid_growth_volatility` (T1), `cv_monthly_paid` (T2),
-`peak_to_median_paid` (T3), `onset_ramp_slope` (T4), `post_peak_dropoff` (T5),
-`new_hcpcs_fraction` (T6), `excess_yoy_growth` (T7).
-
-**Reference-only columns (excluded from scoring):**
+### `provider_dim.parquet` — the provider dimension
+**Grain:** exactly one row per canonical NPI (asserted unique).
 
 | Field | Description |
 |-------|-------------|
-| `total_paid` | Dollars paid that year. Kept for triage sorting, but deliberately left out of the model so size alone doesn't drive the score |
-| `is_excluded` | 1 if the provider was on the OIG exclusion list during that year. Used only to score the model's accuracy after the fact |
-| `taxonomy_code` | Specialty code, carried through for reference |
+| `npi` | Canonical 10-digit NPI (Luhn-validated) |
+| `entity_type` | 1 = individual, 2 = organization |
+| `org_legal_name`, `provider_name`, `name_key` | Legal/display name + normalized key |
+| `taxonomy_code` | Primary taxonomy (peer-group key) |
+| `addr_line1/city/state/zip`, `addr_key` | Practice address + normalized key |
+| `deactivation_date`, `reactivation_date`, `is_active` | NPI lifecycle |
+| `provider_type_desc`, `pecos_state` | Enriched many-to-one from PECOS |
+
+### `spending_fact.parquet` — cleaned, attributed spending
+**Grain:** one row per spending record (row count and `SUM(total_paid)` identical to raw — proof of
+zero fan-out / zero dropped dollars). Adds `billing_npi` (canonical), `provider_matched`, the
+`provider_dim` attributes, and `active_at_claim`.
+
+### Other integration tables
+| Table | Grain / purpose |
+|-------|-----------------|
+| `npi_xwalk.parquet` | NPI ↔ PAC ↔ enrollment (deduped; never joined to spending) |
+| `pecos_provider.parquet` | one row per NPI (deterministic enrollment collapse) |
+| `owner_edges.parquet` | facility → owner edges; facility NPI resolved via enrollment id |
+| `exclusions.parquet` | cleaned LEIE: `npi`, `excl_date`, `reinstate_date`, `excl_type`, `name_key` |
+| `facility_owner_exclusion_flags.parquet` | per facility NPI: excluded-owner counts by tier (high/probable) |
+| `npi_quarantine.parquet` | identifiers that failed Luhn/format (source + raw value + reason) |
 
 ---
 
-## Outputs (Stage 3 writes)
+## 3. Corruption audit (`audit_corruption.py`)
 
-### `provider_rankings.csv` — the investigation shortlist
-**Grain:** one row per provider per year, ranked most-to-least unusual. Top 200 by default.
+| Table | Grain / purpose |
+|-------|-----------------|
+| `spending_corruption_quarantine.parquet` | rows with `TOTAL_PAID > $500M` (physically impossible) + `reason`, `hcpcs_malformed` |
+| `spending_aggregate_billing.parquet` | legitimate non-provider/aggregate billing (blank-NPI, plausible) |
+
+Rule: `$500M`/row cleanly separates the legitimate distribution (matched max ≈ $119M, largest
+aggregate ≈ $470M) from corruption (smallest corrupt ≈ $505M). Real total after quarantine ≈ $1.42 T.
+
+---
+
+## 4. Feature base (`features.py` → `~/Desktop/data/features/`)
+
+### `spending_provider_base.parquet`
+**Grain:** the clean base — `spending_fact` where `provider_matched & total_paid ≤ $500M`
+(≈230 M rows / $1.10 T; reconciled to the audit). All features read **only** this.
+
+### `provider_features.parquet` — the feature table
+**Grain:** exactly one row per billing NPI (617,062). Selected columns:
+
+| Group | Fields |
+|-------|--------|
+| Volume / payment | `gross_paid`, `net_paid`, `reversal_amount`, `reversal_ratio`, `total_claim_lines`, `service_volume` (= Σ`TOTAL_PATIENTS`, a volume **proxy** — not distinct patients), `n_distinct_hcpcs`, `n_active_months`, `tenure_months` |
+| Ratios | `paid_per_claim_line`, `paid_per_patient_instance`, `lines_per_patient_instance` |
+| Concentration | `top_hcpcs_paid_share`, `hcpcs_hhi` |
+| Peer-relative | robust z + percentile for net_paid / paid-per-claim / lines-per-patient / paid-per-patient, vs taxonomy and taxonomy×state, + `peer_group_size_*`, `peer_group_too_small_*` |
+| Temporal (mature months only) | `yoy_growth_net_paid`, `month_to_month_volatility`, `max_single_month_net_paid`, `new_biller_surge_onset` |
+| Specialty proxy | `rare_for_taxonomy_paid_share` |
+| Linkage | `provider_on_leie`, `facility_has_excluded_owner_high/_probable`, `excluded_owner_role` |
+| Carried dims | `entity_type`, `primary_taxonomy`, `practice_state`, `org_legal_name` |
+
+`provider_month.parquet` / `provider_hcpcs.parquet` are the supporting intermediates.
+
+---
+
+## 5. Detection outputs (`detect.py`, `refine_layer2*.py` → `~/Desktop/data/detection/`)
+
+### `fraud_leads.parquet` / `fraud_leads_v2.parquet` / `fraud_leads_v3.parquet`
+**Grain:** one row per billing NPI. `v3` is the latest. Columns:
 
 | Field | Description |
 |-------|-------------|
-| `rank` | Rank by anomaly score (1 = most unusual) |
-| `npi` | Provider NPI |
-| `provider_name` | Provider name (if names file supplied) |
-| `year` | Service year |
-| `anomaly_score` | How unusual the provider-year is, 0 (normal) to 1 (highly unusual) |
-| `is_anomaly` | 1 if the score crosses the anomaly threshold |
-| `total_paid` | Dollars paid that year |
-| `is_excluded` | 1 if the provider was on the OIG exclusion list that year |
-| `taxonomy_code` | Specialty code |
-| `top_driver` | The single signal that contributed most to the score |
-| `description` | Plain-English summary of the top reasons the provider was flagged |
-| *(the 15 signals)* | The underlying signal values for this provider-year |
+| `priority_tier` / `priority_rank` | `1_L1_billed_after_exclusion` > `2_L1_implausible_rate` > `3_L1_excluded_after_billing` > `4_L2_anomaly` > `5_L3_probable_owner` > `6_none` |
+| `provider_on_leie`, `billed_after_exclusion`, `excluded_after_billing`, `rule_reasons` | Layer-1 flags + reasons |
+| `anomaly_score_v3`, `n_concept_signals`, `anomaly_contributing_concepts` | Layer-2 (v3): mean concept percentile; count of concepts ≥ in-group P99; which concepts fired |
+| `iforest_score_secondary` | Isolation Forest cross-check (secondary) |
+| `peer_basis`, `not_scored`, `not_scored_reason` | how/whether scored (`low_volume_unreliable`, `degenerate_zero_gross_paid`, `missing_taxonomy`, `peer_group_too_small`) |
+| `layer3_probable_owner`, `facility_excluded_owner_n_probable`, `excluded_owner_role` | Layer-3 ownership track |
+| `entity_type`, `primary_taxonomy`, `practice_state`, `net_paid`, `gross_paid` | context |
 
-### `provider_summary.csv` — the triage rollup (optional)
-**Grain:** one row per provider, ranked by worst year. Top 200 by default. Produced only when
-`--provider-summary` is supplied.
+Layer-2 concepts (v3): `concentration`, `payment_intensity`, `service_intensity`,
+`specialty_mismatch`, `temporal` — correlated features collapse to one so a single fact can't
+double-count.
 
-| Field | Description |
-|-------|-------------|
-| `rank` | Rank by `max_anomaly_score` |
-| `npi` | Provider NPI |
-| `provider_name` | Provider name |
-| `max_anomaly_score` | The provider's most unusual single year |
-| `mean_anomaly_score` | Average score across the provider's years |
-| `worst_year` | The year with the highest score |
-| `worst_year_top_driver` | The leading signal in that worst year |
-| `n_years` | How many years the provider appears in the data |
-| `n_years_flagged` | How many of those years crossed the anomaly threshold |
-| `total_paid_all_years` | Lifetime Medicaid dollars — use this to prioritize by exposure |
-| `ever_excluded` | 1 if the provider was on the OIG exclusion list in any year |
-| `taxonomy_code` | Specialty code |
+### `layer1_candidate_cases.parquet` (`verify_layer1.py`)
+**Grain:** one row per LEIE-matched billing NPI (578). `disposition` (`QUALIFIED / AMBIGUOUS /
+DISQUALIFIED / CONTEXT_ONLY`), `paid_after`, `n_clean_after_months`, `claim_lines_after`,
+`top_hcpcs_after`, `excl_months`, `reindates`, `waiver_states`, `excltype` + `fraud_related_excltype`,
+`name_match`, NPPES + LEIE names.
+
+---
+
+## 6. Final CSVs (`export_final_leads.py`)
+
+### `final_leads_over_10m.csv`
+**Grain:** one row per NPI; every lead (tiers 1–5) with billing ≥ threshold, sorted tier then dollars.
+
+| Field | Notes |
+|-------|-------|
+| `npi` | written as TEXT (quoted) |
+| `provider_name` | display name (orgs + individuals) |
+| `entity_type`, `primary_taxonomy`, `taxonomy_description`, `state`, `priority_tier` | |
+| `total_billing_size_proxy_not_case_value` | = `net_paid` — a **size proxy, not a case value** |
+| Layer-1 | `provider_on_leie`, `billed_after_exclusion`, `layer1_disposition`, `paid_after`, `excl_date`, `excl_type` |
+| Layer-2 | `anomaly_score_v3`, `n_concept_signals`, `contributing_concepts` |
+| Layer-3 | `probable_excluded_owner` |
+| `reasons` | one-line summary of why the lead surfaced |
+
+### `high_precision_excluded_leads.csv`
+Same columns; the billed-while-excluded leads (tier 1 + any `QUALIFIED` disposition), kept regardless
+of dollar.

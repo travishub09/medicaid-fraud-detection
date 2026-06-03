@@ -1,175 +1,160 @@
 # Medicaid Fraud Detection
 
-A data pipeline that surfaces high-dollar Medicaid providers whose billing patterns look
-unusual compared to their peers, and hands investigators a ranked shortlist to review.
+A pipeline that integrates national Medicaid + OIG data, isolates the trustworthy spending,
+and hands investigators a **ranked, explainable list of provider leads** to review.
 
 ## What this is (and what it isn't)
 
 Medicaid fraud costs the U.S. healthcare system tens of billions of dollars a year, but
-investigators can only look at so many providers. This tool reads national Medicaid
-provider-spending data and scores each provider on how far its billing behavior strays from
-others in the same specialty.
+investigators can only examine so many providers. This tool reads national Medicaid
+provider-spending data, attributes every dollar to the *correct* billing provider, and surfaces
+the providers most worth a closer look.
 
-It is **anomaly detection, not an accusation.** A high score means "this provider bills
-differently from its peers and is worth a closer look" — not "this provider committed fraud."
-The output is a prioritized worklist for human reviewers. Nothing here decides a case on its own.
+It produces **leads for human review, never fraud or violation determinations.** Every lead
+carries the exact signals that surfaced it, and the strongest leads are expressed as factual
+*dispositions* (e.g. "billed after the provider was excluded") — not accusations.
 
-## How it works — three stages
+> **Note on layout.** `src/attempt_1/` is the original three-stage anomaly pipeline
+> (`clean_data → build_features → analyze_anomalies`, Isolation Forest on 15 signals). It has been
+> **superseded** by `src/attempt_2/`, which this README describes. attempt_1 is kept for reference.
 
-The pipeline runs as three scripts, each feeding the next.
+---
 
-### Stage 1 — Clean and filter the data (`clean_data.py`)
-Pulls together three public data sources:
-- **Medicaid provider spending** — how much each provider was paid, for which procedures, by month.
-- **NPPES** — the national provider registry (names, specialty, state, when the provider's ID was issued or deactivated).
-- **OIG LEIE** — the official list of providers excluded from federal healthcare programs (our "known bad" reference).
+## Why attempt_2 exists — the headline finding
 
-It then applies one important filter: **only providers paid more than $10 million in total
-Medicaid dollars are kept.** This keeps the analysis focused on cases where real money is at
-stake, and makes the peer comparisons fair — big billers are compared against other big billers,
-not against a tiny clinic. (The $10M cutoff is adjustable; see *The dollar threshold* below.)
+The raw spending file totals **$21.8 trillion** — which is impossible. attempt_2's first job was to
+find out why, and the answer reshaped everything downstream:
 
-### Stage 2 — Build the "fraud signals" (`build_features.py`)
-For every provider, for every year, the pipeline computes **15 signals** that describe *how*
-the provider bills — not *how much*. Raw dollar totals are deliberately left out of the scoring,
-so a large, legitimate hospital isn't flagged just for being large. Instead the signals capture
-things like "charges far more per claim than peers" or "billing spiked suddenly then collapsed."
-The 15 signals are explained in the next section.
+- Only **$1.10 trillion (5%)** of the dollars are attributable to a real provider (NPPES) NPI.
+- **95% of the dollars sit on ~7.9 M rows with a blank billing NPI** — embedded total/summary rows
+  ingested as if they were claims.
+- A single corrupt code (`HCPCS '20'`) carries **$20.3 trillion across 34 rows** — fabricated
+  `TOTAL_PAID` values like `$7,469,333,333,258`.
 
-### Stage 3 — Score, explain, and rank (`analyze_anomalies.py`)
-An **Isolation Forest** model learns what "normal" billing looks like across all providers, then
-gives each provider-year an **anomaly score from 0 (normal) to 1 (highly unusual).** For every
-flagged provider, a technique called **DIFFI** identifies *which signals* drove the score, so the
-output explains itself in plain language (e.g. "pays far more per claim than peers; billed after
-the provider ID was deactivated"). Results are ranked, rolled up to one row per provider for easy
-triage, and checked against the known OIG exclusion list to measure how well the model is working.
+So the real, analyzable Medicaid universe is **$1.10 T across ~230 M claim rows / 617,062 providers**.
+Everything is built on that clean base; the corruption is quarantined, not deleted.
 
-## The 15 fraud signals, in plain English
+---
 
-**Billing-level — how this provider bills in absolute terms**
+## The pipeline
 
-| Signal | What it means |
-|--------|----------------|
-| `avg_claims_per_beneficiary` | How many claims the provider files per patient |
-| `avg_paid_per_claim` | Average dollars paid per claim |
-| `hcpcs_concentration` | How concentrated billing is in just a few procedure codes |
-| `billing_on_deactivated_npi` | Whether the provider billed *after* its ID was deactivated (a red flag) |
-| `npi_age_days_at_first_claim` | How new the provider's ID was when billing began (brand-new IDs that immediately bill big are unusual) |
+Each script is read-only on its inputs, idempotent, and uses **runtime assertions that hard-fail the
+build** rather than warnings. DuckDB does the heavy joins/aggregation; Python orchestrates and writes
+a Markdown report next to each stage's data outputs.
 
-**Versus peers — how this provider compares to others in the same specialty**
+| # | Script | What it does | Key outputs |
+|---|--------|--------------|-------------|
+| 1 | `clean_data.py` | Cleans all five raw sources into typed Parquet (DuckDB; NPI Luhn canonicalization; CSV→Parquet conversion) | cleaned per-source Parquet |
+| 2 | `integrate.py` | **Integration funnel** — attributes spending to the correct entity with **zero fan-out**, enforced by assertions (billing NPI only; every fact→dim join is many-to-one and asserts unchanged row count + dollar sum) | `provider_dim`, `npi_xwalk`, `pecos_provider`, `spending_fact`, `owner_edges`, `exclusions`, `facility_owner_exclusion_flags`, `npi_quarantine`, `QA_REPORT.md` |
+| 3 | `diagnose_coverage.py` | Read-only diagnostic of the row-vs-dollar coverage gap | `COVERAGE_DIAGNOSTIC.md` |
+| 4 | `audit_corruption.py` | Root-causes the fake $21.8 T and **quarantines corruption** (per-row `TOTAL_PAID > $500M` = physically impossible; justified from the legit distribution) | `spending_corruption_quarantine`, corrected `spending_aggregate_billing`, `CORRUPTION_AUDIT.md` |
+| 5 | `features.py` | Materializes the **clean provider base** (`provider_matched & total_paid ≤ $500M`, reconciled to the audit) and builds **`provider_features`** — one row per billing NPI | `spending_provider_base`, `provider_features`, `provider_month`, `provider_hcpcs`, `FEATURES_REPORT.md` |
+| 6 | `detect.py` | **Three-layer explainable lead prioritization** (see below) | `fraud_leads`, `layer1_rule_hits`, `layer3_ownership_leads`, `DETECTION_REPORT.md` |
+| 7 | `verify_layer1.py` | Turns the billed-while-excluded leads into **candidate cases** using the raw LEIE waiver/reinstatement data + strict-month timing | `layer1_candidate_cases`, `LAYER1_VERIFICATION_REPORT.md` |
+| 8 | `refine_layer2.py` (v2) | Rebuilds Layer-2 scoring: entity-type-aware peers + degeneracy-safe **percentile-rank** normalization | `fraud_leads_v2`, `LAYER2_REFINEMENT_REPORT.md` |
+| 9 | `refine_layer2_v3.py` | Adds a **claim-volume reliability gate** and **de-correlated concept** scoring | `fraud_leads_v3`, `LAYER2_V3_REPORT.md` |
+| 10 | `export_csv.py` / `export_final_leads.py` | Render leads as spreadsheet-friendly CSVs (lists flattened, names joined, NPI as text) | `*.csv` |
 
-| Signal | What it means |
-|--------|----------------|
-| `paid_vs_peer_ratio` | Dollars per claim vs. same-specialty peers (above 1 = pricier than peers) |
-| `claims_vs_peer_ratio` | Claims per patient vs. peers (above 1 = more claims per patient than peers) |
-| `n_distinct_hcpcs_vs_peer` | How many different procedure codes the provider bills vs. peers |
+### The three detection layers (`detect.py`, refined in 8–9)
 
-**Timing and trend — how the provider's billing changes over time (T1–T7)**
+Leads are **not** a single blended black-box score — three independent layers, each keeping its
+signals visible, tiered **Layer-1 > Layer-2 > Layer-3**:
 
-| Signal | What it means |
-|--------|----------------|
-| `mom_paid_growth_volatility` (T1) | How erratic the month-to-month payments are |
-| `cv_monthly_paid` (T2) | How uneven monthly payment volume is |
-| `peak_to_median_paid` (T3) | How much the biggest month spiked above a typical month |
-| `onset_ramp_slope` (T4) | How fast billing ramped up when the provider first started |
-| `post_peak_dropoff` (T5) | How sharply billing fell off after hitting its peak |
-| `new_hcpcs_fraction` (T6) | What share of the year's procedure codes were brand-new for this provider |
-| `excess_yoy_growth` (T7) | How much the provider's year-over-year growth outran its peers' growth |
+- **Layer 1 — deterministic, highest precision.**
+  - *Billed-while-excluded:* the provider's NPI is on the OIG LEIE and it billed on/after its
+    exclusion date. `verify_layer1.py` splits this into `billed_after_exclusion` (strictly after,
+    very high precision) vs `same_month` (ambiguous) vs `excluded_after_billing` (billing predates
+    exclusion), honoring waiver/reinstatement → dispositions `QUALIFIED / AMBIGUOUS / DISQUALIFIED /
+    CONTEXT_ONLY`.
+  - *Physically-implausible rates:* e.g. `lines_per_patient_instance > 100`, or
+    `paid_per_claim_line > $50,000` (thresholds justified from the distribution).
+- **Layer 2 — anomaly on size-normalized features vs taxonomy peers.** Robust, entity-type-aware
+  peer comparison using **percentile ranks** (bounded, degeneracy-safe), a **volume reliability
+  gate** (ratios from too few claims are not scored), and **de-correlated concepts** so one fact
+  can't count twice. Raw dollars are never a primary driver. Isolation Forest is a *secondary*
+  cross-check only.
+- **Layer 3 — low-confidence ownership track.** Facilities whose probable owner matches an excluded
+  party (name-key match). Kept **separate**, never blended into the score.
 
-No single signal proves anything. The model looks at all 15 together and flags providers that are
-unusual on several at once.
+---
 
-## What comes out
+## Outputs you actually use
 
-The pipeline produces two result files (full column definitions in `DATA_DICTIONARY.md`):
+Everything lands under `~/Desktop/data/detection/` (configurable):
 
-**`provider_rankings.csv` — the investigation shortlist (one row per provider per year).**
-Ranked from most to least unusual. Each row carries the anomaly score, the total dollars paid that
-year, a plain-English `description` of *why* it was flagged, and whether the provider was on the OIG
-exclusion list. This is where a reviewer starts: the worst-scoring provider-years, with the reasons
-spelled out. By default the top 200 are saved.
+- **`final_leads_over_10m.csv`** — every lead (Layer 1–3) with total billing ≥ $10 M, one row per
+  NPI, sorted by tier then dollars, with `provider_name`, the contributing signals, and a `reasons`
+  summary. `net_paid` is labelled `total_billing_size_proxy_not_case_value` (a size proxy, *not* an
+  adjudicated case value).
+- **`high_precision_excluded_leads.csv`** — the billed-while-excluded leads (kept regardless of
+  dollar, since they're the highest-precision and naturally small).
+- `fraud_leads_v3.parquet` — the full tiered table, one row per billing NPI.
 
-**`provider_summary.csv` — one row per provider, for triage (optional).**
-Collapses a provider's multiple years into a single line: its worst year, its average score, how many
-years were flagged, and **its total Medicaid dollars across all years.** This lets a reviewer
-re-prioritize by what matters to them — focus on the biggest-dollar exposure, or on repeat offenders
-flagged year after year. By default the top 200 providers are saved.
+Work the list **top-down by tier**: Layer-1 rows first (deterministic), then Layer-2 (ranked
+anomalies), then the lower-confidence Layer-3 ownership track.
 
-**How we know it's working:** the pipeline compares its top-ranked providers against the OIG's known
-exclusion list and reports **precision and "lift"** — how much more likely a top-ranked provider is to
-be a known excluded provider than a randomly chosen one. Higher lift means the ranking is doing real work.
+---
 
-## The dollar threshold
+## Design principles (enforced in code)
 
-Medicaid spending is extremely top-heavy: a large share of providers bill only a few thousand dollars,
-while a small fraction account for most of the money. Without a floor, the "most unusual" list fills up
-with tiny providers whose ratios look weird simply because the numbers are small (e.g. a site that billed
-a few hundred dollars). To avoid that, providers under **$10 million** in lifetime Medicaid payments are
-filtered out up front in Stage 1.
+- **Correct attribution, zero fan-out.** Spending is attributed only via the **billing** NPI; every
+  fact→dimension join is many-to-one and asserts the row count *and* `SUM(TOTAL_PAID)` are unchanged.
+- **Identifiers are strings** everywhere (NPI, PAC ID, enrollment ID, ZIP) — leading zeros preserved,
+  never coerced to numbers.
+- **Raw dollars are never a primary anomaly driver** — features are size-normalized; magnitude is
+  context only.
+- **Quarantine, never delete** — corrupt rows and Luhn-failing NPIs are preserved in their own tables
+  with a reason.
+- **Explainability is mandatory** — every lead exposes the exact signals/concepts that surfaced it.
+- **Assertions stop the build** on any fan-out, uniqueness, or reconciliation failure.
 
-That $10M figure is the current default and is set with `--min-total-paid`. The right cutoff — the point
-where a provider is big enough to be worth investigating — is a policy decision, so it's left adjustable.
+---
 
-## Project structure
+## Data layout
+
+Raw inputs and all derived outputs live **outside the repo** (HIPAA; `data/` is gitignored). The
+scripts default to `~/Desktop/data/`:
 
 ```
-medicaid-fraud-detection/
-├── data/
-│   ├── raw/             # Source extracts (spending, NPPES, LEIE) — never committed
-│   ├── processed/       # Cleaned tables, features, and ranked output
-│   └── reference/       # Static lookups
-├── src/
-│   ├── clean_data.py        # Stage 1 — ingest & filter
-│   ├── build_features.py    # Stage 2 — build the 15 signals
-│   └── analyze_anomalies.py # Stage 3 — score, explain, rank
-├── tests/
-├── requirements.txt
-├── DATA_DICTIONARY.md
-└── README.md
+~/Desktop/data/
+├── preclean/         # raw extracts: Spending.csv, NPPES.csv, PECOS.csv, Caught.csv (LEIE), owners/*.csv
+├── interim/          # CSV→Parquet conversions
+├── integrated/       # integrate.py outputs + QA/diagnostic/audit reports
+│   └── attempt_2/    # features.py outputs (provider_features, spending_provider_base, …)
+├── features/         # working copy of the feature tables (detection reads from here)
+└── detection/        # fraud_leads*, layer1_candidate_cases, final CSVs + layer reports
 ```
+
+Most scripts take `--in-dir` / `--processed` / `--out-dir` flags to override locations.
 
 ## Setup
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Running the pipeline
+## Running the pipeline (in order)
 
 ```bash
-# Stage 1 — clean, join metadata, and filter to providers paid > $10M
-python -m src.clean_data \
-  --spending data/raw/medicaid-provider-spending.parquet \
-  --nppes    data/raw/nppes/npidata_pfile.csv \
-  --leie     data/raw/leie.csv \
-  --output   data/processed
-# (use --min-total-paid to change the $10M cutoff)
-
-# Stage 2 — build the per-(provider, year) fraud signals
-python -m src.build_features \
-  --monthly   data/processed/provider_monthly.parquet \
-  --providers data/processed/providers_clean.csv \
-  --annual    data/processed/provider_annual.parquet \
-  --output    data/processed/fraud_features.csv
-
-# Stage 3 — score, rank, and roll up to a triage list
-python -m src.analyze_anomalies data/processed/fraud_features.csv \
-  --names            data/processed/providers_clean.csv \
-  --output           data/processed/provider_rankings.csv \
-  --provider-summary data/processed/provider_summary.csv
-
-# Run tests
-pytest tests/
+python -m src.attempt_2.integrate            # 2. integrate + QA (zero-fan-out attribution)
+python -m src.attempt_2.diagnose_coverage    # 3. coverage diagnostic
+python -m src.attempt_2.audit_corruption     # 4. root-cause + quarantine corruption
+python -m src.attempt_2.features             # 5. clean base + provider_features
+python -m src.attempt_2.detect               # 6. three-layer leads
+python -m src.attempt_2.verify_layer1        # 7. verify billed-while-excluded → cases
+python -m src.attempt_2.refine_layer2        # 8. Layer-2 v2 (entity-aware percentile)
+python -m src.attempt_2.refine_layer2_v3     # 9. Layer-2 v3 (volume gate + concepts)
+python -m src.attempt_2.export_final_leads --min-net-paid 10000000   # 10. final CSVs
 ```
 
-Useful Stage 3 options: `--contamination` (expected share of anomalies, default 0.05),
-`--n-estimators` (number of trees, default 300), and `--save-top` / `--summary-top` (how many rows
-to write, default 200 each; set to 0 to save everything).
+(`clean_data.py` is step 1; `integrate.py` re-converts the raw CSVs itself, so the integration
+step can be run directly on the `preclean/` extracts.)
+
+See `DATA_DICTIONARY.md` for every table, its grain, and its columns.
 
 ## Compliance & privacy
 
-All data used in this pipeline is subject to HIPAA. Raw data files are excluded from version control
-via `.gitignore` and must never be committed. De-identification rules must be applied before any data
-leaves the secure environment.
+All data here is subject to HIPAA. Raw and derived data are excluded from version control via
+`.gitignore` and must never be committed. These outputs are **investigative leads for human review**,
+not determinations of fraud.
