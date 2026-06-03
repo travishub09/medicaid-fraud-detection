@@ -44,6 +44,34 @@ def require(name: str, ok: bool, detail: str = "") -> None:
         raise AssertionError(f"ASSERTION FAILED: {name} — {detail}")
 
 
+def company_reason(r) -> str:
+    """Plain-English 'why flagged' from a company's tier + aggregated signals."""
+    t = r.best_priority_tier
+    if t == "1_L1_billed_after_exclusion":
+        base = "Billed while excluded: an LEIE-excluded NPI billed on/after its exclusion date"
+    elif t == "2_L1_implausible_rate":
+        base = "Physically-implausible billing rate (Layer-1 deterministic rule)"
+    elif t == "3_L1_excluded_after_billing":
+        base = "On the OIG LEIE exclusion list (billing predates the exclusion date)"
+    elif t == "4_L2_anomaly":
+        base = (f"Statistical anomaly vs. taxonomy peers: {int(r.max_n_concept_signals)} concept "
+                f"signal(s), max score {float(r.max_anomaly_score_v3 or 0):.2f}")
+    elif t == "5_L3_probable_owner":
+        base = "Probable excluded owner — low-confidence ownership link (Layer-3, manual review)"
+    else:
+        base = "flagged"
+    extra = []
+    if r.any_billed_after_exclusion and not t.startswith("1"):
+        extra.append("also has an NPI billed-while-excluded")
+    if r.any_provider_on_leie and not (t.startswith("1") or t.startswith("3")):
+        extra.append("also on LEIE")
+    if (r.max_n_concept_signals or 0) > 0 and not t.startswith("4"):
+        extra.append(f"also Layer-2 anomaly ({int(r.max_n_concept_signals)} concepts)")
+    if r.any_probable_excluded_owner and not t.startswith("5"):
+        extra.append("also probable excluded owner")
+    return base + ("; " + "; ".join(extra) if extra else "")
+
+
 def norm_company(s: str) -> str:
     """Exact-match company-name key: upper, strip punctuation, drop leading THE,
     strip legal suffixes (INC/LLC/CORP/CO/PC/PA/LTD/LP/LLP), collapse whitespace."""
@@ -204,9 +232,10 @@ def main() -> None:
     # ---- company leads CSV (>= threshold AND flagged) ----
     leads = comp[(comp["company_net_paid"] >= thr) & comp["flagged"]].copy()
     leads = leads.sort_values(["best_priority_rank", "company_net_paid"], ascending=[True, False])
+    leads["reasons"] = leads.apply(company_reason, axis=1)
     leads_csv = leads.assign(
         company_total_billing_size_proxy_not_case_value=leads["company_net_paid"].round(0)
-    )[["company_id", "company_name", "best_priority_tier",
+    )[["company_id", "company_name", "best_priority_tier", "reasons",
        "company_total_billing_size_proxy_not_case_value", "npi_count", "states",
        "merge_basis", "merge_confidence", "any_provider_on_leie", "any_billed_after_exclusion",
        "max_anomaly_score_v3", "max_n_concept_signals", "any_probable_excluded_owner",
