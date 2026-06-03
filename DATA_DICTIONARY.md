@@ -155,3 +155,40 @@ DISQUALIFIED / CONTEXT_ONLY`), `paid_after`, `n_clean_after_months`, `claim_line
 ### `high_precision_excluded_leads.csv`
 Same columns; the billed-while-excluded leads (tier 1 + any `QUALIFIED` disposition), kept regardless
 of dollar.
+
+---
+
+## 7. Company grain (`company_rollup.py`, `company_lead_tracker.py`)
+
+### `npi_to_company_map.parquet` (`company_rollup.py`)
+**Grain:** one row per billing NPI → `company_id` (+ per-NPI `net_paid`, `merge_basis_raw`). The audit
+trail that makes the rollup droppable back to claim level.
+
+### `company_rollup.parquet` / `company_leads_over_10m.csv` (`company_rollup.py`)
+**Grain:** one row per company (all 538,232). NPIs linked by PAC > shared-owner > exact-name
+(`merge_basis` + `merge_confidence`). Aggregates: `company_net_paid`, `company_gross_paid`,
+`npi_count`, `states`, `primary_taxonomies`, `entity_types`, `npi_list`, and aggregated signals
+(`any_provider_on_leie`, `any_billed_after_exclusion`, `any_probable_excluded_owner`,
+`max_anomaly_score_v3`, `best_priority_tier`, `flagged`). The CSV is the ≥$10M flagged subset (+ a
+`reasons` column).
+
+### `company_lead_tracker.csv` / `.parquet` (`company_lead_tracker.py`)
+**Grain:** one row per company lead, **companies with `company_net_paid` ≥ $10 M** (all signal tiers),
+ranked direct → company-anomaly → ownership. Unlike the rollup's aggregated "max anomaly across NPIs",
+this carries a **real company-vs-company v3 anomaly** (`rate_features` + `score_concepts` applied at
+company grain).
+
+| Field | Notes |
+|-------|-------|
+| `company_id`, `company_name`, `npi_count`, `states` | `company_id`/`npi_list` written as TEXT |
+| `company_total_billing_size_proxy_not_case_value` | = `company_net_paid` — **size proxy, not case value** |
+| `priority_tier` | `1_billed_after_exclusion` > `2_on_leie` > `3_company_anomaly` > `4_probable_owner` |
+| direct | `any_provider_on_leie`, `any_billed_after_exclusion`, `paid_after` |
+| company anomaly | `company_anomaly_score`, `n_concept_signals`, `contributing_concepts` |
+| `fragmentation_signal` | company is a Layer-2 lead but NO constituent NPI was (≥2 NPIs) — possible split-billing |
+| ownership | `any_probable_excluded_owner` |
+| `merge_basis`, `merge_confidence`, `reasons`, `npi_list` | linkage provenance + why-flagged + constituents |
+
+### `company_tracker_direct_under_10m.csv` (`company_lead_tracker.py`)
+Same columns; the sub-$10 M billed-while-excluded / on-LEIE direct leads, preserved (highest precision,
+naturally below the threshold).

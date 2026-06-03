@@ -184,39 +184,45 @@ def main() -> None:
         default="5_none")
     df["priority_rank"] = df["priority_tier"].str.slice(0, 1).astype(int)
 
-    direct = df["priority_rank"].isin([1, 2])                       # preserved regardless of $
-    gated = df["priority_rank"].isin([3, 4]) & (df["company_net_paid"] >= thr)
-    df["is_lead"] = direct | gated
+    has_signal = df["priority_rank"].isin([1, 2, 3, 4])
     df["contributing_concepts"] = df["anomaly_contributing_concepts"].apply(
         lambda x: "; ".join(x) if isinstance(x, list) else "")
     df["reasons"] = df.apply(_reason, axis=1)
-
-    leads = df[df["is_lead"]].copy()
-    # within-tier strength: anomaly by score; direct by paid_after then $; ownership by $
-    leads["_strength"] = np.where(leads["priority_rank"] == 3,
-                                  leads["company_anomaly_score"].fillna(0),
-                                  np.where(leads["priority_rank"] == 1,
-                                           leads["paid_after"], leads["company_net_paid"]))
-    leads = leads.sort_values(["priority_rank", "_strength"], ascending=[True, False])
+    # within-tier strength: anomaly by score; billed-after by paid_after; else by $
+    df["_strength"] = np.where(df["priority_rank"] == 3, df["company_anomaly_score"].fillna(0),
+                               np.where(df["priority_rank"] == 1, df["paid_after"],
+                                        df["company_net_paid"]))
 
     out_cols = ["company_id", "company_name", "npi_count", "states",
                 "company_net_paid", "priority_tier", "any_provider_on_leie",
                 "any_billed_after_exclusion", "paid_after", "company_anomaly_score",
                 "n_concept_signals", "contributing_concepts", "fragmentation_signal",
                 "any_probable_excluded_owner", "merge_basis", "merge_confidence", "reasons", "npi_list"]
-    out = leads[out_cols].rename(
-        columns={"company_net_paid": "company_total_billing_size_proxy_not_case_value"})
-    out["company_total_billing_size_proxy_not_case_value"] = \
-        out["company_total_billing_size_proxy_not_case_value"].round(0)
-    out.to_parquet(out_dir / "company_lead_tracker.parquet", index=False)
-    con.register("out_csv", out)
-    con.execute(f"""COPY (SELECT * FROM out_csv) TO '{out_dir / 'company_lead_tracker.csv'}'
-        (FORMAT CSV, HEADER, QUOTE '"', FORCE_QUOTE (company_id, npi_list))""")
 
-    write_report(df, leads, thr, float(base_total), out_dir)
+    def write(sub: pd.DataFrame, name: str) -> None:
+        o = sub.sort_values(["priority_rank", "_strength"], ascending=[True, False])[out_cols].rename(
+            columns={"company_net_paid": "company_total_billing_size_proxy_not_case_value"})
+        o["company_total_billing_size_proxy_not_case_value"] = \
+            o["company_total_billing_size_proxy_not_case_value"].round(0)
+        o.to_parquet(out_dir / (name + ".parquet"), index=False)
+        con.register("o_csv", o)
+        con.execute(f"""COPY (SELECT * FROM o_csv) TO '{out_dir / (name + '.csv')}'
+            (FORMAT CSV, HEADER, QUOTE '"', FORCE_QUOTE (company_id, npi_list))""")
+        con.unregister("o_csv")
+        log(f"  wrote {name}: {len(o):,} rows")
+
+    # main tracker: every signal tier, gated to companies >= $10M
+    over = df[has_signal & (df["company_net_paid"] >= thr)]
+    write(over, "company_lead_tracker")
+    # companion: sub-$10M billed-while-excluded / on-LEIE direct leads (highest precision, preserved)
+    direct_under = df[df["priority_rank"].isin([1, 2]) & (df["company_net_paid"] < thr)]
+    write(direct_under, "company_tracker_direct_under_10m")
+
+    write_report(df, over, direct_under, thr, float(base_total), out_dir)
     con.close()
-    log("Done. Tracker tiers:")
-    log(leads["priority_tier"].value_counts().sort_index().to_string())
+    log(f"Done. Main tracker (>= ${thr:,.0f}) tiers:")
+    log(over["priority_tier"].value_counts().sort_index().to_string())
+    log(f"Preserved sub-${thr:,.0f} direct leads: {len(direct_under):,}")
 
 
 def _reason(r) -> str:
@@ -245,15 +251,16 @@ def _reason(r) -> str:
     return base + ("; " + "; ".join(extra) if extra else "")
 
 
-def write_report(df, leads, thr, base_total, out_dir):
+def write_report(df, leads, direct_under, thr, base_total, out_dir):
     log("Writing COMPANY_TRACKER_REPORT.md …")
-    is_gov = leads["company_name"].fillna("").map(lambda s: bool(GOV_RE.search(s)))
     not_scored = df["not_scored"].fillna(True)
-    nr = df.loc[~not_scored]
     r = ["# COMPANY_TRACKER_REPORT — attempt_2\n",
          "_Real company-level v3 anomaly (company vs. company peers) reusing "
          "features.rate_features + refine_layer2_v3.score_concepts, combined with the "
-         "unchanged Layer-1/Layer-3 rollup signals. net_paid = size proxy, not case value._\n"]
+         "unchanged Layer-1/Layer-3 rollup signals. net_paid = size proxy, not case value._\n"
+         f"\n_Main tracker `company_lead_tracker.csv` = companies with company_net_paid ≥ "
+         f"${thr:,.0f} (all signal tiers). Sub-threshold billed-while-excluded / on-LEIE direct "
+         f"leads ({len(direct_under):,}) are preserved in `company_tracker_direct_under_10m.csv`._\n"]
 
     r.append("\n## Dollar conservation & coverage\n"
              f"- company_base SUM(total_paid) = ${base_total:,.2f} vs audit ${AUDIT_BASE_PAID:,.2f} → "
@@ -263,13 +270,10 @@ def write_report(df, leads, thr, base_total, out_dir):
              + ", ".join(f"{k}={v:,}" for k, v in
                          df.loc[not_scored, 'not_scored_reason'].fillna('n/a').value_counts().items()) + "\n")
 
-    r.append("\n## Lead counts per priority_tier\n| tier | leads |\n|---|--:|\n")
+    r.append(f"\n## Main tracker lead counts per priority_tier (≥ ${thr:,.0f})\n| tier | leads |\n|---|--:|\n")
     for t, c in leads["priority_tier"].value_counts().sort_index().items():
         r.append(f"| `{t}` | {c:,} |\n")
-    direct = leads["priority_rank"].isin([1, 2]).sum()
-    gated = leads["priority_rank"].isin([3, 4]).sum()
-    r.append(f"\n- preserved DIRECT leads (Layer-1/LEIE, any $): {int(direct):,}\n"
-             f"- anomaly/ownership leads clearing ${thr:,.0f}: {int(gated):,}\n")
+    r.append(f"\n- sub-${thr:,.0f} direct leads preserved in companion file: **{len(direct_under):,}**\n")
     low = leads[leads["merge_confidence"] == "low"]
     r.append(f"- ranked leads on LOW merge_confidence (over/under-merge caution): {len(low):,}\n")
 
