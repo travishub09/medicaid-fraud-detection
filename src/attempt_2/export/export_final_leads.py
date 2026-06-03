@@ -28,7 +28,7 @@ from pathlib import Path
 
 import duckdb
 
-from .clean_data import PRECLEAN_DIR, _TAXONOMY_SEED
+from ..clean_data import PRECLEAN_DIR, _TAXONOMY_SEED
 
 
 def _find(name: str, root: Path) -> Path | None:

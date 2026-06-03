@@ -30,7 +30,7 @@ import pandas as pd
 
 pd.set_option("future.no_silent_downcasting", True)
 
-from .clean_data import PRECLEAN_DIR
+from ..clean_data import PRECLEAN_DIR
 
 # Parameters (all stated in the report)
 ROBUST_Z_CUTOFF = 3.5            # a normalized feature is a "signal" at/above this robust z

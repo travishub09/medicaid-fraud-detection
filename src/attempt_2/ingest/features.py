@@ -35,7 +35,7 @@ from pathlib import Path
 
 import duckdb
 
-from .clean_data import PRECLEAN_DIR
+from ..clean_data import PRECLEAN_DIR
 
 # Parameters
 PLAUSIBILITY_CEILING = 500_000_000.0      # from the corruption audit

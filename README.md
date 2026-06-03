@@ -53,7 +53,8 @@ a Markdown report next to each stage's data outputs.
 | 7 | `verify_layer1.py` | Turns the billed-while-excluded leads into **candidate cases** using the raw LEIE waiver/reinstatement data + strict-month timing | `layer1_candidate_cases`, `LAYER1_VERIFICATION_REPORT.md` |
 | 8 | `refine_layer2.py` (v2) | Rebuilds Layer-2 scoring: entity-type-aware peers + degeneracy-safe **percentile-rank** normalization | `fraud_leads_v2`, `LAYER2_REFINEMENT_REPORT.md` |
 | 9 | `refine_layer2_v3.py` | Adds a **claim-volume reliability gate** and **de-correlated concept** scoring | `fraud_leads_v3`, `LAYER2_V3_REPORT.md` |
-| 10 | `export_csv.py` / `export_final_leads.py` | Render leads as spreadsheet-friendly CSVs (lists flattened, names joined, NPI as text) | `*.csv` |
+| 10 | `company_rollup.py` | Consolidates per-NPI leads to the **owning company** (PAC > shared-owner > exact-name linkage); surfaces companies that cross $10M only when consolidated | `company_rollup`, `company_leads_over_10m.csv`, `npi_to_company_map`, `COMPANY_ROLLUP_REPORT.md` |
+| 11 | `export_csv.py` / `export_final_leads.py` | Render leads as spreadsheet-friendly CSVs (lists flattened, names joined, NPI as text) | `*.csv` |
 
 ### The three detection layers (`detect.py`, refined in 8–9)
 
@@ -137,19 +138,31 @@ pip install -r requirements.txt
 ## Running the pipeline (in order)
 
 ```bash
-python -m src.attempt_2.integrate            # 2. integrate + QA (zero-fan-out attribution)
-python -m src.attempt_2.diagnose_coverage    # 3. coverage diagnostic
-python -m src.attempt_2.audit_corruption     # 4. root-cause + quarantine corruption
-python -m src.attempt_2.features             # 5. clean base + provider_features
-python -m src.attempt_2.detect               # 6. three-layer leads
-python -m src.attempt_2.verify_layer1        # 7. verify billed-while-excluded → cases
-python -m src.attempt_2.refine_layer2        # 8. Layer-2 v2 (entity-aware percentile)
-python -m src.attempt_2.refine_layer2_v3     # 9. Layer-2 v3 (volume gate + concepts)
-python -m src.attempt_2.export_final_leads --min-net-paid 10000000   # 10. final CSVs
+python -m src.attempt_2.ingest.integrate            # 2. integrate + QA (zero-fan-out attribution)
+python -m src.attempt_2.audit.diagnose_coverage     # 3. coverage diagnostic
+python -m src.attempt_2.audit.audit_corruption      # 4. root-cause + quarantine corruption
+python -m src.attempt_2.ingest.features             # 5. clean base + provider_features
+python -m src.attempt_2.leads.detect                # 6. three-layer leads
+python -m src.attempt_2.leads.verify_layer1         # 7. verify billed-while-excluded → cases
+python -m src.attempt_2.leads.refine_layer2         # 8. Layer-2 v2 (entity-aware percentile)
+python -m src.attempt_2.leads.refine_layer2_v3      # 9. Layer-2 v3 (volume gate + concepts)
+python -m src.attempt_2.leads.company_rollup        # 10. consolidate NPIs → companies
+python -m src.attempt_2.export.export_final_leads --min-net-paid 10000000   # 11. final CSVs
 ```
 
 (`clean_data.py` is step 1; `integrate.py` re-converts the raw CSVs itself, so the integration
 step can be run directly on the `preclean/` extracts.)
+
+### Code layout (`src/attempt_2/`)
+
+```
+src/attempt_2/
+├── clean_data.py     # stage 1 + shared helpers (NPI canonicalize, normalizers, readers)
+├── ingest/           # integrate.py, features.py
+├── audit/            # diagnose_coverage.py, audit_corruption.py
+├── leads/            # detect.py, verify_layer1.py, refine_layer2.py, refine_layer2_v3.py, company_rollup.py
+└── export/           # export_csv.py, export_final_leads.py
+```
 
 See `DATA_DICTIONARY.md` for every table, its grain, and its columns.
 

@@ -36,7 +36,7 @@ import pandas as pd
 
 pd.set_option("future.no_silent_downcasting", True)
 
-from .clean_data import PRECLEAN_DIR
+from ..clean_data import PRECLEAN_DIR
 
 MIN_PEER = 30
 P99 = 0.99                 # in-group percentile that counts as an extreme signal

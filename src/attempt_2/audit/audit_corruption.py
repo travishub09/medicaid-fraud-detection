@@ -30,7 +30,7 @@ from pathlib import Path
 
 import duckdb
 
-from .clean_data import PRECLEAN_DIR, _read_any  # shared raw-reader (all-VARCHAR)
+from ..clean_data import PRECLEAN_DIR, _read_any  # shared raw-reader (all-VARCHAR)
 
 # ----------------------------------------------------------------------------
 # PRINCIPLED corruption rule (documented + generalizable; no hardcoded row ids)

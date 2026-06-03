@@ -36,7 +36,7 @@ import duckdb
 import pandas as pd
 
 # Rule 8: reuse the ONE canonicaliser + ONE name/address normaliser everywhere.
-from .clean_data import (
+from ..clean_data import (
     PRECLEAN_DIR,
     canonicalize_series,
     _normalize_name,

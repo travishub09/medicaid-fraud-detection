@@ -28,7 +28,7 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-from .clean_data import PRECLEAN_DIR
+from ..clean_data import PRECLEAN_DIR
 
 LEGAL_SUFFIX = re.compile(
     r"\b(INC|INCORPORATED|LLC|CORP|CORPORATION|CO|COMPANY|PC|PA|LTD|LP|LLP)\b")

@@ -32,7 +32,7 @@ import duckdb
 import pandas as pd
 
 # Reuse the integration's NPI canonicaliser so identifier handling matches exactly.
-from .clean_data import PRECLEAN_DIR, canonicalize_series
+from ..clean_data import PRECLEAN_DIR, canonicalize_series
 
 # If the valid-NPI-not-in-NPPES bucket holds less than this share of unmatched
 # dollars, the aggregate boundary is "clean" and we may write the segregated table.

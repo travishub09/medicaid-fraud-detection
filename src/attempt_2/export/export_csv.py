@@ -23,7 +23,7 @@ from pathlib import Path
 
 import duckdb
 
-from .clean_data import PRECLEAN_DIR
+from ..clean_data import PRECLEAN_DIR
 
 # Legible, ordered column projection. List cols are flattened; numbers rounded.
 SELECT = """
