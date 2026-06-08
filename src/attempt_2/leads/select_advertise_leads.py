@@ -37,8 +37,9 @@ def _find_rollup() -> Path:
 
 ROLLUP = _find_rollup()
 OUT_DIR = Path.home() / "Desktop/linked in ads"
-OUT_SEND = OUT_DIR / "companies_to_advertise.csv"
-OUT_EXCL = OUT_DIR / "companies_to_advertise_excluded.csv"
+OUT_FULL = OUT_DIR / "leads_0.70anomaly_leie_10m_full.csv"        # file 1: selection, ALL features
+OUT_CLEAN = OUT_DIR / "leads_0.70anomaly_leie_10m_cleaned.csv"    # file 2: after secondary FP cleaning
+OUT_EXCL = OUT_DIR / "leads_0.70anomaly_leie_10m_excluded.csv"    # quarantine (what cleaning removed)
 
 # ----- state maps -----
 STATE_FULL = {"AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California",
@@ -137,70 +138,74 @@ def strength(score, is_leie):
 
 def main():
     con = duckdb.connect()
-    rows = con.execute(f"""
-        SELECT company_name, company_net_paid AS billing,
-               max_anomaly_score_v3 AS score, any_provider_on_leie AS leie, states
-        FROM read_parquet('{ROLLUP}')
+    # ---- STAGE 1: selection (0.70+ anomaly OR LEIE, all >=$10M) with ALL rollup features ----
+    df = con.execute(f"""
+        SELECT * FROM read_parquet('{ROLLUP}')
         WHERE company_net_paid >= {DOLLAR_MIN}
           AND ( max_anomaly_score_v3 >= {ANOMALY_SCORE_MIN} OR any_provider_on_leie )
-        ORDER BY any_provider_on_leie DESC, score DESC, billing DESC
+        ORDER BY any_provider_on_leie DESC, max_anomaly_score_v3 DESC, company_net_paid DESC
     """).fetchdf()
-    n_candidates = len(rows)
+    n_candidates = len(df)
+    base_cols = list(df.columns)
 
-    from collections import Counter
-    kept, excluded = [], []
-    fp_counts = Counter()
-    seen = {}
-    n_dup = 0
-    for _, r in rows.iterrows():
-        name = str(r["company_name"]).strip()
-        score = float(r["score"]) if r["score"] is not None else 0.0
-        is_leie = bool(r["leie"])
-        if not name:
-            excluded.append({"company_name": "", "states": str(r["states"]), "score": round(score, 4),
-                             "reason": "missing_name", "matched": ""})
-            fp_counts["missing_name"] += 1
-            continue
-        cat = fp_category(name)
-        if cat:
-            excluded.append({"company_name": name, "states": str(r["states"]), "score": round(score, 4),
-                             "reason": cat[0], "matched": cat[1]})
-            fp_counts[cat[0]] += 1
-            continue
-        states = split_states(r["states"])
-        key = (normalize(name), states[0].upper() if states else "")
-        if key in seen:
-            excluded.append({"company_name": name, "states": "; ".join(states), "score": round(score, 4),
-                             "reason": "duplicate", "matched": seen[key]})
-            n_dup += 1
-            continue
-        seen[key] = name
-        kept.append({"company_name": name, "states_all": "; ".join(states),
-                     "lead_strength": strength(score, is_leie)})
+    # derived columns added to BOTH files
+    df["states_all"] = df["states"].map(lambda s: "; ".join(split_states(s)))
+    df["lead_strength"] = [
+        strength(float(s) if s is not None else 0.0, bool(l))
+        for s, l in zip(df["max_anomaly_score_v3"], df["any_provider_on_leie"])
+    ]
+    out_cols = base_cols + ["states_all", "lead_strength"]
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(OUT_SEND, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["company_name", "states_all", "lead_strength"])
-        w.writeheader(); w.writerows(kept)
-    with open(OUT_EXCL, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["company_name", "states", "score", "reason", "matched"])
-        w.writeheader(); w.writerows(excluded)
+    # FILE 1 — full selection, every feature column, BEFORE cleaning
+    df[out_cols].to_csv(OUT_FULL, index=False)
 
-    assert len(kept) + len(excluded) == n_candidates, "reconcile fail"
+    # ---- STAGE 2: secondary cleaning (institutional/fiscal/lab/individual FP + dedupe) ----
+    from collections import Counter
+    keep_mask, excl_rows, fp_counts = [], [], Counter()
+    seen, n_dup = {}, 0
+    for _, r in df.iterrows():
+        name = str(r["company_name"]).strip()
+        if not name:
+            keep_mask.append(False); fp_counts["missing_name"] += 1
+            excl_rows.append({"company_name": "", "states": str(r["states"]),
+                              "reason": "missing_name", "matched": ""}); continue
+        cat = fp_category(name)
+        if cat:
+            keep_mask.append(False); fp_counts[cat[0]] += 1
+            excl_rows.append({"company_name": name, "states": str(r["states"]),
+                              "reason": cat[0], "matched": cat[1]}); continue
+        key = (normalize(name), (r["states_all"].split(";")[0].strip().upper()))
+        if key in seen:
+            keep_mask.append(False); n_dup += 1
+            excl_rows.append({"company_name": name, "states": r["states_all"],
+                              "reason": "duplicate", "matched": seen[key]}); continue
+        seen[key] = name
+        keep_mask.append(True)
+
+    clean = df[keep_mask]
+    # FILE 2 — same feature columns, AFTER secondary cleaning
+    clean[out_cols].to_csv(OUT_CLEAN, index=False)
+    with open(OUT_EXCL, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["company_name", "states", "reason", "matched"])
+        w.writeheader(); w.writerows(excl_rows)
+
+    assert len(clean) + len(excl_rows) == n_candidates, "reconcile fail"
     full = con.execute(f"SELECT count(*) FROM read_parquet('{ROLLUP}')").fetchone()[0]
     print("=" * 60)
     print(f"select_advertise_leads.py  (ANOMALY_SCORE_MIN={ANOMALY_SCORE_MIN}, ${DOLLAR_MIN:,} floor)")
     print("=" * 60)
-    print(f"full scored population:            {full:,}")
-    print(f"candidates (0.70+ anomaly OR LEIE, >=$10M): {n_candidates:,}")
-    print(f"  - removed (FP/dupe):")
+    print(f"full scored population:                       {full:,}")
+    print(f"FILE 1 selection (0.70+ anomaly OR LEIE, >=$10M, all features): {n_candidates:,}")
+    print(f"  secondary cleaning removed:")
     for r, c in fp_counts.most_common():
         print(f"      {r:<20} {c}")
     print(f"      {'duplicate':<20} {n_dup}")
-    print(f"  => FINAL kept:                   {len(kept):,}")
-    print(f"lead_strength: {dict(Counter(k['lead_strength'] for k in kept))}")
-    print(f"send -> {OUT_SEND}")
-    print(f"excl -> {OUT_EXCL}")
+    print(f"FILE 2 cleaned:                               {len(clean):,}")
+    print(f"lead_strength (cleaned): {dict(Counter(clean['lead_strength']))}")
+    print(f"file 1 (full)    -> {OUT_FULL}")
+    print(f"file 2 (cleaned) -> {OUT_CLEAN}")
+    print(f"excluded         -> {OUT_EXCL}")
 
 
 if __name__ == "__main__":
