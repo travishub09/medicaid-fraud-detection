@@ -1,0 +1,77 @@
+{
+  "methodology": "We re-scored the FULL company universe with the exact, LEIE-independent company-grain Layer-2 anomaly score (company_lead_tracker's score_concepts, formula unchanged), then labelled every company by whether it carries a fraud-relevant OIG LEIE exclusion (by NPI, or secondarily company name+state). We backtest the SCORE across the whole universe \u2014 with on-LEIE companies INCLUDED \u2014 rather than the anomaly-tier leads, and we benchmark it against a billing-size-only baseline plus within-size stratification to prove the lift is not a size artifact. Significance via a permutation test and a bootstrap CI.",
+  "data_sources": "Scores: company_scores_full.parquet (419,342 scored companies, exact Layer-2 score). LEIE: OIG Caught.csv (83,256 rows; only ~10% carry an NPI). Universe and base rate are the full scored company set. All inputs read-only.",
+  "label_definition": "Fraud-relevant LEIE = convictions/fraud/kickbacks 1128(a)(1),(a)(2),(a)(3), (b)(1),(b)(2),(b)(3),(b)(7) (kept: ['1128a1', '1128a2', '1128a3', '1128b1', '1128b2', '1128b3', '1128b7']). Dropped license-revocation (b4), program/loan/derivative (b5,b6,b8,b14,\u2026), CMP and agreement-breach types \u2014 those are not fraud convictions.",
+  "matching_approach": "A company is a positive if any NPI in its npi_list is a fraud-relevant LEIE NPI (match_confidence='npi', high confidence) or, failing that, its normalized name+state matches a fraud-relevant LEIE business name without an NPI (match_confidence='name', noisier). Earliest exclusion date is bucketed before/during/after the 2018-2024 billing window.",
+  "results": "Across 419,342 scored companies the base rate of a fraud-relevant LEIE exclusion is 0.080%. The top anomaly-score decile hits at 0.160% \u2014 a 2.0x lift \u2014 versus 0.9x for the top billing decile, so the size-neutral score beats the size baseline at the top. Companies at the Layer-2 bar (score>=0.7, n=31,269) hit at 0.176% (2.2x). The score gradient is significant (permutation p=0.0010); bootstrap 95% CI on top-decile lift is [1.6x, 2.4x].",
+  "size_baseline_finding": "Billing rank alone gives a top-decile lift of 0.9x; the anomaly score gives 2.0x. Within billing quartiles the top-anomaly-decile lift is {'Q1': 1.87, 'Q2': 2.44, 'Q3': 2.21, 'Q4': 1.62} (Q1..Q4) \u2014 lift that survives within-size stratification is the real, non-size signal and is the payoff of using the size-neutral score over max_anomaly_score_v3.",
+  "timing_finding": "Of the hits, the exclusion-date split is {'during_2018_2024': 217, 'after_2024': 117, 'before_2018': 2}. Restricting positives to exclusions AFTER the 2018-2024 billing window (the closest thing to a prospective, non-leaky signal) the top-decile lift is 2.31x on a base of 0.0279% \u2014 small-N and noisy, but the same direction.",
+  "disjointness_finding": "The anomaly TIER in the shipped pipeline is LEIE-disjoint BY DESIGN: any company with an excluded NPI routes to the higher-priority on-LEIE tier, so the anomaly-tier leads contain ZERO LEIE-NPI companies (verified 0/1985). This is correct behavior \u2014 the anomaly tier exists to surface fraud-SHAPED billing among providers NOT YET caught \u2014 so it cannot be NPI-backtested directly. That is precisely why we backtest the underlying SCORE over the whole universe.",
+  "limitations": "This is PRECISION/LIFT, not recall. The score is computed in-sample on the same providers, so it is optimistic (the AFTER-2024 split is the only quasi-prospective view and is small-N). Ground truth is CAUGHT fraud (OIG exclusions), not all fraud. Only ~10% of LEIE rows carry an NPI, so many true positives are unlabeled and both base rate and hit-rate undercount real fraud. Name+state matches are noisier than NPI matches and are reported separately. Company linkage in the rollup can add/drop NPIs. A high-score company may be excluded for activity outside the billing window (see timing split).",
+  "conclusion": "The size-neutral Layer-2 anomaly score concentrates fraud-relevant LEIE exclusions at 2.0x in its top decile and beats the 0.9x billing-only baseline, with lift surviving within billing quartiles ({'Q1': 1.87, 'Q2': 2.44, 'Q3': 2.21, 'Q4': 1.62}). The gradient is highly significant (p=0.0010). The Layer-2 score carries real, LEIE-independent, non-size signal about fraud-relevant exclusions \u2014 as lift/precision on caught fraud, not a recall guarantee.",
+  "metrics": {
+    "scored_universe": 419342,
+    "base_rate": 0.000801,
+    "base_rate_npi_only": 0.000801,
+    "anomaly_top_decile_lift": 1.99,
+    "billing_top_decile_lift": 0.86,
+    "anomaly_beats_size": true,
+    "anomaly_decile_lift": {
+      "1": 0.68,
+      "2": 1.01,
+      "3": 0.42,
+      "4": 0.68,
+      "5": 0.95,
+      "6": 0.8,
+      "7": 0.74,
+      "8": 1.31,
+      "9": 1.4,
+      "10": 1.99
+    },
+    "billing_decile_lift": {
+      "1": 0.62,
+      "2": 0.98,
+      "3": 0.95,
+      "4": 0.8,
+      "5": 0.86,
+      "6": 1.04,
+      "7": 0.98,
+      "8": 1.55,
+      "9": 1.34,
+      "10": 0.86
+    },
+    "within_size_top_decile_lift": {
+      "Q1": 1.87,
+      "Q2": 2.44,
+      "Q3": 2.21,
+      "Q4": 1.62
+    },
+    "anomaly_leads_score_ge_0_70": 31269,
+    "anomaly_leads_hit_rate": 0.00176,
+    "anomaly_leads_lift": 2.2,
+    "timing_hits": {
+      "during_2018_2024": 217,
+      "after_2024": 117,
+      "before_2018": 2
+    },
+    "after_2024_base_rate": 0.000279,
+    "after_2024_top_decile_lift": 2.31,
+    "permutation_p_value": 0.001,
+    "bootstrap_top_decile_lift_ci95": [
+      1.59,
+      2.43
+    ],
+    "kept_exclusion_types": [
+      "1128a1",
+      "1128a2",
+      "1128a3",
+      "1128b1",
+      "1128b2",
+      "1128b3",
+      "1128b7"
+    ],
+    "fraud_relevant_leie_npis": 4590,
+    "total_hits": 336,
+    "npi_hits": 336
+  }
+}

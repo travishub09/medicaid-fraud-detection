@@ -205,3 +205,40 @@ the `any_*` direct/ownership flags, `paid_after`, `related_entities` (likely sam
 - `company_leads_clean.csv` — all leads.
 - `triage_priority.csv` — Direct + Company-anomaly tiers only (the queue agents start on).
 - `probable_owner_backlog.csv` — the probable-owner tier alone (noisy name-match backlog).
+
+## 8. LEIE backtest (`src/backtest/`)
+
+Held-out validation of the Layer-2 company anomaly score against the OIG LEIE. Outputs are written
+inside `src/backtest/`. The large intermediate `company_scores_full.parquet` (exact company-grain
+score for every company; produced by `score_universe.py`) is gitignored — regenerate it before
+running `backtest_leie.py`.
+
+### Fraud-relevant LEIE exclusion types (the label definition)
+A LEIE row is a **fraud-relevant positive** only for conviction / fraud / kickback exclusion types:
+`1128a1`, `1128a2`, `1128a3`, `1128b1`, `1128b2`, `1128b3`, `1128b7`. **Dropped** (not fraud
+convictions): license-revocation `1128b4`; program/loan/derivative `1128b5`,`1128b6`,`1128b8`,
+`1128b14`,…; civil monetary penalty `1128Aa`; peer-review/quality `1156`,`1160`; agreement breaches
+`BRCH SA`/`BRCH CIA`. Only ~10% of LEIE rows carry a usable `NPI` (matched high-confidence); rows
+without an NPI are matched by business name + state (lower confidence). `EXCLDATE` is `YYYYMMDD`.
+
+### `backtest_results.csv` (`backtest_leie.py`)
+**Grain:** one row per anomaly lead = company with `company_anomaly_score ≥ 0.70` (on-LEIE
+companies INCLUDED — this is the score backtest, not the tier).
+- `company_name`, `states` — company identity (strings).
+- `company_anomaly_score` — exact Layer-2 company-grain score (LEIE-independent).
+- `npi_count` — distinct NPIs parsed from the company's `npi_list`.
+- `hit` — 1 if the company carries a fraud-relevant LEIE exclusion, else 0.
+- `matched_npi` — the constituent NPI(s) that matched a fraud-relevant LEIE NPI (`;`-joined).
+- `exclusion_type` — matched LEIE `EXCLTYPE`(s) (`;`-joined).
+- `exclusion_date` — earliest matched `EXCLDATE` (`YYYYMMDD`).
+- `match_confidence` — `npi` (high) or `name` (name+state, noisier) or empty (no hit).
+- `timing_bucket` — `before_2018` / `during_2018_2024` / `after_2024` vs the billing window.
+- `score_decile` — 1–10 anomaly-score decile across the **full** scored universe.
+- `size_band` — billing quartile `Q1`–`Q4` across the universe.
+
+### `backtest_report.json` (`backtest_leie.py`)
+Prose narrative + a `metrics` object. Sections: `methodology`, `data_sources`, `label_definition`,
+`matching_approach`, `results`, `size_baseline_finding`, `timing_finding`, `disjointness_finding`,
+`limitations`, `conclusion`. Key metrics: `base_rate`, `anomaly_top_decile_lift`,
+`billing_top_decile_lift`, `anomaly_beats_size`, `within_size_top_decile_lift` (per billing
+quartile), `after_2024_top_decile_lift`, `permutation_p_value`, `bootstrap_top_decile_lift_ci95`.
