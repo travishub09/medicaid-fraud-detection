@@ -33,6 +33,9 @@ from ..ingest.features import rate_features              # reuse: rate features 
 from .refine_layer2_v3 import score_concepts, RARE_THRESHOLD   # reuse: exact v3 scoring
 
 AUDIT_BASE_PAID = 1_100_631_960_143.0
+# Anomaly tier = company_anomaly_score >= this (lowered bar to surface MORE anomalies),
+# unioned with the original concept-signal lead (n_concept_signals >= 2) so no prior lead is lost.
+ANOMALY_SCORE_MIN = 0.70
 GOV_RE = re.compile(r"\b(COUNTY|STATE|CITY|DEPARTMENT|DEPT|UNIVERSITY|HOSPITALS?|DISTRICT|"
                     r"BOROUGH|PARISH|TRIBAL|TRIBE|NATION|PUBLIC|MUNICIPAL|GOVERNMENT|"
                     r"COMMONWEALTH|REGIONAL MEDICAL|HEALTH SYSTEM|MEDICAL CENTER)\b", re.I)
@@ -177,9 +180,13 @@ def main() -> None:
                                   & (df["npi_count"] >= 2))
 
     # ---- Step 5: tier (direct > anomaly > ownership), gate, rank ----
+    # anomaly tier now = score >= ANOMALY_SCORE_MIN (more anomalies) UNION the original
+    # concept-signal lead, so the validated leads are kept and lower-scoring ones are added.
+    df["anomaly_tier_member"] = (
+        (df["company_anomaly_score"].fillna(0) >= ANOMALY_SCORE_MIN) | df["company_anomaly_lead"])
     df["priority_tier"] = np.select(
         [df["any_billed_after_exclusion"], df["any_provider_on_leie"],
-         df["company_anomaly_lead"], df["any_probable_excluded_owner"]],
+         df["anomaly_tier_member"], df["any_probable_excluded_owner"]],
         ["1_billed_after_exclusion", "2_on_leie", "3_company_anomaly", "4_probable_owner"],
         default="5_none")
     df["priority_rank"] = df["priority_tier"].str.slice(0, 1).astype(int)
