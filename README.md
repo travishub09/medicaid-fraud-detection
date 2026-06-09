@@ -185,6 +185,24 @@ src/attempt_2/
 
 See `DATA_DICTIONARY.md` for every table, its grain, and its columns.
 
+### Backtest (`src/backtest/`)
+
+Held-out validation of the **Layer-2 company anomaly score** against the **OIG LEIE** exclusion
+list. Because the anomaly *tier* is LEIE-disjoint by design (excluded-NPI companies route to the
+on-LEIE tier — correct, since the anomaly tier targets *not-yet-caught* providers), we re-score the
+**full universe** and backtest the underlying score, including on-LEIE companies.
+
+```
+python -m src.backtest.score_universe   # persist exact company-grain score for ALL companies
+python -m src.backtest.backtest_leie    # lift vs LEIE, billing-size baseline, timing split, null tests
+```
+
+**Headline:** the size-neutral score gives a **2.0× top-decile lift** on fraud-relevant LEIE
+exclusions vs **0.9×** for a billing-only baseline, and the lift **survives within every billing
+quartile** (1.6×–2.4×); permutation **p = 0.001**, bootstrap 95% CI **[1.6×, 2.4×]**. Outputs:
+`backtest_results.csv`, `backtest_report.json` (prose + metrics). Caveat: precision/lift not recall,
+in-sample, caught-fraud ground truth, ~10% LEIE NPI coverage. See `src/backtest/README.md`.
+
 ## Compliance & privacy
 
 All data here is subject to HIPAA. Raw and derived data are excluded from version control via
