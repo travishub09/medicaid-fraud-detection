@@ -119,10 +119,21 @@ All done with pandas/pyarrow, originals preserved. New files in `~/Desktop/Data/
   ranks are the not-yet-caught candidates) — judge the model on held-out val.
 - `lightgbm>=4.3` added to requirements.txt (installed locally for python3.13).
 
+## LEAD LIST EXPORT (2026-06-11, `src/model/export_leads.py`, on main)
+Agreed selection: **top 5,000 companies by `company_model_score_max` with
+>= $10M consolidated billing** (size-defined list, NOT a score threshold — the
+model's scores are uncalibrated and a "0.7" here is NOT comparable to the
+unsupervised 0.70 bar). Output: `~/Desktop/Data/Model/model_leads_top5000_over10m.csv`
+($354.5B billing; 16,751 companies were eligible; scores in-list run 1.0 down
+to 0.008 — only ~2,687 exceed 0.7, so the tail is low-confidence padding).
+Null rollup names (single-NPI companies) resolved from the best constituent
+NPI's org_legal_name. Top leads: behavioral-health/treatment orgs.
+
 ## Next steps (not started)
-1. PR + review for `feat/model-scaffold`.
-2. Calibration / threshold pick for the ad-targeting handoff (company grain).
-3. Compare model ranking vs unsupervised `company_anomaly_score` (agreement,
+1. Calibration / threshold pick for the ad-targeting handoff (company grain).
+2. Compare model ranking vs unsupervised `company_anomaly_score` (agreement,
    uniques each finds); consider LEIE-timing backtest like src/backtest.
-4. Company-name resolution for single-NPI companies in the top CSV is null —
-   reuse finalize_tracker's resolution if the model list feeds ads directly.
+3. Per-lead explainability: SHAP contributions (`pred_contrib=True`) so each
+   lead carries its driving features, like the rest of the pipeline.
+4. FP screening for the model lead list (gov/tribal/academic/nonprofit) — the
+   build_final_leads.py screens have NOT been applied to the model CSV.
