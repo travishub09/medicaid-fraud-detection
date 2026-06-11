@@ -49,6 +49,10 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--top-k", type=int, default=5000)
     p.add_argument("--min-net-paid", type=float, default=10_000_000.0)
+    p.add_argument("--min-score", type=float, default=0.0,
+                   help="floor on company_model_score_max (uncalibrated — pick "
+                        "by inspecting the score distribution, not by analogy "
+                        "to the unsupervised 0.70 bar)")
     p.add_argument("--out", type=str, default=str(
         config.MODEL_DATA_DIR / "model_leads_top5000_over10m.csv"))
     args = p.parse_args()
@@ -61,8 +65,9 @@ def main() -> None:
 
     log("[2/3] Filtering: billing >= threshold, reliable score present, top-K")
     eligible = comp[(comp["company_net_paid"] >= args.min_net_paid)
-                    & comp["company_model_score_max"].notna()]
-    log(f"    {len(eligible):,} companies >= ${args.min_net_paid:,.0f} with a reliable score")
+                    & (comp["company_model_score_max"] >= args.min_score)]
+    log(f"    {len(eligible):,} companies >= ${args.min_net_paid:,.0f} with a "
+        f"reliable score >= {args.min_score}")
     leads = eligible.sort_values(
         ["company_model_score_max", "company_net_paid"],
         ascending=False).head(args.top_k).copy()
