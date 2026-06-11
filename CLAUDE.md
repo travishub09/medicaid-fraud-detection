@@ -129,11 +129,22 @@ to 0.008 — only ~2,687 exceed 0.7, so the tail is low-confidence padding).
 Null rollup names (single-NPI companies) resolved from the best constituent
 NPI's org_legal_name. Top leads: behavioral-health/treatment orgs.
 
+## FP SCREENING APPLIED (2026-06-11, `src/model/screen_leads.py`, on main)
+The validated build_final_leads screens (imported verbatim from attempt_2) ran
+on the model lead list; company specialty = dominant (highest-billing)
+constituent NPI's taxonomy. **Removed 967 of 5,000** (hospital_taxonomy 276,
+hospital_name 196, government 192, fqhc 149, public_academic 63,
+national_nonprofit 50, tribal 41) → **`model_leads_top5000_over10m_screened.csv`
+(4,033 leads, $236.6B)** + `..._removed_audit.csv` (quarantine, never delete).
+Notes: SOUTHCENTRAL FOUNDATION survives (no keyword matches — same behavior as
+the unsupervised FinalLeads screen); 66 leads are individual NPIs with no org
+name → "UNKNOWN NAME (NPI x)" (export_leads now treats blank org_legal_name as
+missing; person-name resolution from NPPES is a possible follow-up).
+
 ## Next steps (not started)
 1. Calibration / threshold pick for the ad-targeting handoff (company grain).
 2. Compare model ranking vs unsupervised `company_anomaly_score` (agreement,
    uniques each finds); consider LEIE-timing backtest like src/backtest.
 3. Per-lead explainability: SHAP contributions (`pred_contrib=True`) so each
    lead carries its driving features, like the rest of the pipeline.
-4. FP screening for the model lead list (gov/tribal/academic/nonprofit) — the
-   build_final_leads.py screens have NOT been applied to the model CSV.
+4. NPPES person-name resolution for the 66 individual-NPI leads.
