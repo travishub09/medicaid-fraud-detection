@@ -155,6 +155,16 @@ score070 files as a second-tier reserve. NOTE: Travis reorganized the Model dir
 near 1.0 (uncalibrated sigmoid; ranking valid — 2,000 distinct values in top
 2,000; a raw-margin column is a pending nice-to-have).
 
+**NPI-GRAIN LIST (2026-06-11, `src/model/export_npi_leads.py`, on main):**
+same process WITHOUT company rollup, billing bar $5M: reliable score >= 0.90 &
+net_paid >= $5M → 2,658 NPIs → FP screens (own org_legal_name +
+primary_taxonomy; individuals can only be taxonomy-screened) removed 246 →
+**`Model/output/final/model_npi_leads_score090_over5m_screened.csv` = 2,412
+leads, $51.9B, 13 on-LEIE** (+ unscreened + removed_audit). Composition: 2,398
+ambiguous_high_anomaly / 13 leie_positive / 1 trained-clean; 2,294 orgs + 118
+individuals ("INDIVIDUAL PROVIDER (NPI x)" names). Top leads AZ-heavy
+behavioral health. Cols incl. segment, provider_on_leie, practice_state.
+
 **GitHub branch protection (2026-06-11):** main now has "changes via PR" +
 locked-branch rules; pushes as travishub09 succeed via admin bypass. Consider
 PR workflow for future substantive changes.
