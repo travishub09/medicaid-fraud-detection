@@ -85,11 +85,44 @@ All done with pandas/pyarrow, originals preserved. New files in `~/Desktop/Data/
   overwrite source files.
 - Remember the leakage column blocklist above when assembling the feature matrix.
 
-## Your first task (suggested)
-Scaffold `src/model/` on branch `feat/model-scaffold`:
-1. A data-loading module that reads `Model/provider_features_pu.parquet`, drops the
-   leakage columns, sets `provider_on_leie` as `y`, and splits train/val (stratified).
-2. A LightGBM training script with PR-AUC / recall@LEIE / precision@K eval.
-3. An inference/scoring script + an NPI->company rollup step.
-Confirm the feature list (52 cols minus blocklist minus identifiers like `npi`,
-`org_legal_name`, `first_month`, `last_month`) before training.
+## MODEL SCAFFOLD: DONE (2026-06-11, branch `feat/model-scaffold`, pushed)
+`src/model/` is built and ran end-to-end on real data:
+- `config.py` — paths, label, leakage blocklist + **detector-score exclusions**
+  (`anomaly_score`/`n_anomaly_signals`/`anomaly_lead`/`not_scored`/`not_scored_reason`
+  are NOT features: PU negatives were selected on `anomaly_score == 0`, so those
+  columns encode the sampling design, not provider behavior).
+- `data.py` — loads the PU frame (asserts 308,038 rows / 578 positives / all
+  negatives anomaly_score==0), builds the shared leakage-free matrix
+  (**42 features**: 57 cols − 4 identifiers − 6 leakage − 5 detector), stratified
+  80/20 split (seed 42). Train and inference both go through `build_feature_matrix()`.
+- `train.py` — LightGBM binary, **heavy regularization is load-bearing** (only 462
+  train positives): `num_leaves=15, min_data_in_leaf=100, lambda_l2=10,
+  feature_fraction=0.6, lr=0.03`, early stopping on val average_precision.
+  Selected by 3-seed comparison (loose params → PR-AUC ~0.01; these → 0.35–0.47).
+  **Held-out val: PR-AUC 0.465 (base rate 0.19%), ROC-AUC 0.931, P@100 0.53,
+  recall@1000 63%, top-decile lift 7.9x.** Artifacts + `MODEL_REPORT.md` →
+  `~/Desktop/Data/Model/artifacts/` (booster `lgbm_leie.txt`, `feature_list.json`
+  incl. categorical levels, `metrics.json`, PR curve, val predictions, importances).
+- `score.py` — scores all 617,062 NPIs (`provider_features_scored.parquet`),
+  reapplies training categorical levels, then company rollup via
+  `detection/tables/npi_to_company_map.parquet` (non-fan-out asserted).
+  **`score_reliable = NOT not_scored` gate is essential**: the 33,920 unscoreable
+  providers get pure missing-value extrapolation (median score 0.9996 at median
+  $0 net_paid) — flagged, never ranked; company scores aggregate reliable
+  constituents only. Outputs → `~/Desktop/Data/Model/scores/`
+  (`provider_model_scores.parquet` w/ segment + rank_reliable,
+  `company_model_scores.parquet`, top-500 CSV, `MODEL_SCORING_REPORT.md`).
+- Segment separation (the PU design working): LEIE positives mean score 0.875,
+  clean negatives 0.0001, held-out high-anomaly spread between (mean 0.225) —
+  reliable top-1,000 = 989 high-anomaly candidates + 11 LEIE. NOTE: universe
+  recall@K of LEIE is LOW and that is expected (unlabeled ≠ negative; the top
+  ranks are the not-yet-caught candidates) — judge the model on held-out val.
+- `lightgbm>=4.3` added to requirements.txt (installed locally for python3.13).
+
+## Next steps (not started)
+1. PR + review for `feat/model-scaffold`.
+2. Calibration / threshold pick for the ad-targeting handoff (company grain).
+3. Compare model ranking vs unsupervised `company_anomaly_score` (agreement,
+   uniques each finds); consider LEIE-timing backtest like src/backtest.
+4. Company-name resolution for single-NPI companies in the top CSV is null —
+   reuse finalize_tracker's resolution if the model list feeds ads directly.
