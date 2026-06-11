@@ -85,7 +85,7 @@ All done with pandas/pyarrow, originals preserved. New files in `~/Desktop/Data/
   overwrite source files.
 - Remember the leakage column blocklist above when assembling the feature matrix.
 
-## MODEL SCAFFOLD: DONE (2026-06-11, branch `feat/model-scaffold`, pushed)
+## MODEL SCAFFOLD: DONE (2026-06-11, MERGED TO MAIN — `src/model/` is live)
 `src/model/` is built and ran end-to-end on real data:
 - `config.py` — paths, label, leakage blocklist + **detector-score exclusions**
   (`anomaly_score`/`n_anomaly_signals`/`anomaly_lead`/`not_scored`/`not_scored_reason`
