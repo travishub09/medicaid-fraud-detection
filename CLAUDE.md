@@ -141,13 +141,23 @@ the unsupervised FinalLeads screen); 66 leads are individual NPIs with no org
 name → "UNKNOWN NAME (NPI x)" (export_leads now treats blank org_legal_name as
 missing; person-name resolution from NPPES is a possible follow-up).
 
-**FINAL CUT (2026-06-11): score >= 0.70 only.** The 5,000-lead list was bimodal
-(897 leads scored <0.1 — padding to hit the count). Travis chose 0.7–1.0:
-`export_leads --min-score 0.7 --out .../model_leads_score070_over10m.csv`
-(2,687 leads) → screen_leads → **`model_leads_score070_over10m_screened.csv`
-= 2,168 leads, $135.6B** (519 institutional FPs removed). This is the current
-model handoff list. (0.70 here was chosen FROM THIS MODEL'S score distribution
-— coincidence that it matches the unsupervised bar; the scales are unrelated.)
+**FINAL CUT (2026-06-11): score >= 0.90.** First cut was 0.70 (2,168 screened
+leads), then tightened to 0.90 after held-out validation showed the bands
+differ sharply: val precision 0.897 for score>0.9 (35/39) vs 0.40 for 0.7–0.9
+(4/10, small n); all 9 known-LEIE companies in the list sat above 0.9.
+`export_leads --min-score 0.9` → screen_leads →
+**`~/Desktop/Data/Model/output/final/model_leads_score090_over10m_screened.csv`
+= 1,816 leads, $110.7B** (+ removed_audit, 415 institutional FPs). This is THE
+model handoff list. The 0.7–0.9 band (352 companies, $24.9B) is kept in the
+score070 files as a second-tier reserve. NOTE: Travis reorganized the Model dir
+— handoff CSVs live in `Model/output/final/`, superseded ones in
+`Model/output/unimportant/`; scores/artifacts unchanged. Scores are saturated
+near 1.0 (uncalibrated sigmoid; ranking valid — 2,000 distinct values in top
+2,000; a raw-margin column is a pending nice-to-have).
+
+**GitHub branch protection (2026-06-11):** main now has "changes via PR" +
+locked-branch rules; pushes as travishub09 succeed via admin bypass. Consider
+PR workflow for future substantive changes.
 
 ## Next steps (not started)
 1. Calibration / threshold pick for the ad-targeting handoff (company grain).
