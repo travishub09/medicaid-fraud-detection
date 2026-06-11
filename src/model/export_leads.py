@@ -36,6 +36,9 @@ def resolve_names(comp: pd.DataFrame, prov: pd.DataFrame) -> pd.DataFrame:
     npis = j.groupby("company_id", sort=False)["npi"].agg("|".join).rename("npi_list")
     out = comp.merge(best, on="company_id", how="left", validate="1:1") \
               .merge(npis, on="company_id", how="left", validate="1:1")
+    # blank-string names (individual NPIs have no org_legal_name) count as missing
+    for c in ("company_name", "_best_name"):
+        out[c] = out[c].replace(r"^\s*$", pd.NA, regex=True)
     out["company_name"] = out["company_name"].fillna(out["_best_name"])
     out["company_name"] = out["company_name"].fillna(
         "UNKNOWN NAME (NPI " + out["_best_npi"].astype(str) + ")")
