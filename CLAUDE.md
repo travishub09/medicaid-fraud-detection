@@ -141,6 +141,14 @@ the unsupervised FinalLeads screen); 66 leads are individual NPIs with no org
 name → "UNKNOWN NAME (NPI x)" (export_leads now treats blank org_legal_name as
 missing; person-name resolution from NPPES is a possible follow-up).
 
+**FINAL CUT (2026-06-11): score >= 0.70 only.** The 5,000-lead list was bimodal
+(897 leads scored <0.1 — padding to hit the count). Travis chose 0.7–1.0:
+`export_leads --min-score 0.7 --out .../model_leads_score070_over10m.csv`
+(2,687 leads) → screen_leads → **`model_leads_score070_over10m_screened.csv`
+= 2,168 leads, $135.6B** (519 institutional FPs removed). This is the current
+model handoff list. (0.70 here was chosen FROM THIS MODEL'S score distribution
+— coincidence that it matches the unsupervised bar; the scales are unrelated.)
+
 ## Next steps (not started)
 1. Calibration / threshold pick for the ad-targeting handoff (company grain).
 2. Compare model ranking vs unsupervised `company_anomaly_score` (agreement,
