@@ -153,6 +153,89 @@ score driver, always corroboration context (X-layer, per the manifesto).
 5. **A9 + B10** after the DOJ backfill runs.
 6. B3/B4/B5/B6/B8/B9 fill in alongside, smallest-first.
 
+## D. Manifesto features not captured anywhere else (inventory, June 2026)
+
+Recorded here so the full manifesto surface stays visible. Not sequenced; most
+sit behind Phase-0 counsel, real data, or the marketing build.
+
+### D1. Typology blueprints not yet seeded in the scheme registry
+The registry has 11 schemes; the manifesto's typology table (App. G) also
+specifies, each with named features and witness personas:
+- **MA risk adjustment** (HCC revenue-opportunity, unsupported-diagnosis
+  proxies, chart-review hiring signals, RADV pressure) — the largest-dollar
+  typology; needs MA-specific files
+- **Hospice** (long LOS, non-cancer mix, live-discharge proxies, SNF referral
+  concentration) — unlocked by B1 (Care Compare/PBJ)
+- **SNF / worthless services** (staffing-vs-acuity mismatch, PDPM case-mix
+  spikes, related-party services) — unlocked by B1 + B5
+- **Labs** (panel stacking, CLIA capacity mismatch, prescriber concentration)
+- **Behavioral health / ABA / SUD** (hours-per-patient, billing at
+  authorization limits, staffing mismatch, patient-acquisition ads)
+- **NEMT** (mileage/trip outliers, impossible routing, provider-driver
+  related parties) — state Medicaid data, geospatial
+- **Telehealth rings** (cross-state ordering, lead-gen ad infrastructure)
+- **Pharmacy / PBM / 340B** (prescriber-pharmacy exclusivity, geography
+  mismatch, contract-pharmacy patterns)
+- **Cost-report fraud** (HCRIS DSH / wage-index / allocation anomalies) — B5
+
+### D2. Creative data sources (manifesto §13) beyond the A/B/C lists
+- Job-posting **semantic drift** (audit-response hiring, risk-adjustment
+  hiring spikes) — partially parked in C; the drift analytic itself is unbuilt
+- **Internet Archive deleted-page monitoring** (services/claims quietly
+  removed from target websites after audits)
+- **Domain / phone / address reuse graph** (shared-address shells exist;
+  domain + phone reuse edges do not — DME/telehealth ring infrastructure)
+- **Capacity-vs-billing reconciliation** (billed hours vs roster/CLIA/bed
+  capacity — the "impossible org" version of impossible-day)
+- **Policy-shock arbitrage** (orgs whose billing pivots immediately after a
+  coverage/payment rule change)
+- **Competitor-enforcement cloning** (when one org settles, score its
+  structural twins — overlaps A9 but event-driven)
+- **Payer directory termination monitoring** (network terminations as
+  catalysts, A8 events)
+- **Procurement / vendor graph** (USAspending, state contracts → `pays`
+  edges)
+- **Credentialing / roster inconsistencies** (directory vs NPPES vs claims
+  mismatches)
+- **Local news / court mining** and **ad-library monitoring** (Meta/Google ad
+  libraries: patient-recruitment ad spend as a DME/telehealth/ABA signal)
+- **FOIA strategy** (state Medicaid program-integrity reports, audit lists)
+
+### D3. The funnel / marketing / intake software layer (manifesto §§12, 14–16, 20)
+Deliberately unbuilt until Phase-0 counsel and a partner firm exist:
+7-stage funnel metrics (visitor→MQL→CQL→EQL→filed), ListenLayer event
+taxonomy + data-layer fields (`fraud_typology`, `persona_segment`,
+`trust_stage`, `target_cluster_id`), composite behavioral lead score
+(org-anomaly 25 / persona 25 / behavior 25 / intake 15 / recency 10), offline
+conversion optimization to CQL, landing-page families per typology × persona,
+SEO content hub (conversion hubs, distress/protection clusters, persona +
+scheme pillars), 7-touch nurture sequences, self-assessment + reward
+estimator + evidence-checklist lead magnets, confidential structured intake
+(first-to-file / public-disclosure / original-source capture, privilege from
+first contact), triage scoring, counsel case-packet generator, and
+campaign-brief generation from dossiers ("data-to-audience transformation").
+
+### D4. Model C remaining surface (beyond the scaffold)
+P(intervene) + recovery-distribution model; USAO/jurisdiction intervention
+tendencies; scienter-likelihood and evidence-specificity intake features;
+counsel-interest fit; litigation-finance terms engine (the §7 unit-economics
+model). A1 built the damages-proxy input; A3/A6 build two more.
+
+### D5. The activation gate ("Final Practical Test")
+A buildable checklist gate: no target enters outbound activation until the
+system answers (1) what abnormal pattern vs what peer group, (2) benign
+explanations, (3) which job titles would know, (4) what documents would
+validate, (5) the lowest-pressure trust path. Dossiers already answer 1–2;
+3–5 arrive with Model B activation and the content layer. Implement as a
+hard gate in the eventual activation pipeline, not a score.
+
+### D6. Platform plumbing contemplated, not yet needed
+Feature-store / medallion marts (bronze raw → silver conformed → gold
+model-ready by typology) — our preclean/interim/processed/features flow is
+the small-scale equivalent; revisit at real-data volume. `fraud_typology_score`
+output tables per provider/org. Supervised graduation (PU + isotonic + SHAP +
+quantile-regression exposure) remains scaffolded in `model_a/supervised.py`.
+
 ## Explicitly not doing (manifesto-consistent)
 
 T-MSIS RIFs / LDS (DUA-barred), commercial claims (license-barred), anything
