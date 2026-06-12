@@ -30,6 +30,9 @@ entity-resolution graph, all under a strict legal/compliance frame.
 | [06-model-c.md](06-model-c.md) | Case-selection and intervention-likelihood (underwriting) |
 | [07-sourcing-and-marketing.md](07-sourcing-and-marketing.md) | Relator-sourcing engine, personas, funnel, intake |
 | [08-litigation-finance.md](08-litigation-finance.md) | Unit economics and fund construction |
+| [09-data-procurement.md](09-data-procurement.md) | Exactly what data to acquire, where, and what each file powers |
+| [10-workflows.md](10-workflows.md) | Operational workflows end-to-end + the model rationale |
+| [GAPS.md](GAPS.md) | The honest punch list of everything still missing |
 
 ## Component status (current repo state)
 
