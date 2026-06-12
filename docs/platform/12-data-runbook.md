@@ -57,6 +57,11 @@ from your data arrangement, not a public click-path. Required columns:
 `BILLING_PROVIDER_NPI_NUM, SERVICING_PROVIDER_NPI_NUM, HCPCS_CODE,
 CLAIM_FROM_MONTH, TOTAL_PATIENTS, TOTAL_CLAIM_LINES, TOTAL_PAID`.
 
+**Snapshot rule (start now, costs nothing):** when you refresh the owners
+files each quarter, do NOT overwrite — keep dated copies
+(`owners/2026-06/HospiceOwners.csv`, …). Diffing snapshots powers the
+ownership-churn detector (docs 14, A7).
+
 **After Block 0, run:** `python3 -m src.attempt_2.ingest.integrate` and check
 `processed/QA_REPORT.md` shows all assertions ✅.
 
