@@ -9,8 +9,9 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
    sector prior × graph boost → ERV + target dossiers (`src/model_a/`, tested;
    `python -m src.model_a --fixture`). Real per-org annual payments now flow
    from spending via `src/model_a/exposure.py` (`--spending` flag; dollar
-   conservation asserted). Remaining: the docket twin
-   (`src/sourcing/docket_monitor.py`, stub).
+   conservation asserted). Docket twin now DONE: CourtListener
+   qui tam monitor with first-to-file alerts + retaliation grievance events
+   (`src/sourcing/docket_monitor.py`, live client, tested on canned JSON).
 2. ~~**Part B / Part D / DMEPOS adapters**~~ — **DONE** (`src/ingest_cms/`):
    real-PUF-header column maps, NPI quarantine, per-NPI metrics → one-sided peer
    percentiles → org rollup; tested against the published header names so the
@@ -21,8 +22,9 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
    (`src/enforcement/`): press-release parser (amount, sector, scheme, qui tam,
    intervention, jurisdiction), validated case schema with the graph join key, and
    `derive_sector_priors` that replaces the placeholder multipliers (wired into
-   `sector_priors.sector_prior_series(priors=...)`). Remaining: the live fetcher
-   (`fetch.py`, stub — needs network + scraping review) and the 10-year backfill.
+   `sector_priors.sector_prior_series(priors=...)`). Live DOJ fetcher now DONE
+   (`fetch.py` — DOJ News API client; `make feeds-backfill` runs the 10-year
+   backfill on the analysis server). OIG pages remain manual (no API).
 4. **Dossier generator** — render a flagged org's full story (drivers, benign
    explanations, graph context, exposure) to Markdown/PDF. The product artifact
    counsel actually consumes; everything upstream exists.

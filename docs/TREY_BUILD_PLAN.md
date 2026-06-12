@@ -144,6 +144,21 @@ smarter immediately.
 
 ---
 
+## Phase 7 — Turn on the API feeds (after Phase 1; mostly signups + cron)
+
+The feed code is built and tested (docs/platform/13-api-feeds.md). My part:
+
+- [ ] Get the two free keys: CourtListener token + SAM.gov key → `.env`.
+- [ ] `make feeds-backfill` on the server (one-time: 10 years of DOJ cases +
+      docket history) — kills the manual DOJ spreadsheet task.
+- [ ] Put `make feeds-refresh` on a weekly cron.
+- [ ] After the first backfill: load the derived sector priors into Model A
+      (replaces the placeholder multipliers) and review the first
+      first-to-file alert list.
+
+**Done when:** priors come from real cases and a qui tam filing against any
+top-ranked target pages me within a week of hitting the docket.
+
 ## Dependencies I'll add (all free, CPU-only, no GPU/hosting)
 
 `sentence-transformers`, `transformers`, `torch` (CPU build), `praw`,

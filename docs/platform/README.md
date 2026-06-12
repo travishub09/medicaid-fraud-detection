@@ -40,6 +40,7 @@ rationale), [../GETTING_STARTED.md](../GETTING_STARTED.md) (zero to running),
 | [10-workflows.md](10-workflows.md) | Operational workflows end-to-end + the model rationale |
 | [11-icp-selection.md](11-icp-selection.md) | The first two typologies (ICPs) and why |
 | [12-data-runbook.md](12-data-runbook.md) | Click-by-click data acquisition with verification steps |
+| [13-api-feeds.md](13-api-feeds.md) | The API event layer: DOJ, CourtListener, SAM, NPPES, freshness probe |
 | [GAPS.md](GAPS.md) | The honest punch list of everything still missing |
 
 ## Component status (current repo state)

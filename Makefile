@@ -63,3 +63,15 @@ ci-local: test
 	$(PY) -m src.entity_graph --fixture --out /tmp/graph_ci
 	$(PY) -m src.model_a --fixture --out /tmp/model_a_ci --top-k 1
 	@test -f /tmp/model_a_ci/MODEL_A_REPORT.md && echo "fixture e2e OK"
+
+feeds-backfill:
+	$(PY) -m src.enforcement.fetch --backfill-years 10
+	$(PY) -m src.sourcing.docket_monitor --graph-dir $(DATA_ROOT)/graph \
+		--erv $(DATA_ROOT)/model_a/erv_ranked.parquet --since 2016-01-01
+
+feeds-refresh:
+	$(PY) -m src.enforcement.fetch
+	$(PY) -m src.sourcing.docket_monitor --graph-dir $(DATA_ROOT)/graph \
+		--erv $(DATA_ROOT)/model_a/erv_ranked.parquet
+	$(PY) -m src.enforcement.sam_api
+	$(PY) -m src.feeds.freshness

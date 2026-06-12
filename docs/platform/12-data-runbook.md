@@ -124,7 +124,15 @@ Adapters are already built and tested against these files' real headers
 - **Verify:** the run prints matched/unmatched counts; surge leads land in
   `sourcing/warn_surge_leads.parquet`.
 
+### 2.1b Two free API signups (5 minutes total)
+The automated feeds (docs 13) need two free keys in your `.env`:
+1. **CourtListener** — courtlistener.com → create account → profile → API token → `COURTLISTENER_TOKEN`.
+2. **SAM.gov** — sign in → Account Details → request public API key → `SAM_API_KEY`.
+Then `make feeds-backfill` once, and `make feeds-refresh` on a weekly cron.
+
 ### 2.2 DOJ enforcement backfill → `enforcement/doj_cases.csv`
+**SUPERSEDED by the automated DOJ feed** (`make feeds-backfill`, docs 13) — the
+manual path below remains only as a fallback if the API is unavailable.
 Until the automated fetcher ships, this is a manual/assisted task:
 1. Go to https://www.justice.gov/news and filter by topic **"False Claims Act"**
    (also: https://www.justice.gov/civil/false-claims-act).
