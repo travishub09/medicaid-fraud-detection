@@ -94,8 +94,14 @@ Audiences, not call lists · FCRA (audience definitions, not adjudications) · p
 properly.
 
 ## Current state in this repo
-- **Built:** the scheme-to-role line-of-sight matrix (`scheme_role_matrix.py`).
-- **Scaffold:** `knowledge.py`, `propensity.py`, `reachability.py`, `audiences.py`.
-- **Blocked on:** people-data licensing + FCRA review, and the probabilistic
-  person↔employer resolver + temporal `employed_by` edges
-  (`src/entity_graph/person_resolver.py`).
+- **Logic-complete, data-gated.** The whole scoring chain is implemented and
+  tested on synthetic people (`tests/test_model_b.py`):
+  `scheme_role_matrix.py` (line-of-sight), `knowledge.py` (seniority/doc-access
+  modifiers + the tenure-overlap HARD gate), `propensity.py` (additive heuristic
+  with the 6–18-month window and the financial-distress review flag),
+  `reachability.py` (channel availability × persona fit), `audiences.py`
+  (role×org×channel roll-up with education-first message angles and the
+  `assert_no_identifiers` export tripwire — the guardrail is code, not policy).
+- **Blocked on (activation):** people-data licensing + FCRA review, and the
+  probabilistic person↔employer resolver + temporal `employed_by` edges
+  (`src/entity_graph/person_resolver.py`) — the only missing piece.

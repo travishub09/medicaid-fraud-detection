@@ -14,9 +14,9 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
 2. ~~**Part B / Part D / DMEPOS adapters**~~ — **DONE** (`src/ingest_cms/`):
    real-PUF-header column maps, NPI quarantine, per-NPI metrics → one-sided peer
    percentiles → org rollup; tested against the published header names so the
-   downloads drop in unmodified. Remaining: the Open Payments adapter (needs the
-   utilization cross — build with the kickback correlation) and running against
-   the real files once procured.
+   downloads drop in unmodified. Open Payments adapter + kickback co-occurrence now ALSO done
+   (`src/ingest_cms/openpayments.py`, incl. `pays` edges). Remaining: run
+   against the real files once procured.
 3. ~~**DOJ/OIG case-database builder**~~ — **DONE (parse/build/derive)**
    (`src/enforcement/`): press-release parser (amount, sector, scheme, qui tam,
    intervention, jurisdiction), validated case schema with the graph join key, and
@@ -26,21 +26,27 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
 4. **Dossier generator** — render a flagged org's full story (drivers, benign
    explanations, graph context, exposure) to Markdown/PDF. The product artifact
    counsel actually consumes; everything upstream exists.
-5. **Temporal-holdout harness generalization** — extend `src/backtest/` from LEIE to
-   enforcement-action labels with arbitrary cut years (`src/model_a/validation.py`).
+5. ~~**Temporal-holdout harness generalization**~~ — **DONE**
+   (`src/model_a/validation.py`): precision@k + lift vs. baseline on arbitrary
+   cut dates and outcome tables; `outcomes_from_case_db` joins DOJ cases to the
+   graph by name key. Run it for real once Model A scores a real universe.
 6. **Person↔employer resolver** — Splink-based probabilistic linkage + temporal
    `employed_by` edges (`src/entity_graph/person_resolver.py`). *Gated on people-data
-   license + FCRA review.*
+   license + FCRA review.* NOTE: Model B's scoring chain is now LOGIC-COMPLETE
+   (`src/model_b/` — knowledge gate, propensity + distress review flag,
+   reachability, audience roll-up with the no-identifier tripwire) and tested on
+   synthetic people; this resolver is the only missing piece to activate it.
 7. **Public lookup tool** — FastAPI app behind Model A percentile features
    (`src/lookup_tool/`). Gated on Part B ingestion (its data) + Phase-0 sign-off
    (its legal frame).
 8. **Tests for the attempt_2 core** — the 13-stage pipeline has assertions but zero
    unit tests; `tests/` covers only the entity graph. Add fixture-driven tests for
    `clean_data` normalizers, `integrate` joins, and v3 concept scoring.
-9. **CI** — no `.github/workflows/`. Add: pytest on PR, plus a docs link-checker.
-   (Blocked on repo write access; ready to add the moment we can push.)
-10. **Orchestration** — a `Makefile` or single `run_all` entry point encoding the
-    stage order (currently a README list); refresh scheduling later.
+9. ~~**CI**~~ — **DONE** (`.github/workflows/tests.yml`): pytest + fixture
+   end-to-end + doc-link check on every push/PR. Activates when the branch
+   reaches GitHub.
+10. ~~**Orchestration**~~ — **DONE** (`Makefile`): `make demo|test|pipeline|
+    graph|model-a|warn|ci-local`; refresh scheduling later.
 11. **Config hygiene** — `.env.example` exists but stages hardcode
     `~/Desktop/data` defaults; route through one config module.
 12. **Label store** — a small, append-only outcomes table (case → outcome → date)

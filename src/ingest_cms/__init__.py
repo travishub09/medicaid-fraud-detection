@@ -10,6 +10,8 @@ that power the dormant schemes in Model A's feature registry:
                        brand-steering / high-cost-drug metrics
   dmepos.py            Medicare DMEPOS (by Referring Provider and Service) →
                        high-cost-item metrics
+  openpayments.py      Open Payments (manufacturer→physician) → payment
+                       concentration, pays edges, kickback co-occurrence with Part D
   peer_percentiles.py  raw metrics → one-sided peer-relative percentiles (the 0–1
                        inputs the registry expects) → NPI→org rollup
 
@@ -28,12 +30,15 @@ registry consumes the *percentile* versions (0–1), produced by peer_percentile
 from .partb import compute_partb_metrics
 from .partd import compute_partd_metrics
 from .dmepos import compute_dmepos_metrics
+from .openpayments import compute_openpayments_metrics, kickback_co_occurrence
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
 __all__ = [
     "compute_partb_metrics",
     "compute_partd_metrics",
     "compute_dmepos_metrics",
+    "compute_openpayments_metrics",
+    "kickback_co_occurrence",
     "to_peer_percentiles",
     "rollup_to_org",
 ]

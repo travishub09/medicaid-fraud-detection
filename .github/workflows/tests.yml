@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run the full suite (synthetic fixtures — no real data needed)
+        run: python -m pytest tests/ -v
+      - name: End-to-end fixture run (graph -> Model A -> dossiers)
+        run: |
+          python -m src.entity_graph --fixture --out /tmp/graph_ci
+          python -m src.model_a --fixture --out /tmp/model_a_ci --top-k 1
+          test -f /tmp/model_a_ci/MODEL_A_REPORT.md
+
+  docs-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify every relative doc link resolves
+        run: |
+          python3 - << 'PY'
+          import re, pathlib, sys
+          bad = []
+          for md in list(pathlib.Path("docs").rglob("*.md")) + [pathlib.Path("README.md"), pathlib.Path("CLAUDE.md")]:
+              for l in re.findall(r"\]\(([^)]+)\)", md.read_text()):
+                  if l.startswith(("http", "#")):
+                      continue
+                  if not (md.parent / l).resolve().exists():
+                      bad.append(f"{md} -> {l}")
+          if bad:
+              print("\n".join(bad)); sys.exit(1)
+          print("all doc links resolve")
+          PY
