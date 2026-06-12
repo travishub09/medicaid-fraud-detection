@@ -12,6 +12,16 @@ geography; enforce a minimum peer count (e.g. n ≥ 30); when a cell is too spar
 fall back to coarser geography (state, then national). Facilities get their own peer
 logic (e.g. SNFs grouped by size band and region).
 
+**Implemented** in `src/analytics/peers.py`: the ladder (taxonomy × entity ×
+state → taxonomy × entity → taxonomy) with the critical subtlety that fallback
+rows are baselined against the level's FULL population, not just the leftovers;
+`peer_basis`/`peer_n` recorded per provider (the comparison itself is
+explainable); too-small-everywhere rows are excluded, never force-ranked;
+degenerate cells return NaN; and `complexity_adjust` residualizes metrics
+against volume/breadth with a robust two-pass fit (3×MAD trim) so the fit is
+not dragged by the very outliers being hunted — the referral-center trap (§2.6)
+addressed at the comparison layer.
+
 ## Robust standardization (one-sided)
 Most fraud signals are one-sided — unusually high level-5 coding is suspicious,
 unusually low is not — measured on a robust scale a few extreme billers cannot
@@ -106,6 +116,7 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Enforcement-prior sector map (placeholder multipliers) | **Built** | `src/model_a/sector_priors.py` — re-derive from the DOJ case DB (GAPS #13) |
 | Target dossiers (drivers + alternative explanations + disclaimer) | **Built** | `src/model_a/dossier.py` |
 | Real exposure from spending (dollar-conserving) | **Built** | `src/model_a/exposure.py` (`--spending`) |
+| Hierarchical peer engine: specialty×entity×state ladder, full-population baselines, robust complexity adjustment, degeneracy guards, peer report | **Built** | `src/analytics/peers.py` (wired into `ingest_cms.to_peer_percentiles`) |
 | Part B / Part D / DMEPOS feature adapters | **Built** | `src/ingest_cms/` (awaiting the real files) |
 | Enforcement case DB + derived sector priors | **Built** (fetcher stub) | `src/enforcement/` |
 | PU supervised graduation + quantile exposure | Scaffold | `src/model_a/supervised.py` |

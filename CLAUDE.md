@@ -42,6 +42,7 @@ src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
 src/ingest_cms/     Part B/D/DMEPOS/OpenPayments adapters + NPPES API (built)
 src/feeds/          API-feed plumbing: cached transport, cursors, freshness probe
+src/analytics/      peer engine: ladder groups, robust complexity adjust (built)
 src/enforcement/    DOJ case DB + API fetcher + SAM client + label store (built)
 tests/              pytest; fixtures/synthetic.py generates data — no data files committed
 docs/platform/      architecture, roadmap, and component specs (the source of truth)

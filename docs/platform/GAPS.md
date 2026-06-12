@@ -71,8 +71,15 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
     derived from the DOJ case DB (#3); documented, not hardcoded magic numbers.
 14. **Exposure model** — annual program payments per org (we have Medicaid spending;
     Part B adds Medicare) × scheme multiplier; later a quantile model.
-15. **Case-mix / acuity controls** — referral-center and subspecialty flags before
-    Model A graduates to supervised (the false-positive trap).
+15. **Case-mix / acuity controls** — **LARGELY DONE** (`src/analytics/peers.py`):
+    hierarchical peer ladder with full-population baselines, robust
+    within-cell complexity residualization (volume/breadth controls, 3×MAD
+    trimmed refit), referral-center context flags, degeneracy guards, and a
+    peer-quality report; wired into `ingest_cms.to_peer_percentiles` and
+    proven on a planted whale-vs-true-outlier fixture
+    (`tests/test_peer_analytics.py`). Remaining: HCC acuity scores as a
+    control when that data exists, and facility size-band peer logic for the
+    CCN grain.
 16. **Model B propensity calibration plan** — define the engagement proxy label and
     the measurement design *before* campaigns launch, or the data is unusable.
 17. **Model C survivorship-bias handling** — track the full intake→filed→outcome
