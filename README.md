@@ -172,6 +172,22 @@ python -m src.attempt_2.export.export_final_leads --min-net-paid 10000000   # 13
 (`clean_data.py` is step 1; `integrate.py` re-converts the raw CSVs itself, so the integration
 step can be run directly on the `preclean/` extracts.)
 
+### Entity-resolution graph (`src/entity_graph/`)
+
+The canonical healthcare entity graph — the foundation the broader platform builds on
+(see `docs/platform/`). It turns the integration outputs into typed nodes (Provider,
+Organization, Owner, Exclusion) and temporal edges (`member_of`, `owned_by`,
+`excluded_in`, `co_located_with`), then derives graph features single-entity scoring
+cannot see (excluded-party distance, related-party density, shell score, community,
+centrality) and runs ring detection (shared-address shells, common-owner clusters,
+excluded-party proximity).
+
+```bash
+python -m src.entity_graph --input ~/Desktop/data/processed --out ~/Desktop/data/graph
+python -m src.entity_graph --fixture --out /tmp/graph_out   # runs on a synthetic fixture (no real data)
+pytest tests/test_entity_graph.py                            # 9 end-to-end tests
+```
+
 ### Code layout (`src/attempt_2/`)
 
 ```
@@ -181,9 +197,16 @@ src/attempt_2/
 ├── audit/            # diagnose_coverage.py, audit_corruption.py
 ├── leads/            # detect, verify_layer1, refine_layer2, refine_layer2_v3, company_rollup, company_lead_tracker, finalize_tracker
 └── export/           # export_csv.py, export_final_leads.py
+
+src/entity_graph/      # canonical entity graph (nodes, resolver, edges, graph features, rings)
+src/model_a/           # org fraud-risk → ERV (scaffold; absorbs the leads/ detection core)
+src/model_b/           # whistleblower identification (scaffold + scheme-to-role matrix)
+src/model_c/           # case-selection / underwriting (scaffold)
+src/lookup_tool/       # public billing-risk lookup tool (scaffold)
 ```
 
-See `DATA_DICTIONARY.md` for every table, its grain, and its columns.
+See `DATA_DICTIONARY.md` for every table, its grain, and its columns, and
+`docs/platform/` for the full platform architecture, roadmap, and component specs.
 
 ### Backtest (`src/backtest/`)
 

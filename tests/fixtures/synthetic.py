@@ -1,0 +1,136 @@
+"""
+synthetic.py — a tiny in-memory dataset shaped exactly like the integrate.py
+outputs, so the entity-graph build runs and is verified end-to-end without any
+real (HIPAA-protected) CMS data.
+
+Returned tables match the schemas in ``src/attempt_2/ingest/integrate.py``:
+    provider_dim   one row per NPI
+    npi_xwalk      npi ↔ pac_id ↔ enrollment_id
+    owner_edges    facility ↔ owner
+    exclusions     LEIE records
+
+Planted patterns the tests assert on:
+  * a shared-address SHELL cluster — 3 thin, name-only orgs at one address;
+  * a COMMON-OWNER ring — one excluded owner ("BADCO HOLDINGS") controlling 4
+    distinct (PAC-resolved) orgs;
+  * a directly EXCLUDED provider (NPI present in LEIE);
+  * a PAC SUBPART org — 2 NPIs sharing one PECOS PAC id → one canonical org;
+  * an ALIAS pair — two name spellings of "ACME HEALTH LLC" → one canonical org;
+  * plain independent providers with no flags (the negative controls).
+
+This data is generated, not committed (the repo .gitignore excludes *.parquet/*.csv).
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+# Canonical keys are hardcoded to the exact strings the resolver/normalizers
+# produce, so matches are deterministic without re-running the normalizers here.
+_BADCO_KEY = "BADCO HOLDINGS"
+_SHELL_ADDR = "100 MAIN ST AUSTIN TX 78701"
+
+
+def _provider_row(npi, etype, org_name, addr_key, state, person=""):
+    return {
+        "npi": npi,
+        "entity_type": etype,                       # "1" individual, "2" organization
+        "org_legal_name": org_name,
+        "provider_name": org_name or person,
+        "name_key": org_name.upper() or person.upper(),
+        "taxonomy_code": "207Q00000X",
+        "addr_key": addr_key,
+        "addr_state": state,
+        "is_active": True,
+        "deactivation_date": pd.NaT,
+        "reactivation_date": pd.NaT,
+    }
+
+
+def build_provider_dim() -> pd.DataFrame:
+    rows = [
+        # shared-address shell cluster (3 distinct names, one address, single-NPI each)
+        _provider_row("1003000001", "2", "SHELL ALPHA LLC", _SHELL_ADDR, "TX"),
+        _provider_row("1003000002", "2", "SHELL BETA LLC", _SHELL_ADDR, "TX"),
+        _provider_row("1003000003", "2", "SHELL GAMMA LLC", _SHELL_ADDR, "TX"),
+        # common-owner ring: 4 distinct orgs (each its own PAC), owned by BADCO
+        _provider_row("1003000010", "2", "OWNED ONE LLC", "10 OAK AVE DALLAS TX 75201", "TX"),
+        _provider_row("1003000011", "2", "OWNED TWO LLC", "22 ELM ST DALLAS TX 75202", "TX"),
+        _provider_row("1003000012", "2", "OWNED THREE LLC", "33 ASH RD DALLAS TX 75203", "TX"),
+        _provider_row("1003000013", "2", "OWNED FOUR LLC", "44 FIR LN DALLAS TX 75204", "TX"),
+        # directly excluded individual provider
+        _provider_row("1003000020", "1", "", "55 PINE ST HOUSTON TX 77001", "TX", person="EXCLUDED, JOHN"),
+        # PAC subparts: 2 NPIs, one PECOS PAC → one canonical org
+        _provider_row("1003000030", "2", "SUBPART HEALTH SYSTEM", "60 CEDAR BLVD AUSTIN TX 78702", "TX"),
+        _provider_row("1003000031", "2", "SUBPART HEALTH SYSTEM EAST", "61 CEDAR BLVD AUSTIN TX 78702", "TX"),
+        # alias pair → one canonical org by exact normalized name
+        _provider_row("1003000050", "2", "ACME HEALTH LLC", "70 BIRCH WAY AUSTIN TX 78703", "TX"),
+        _provider_row("1003000051", "2", "Acme Health, LLC.", "71 BIRCH WAY AUSTIN TX 78704", "TX"),
+        # negative controls: independent, unflagged
+        _provider_row("1003000040", "1", "", "80 MAPLE CT WACO TX 76701", "TX", person="CLEAN, JANE"),
+        _provider_row("1003000041", "2", "INDEPENDENT CLINIC LLC", "90 WALNUT DR WACO TX 76702", "TX"),
+    ]
+    return pd.DataFrame(rows)
+
+
+def build_npi_xwalk() -> pd.DataFrame:
+    rows = [
+        # each owned org gets its OWN pac → resolves to a distinct org (not merged)
+        ("1003000010", "PAC10", ""),
+        ("1003000011", "PAC11", ""),
+        ("1003000012", "PAC12", ""),
+        ("1003000013", "PAC13", ""),
+        # the two subpart NPIs SHARE one pac → collapse into one org
+        ("1003000030", "PAC_SUB", "O1003000030"),
+        ("1003000031", "PAC_SUB", "O1003000031"),
+    ]
+    return pd.DataFrame(rows, columns=["npi", "pac_id", "enrollment_id"])
+
+
+def _owner_row(facility_npi):
+    return {
+        "facility_npi": facility_npi,
+        "facility_name": "OWNED FACILITY",
+        "facility_type": "nursing",
+        "owner_npi": "",                               # owner has no NPI (matched by name)
+        "owner_type": "O",                             # organization owner
+        "owner_role": "5% OR GREATER DIRECT OWNERSHIP INTEREST",
+        "owner_first_name": "",
+        "owner_last_name": "",
+        "owner_name_key": "",                          # person key (empty for org owner)
+        "owner_org_name": "BADCO HOLDINGS LLC",
+        "owner_org_name_key": _BADCO_KEY,              # == exclusions name_key below
+        "owner_addr_key": "1 CORPORATE PLZ DALLAS TX 75201",
+        "pct_ownership": "100",
+        "flag_private_equity": "Y",
+        "association_date": pd.Timestamp("2019-01-01"),
+    }
+
+
+def build_owner_edges() -> pd.DataFrame:
+    return pd.DataFrame([_owner_row(n) for n in
+                         ["1003000010", "1003000011", "1003000012", "1003000013"]])
+
+
+def build_exclusions() -> pd.DataFrame:
+    rows = [
+        # excluded OWNER, matched by name_key (no NPI)
+        {"npi": "", "entity_name": "BADCO HOLDINGS LLC", "name_key": _BADCO_KEY,
+         "excl_type": "1128b8", "excl_date": pd.Timestamp("2021-06-01"),
+         "reinstate_date": pd.NaT, "currently_active": 1},
+        # excluded individual PROVIDER, matched by NPI
+        {"npi": "1003000020", "entity_name": "EXCLUDED, JOHN", "name_key": "EXCLUDED JOHN",
+         "excl_type": "1128a1", "excl_date": pd.Timestamp("2020-03-15"),
+         "reinstate_date": pd.NaT, "currently_active": 1},
+    ]
+    return pd.DataFrame(rows)
+
+
+def build_synthetic_inputs() -> dict[str, pd.DataFrame]:
+    """All four integration tables as a dict (the shape ``entity_graph.run`` expects)."""
+    return {
+        "provider_dim": build_provider_dim(),
+        "npi_xwalk": build_npi_xwalk(),
+        "owner_edges": build_owner_edges(),
+        "exclusions": build_exclusions(),
+    }

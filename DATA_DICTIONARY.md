@@ -242,3 +242,56 @@ Prose narrative + a `metrics` object. Sections: `methodology`, `data_sources`, `
 `limitations`, `conclusion`. Key metrics: `base_rate`, `anomaly_top_decile_lift`,
 `billing_top_decile_lift`, `anomaly_beats_size`, `within_size_top_decile_lift` (per billing
 quartile), `after_2024_top_decile_lift`, `permutation_p_value`, `bootstrap_top_decile_lift_ci95`.
+
+## 9. Entity-resolution graph (`src/entity_graph/` → `~/Desktop/data/graph/`)
+
+The canonical graph built from the integration outputs. See `docs/platform/03-entity-resolution.md`.
+Run: `python -m src.entity_graph --input ~/Desktop/data/processed --out ~/Desktop/data/graph`.
+
+### Node tables (`nodes/`)
+- **`provider_nodes.parquet`** — one row per NPI. `node_id` (`provider:<npi>`), `npi`,
+  `entity_type`, `provider_name`, `org_legal_name`, `name_key`, `taxonomy_code`, `addr_key`,
+  `addr_state`, `is_active`, `pac_id`, `enrollment_id`, `node_type`.
+- **`org_nodes.parquet`** — one row per canonical organization. `org_node_id` (`org:<company_id>`),
+  `company_id`, `n_constituent_npis`, `member_npis` (`;`-joined), `org_name`, `org_legal_name`,
+  `aliases`, `addr_key`, `addr_state`, `n_states`, `primary_taxonomy`, `merge_basis`
+  (`pac_id`/`shared_owner`/`name`/`single`), `merge_confidence` (`high`/`medium`/`low`/`single`).
+- **`owner_nodes.parquet`** — one row per distinct owner. `node_id` (`owner:<key>`), `owner_key`,
+  `owner_type` (I/O), `owner_display_name`, `owner_npi`, `is_private_equity`.
+- **`exclusion_nodes.parquet`** — one row per LEIE record. `node_id` (`exclusion:<row>`), `npi`,
+  `entity_name`, `name_key`, `excl_type`, `excl_date`, `reinstate_date`, `currently_active`.
+
+### Edge tables (`edges/`) — `src_id`, `dst_id`, `edge_type` + attributes
+- **`member_edges.parquet`** — `provider → org` (`member_of`), with `basis`.
+- **`owned_by_edges.parquet`** — `org → owner` (`owned_by`): `pct_ownership`, `owner_role`,
+  `association_date`, `is_private_equity`.
+- **`excluded_in_edges.parquet`** — `provider/owner → exclusion` (`excluded_in`): `match_tier`
+  (`exact`/`probable`), `excl_date`, `currently_active`.
+- **`co_located_edges.parquet`** — `org ↔ org` (`co_located_with`): `addr_key`, `cluster_size`.
+
+### `npi_to_org.parquet`
+**Grain:** one row per NPI (the resolution crosswalk). `npi`, `org_company_id`, `org_node_id`,
+`merge_basis_raw`. The audit trail proving every NPI resolves to exactly one organization.
+
+### `org_graph_features.parquet`
+**Grain:** one row per canonical organization. Feeds Model A.
+- `excluded_party_distance` — graph hops to the nearest exclusion (`-1` = unreached).
+- `within_2_hops_of_exclusion` — 1/0 integrity proximity flag.
+- `related_party_density` — count of organizations sharing this org's owner(s).
+- `co_location_cluster_size` — organizations sharing this org's address.
+- `shell_score` — 0–1 heuristic (shared address + thin/name-only + exclusion proximity).
+- `community_id` — Louvain (fallback greedy-modularity) community membership.
+- `betweenness` — betweenness centrality (the orchestrator of a suspected ring).
+
+### Ring detection (`rings/`)
+- **`shared_address_shells.parquet`** — address clusters of ≥3 orgs: `addr_key`, `n_orgs`,
+  `n_thin`, `org_node_ids`, `org_names`.
+- **`common_owner_clusters.parquet`** — owners controlling ≥4 orgs: `owner_node_id`, `owner_name`,
+  `n_orgs`, `excluded_in_network` (1 if an exclusion sits in the owner's network), `org_node_ids`.
+- **`excluded_party_proximity.parquet`** — orgs within 2 hops of an exclusion: `org_node_id`,
+  `org_name`, `hops_to_exclusion`.
+- **`referral_rings.parquet`** — gated/empty until referral-pair data is ingested.
+
+### `GRAPH_REPORT.md`
+Table sizes + graph-feature highlights (orgs near exclusions, max related-party density, max
+co-location cluster, count of high shell-score orgs).
