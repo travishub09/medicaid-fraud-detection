@@ -41,7 +41,8 @@ def require(name: str, ok: bool, detail: str = "") -> None:
 def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         company_features: pd.DataFrame, shell_clusters: pd.DataFrame | None,
         common_owner_clusters: pd.DataFrame | None, out_dir: Path,
-        top_k_dossiers: int = 10) -> pd.DataFrame:
+        top_k_dossiers: int = 10,
+        scoped_payments: pd.DataFrame | None = None) -> pd.DataFrame:
     """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/."""
     n0 = len(org_nodes)
     df = org_nodes.merge(org_graph_features, on="org_node_id", how="left")
@@ -55,18 +56,27 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     prior = sector_prior_series(df.get("primary_taxonomy", pd.Series("", index=df.index)))
     payments = df.get("payments", pd.Series(0.0, index=df.index)).fillna(0.0)
 
+    scoped_idx = None
+    if scoped_payments is not None and len(scoped_payments):
+        scoped_idx = (scoped_payments.set_index("org_node_id")
+                      .reindex(df["org_node_id"]).set_axis(df.index))
     scored = expected_recoverable_value(subscores, payments, prior,
-                                        boost["graph_risk_boost"])
+                                        boost["graph_risk_boost"],
+                                        scoped_payments=scoped_idx)
+    from src.analytics.confidence import confidence_band
+    conf = confidence_band(pd.concat([df, subscores, scored], axis=1)
+                           .loc[:, lambda d: ~d.columns.duplicated()])
     # Computed outputs are authoritative: a stale erv/adjusted_prob/subscore_*
     # column arriving in the features input must never survive the concat
     # (duplicated() keeps the FIRST copy — found by probing: a poisoned input
     # column silently overrode the entire ranking).
     computed_cols = (set(subscores.columns) | set(boost.columns)
-                     | set(scored.columns) | {"erv_rank", "payments_joined"})
+                     | set(scored.columns) | set(conf.columns)
+                     | {"erv_rank", "payments_joined"})
     df = df.drop(columns=[c for c in df.columns if c in computed_cols],
                  errors="ignore")
     out = pd.concat([df, subscores, boost.drop(columns=["graph_risk_boost"]),
-                     scored, payments.rename("payments_joined")], axis=1)
+                     scored, conf, payments.rename("payments_joined")], axis=1)
     assert not out.columns.duplicated().any(), \
         f"duplicate output columns: {out.columns[out.columns.duplicated()].tolist()}"
     out = out.sort_values("erv", ascending=False)
@@ -144,17 +154,27 @@ def main() -> None:
         feats = pd.read_parquet(args.features)
         shells = pd.read_parquet(g / "rings" / "shared_address_shells.parquet")
         owners = pd.read_parquet(g / "rings" / "common_owner_clusters.parquet")
+        scoped = None
         if args.spending:
-            from .exposure import annual_payments_per_org, attach_payments
+            from .exposure import (annual_payments_per_org, attach_payments,
+                                   scoped_payments_per_org)
+            from src.analytics.growth import growth_features, growth_percentiles
             npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
-            payments, recon = annual_payments_per_org(
-                pd.read_parquet(args.spending), npi_to_org)
+            spending = pd.read_parquet(args.spending)
+            payments, recon = annual_payments_per_org(spending, npi_to_org)
             log(f"    exposure: ${recon['total_matched']:,.0f} matched "
                 f"({recon['pct_dollars_matched']:.1%}); "
                 f"{recon['unresolved_npis']} unresolved billing NPIs")
             feats = attach_payments(feats, payments)
+            scoped = scoped_payments_per_org(spending, npi_to_org)
+            growth = growth_percentiles(growth_features(spending, npi_to_org))
+            pre = len(feats)
+            feats = feats.merge(growth, on="org_node_id", how="left")
+            assert len(feats) == pre, "growth join fan-out"
+            log(f"    growth features attached for {growth['org_node_id'].nunique()} orgs")
 
-    run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k)
+    run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k,
+        scoped_payments=scoped if args.spending else None)
 
 
 if __name__ == "__main__":

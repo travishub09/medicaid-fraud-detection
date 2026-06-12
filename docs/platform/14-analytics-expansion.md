@@ -9,7 +9,7 @@ the bigger swings. Each item names where it plugs into the existing code.
 
 ## A. New analytics on data we ALREADY have (build first — zero downloads)
 
-### A1. Scheme-scoped damages proxy (sharper exposure)
+### A1. Scheme-scoped damages proxy (sharper exposure) — BUILT
 The manifesto's damages proxy is "payments associated with **suspect
 code/service families** × estimated unsupported share × period" — not total
 billing. Today `exposure.py` uses ALL of an org's payments × a scheme
@@ -22,7 +22,7 @@ then says "$8.2M of personal-care billing at issue," not "$25M total billing."
 **Where:** `src/model_a/exposure.py` (+ a `scheme_code_families.py` data
 module); `spending_fact` already carries HCPCS per row.
 
-### A2. Data-confidence band on every dossier
+### A2. Data-confidence band on every dossier — BUILT
 The manifesto's scoring architecture has a seventh sub-score we skipped:
 **data-confidence** — "suppress small samples, poor state quality, stale
 source data, broad peer groups." The spec's output line is "ranked organizations
@@ -46,7 +46,7 @@ docket pulls + (later) news for the org's name keys; emit
 **Where:** `src/model_c/` first real function (it's a case-viability input);
 reuses `norm_org_name` matching that already joins both sources.
 
-### A4. Growth-shock score (change-points, not just YoY)
+### A4. Growth-shock score (change-points, not just YoY) — BUILT
 v3 has `yoy_growth_net_paid` + volatility; the manifesto wants **change-point
 models** on "services, beneficiaries, payments, new codes, new locations" —
 the fly-by-night ramp signature. `provider_month` and `provider_hcpcs` tables

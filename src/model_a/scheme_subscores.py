@@ -35,7 +35,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "payment_outlier": {"payment_intensity": 1.0},
     "overutilization": {"service_intensity": 1.0},
     "specialty_mismatch": {"specialty_mismatch": 1.0},
-    "rapid_ramp": {"temporal": 1.0},
+    "rapid_ramp": {"temporal": 0.6,
+                   # growth-shock signals from src/analytics/growth.py (A4):
+                   # absent until spending-derived features are attached
+                   "growth_level_shift": 0.8, "new_code_burst": 0.5},
     # available today: entity-graph features (src/entity_graph/graph_features.py)
     "ownership_integrity": {
         "within_2_hops_of_exclusion": 0.6,

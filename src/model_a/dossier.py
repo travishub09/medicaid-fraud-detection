@@ -51,6 +51,9 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
     lines.append("\n## Risk picture (drivers, not a bare score)\n")
     lines.append(f"- **Scheme hypothesis:** {row.get('scheme_hypothesis')} "
                  f"(top subscore {row.get('top_subscore')})\n")
+    if row.get("confidence"):
+        lines.append(f"- **Confidence: {str(row.get('confidence')).upper()}** — "
+                     f"{row.get('confidence_reasons', '')}\n")
     lines.append(f"- Composite org_prob (noisy-OR): {row.get('org_prob')}  →  "
                  f"adjusted {row.get('adjusted_prob')} "
                  f"(sector prior ×{row.get('sector_prior')}, "
@@ -76,9 +79,18 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
         return f"${float(v):,.0f}" if pd.notna(v) else "unknown (payments not yet loaded)"
 
     lines.append("\n## Exposure (size proxy, NOT case value)\n")
-    lines.append(f"- Annual program payments: {_dollars(row.get('payments'))} × "
-                 f"recovery multiplier {row.get('scheme_recovery_multiplier')} "
-                 f"= exposure {_dollars(row.get('exposure'))}\n")
+    if str(row.get("exposure_scope", "")) == "scheme_code_family":
+        lines.append(f"- Payments at issue ({row.get('scheme_hypothesis')} code "
+                     f"family): {_dollars(row.get('payments_at_issue'))} of "
+                     f"{_dollars(row.get('payments'))} total annual billing\n")
+        lines.append(f"- × recovery multiplier "
+                     f"{row.get('scheme_recovery_multiplier')} "
+                     f"= exposure {_dollars(row.get('exposure'))}\n")
+    else:
+        lines.append(f"- Annual program payments: {_dollars(row.get('payments'))} × "
+                     f"recovery multiplier {row.get('scheme_recovery_multiplier')} "
+                     f"= exposure {_dollars(row.get('exposure'))} "
+                     f"(scope: all payments — no code family for this scheme)\n")
     lines.append(f"- **ERV (expected recoverable value): {_dollars(row.get('erv'))}**\n")
 
     lines.append("\n## Alternative explanations (must be ruled out)\n")

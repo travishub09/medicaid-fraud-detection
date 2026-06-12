@@ -18,6 +18,8 @@ HOW MANY peers — the explainability requirement applies to the comparison
 itself, not just the score.
 """
 
+from .confidence import confidence_band
+from .growth import growth_features, growth_percentiles
 from .peers import (
     assign_peer_groups,
     one_sided_percentiles,
@@ -28,6 +30,9 @@ from .peers import (
 )
 
 __all__ = [
+    "confidence_band",
+    "growth_features",
+    "growth_percentiles",
     "assign_peer_groups",
     "one_sided_percentiles",
     "complexity_adjust",

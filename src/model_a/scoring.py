@@ -73,8 +73,17 @@ def graph_risk_boost(org_ids: pd.Series,
 def expected_recoverable_value(subscores: pd.DataFrame,
                                exposure_payments: pd.Series,
                                sector_prior: pd.Series,
-                               boost: pd.Series) -> pd.DataFrame:
-    """org_prob, scheme hypothesis, adjusted_prob, exposure, ERV — with drivers."""
+                               boost: pd.Series,
+                               scoped_payments: pd.DataFrame | None = None
+                               ) -> pd.DataFrame:
+    """org_prob, scheme hypothesis, adjusted_prob, exposure, ERV — with drivers.
+
+    ``scoped_payments`` (optional, from ``exposure.scoped_payments_per_org``):
+    same index as subscores, columns ``scoped__<scheme>``. When the hypothesized
+    scheme has a code family, exposure uses the dollars IN THAT FAMILY rather
+    than total billing (the manifesto's damages proxy); ``exposure_scope``
+    records which basis was used per org.
+    """
     cols = [c for c in subscores.columns if c.startswith("subscore_")]
     org_prob = noisy_or(subscores)
 
@@ -89,7 +98,18 @@ def expected_recoverable_value(subscores: pd.DataFrame,
     adjusted = (org_prob * sector_prior.fillna(1.0)
                 * (1.0 + boost.fillna(0.0))).clip(upper=1.0)
     rec_mult = scheme_hypothesis.map(recovery_multiplier_for)
-    exposure = exposure_payments.fillna(0).clip(lower=0) * rec_mult
+
+    payments_basis = exposure_payments.fillna(0).clip(lower=0)
+    exposure_scope = pd.Series("all_payments", index=subscores.index)
+    if scoped_payments is not None and len(scoped_payments):
+        for i in subscores.index:
+            col = f"scoped__{scheme_hypothesis[i]}"
+            if col in scoped_payments.columns:
+                val = scoped_payments.at[i, col] if i in scoped_payments.index else None
+                if pd.notna(val):
+                    payments_basis[i] = max(0.0, float(val))
+                    exposure_scope[i] = "scheme_code_family"
+    exposure = payments_basis * rec_mult
 
     return pd.DataFrame({
         "org_prob": org_prob.round(4),
@@ -99,6 +119,8 @@ def expected_recoverable_value(subscores: pd.DataFrame,
         "graph_risk_boost": boost.round(3),
         "adjusted_prob": adjusted.round(4),
         "scheme_recovery_multiplier": rec_mult,
+        "exposure_scope": exposure_scope,
+        "payments_at_issue": payments_basis.round(2),
         "exposure": exposure.round(2),
         "erv": (adjusted * exposure).round(2),
     }, index=subscores.index)

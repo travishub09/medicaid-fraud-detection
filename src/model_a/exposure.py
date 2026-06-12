@@ -79,6 +79,61 @@ def annual_payments_per_org(spending: pd.DataFrame,
     return agg, recon
 
 
+def scoped_payments_per_org(spending: pd.DataFrame,
+                            npi_to_org: pd.DataFrame) -> pd.DataFrame:
+    """Mean-annual payments per org WITHIN each scheme's code family (A1).
+
+    Input spending must carry ``hcpcs_code`` alongside billing_npi /
+    service_month / total_paid (spending_fact does). Output: one row per
+    org_node_id with one column per scheme that has a real family
+    (``scoped__<scheme>``) — schemes in "all" mode are omitted (callers fall
+    back to total payments). Scoped dollars are asserted ≤ total dollars.
+    """
+    from .scheme_code_families import SCHEME_FAMILIES
+
+    s = spending.copy()
+    s["billing_npi"] = s["billing_npi"].astype(str)
+    s["total_paid"] = pd.to_numeric(s["total_paid"], errors="coerce").fillna(0.0)
+    s["year"] = s["service_month"].astype(str).str.slice(0, 4)
+    s["hcpcs"] = s.get("hcpcs_code", "").fillna("").astype(str).str.strip().str.upper()
+
+    xw_npis = npi_to_org["npi"].astype(str)
+    assert xw_npis.is_unique, "npi_to_org has duplicate NPIs (ambiguous attribution)"
+    s["org_node_id"] = s["billing_npi"].map(
+        dict(zip(xw_npis, npi_to_org["org_node_id"].astype(str))))
+    s = s[s["org_node_id"].notna()]
+    if not len(s):
+        return pd.DataFrame(columns=["org_node_id"])
+
+    def mean_annual(sub: pd.DataFrame) -> pd.Series:
+        per_year = sub.groupby(["org_node_id", "year"])["total_paid"].sum()
+        return per_year.groupby("org_node_id").mean()
+
+    total = mean_annual(s)
+    out = pd.DataFrame({"org_node_id": total.index})
+
+    # the org's dominant code, for top_code-mode schemes
+    by_code = s.groupby(["org_node_id", "hcpcs"])["total_paid"].sum()
+    top_code = by_code.groupby("org_node_id").idxmax().map(lambda t: t[1])
+
+    for scheme, (mode, payload) in SCHEME_FAMILIES.items():
+        if mode == "all":
+            continue
+        if mode == "codes":
+            mask = s["hcpcs"].isin(payload)
+        elif mode == "prefixes":
+            mask = s["hcpcs"].str.startswith(tuple(payload))
+        elif mode == "top_code":
+            mask = s["hcpcs"] == s["org_node_id"].map(top_code)
+        else:                                            # defensive
+            continue
+        scoped = mean_annual(s[mask]).reindex(total.index).fillna(0.0)
+        assert (scoped <= total + 0.01).all(), \
+            f"scoped payments exceed total for scheme {scheme}"
+        out[f"scoped__{scheme}"] = scoped.values
+    return out.reset_index(drop=True)
+
+
 def attach_payments(features: pd.DataFrame, payments: pd.DataFrame) -> pd.DataFrame:
     """Join computed payments onto a features table (real payments win over any
     pre-existing ``payments`` column); many-to-one, no fan-out."""

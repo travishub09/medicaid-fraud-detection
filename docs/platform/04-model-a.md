@@ -116,6 +116,9 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Enforcement-prior sector map (placeholder multipliers) | **Built** | `src/model_a/sector_priors.py` — re-derive from the DOJ case DB (GAPS #13) |
 | Target dossiers (drivers + alternative explanations + disclaimer) | **Built** | `src/model_a/dossier.py` |
 | Real exposure from spending (dollar-conserving) | **Built** | `src/model_a/exposure.py` (`--spending`) |
+| Scheme-scoped damages (payments at issue in the suspect code family, scope labeled) | **Built** | `src/model_a/scheme_code_families.py`, `exposure.scoped_payments_per_org` |
+| Confidence band on every dossier (graded, named reasons) | **Built** | `src/analytics/confidence.py` |
+| Growth-shock change-points (level shifts + new-code bursts) | **Built** | `src/analytics/growth.py` → `rapid_ramp` concept |
 | Hierarchical peer engine: specialty×entity×state ladder, full-population baselines, robust complexity adjustment, degeneracy guards, peer report | **Built** | `src/analytics/peers.py` (wired into `ingest_cms.to_peer_percentiles`) |
 | Part B / Part D / DMEPOS feature adapters | **Built** | `src/ingest_cms/` (awaiting the real files) |
 | Enforcement case DB + derived sector priors | **Built** (fetcher stub) | `src/enforcement/` |
