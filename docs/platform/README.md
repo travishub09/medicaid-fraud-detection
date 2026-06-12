@@ -32,6 +32,7 @@ entity-resolution graph, all under a strict legal/compliance frame.
 | [08-litigation-finance.md](08-litigation-finance.md) | Unit economics and fund construction |
 | [09-data-procurement.md](09-data-procurement.md) | Exactly what data to acquire, where, and what each file powers |
 | [10-workflows.md](10-workflows.md) | Operational workflows end-to-end + the model rationale |
+| [11-icp-selection.md](11-icp-selection.md) | The first two typologies (ICPs) and why |
 | [GAPS.md](GAPS.md) | The honest punch list of everything still missing |
 
 ## Component status (current repo state)
@@ -40,7 +41,7 @@ entity-resolution graph, all under a strict legal/compliance frame.
 |---|---|---|
 | Data acquisition | **Partial** | CMS Spending / NPPES / PECOS / LEIE / All-Owners ingested (`src/attempt_2/ingest/integrate.py`); Part D, DMEPOS, Open Payments, structured DOJ/OIG, people-data, PACER not yet |
 | Entity resolution | **Partial** | Canonical graph + deterministic resolver + graph features **built** (`src/entity_graph/`); probabilistic person↔employer resolution is a stub |
-| Model A (org fraud-risk) | **Partial** | 3-layer anomaly detection + company rollup + LEIE backtest built (`src/attempt_2/leads/`, `src/backtest/`); scheme subscores / noisy-OR / ERV / supervised graduation scaffolded (`src/model_a/`) |
+| Model A (org fraud-risk) | **Partial → v1 built** | 3-layer detection + company rollup + LEIE backtest (`src/attempt_2/leads/`, `src/backtest/`); **v1 ERV composite built**: scheme subscores → noisy-OR → sector prior × graph boost → ERV + target dossiers (`src/model_a/`, tested); supervised graduation still scaffold |
 | Model B (whistleblower) | **Not started** | Scaffold + scheme-to-role matrix (`src/model_b/`) |
 | Model C (underwriting) | **Not started** | Scaffold (`src/model_c/`) |
 | Public lookup tool | **Not started** | Scaffold (`src/lookup_tool/`) |

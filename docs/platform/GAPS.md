@@ -5,10 +5,12 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
 
 ## Engineering (build next, roughly in order)
 
-1. **Model A ERV composite** — wire existing v3 concept scores + new graph features
-   into scheme subscores → noisy-OR → sector prior × graph boost → exposure → ERV
-   (`src/model_a/`, scaffolded). *Highest leverage: the features and validation
-   already exist; this turns leads into ranked, dollar-weighted dossiers.*
+1. ~~**Model A ERV composite**~~ — **DONE (v1)**: scheme subscores → noisy-OR →
+   sector prior × graph boost → ERV + target dossiers (`src/model_a/`, tested;
+   `python -m src.model_a --fixture`). Remaining inside this item: feed *real*
+   per-org annual payments from `spending_fact` (currently expects a `payments`
+   column in the features input), and the WARN monitor's docket twin
+   (`src/sourcing/docket_monitor.py`, stub).
 2. **Part B / Part D / DMEPOS / Open Payments adapters** — ingestion modules following
    the `integrate.py` adapter contract (column map, VARCHAR, quarantine, assertions).
    Unblocks most of the Model A feature dictionary.

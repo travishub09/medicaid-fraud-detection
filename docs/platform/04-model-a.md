@@ -102,10 +102,18 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Company-grain scoring | **Built** | `leads/company_lead_tracker.py` |
 | LEIE temporal validation (2.0× top-decile lift) | **Built** | `src/backtest/` |
 | Graph features (distance, density, shell, community) | **Built** (Increment 1) | `src/entity_graph/graph_features.py` |
-| Scheme subscores → noisy-OR → ERV | Scaffold | `src/model_a/scoring.py`, `scheme_subscores.py` |
+| Scheme subscores → noisy-OR → ERV (v1, label-free) | **Built** | `src/model_a/scheme_subscores.py`, `scoring.py`, `__main__.py` (run: `python -m src.model_a --fixture`) |
+| Enforcement-prior sector map (placeholder multipliers) | **Built** | `src/model_a/sector_priors.py` — re-derive from the DOJ case DB (GAPS #13) |
+| Target dossiers (drivers + alternative explanations + disclaimer) | **Built** | `src/model_a/dossier.py` |
 | PU supervised graduation + quantile exposure | Scaffold | `src/model_a/supervised.py` |
 | Temporal-holdout precision@k harness (generalized) | Scaffold | `src/model_a/validation.py` |
 
-**Next increment:** wire the existing concept anomaly + graph features into scheme
-subscores, add the noisy-OR/ERV composite, and join graph features into the feature
-store — the highest-leverage step because the hard parts (features, validation) exist.
+**v1 notes:** the composite runs on today's company-grain concept percentiles +
+entity-graph features; the feature registry already lists the Part B/D/DMEPOS
+columns so the procurement files (09) drop in without code changes. Graph features
+feed the ownership_integrity subscore; the separate graph-risk *boost* uses
+ring-structure membership only — one fact never counts twice.
+
+**Next increments:** real exposure (annual payments per org from spending_fact at
+company grain), Part B adapter, then the supervised graduation once the DOJ case DB
+exists.

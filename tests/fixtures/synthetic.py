@@ -134,3 +134,55 @@ def build_synthetic_inputs() -> dict[str, pd.DataFrame]:
         "owner_edges": build_owner_edges(),
         "exclusions": build_exclusions(),
     }
+
+
+def build_company_features(org_nodes: pd.DataFrame) -> pd.DataFrame:
+    """Company-grain v3 concept percentiles + payments, keyed by org_node_id.
+
+    Planted patterns for Model A tests:
+      * the org containing NPI 1003000041 (INDEPENDENT CLINIC) is the MILL —
+        extreme concentration + payment intensity, big payments → must rank top;
+      * BADCO-owned orgs (PAC10–13) are mid-anomaly but get the graph boost
+        (excluded-owner cluster) → must outrank equal-anomaly unboosted peers;
+      * the org containing NPI 1003000040 (CLEAN, JANE) is the negative control —
+        benign on every concept → must rank at/near bottom with ERV ≈ low.
+    """
+    mid = {"concentration": 0.60, "payment_intensity": 0.55, "service_intensity": 0.50,
+           "specialty_mismatch": 0.30, "temporal": 0.40}
+    rows = []
+    for r in org_nodes.itertuples():
+        npis = str(getattr(r, "member_npis", ""))
+        f = dict(mid)
+        payments = 2_000_000.0
+        if "1003000041" in npis:                      # the mill
+            f = {"concentration": 0.99, "payment_intensity": 0.97,
+                 "service_intensity": 0.90, "specialty_mismatch": 0.85,
+                 "temporal": 0.70}
+            payments = 25_000_000.0
+        elif "1003000040" in npis:                    # the clean control
+            f = {"concentration": 0.10, "payment_intensity": 0.12,
+                 "service_intensity": 0.15, "specialty_mismatch": 0.05,
+                 "temporal": 0.10}
+            payments = 1_000_000.0
+        elif any(n in npis for n in ["1003000010", "1003000011",
+                                     "1003000012", "1003000013"]):
+            payments = 5_000_000.0                    # BADCO ring: mid anomaly + boost
+        rows.append({"org_node_id": r.org_node_id, "payments": payments, **f})
+    return pd.DataFrame(rows)
+
+
+def build_warn_notices() -> pd.DataFrame:
+    """Synthetic WARN notices shaped like a state workforce-agency posting.
+
+    Planted: a layoff at "Owned One LLC" (a BADCO-ring, Model-A-boosted org) →
+    must surface as a surge lead; plus a layoff at an employer we don't know →
+    must land in the unmatched bucket, not silently dropped.
+    """
+    return pd.DataFrame([
+        {"COMPANY": "Owned One, LLC", "STATE": "TX",
+         "NOTICE_DATE": "2024-08-15", "LAYOFF_DATE": "2024-10-01", "EMPLOYEES": 120},
+        {"COMPANY": "Subpart Health System", "STATE": "TX",
+         "NOTICE_DATE": "2024-06-01", "LAYOFF_DATE": "2024-07-15", "EMPLOYEES": 45},
+        {"COMPANY": "Totally Unrelated Retail Inc", "STATE": "TX",
+         "NOTICE_DATE": "2024-09-01", "LAYOFF_DATE": "2024-09-30", "EMPLOYEES": 300},
+    ])

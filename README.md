@@ -188,6 +188,22 @@ python -m src.entity_graph --fixture --out /tmp/graph_out   # runs on a syntheti
 pytest tests/test_entity_graph.py                            # 9 end-to-end tests
 ```
 
+### Model A v1 — ERV composite + dossiers (`src/model_a/`) and WARN monitor (`src/sourcing/`)
+
+Scheme subscores → noisy-OR → sector prior × graph boost → expected recoverable
+value, with rendered target dossiers (drivers + alternative explanations). The WARN
+monitor turns layoff notices into surge-timing leads at Model-A-flagged orgs.
+
+```bash
+python -m src.model_a --fixture --out /tmp/model_a_out        # synthetic end-to-end
+python -m src.model_a --graph-dir ~/Desktop/data/graph \
+    --features <company_features.parquet> --out ~/Desktop/data/model_a
+python -m src.sourcing.warn_monitor --warn <warn.csv> \
+    --graph-dir ~/Desktop/data/graph --erv ~/Desktop/data/model_a/erv_ranked.parquet \
+    --out ~/Desktop/data/sourcing
+pytest tests/                                                  # full suite
+```
+
 ### Code layout (`src/attempt_2/`)
 
 ```

@@ -108,11 +108,12 @@ python -m pytest tests/ -v
 ## Current state & what's next
 
 - **Built:** integration + corruption audit + 3-layer detection + company rollup +
-  LEIE backtest (`attempt_2`, `backtest`); entity graph with deterministic resolver,
-  graph features, ring detection (`entity_graph`, 9 passing tests).
-- **Next increment (highest leverage):** Model A productionization — scheme subscores
-  → noisy-OR → ERV using existing concept scores + new graph features
-  (`docs/platform/04-model-a.md`).
+  LEIE backtest (`attempt_2`, `backtest`); entity graph (`entity_graph`); Model A v1
+  ERV composite + sector priors + target dossiers (`model_a`); WARN surge monitor
+  (`sourcing`). Full suite: `pytest tests/` (20 tests).
+- **Next increments:** real per-org payments into the ERV exposure; Part B/D/DMEPOS
+  adapters (docs/platform/09); the dossier generator against real data; docket
+  monitor (`sourcing/docket_monitor.py`).
 - **Gated on data/licensing:** person↔employer resolution (people-data vendors, FCRA
   review), Model C labels (DOJ/PACER case DB), `refers_to`/`pays` edges.
 - See `docs/platform/ROADMAP.md` for the full phase plan and
