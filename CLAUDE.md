@@ -33,6 +33,8 @@ src/attempt_2/      CURRENT detection pipeline (13 stages) — the production co
 src/attempt_1/      DEPRECATED first pipeline — reference only, do not extend
 src/backtest/       LEIE temporal validation (2.0× top-decile lift) — the proof
 src/entity_graph/   canonical entity graph (nodes/edges/features/rings) — BUILT, tested
+src/model/          supervised LightGBM lead scorer (Travis's build — PU training,
+                    screening, exports; context in src/model/README.md)
 src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
 src/model_b/        whistleblower id/propensity — logic-complete, gated on people data
 src/model_c/        case underwriting (scaffold)
@@ -110,6 +112,9 @@ python -m pytest tests/ -v
 
 ## Current state & what's next
 
+- **Built (parallel track):** `src/model` supervised LightGBM scorer with PU
+  training, FP screening, and lead exports (see `src/model/README.md` — keep the
+  two model tracks coordinated; `model_a` ERV and `model` scores are complements).
 - **Built:** integration + corruption audit + 3-layer detection + company rollup +
   LEIE backtest (`attempt_2`, `backtest`); entity graph (`entity_graph`); Model A v1
   ERV composite + sector priors + target dossiers (`model_a`); WARN surge monitor
