@@ -18,7 +18,7 @@ entity-resolution graph, all under a strict legal/compliance frame.
 
 ## New to the project?
 
-Start one level up: [../HOW_IT_WORKS.md](../HOW_IT_WORKS.md) (plain-English
+Start one level up: [../WHAT_WAS_BUILT.md](../WHAT_WAS_BUILT.md) (the briefing), [../HOW_IT_WORKS.md](../HOW_IT_WORKS.md) (plain-English
 rationale), [../GETTING_STARTED.md](../GETTING_STARTED.md) (zero to running),
 [../GLOSSARY.md](../GLOSSARY.md) (every term), [../READING_THE_OUTPUTS.md](../READING_THE_OUTPUTS.md) (interpreting results), [../TROUBLESHOOTING.md](../TROUBLESHOOTING.md) (errors). These specs are the depth layer.
 

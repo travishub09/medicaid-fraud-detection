@@ -136,6 +136,7 @@ is by design; never patch around a failed assertion.
 
 | You want… | Read… |
 |---|---|
+| The one-page briefing (what exists + next steps) | [WHAT_WAS_BUILT.md](WHAT_WAS_BUILT.md) |
 | The plain-English rationale | [HOW_IT_WORKS.md](HOW_IT_WORKS.md) |
 | How to read what it produces | [READING_THE_OUTPUTS.md](READING_THE_OUTPUTS.md) |
 | An error / failed check | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |

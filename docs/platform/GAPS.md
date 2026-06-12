@@ -46,8 +46,9 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
    raw-shaped five-source fixture (`tests/fixtures/raw_sources.py`,
    `tests/test_integrate.py`: dedup determinism, type-match collapse,
    active_at_claim truth table, quarantine routing, PAC-ambiguity guard,
-   two-tier owner↔LEIE matching, dollar conservation). Remaining: v3 concept
-   scoring (`refine_layer2_v3`) fixture tests.
+   two-tier owner↔LEIE matching, dollar conservation). v3 concept scoring now ALSO covered
+   (`tests/test_v3_concepts.py`: volume gate, peer fallback, concept
+   de-correlation, the ≥2-signal lead bar, dollars-as-context-only). #8 DONE.
 9. ~~**CI**~~ — **DONE** (`.github/workflows/tests.yml`): pytest + fixture
    end-to-end + doc-link check on every push/PR. Activates when the branch
    reaches GitHub.

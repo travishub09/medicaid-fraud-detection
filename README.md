@@ -3,7 +3,9 @@
 A pipeline that integrates national Medicaid + OIG data, isolates the trustworthy spending,
 and hands investigators a **ranked, explainable list of provider leads** to review.
 
-> **New here? Five docs take you from zero to running to reading results:**
+> **New here? Start with the briefing: [docs/WHAT_WAS_BUILT.md](docs/WHAT_WAS_BUILT.md)** — what exists, how to run it, what data to fetch, what's next.
+>
+> Then five docs take you from zero to running to reading results:
 > 1. [docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md) — what this is and why, in plain English (10 min)
 > 2. [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) — install → working demo in 10 minutes, then real data
 > 3. [docs/platform/12-data-runbook.md](docs/platform/12-data-runbook.md) — click-by-click data acquisition
