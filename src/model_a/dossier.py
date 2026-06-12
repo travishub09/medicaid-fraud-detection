@@ -69,12 +69,17 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
     lines.append(f"- Ring membership: shell cluster={row.get('in_shell_cluster')}, "
                  f"excluded-owner cluster={row.get('in_excluded_owner_cluster')}\n")
 
+    def _dollars(value) -> str:
+        """NaN/missing dollars render as 'unknown', never as '$nan' in a
+        counsel-facing artifact (found by probing)."""
+        v = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
+        return f"${float(v):,.0f}" if pd.notna(v) else "unknown (payments not yet loaded)"
+
     lines.append("\n## Exposure (size proxy, NOT case value)\n")
-    lines.append(f"- Annual program payments: ${float(row.get('payments', 0)):,.0f} × "
+    lines.append(f"- Annual program payments: {_dollars(row.get('payments'))} × "
                  f"recovery multiplier {row.get('scheme_recovery_multiplier')} "
-                 f"= exposure ${float(row.get('exposure', 0)):,.0f}\n")
-    lines.append(f"- **ERV (expected recoverable value): "
-                 f"${float(row.get('erv', 0)):,.0f}**\n")
+                 f"= exposure {_dollars(row.get('exposure'))}\n")
+    lines.append(f"- **ERV (expected recoverable value): {_dollars(row.get('erv'))}**\n")
 
     lines.append("\n## Alternative explanations (must be ruled out)\n")
     for alt in ALTERNATIVE_EXPLANATIONS:

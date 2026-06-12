@@ -137,6 +137,8 @@ is by design; never patch around a failed assertion.
 | You want… | Read… |
 |---|---|
 | The plain-English rationale | [HOW_IT_WORKS.md](HOW_IT_WORKS.md) |
+| How to read what it produces | [READING_THE_OUTPUTS.md](READING_THE_OUTPUTS.md) |
+| An error / failed check | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | Every acronym defined | [GLOSSARY.md](GLOSSARY.md) |
 | Click-by-click data acquisition | [platform/12-data-runbook.md](platform/12-data-runbook.md) |
 | The big-picture architecture | [platform/ARCHITECTURE.md](platform/ARCHITECTURE.md) |

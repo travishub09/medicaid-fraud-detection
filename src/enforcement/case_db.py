@@ -37,8 +37,11 @@ CASE_COLUMNS = [
     "summary",
 ]
 
+# Units: spelled out OR the abbreviations DOJ/press copy actually uses ("$3M",
+# "$1.2B") — without [MBK], "$3M" parsed as three dollars (found by probing).
 _AMOUNT = re.compile(
-    r"\$\s*([\d,]+(?:\.\d+)?)\s*(billion|million|thousand)?", re.IGNORECASE)
+    r"\$\s*([\d,]+(?:\.\d+)?)\s*(billion|million|thousand|[MBK])?\b",
+    re.IGNORECASE)
 
 _SECTOR_KEYWORDS: dict[str, list[str]] = {
     "hospice": ["hospice"],
@@ -73,8 +76,8 @@ def _extract_amount(text: str) -> float | None:
     best = 0.0
     for num, unit in hits:
         v = float(num.replace(",", ""))
-        v *= {"billion": 1e9, "million": 1e6, "thousand": 1e3}.get(
-            (unit or "").lower(), 1.0)
+        v *= {"billion": 1e9, "b": 1e9, "million": 1e6, "m": 1e6,
+              "thousand": 1e3, "k": 1e3}.get((unit or "").lower(), 1.0)
         best = max(best, v)
     return best or None
 

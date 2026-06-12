@@ -41,10 +41,13 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
    benign explanations, disclaimer, and structurally no fraud field (tested).
    PUBLIC launch remains gated on Part B data + Phase-0 sign-off; binds to
    localhost by default.
-8. **Tests for the attempt_2 core** — **PARTIAL**: the shared core
-   (`clean_data` NPI Luhn + name/address normalizers + header resolution) is now
-   covered (`tests/test_clean_data.py`); `integrate` joins and v3 concept
-   scoring still need fixture-driven tests.
+8. **Tests for the attempt_2 core** — **MOSTLY DONE**: shared core covered
+   (`tests/test_clean_data.py`); `integrate.py` now covered end-to-end on a
+   raw-shaped five-source fixture (`tests/fixtures/raw_sources.py`,
+   `tests/test_integrate.py`: dedup determinism, type-match collapse,
+   active_at_claim truth table, quarantine routing, PAC-ambiguity guard,
+   two-tier owner↔LEIE matching, dollar conservation). Remaining: v3 concept
+   scoring (`refine_layer2_v3`) fixture tests.
 9. ~~**CI**~~ — **DONE** (`.github/workflows/tests.yml`): pytest + fixture
    end-to-end + doc-link check on every push/PR. Activates when the branch
    reaches GitHub.
@@ -97,6 +100,10 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
 
 ## Known technical debt
 
+- Adversarial bug hunt (round 2) fixed: stale input columns overriding the
+  computed ERV ranking, "$3M" parsed as $3 in the case DB, NaN dollars in
+  dossiers, silent ambiguous WARN name matches — regression-locked in
+  `tests/test_round2_fixes.py` (+ the integrate.py core test suite).
 - Adversarial bug hunt (round 1) fixed: betweenness scaling, mega-address edge
   explosion, silent duplicate-crosswalk attribution, unicode alias misses —
   regression-locked in `tests/test_edge_cases.py`. Residual known limit: the

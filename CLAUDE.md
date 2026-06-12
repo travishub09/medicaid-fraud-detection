@@ -12,7 +12,7 @@ witnessed it and converts them into compliant marketing audiences (Model B), and
 underwriting model decides *which* resulting cases are worth financing (Model C) —
 all on a shared healthcare entity-resolution graph, under a strict legal frame.
 
-The full strategy is in `docs/platform/` (start at `docs/platform/README.md`); human onboarding lives in `docs/HOW_IT_WORKS.md`, `docs/GETTING_STARTED.md`, `docs/GLOSSARY.md`, and the data runbook `docs/platform/12-data-runbook.md` — keep all four current when behavior or commands change. The
+The full strategy is in `docs/platform/` (start at `docs/platform/README.md`); human onboarding lives in `docs/HOW_IT_WORKS.md`, `docs/GETTING_STARTED.md`, `docs/GLOSSARY.md`, `docs/READING_THE_OUTPUTS.md`, `docs/TROUBLESHOOTING.md`, and the data runbook `docs/platform/12-data-runbook.md` — keep them current when behavior or commands change. The
 source strategy document lives on branch `docs/source-pdfs` (confidential — never
 copy its text wholesale into committed files).
 

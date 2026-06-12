@@ -71,28 +71,43 @@ def normalize_warn(raw: pd.DataFrame) -> pd.DataFrame:
     return out[out["employer_key"] != ""].reset_index(drop=True)
 
 
-def _org_name_index(org_nodes: pd.DataFrame) -> dict[str, str]:
-    """employer_key → org_node_id over canonical names AND every alias."""
+def _org_name_index(org_nodes: pd.DataFrame) -> tuple[dict[str, str], set[str]]:
+    """employer_key → org_node_id over canonical names AND every alias.
+
+    Returns ``(index, ambiguous_keys)``: a key claimed by more than one distinct
+    org is AMBIGUOUS — matching it silently to the first org would pin a layoff
+    on the wrong company, so the matcher flags those rows for human review
+    instead (the decision-band principle).
+    """
     idx: dict[str, str] = {}
+    ambiguous: set[str] = set()
     for r in org_nodes.itertuples():
         names = {str(getattr(r, "org_name", "") or "")}
         names.update(a.strip() for a in str(getattr(r, "aliases", "") or "").split(";"))
         for n in names:
             k = norm_org_name(n)
-            if k:
-                idx.setdefault(k, str(r.org_node_id))   # first wins; ambiguity is rare at this grain
-    return idx
+            if not k:
+                continue
+            prev = idx.setdefault(k, str(r.org_node_id))
+            if prev != str(r.org_node_id):
+                ambiguous.add(k)
+    return idx, ambiguous
 
 
 def match_warn_to_orgs(warn: pd.DataFrame, org_nodes: pd.DataFrame
                        ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Split normalized WARN rows into (matched-with-org_node_id, unmatched)."""
-    idx = _org_name_index(org_nodes)
+    """Split normalized WARN rows into (matched-with-org_node_id, unmatched).
+
+    Matched rows carry ``match_ambiguous`` (1 = the employer name maps to more
+    than one org; kept and matched to the first, but flagged — verify before
+    acting on it)."""
+    idx, ambiguous = _org_name_index(org_nodes)
     warn = warn.copy()
     warn["org_node_id"] = warn["employer_key"].map(idx)
+    warn["match_ambiguous"] = warn["employer_key"].isin(ambiguous).astype(int)
     matched = warn[warn["org_node_id"].notna()].reset_index(drop=True)
-    unmatched = warn[warn["org_node_id"].isna()].drop(columns=["org_node_id"]) \
-                    .reset_index(drop=True)
+    unmatched = warn[warn["org_node_id"].isna()] \
+        .drop(columns=["org_node_id", "match_ambiguous"]).reset_index(drop=True)
     return matched, unmatched
 
 

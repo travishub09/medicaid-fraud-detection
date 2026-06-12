@@ -20,7 +20,7 @@ entity-resolution graph, all under a strict legal/compliance frame.
 
 Start one level up: [../HOW_IT_WORKS.md](../HOW_IT_WORKS.md) (plain-English
 rationale), [../GETTING_STARTED.md](../GETTING_STARTED.md) (zero to running),
-[../GLOSSARY.md](../GLOSSARY.md) (every term). These specs are the depth layer.
+[../GLOSSARY.md](../GLOSSARY.md) (every term), [../READING_THE_OUTPUTS.md](../READING_THE_OUTPUTS.md) (interpreting results), [../TROUBLESHOOTING.md](../TROUBLESHOOTING.md) (errors). These specs are the depth layer.
 
 ## How to read these docs
 
@@ -49,9 +49,9 @@ rationale), [../GETTING_STARTED.md](../GETTING_STARTED.md) (zero to running),
 | Data acquisition | **Partial** | CMS Spending / NPPES / PECOS / LEIE / All-Owners ingested (`src/attempt_2/ingest/integrate.py`); Part D, DMEPOS, Open Payments, structured DOJ/OIG, people-data, PACER not yet |
 | Entity resolution | **Partial** | Canonical graph + deterministic resolver + graph features **built** (`src/entity_graph/`); probabilistic person↔employer resolution is a stub |
 | Model A (org fraud-risk) | **Partial → v1 built** | 3-layer detection + company rollup + LEIE backtest (`src/attempt_2/leads/`, `src/backtest/`); **v1 ERV composite built**: scheme subscores → noisy-OR → sector prior × graph boost → ERV + target dossiers (`src/model_a/`, tested); supervised graduation still scaffold |
-| Model B (whistleblower) | **Not started** | Scaffold + scheme-to-role matrix (`src/model_b/`) |
+| Model B (whistleblower) | **Logic-complete, data-gated** | Full scoring chain + guardrail tripwire (`src/model_b/`, tested on synthetic people); activation gated on people-data license + person-resolver |
 | Model C (underwriting) | **Not started** | Scaffold (`src/model_c/`) |
-| Public lookup tool | **Not started** | Scaffold (`src/lookup_tool/`) |
+| Public lookup tool | **v1 preview built** | FastAPI risk cards, no fraud field (`src/lookup_tool/app.py`); public launch gated on Part B data + Phase-0 |
 | Marketing / sourcing | **Not started** | Spec only (this directory) |
 | Analytics / instrumentation | **Not started** | Spec only |
 | Counsel workflow / intake | **Not started** | Spec only |

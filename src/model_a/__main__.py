@@ -57,9 +57,19 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
 
     scored = expected_recoverable_value(subscores, payments, prior,
                                         boost["graph_risk_boost"])
+    # Computed outputs are authoritative: a stale erv/adjusted_prob/subscore_*
+    # column arriving in the features input must never survive the concat
+    # (duplicated() keeps the FIRST copy — found by probing: a poisoned input
+    # column silently overrode the entire ranking).
+    computed_cols = (set(subscores.columns) | set(boost.columns)
+                     | set(scored.columns) | {"erv_rank", "payments_joined"})
+    df = df.drop(columns=[c for c in df.columns if c in computed_cols],
+                 errors="ignore")
     out = pd.concat([df, subscores, boost.drop(columns=["graph_risk_boost"]),
                      scored, payments.rename("payments_joined")], axis=1)
-    out = out.loc[:, ~out.columns.duplicated()].sort_values("erv", ascending=False)
+    assert not out.columns.duplicated().any(), \
+        f"duplicate output columns: {out.columns[out.columns.duplicated()].tolist()}"
+    out = out.sort_values("erv", ascending=False)
     out["erv_rank"] = range(1, len(out) + 1)
     out = out.reset_index(drop=True)
     require("scored_one_row_per_org", len(out) == n0, f"{len(out)} vs {n0}")
