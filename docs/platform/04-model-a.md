@@ -123,6 +123,8 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Public-disclosure screen on every dossier (§3730(e)(4) gate) | **Built** | `src/model_c/public_disclosure.py` (`--case-db` / `--dockets`) |
 | Hierarchical peer engine: specialty×entity×state ladder, full-population baselines, robust complexity adjustment, degeneracy guards, peer report | **Built** | `src/analytics/peers.py` (wired into `ingest_cms.to_peer_percentiles`) |
 | Part B / Part D / DMEPOS feature adapters | **Built** | `src/ingest_cms/` (awaiting the real files) |
+| Market Saturation adapter → `saturation_fraud` scheme | **Built** | `src/ingest_cms/saturation.py` (state-grain attach until ZIP→county) |
+| PBJ staffing + Care Compare facility signals (worthless services, hospice ineligibility; facility peers = size band × state) | **Built** | `src/ingest_cms/facility.py` (awaiting the real files + PECOS CCN↔NPI crosswalk) |
 | Enforcement case DB + derived sector priors | **Built** (fetcher stub) | `src/enforcement/` |
 | PU supervised graduation + quantile exposure | Scaffold | `src/model_a/supervised.py` |
 | Temporal-holdout precision@k harness (generalized) | Scaffold | `src/model_a/validation.py` |

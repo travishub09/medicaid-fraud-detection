@@ -38,6 +38,11 @@ SCHEME_FAMILIES: dict[str, tuple[str, object]] = {
     "rapid_ramp": ("all", None),
     "specialty_mismatch": ("all", None),
     "ownership_integrity": ("all", None),
+    # B1 facility schemes: hospice payments are the Q50xx per-diem family;
+    # worthless services and saturation have no code family (whole-org).
+    "hospice_ineligibility": ("prefixes", ("Q50", "T204")),
+    "worthless_services": ("all", None),
+    "saturation_fraud": ("all", None),
 }
 DEFAULT_FAMILY: tuple[str, object] = ("all", None)
 

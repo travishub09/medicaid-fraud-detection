@@ -52,6 +52,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3},
     "drug_outlier": {"controlled_substance_share": 0.5, "high_cost_drug_share": 0.5},
     "dme_ring": {"dme_high_cost_item_share": 0.5, "dme_ordering_md_concentration": 0.5},
+    # future (B1/B2 facility + saturation adapters: ingest_cms/facility.py,
+    # ingest_cms/saturation.py — percentile features at the org grain)
+    "worthless_services": {"pbj_understaffing": 0.7, "deficiency_count": 0.4},
+    "hospice_ineligibility": {"hospice_live_discharge_rate": 1.0},
+    "saturation_fraud": {"market_saturation_index": 1.0},
 }
 
 

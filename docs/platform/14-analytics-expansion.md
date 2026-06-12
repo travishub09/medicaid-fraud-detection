@@ -115,8 +115,8 @@ score driver, always corroboration context (X-layer, per the manifesto).
 
 | # | Dataset | Source | What it unlocks | Plugs into |
 |---|---|---|---|---|
-| B1 | **PBJ Daily Nurse Staffing + Care Compare** | data.cms.gov (P2 #8 in runbook) | `pbj_staffing_z` (billed acuity vs. actual staffing = worthless-services), `hospice_live_discharge_rate` (ICP-1's sharpest signal), deficiency counts | new `ingest_cms/facility.py`; CCN joined via PECOS enrollment; facility peer cells = the manifesto's "size band × region" (peer engine already supports custom ladders) |
-| B2 | **Market Saturation** | data.cms.gov (P1 #5 — runbook'd, no adapter yet) | county over-supply multiplier for HH/hospice/DME — the CMS program-integrity prior | tiny `ingest_cms/saturation.py` → `market_saturation_index` (registry name exists, dormant) |
+| B1 | **PBJ Daily Nurse Staffing + Care Compare** — BUILT | data.cms.gov (runbook §1.6) | `pbj_understaffing` (negated HPRD: billed acuity vs. actual staffing = worthless-services), `hospice_live_discharge_rate` (ICP-1's sharpest signal) → `hospice_ineligibility` scheme, `deficiency_count` | `ingest_cms/facility.py` — CCN grain; facility peers = size band × state via the peer engine's custom-ladder support; `rollup_ccn_to_org` awaits the PECOS CCN↔NPI crosswalk file |
+| B2 | **Market Saturation** — BUILT | data.cms.gov (runbook §1.4) | county over-supply index for HH/hospice/SNF/lab — the CMS program-integrity prior → `saturation_fraud` scheme | `ingest_cms/saturation.py` → `market_saturation_index`; state-grain attach until ZIP→county (B6) lands |
 | B3 | **State Medicaid exclusion/sanction lists** | ~40 states publish their own lists beyond OIG LEIE | more exclusion nodes; state actions often precede federal | normalize to the `exclusions` schema (same as `sam_api.py` did); start with ICP states |
 | B4 | **NADAC drug pricing** | data.medicaid.gov (weekly) | normalizes Part D cost signals; spread/markup anomalies; 340B groundwork | `ingest_cms/nadac.py` → refines `high_cost_drug_share` |
 | B5 | **HCRIS cost reports** | cms.gov (P2 #9) | `hcris_cost_alloc_anomaly` (cost-report fraud — a distinct scheme) + the finance-persona targeting hint for Model B | `ingest_cms/hcris.py`; CCN grain |
@@ -145,7 +145,10 @@ score driver, always corroboration context (X-layer, per the manifesto).
 1. **A1, A2, A4** the moment real data lands (pure code, immediate dossier
    quality jump: scoped damages, confidence bands, ramp detection).
 2. **B2 + B1** next (Market Saturation is an hour; PBJ/Care Compare is the
-   ICP-1 signal package and introduces the CCN/facility grain).
+   ICP-1 signal package and introduces the CCN/facility grain). — DONE:
+   `ingest_cms/saturation.py` + `ingest_cms/facility.py`; three new schemes
+   registered (`worthless_services`, `hospice_ineligibility`,
+   `saturation_fraud`) — dormant until the files land (runbook §1.4/§1.6).
 3. **A3 + A6** together (both reuse the case DB/dockets; both feed Model C's
    first real functions). — DONE: `src/model_c/public_disclosure.py` (named
    citations, sources-checked recorded, never reads as clearance) and
@@ -169,9 +172,11 @@ specifies, each with named features and witness personas:
   proxies, chart-review hiring signals, RADV pressure) — the largest-dollar
   typology; needs MA-specific files
 - **Hospice** (long LOS, non-cancer mix, live-discharge proxies, SNF referral
-  concentration) — unlocked by B1 (Care Compare/PBJ)
+  concentration) — `hospice_ineligibility` scheme now seeded by B1
+  (live-discharge); LOS/diagnosis-mix features still to come
 - **SNF / worthless services** (staffing-vs-acuity mismatch, PDPM case-mix
-  spikes, related-party services) — unlocked by B1 + B5
+  spikes, related-party services) — `worthless_services` scheme now seeded by
+  B1 (PBJ understaffing + deficiencies); PDPM/case-mix needs B5
 - **Labs** (panel stacking, CLIA capacity mismatch, prescriber concentration)
 - **Behavioral health / ABA / SUD** (hours-per-patient, billing at
   authorization limits, staffing mismatch, patient-acquisition ads)

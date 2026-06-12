@@ -127,7 +127,10 @@ python -m pytest tests/ -v
   Peer engine (`analytics/peers`), dossier-quality sprint (scoped damages, confidence
   bands, growth shock), public-disclosure screen (`model_c/public_disclosure`),
   government-interest overlay (`model_a/government_interest` — refresh the curated
-  Work Plan table quarterly). Full suite: `pytest tests/` (125 tests).
+  Work Plan table quarterly), Market Saturation + PBJ/Care Compare facility adapters
+  (`ingest_cms/saturation.py`, `facility.py` → worthless_services /
+  hospice_ineligibility / saturation_fraud schemes, dormant until files land).
+  Full suite: `pytest tests/` (134 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

@@ -68,6 +68,9 @@ SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {
     "pharma_kickback": 0.30,
     "drug_outlier": 0.30,
     "dme_ring": 0.40,
+    "worthless_services": 0.40,
+    "hospice_ineligibility": 0.50,   # ineligible patients = full payments at issue
+    "saturation_fraud": 0.20,        # a geographic prior, weakest scheme on its own
     "default": 0.25,
 }
 

@@ -102,7 +102,29 @@ Adapters are already built and tested against these files' real headers
 1. Go to https://data.cms.gov and search **"Market Saturation & Utilization
    State-County"**.
 2. Download the latest CSV → `preclean/saturation/market_saturation.csv`.
-- **Powers:** the county over-supply prior for home health/hospice/DME (both ICPs).
+- **Verify:** header contains `Type of Service`, `State and County FIPS Code`,
+  `Number of Providers`, `Number of Fee-for-Service Beneficiaries`.
+- **Powers:** `market_saturation_index` / the `saturation_fraud` scheme — the
+  CMS program-integrity over-supply prior for home health/hospice/SNF/lab
+  (adapter: `src/ingest_cms/saturation.py`; state-grain attach until the
+  Census ZIP→county mapping lands).
+
+### 1.6 PBJ nurse staffing + Care Compare → `facility/`
+The ICP-1 facility signal package (adapter: `src/ingest_cms/facility.py`;
+CCN grain, joined to orgs via the PECOS enrollment CCN↔NPI crosswalk).
+1. data.cms.gov → search **"Payroll Based Journal Daily Nurse Staffing"** →
+   latest quarter CSV → `preclean/facility/pbj_daily_staffing_YYYYQn.csv`.
+   - **Verify:** header contains `PROVNUM`, `MDScensus`, `Hrs_RN`, `Hrs_LPN`,
+     `Hrs_CNA`.
+2. data.cms.gov/provider-data → search **"Hospice - Provider Data"** (the
+   measure-level file) → `preclean/facility/hospice_measures.csv`.
+   - **Verify:** header has a CCN column, `Measure Code`/`Measure Name`,
+     `Score`; live-discharge measures are matched by name.
+3. data.cms.gov/provider-data → search **"Health Deficiencies"** (nursing
+   homes) → `preclean/facility/health_deficiencies.csv`.
+- **Powers:** `pbj_understaffing` + `deficiency_count` → the
+  `worthless_services` scheme; `hospice_live_discharge_rate` → the
+  `hospice_ineligibility` scheme. Facility peers = size band × state.
 
 ### 1.5 SAM.gov exclusions → `sam/sam_exclusions.csv`
 1. Go to https://sam.gov/data-services → **Exclusions** → Public V2 extract (CSV).
@@ -173,4 +195,5 @@ files, CMS LDS/RIF, Komodo/IQVIA/Optum-style commercial claims. See
 | Monthly | LEIE, SAM, WARN states, DOJ releases |
 | Quarterly | PECOS, ownership files, NPPES (or monthly) |
 | Annually (new vintage) | Part B, Part D, DMEPOS, Market Saturation |
+| Quarterly | PBJ staffing, Care Compare hospice/deficiencies, OIG Work Plan table (`model_a/government_interest.py`) |
 | After every refresh | re-run the pipeline order in [GETTING_STARTED](../GETTING_STARTED.md) Part 3 |

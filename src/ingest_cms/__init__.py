@@ -12,6 +12,11 @@ that power the dormant schemes in Model A's feature registry:
                        high-cost-item metrics
   openpayments.py      Open Payments (manufacturer→physician) → payment
                        concentration, pays edges, kickback co-occurrence with Part D
+  saturation.py        Market Saturation & Utilization (county × service) →
+                       market_saturation_index, the CMS program-integrity prior (B2)
+  facility.py          PBJ nurse staffing + Care Compare hospice/deficiencies at
+                       the CCN grain → worthless-services / hospice-ineligibility
+                       signals; facility peer cells = size band × region (B1)
   peer_percentiles.py  raw metrics → one-sided peer-relative percentiles (the 0–1
                        inputs the registry expects) → NPI→org rollup
 
@@ -31,6 +36,11 @@ from .partb import compute_partb_metrics
 from .partd import compute_partd_metrics
 from .dmepos import compute_dmepos_metrics
 from .openpayments import compute_openpayments_metrics, kickback_co_occurrence
+from .saturation import (compute_saturation_metrics, state_saturation_index,
+                         attach_market_saturation)
+from .facility import (compute_pbj_metrics, compute_hospice_metrics,
+                       compute_deficiency_counts, facility_peer_percentiles,
+                       rollup_ccn_to_org)
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
 __all__ = [
@@ -39,6 +49,14 @@ __all__ = [
     "compute_dmepos_metrics",
     "compute_openpayments_metrics",
     "kickback_co_occurrence",
+    "compute_saturation_metrics",
+    "state_saturation_index",
+    "attach_market_saturation",
+    "compute_pbj_metrics",
+    "compute_hospice_metrics",
+    "compute_deficiency_counts",
+    "facility_peer_percentiles",
+    "rollup_ccn_to_org",
     "to_peer_percentiles",
     "rollup_to_org",
 ]
