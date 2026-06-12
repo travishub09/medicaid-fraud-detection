@@ -16,6 +16,12 @@ runs trust-first, education-led outreach to convert them into qui tam relators, 
 C). The moat is the compounding outcome-label set on a shared healthcare
 entity-resolution graph, all under a strict legal/compliance frame.
 
+## New to the project?
+
+Start one level up: [../HOW_IT_WORKS.md](../HOW_IT_WORKS.md) (plain-English
+rationale), [../GETTING_STARTED.md](../GETTING_STARTED.md) (zero to running),
+[../GLOSSARY.md](../GLOSSARY.md) (every term). These specs are the depth layer.
+
 ## How to read these docs
 
 | Doc | What it covers |
@@ -33,6 +39,7 @@ entity-resolution graph, all under a strict legal/compliance frame.
 | [09-data-procurement.md](09-data-procurement.md) | Exactly what data to acquire, where, and what each file powers |
 | [10-workflows.md](10-workflows.md) | Operational workflows end-to-end + the model rationale |
 | [11-icp-selection.md](11-icp-selection.md) | The first two typologies (ICPs) and why |
+| [12-data-runbook.md](12-data-runbook.md) | Click-by-click data acquisition with verification steps |
 | [GAPS.md](GAPS.md) | The honest punch list of everything still missing |
 
 ## Component status (current repo state)
