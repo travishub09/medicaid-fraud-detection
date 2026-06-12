@@ -135,6 +135,17 @@ inputs to Model A.
 9 tests: node uniqueness, alias/PAC collapse, no fan-out, exclusion distance, shell
 and common-owner detection).
 
+### Scale guards (from adversarial testing)
+- **Betweenness** uses the seeded k-sample approximation above 2,000 nodes
+  (exact is O(V·E) and never finishes at 617k providers); ranking quality is
+  what the feature needs (`graph_features._betweenness`).
+- **Mega-address clusters** (registered agents / virtual offices with hundreds+
+  of orgs) emit a linear star instead of quadratic all-pairs `co_located_with`
+  edges; true cluster size rides on every edge and in the ring-detection table
+  (`build_edges.build_co_located_edges`).
+- **Org-name keys fold unicode** (NFKD→ASCII) so accented aliases merge
+  ("Café Salud" = "CAFE SALUD") — `resolve_entities.norm_org_name`.
+
 ### Next increments here
 - **Probabilistic person↔employer resolution** (`person_resolver.py`, stub): the bridge
   to Model B; needs licensed people-data + Splink + the privacy guardrails above, and

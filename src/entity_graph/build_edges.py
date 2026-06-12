@@ -137,12 +137,18 @@ def build_excluded_in_edges(provider_dim: pd.DataFrame,
     return e.reset_index(drop=True)
 
 
-def build_co_located_edges(org_nodes: pd.DataFrame, min_cluster: int = 2) -> pd.DataFrame:
+def build_co_located_edges(org_nodes: pd.DataFrame, min_cluster: int = 2,
+                           max_pairwise: int = 50) -> pd.DataFrame:
     """Organization ↔ Organization sharing a standardized address key.
 
-    Emitted as one undirected edge per pair within each shared-address cluster of
-    size >= ``min_cluster`` (capped to keep dense clusters from exploding into
-    all-pairs — see ``ring_detection`` for the cluster-level view).
+    Small clusters (<= ``max_pairwise`` orgs) emit one undirected edge per pair.
+    Mega-address clusters — registered-agent offices and virtual-office
+    buildings can host thousands of orgs, where all-pairs goes quadratic
+    (300 orgs → 44,850 edges; 3,000 → ~4.5M) — emit a STAR around the first
+    (sorted) org instead: edge count stays linear, BFS connectivity within the
+    cluster is preserved (members sit 2 hops apart instead of 1), and the true
+    cluster size is carried on every edge and in ``ring_detection``'s
+    cluster-level table, which is the right view for huge addresses anyway.
     """
     cols = ["src_id", "dst_id", "edge_type", "addr_key", "cluster_size"]
     if org_nodes is None or "addr_key" not in org_nodes.columns:
@@ -151,11 +157,17 @@ def build_co_located_edges(org_nodes: pd.DataFrame, min_cluster: int = 2) -> pd.
     rows: list[dict] = []
     for addr, g in o.groupby("addr_key"):
         ids = sorted(g["org_node_id"].astype(str))
-        if len(ids) < min_cluster:
+        size = len(ids)
+        if size < min_cluster:
             continue
-        for i in range(len(ids)):
-            for j in range(i + 1, len(ids)):
-                rows.append({"src_id": ids[i], "dst_id": ids[j],
-                             "edge_type": "co_located_with", "addr_key": addr,
-                             "cluster_size": len(ids)})
+        if size <= max_pairwise:
+            pairs = ((ids[i], ids[j]) for i in range(size)
+                     for j in range(i + 1, size))
+        else:                                   # star topology: linear, connected
+            hub = ids[0]
+            pairs = ((hub, other) for other in ids[1:])
+        for a, b in pairs:
+            rows.append({"src_id": a, "dst_id": b,
+                         "edge_type": "co_located_with", "addr_key": addr,
+                         "cluster_size": size})
     return pd.DataFrame(rows, columns=cols).reset_index(drop=True)

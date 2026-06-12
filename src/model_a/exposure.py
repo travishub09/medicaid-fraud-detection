@@ -38,8 +38,13 @@ def annual_payments_per_org(spending: pd.DataFrame,
     s["year"] = s["service_month"].astype(str).str.slice(0, 4)
     total_in = float(s["total_paid"].sum())
 
-    npi2org = dict(zip(npi_to_org["npi"].astype(str),
-                       npi_to_org["org_node_id"].astype(str)))
+    # a duplicate NPI in the crosswalk means ambiguous attribution — that must
+    # hard-fail (repo rule 2), not silently resolve to whichever row came last
+    xw_npis = npi_to_org["npi"].astype(str)
+    assert xw_npis.is_unique, \
+        f"npi_to_org has duplicate NPIs (ambiguous attribution): " \
+        f"{xw_npis[xw_npis.duplicated()].head().tolist()}"
+    npi2org = dict(zip(xw_npis, npi_to_org["org_node_id"].astype(str)))
     s["org_node_id"] = s["billing_npi"].map(npi2org)
 
     unresolved = s[s["org_node_id"].isna()]

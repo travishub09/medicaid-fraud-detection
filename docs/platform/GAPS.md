@@ -97,6 +97,13 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
 
 ## Known technical debt
 
+- Adversarial bug hunt (round 1) fixed: betweenness scaling, mega-address edge
+  explosion, silent duplicate-crosswalk attribution, unicode alias misses —
+  regression-locked in `tests/test_edge_cases.py`. Residual known limit: the
+  shared `_normalize_name` in attempt_2 does NOT unicode-fold (changing it
+  would shift the production pipeline's name keys; fold it when the pipeline
+  is next re-run end-to-end on real data).
+
 - `attempt_1/` is dead code kept for reference — fine, but say so in its docstring.
 - `sqlalchemy`/`psycopg2` in requirements are unused (presumably for the future API).
 - The fixture's hardcoded normalizer outputs (`tests/fixtures/synthetic.py`) will

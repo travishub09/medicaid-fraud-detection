@@ -24,6 +24,7 @@ is the deterministic backbone it will extend.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 import numpy as np
 import pandas as pd
@@ -38,10 +39,14 @@ _LEGAL_SUFFIX = re.compile(
 
 
 def norm_org_name(s) -> str:
-    """Exact-match organization key: upper, strip punctuation, drop leading THE,
-    strip legal suffixes, collapse whitespace. Identical in spirit to
-    ``company_rollup.norm_company`` so the two stay consistent."""
-    s = re.sub(r"[^A-Z0-9 ]", " ", str(s or "").upper())
+    """Exact-match organization key: fold diacritics to ASCII, upper, strip
+    punctuation, drop leading THE, strip legal suffixes, collapse whitespace.
+    Identical in spirit to ``company_rollup.norm_company``, plus the unicode
+    fold — without it "Café Salud LLC" and "CAFE SALUD LLC" produce different
+    keys and the alias never merges (real provider names carry diacritics)."""
+    s = unicodedata.normalize("NFKD", str(s or ""))
+    s = s.encode("ascii", "ignore").decode("ascii")        # é→e, ñ→n, …
+    s = re.sub(r"[^A-Z0-9 ]", " ", s.upper())
     s = re.sub(r"^THE ", "", s)
     s = _LEGAL_SUFFIX.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()

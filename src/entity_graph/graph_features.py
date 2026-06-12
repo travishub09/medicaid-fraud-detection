@@ -33,6 +33,23 @@ def _community_partition(G: nx.Graph) -> dict:
     return {n: cid for cid, comm in enumerate(communities) for n in comm}
 
 
+# Exact betweenness is O(V·E) and never finishes on the real 617k-provider
+# graph (measured: ~19s at just 1,500 nodes on a chain). Above the threshold we
+# use the standard k-sample approximation (k BFS passes, seeded for
+# reproducibility) — ranking quality, which is all the feature needs.
+BETWEENNESS_EXACT_MAX_NODES = 2_000
+BETWEENNESS_SAMPLE_K = 256
+
+
+def _betweenness(G: nx.Graph) -> dict:
+    n = G.number_of_nodes()
+    if n <= 2:
+        return {}
+    if n <= BETWEENNESS_EXACT_MAX_NODES:
+        return nx.betweenness_centrality(G)
+    return nx.betweenness_centrality(G, k=min(BETWEENNESS_SAMPLE_K, n), seed=0)
+
+
 def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                 exclusion_nodes: pd.DataFrame, member_edges: pd.DataFrame,
                 owned_by_edges: pd.DataFrame, excluded_in_edges: pd.DataFrame,
@@ -88,7 +105,7 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
     excl_ids = set(exclusion_nodes["node_id"].astype(str)) if exclusion_nodes is not None and len(exclusion_nodes) else set()
     dist = _distance_to_exclusions(G, excl_ids)
     community = _community_partition(G) if G.number_of_edges() else {}
-    betweenness = nx.betweenness_centrality(G) if G.number_of_nodes() > 2 else {}
+    betweenness = _betweenness(G)
 
     # related_party_density: orgs sharing an owner with this org.
     owner_to_orgs: dict[str, set] = {}
