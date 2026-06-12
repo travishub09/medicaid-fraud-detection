@@ -43,14 +43,14 @@ def _org_of(outputs, npi: str) -> str:
 
 def test_mill_ranks_first(scored):
     result, outputs, _ = scored
-    mill = _org_of(outputs, "1003000041")
+    mill = _org_of(outputs, "1003000415")
     assert result.iloc[0]["org_node_id"] == mill
     assert result.iloc[0]["erv"] > 0
 
 
 def test_clean_control_ranks_low(scored):
     result, outputs, _ = scored
-    clean = _org_of(outputs, "1003000040")
+    clean = _org_of(outputs, "1003000407")
     clean_row = result[result["org_node_id"] == clean].iloc[0]
     # bottom quartile of adjusted probability, and far below the mill
     assert clean_row["adjusted_prob"] <= result["adjusted_prob"].quantile(0.25)
@@ -59,12 +59,12 @@ def test_clean_control_ranks_low(scored):
 
 def test_badco_ring_gets_graph_boost(scored):
     result, outputs, _ = scored
-    badco = _org_of(outputs, "1003000010")
+    badco = _org_of(outputs, "1003000100")
     row = result[result["org_node_id"] == badco].iloc[0]
     assert row["in_excluded_owner_cluster"] == 1
     assert row["graph_risk_boost"] > 0
     # an equal-anomaly org with no boost: the PAC subpart org (mid features too)
-    subpart = _org_of(outputs, "1003000030")
+    subpart = _org_of(outputs, "1003000308")
     sub_row = result[result["org_node_id"] == subpart].iloc[0]
     assert row["adjusted_prob"] > sub_row["adjusted_prob"]
 

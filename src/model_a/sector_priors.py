@@ -81,11 +81,18 @@ def sector_for_taxonomy(taxonomy_code: str | None) -> str:
     return "default"
 
 
-def sector_prior_series(taxonomies: pd.Series) -> pd.Series:
-    """Per-org sector-prior multiplier from the primary taxonomy code."""
+def sector_prior_series(taxonomies: pd.Series,
+                        priors: dict[str, float] | None = None) -> pd.Series:
+    """Per-org sector-prior multiplier from the primary taxonomy code.
+
+    ``priors`` overrides the placeholder table — pass the output of
+    ``src.enforcement.derive_priors.derive_sector_priors`` once the DOJ case DB
+    exists, and the hand-set constants retire.
+    """
+    table = priors or SECTOR_PRIOR_MULTIPLIER
+    default = table.get("default", 1.0)
     sectors = taxonomies.map(sector_for_taxonomy)
-    return sectors.map(SECTOR_PRIOR_MULTIPLIER).fillna(
-        SECTOR_PRIOR_MULTIPLIER["default"])
+    return sectors.map(table).fillna(default)
 
 
 def recovery_multiplier_for(scheme: str) -> float:

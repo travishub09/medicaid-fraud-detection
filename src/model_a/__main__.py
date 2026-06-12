@@ -104,7 +104,11 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--graph-dir", default=None, help="output dir of src.entity_graph")
     ap.add_argument("--features", default=None,
-                    help="parquet: org_node_id + concept percentiles + payments")
+                    help="parquet: org_node_id + concept percentiles (+ payments)")
+    ap.add_argument("--spending", default=None,
+                    help="spending parquet (billing_npi, service_month, total_paid): "
+                         "computes REAL per-org annual payments for the exposure "
+                         "(overrides any payments column in --features)")
     ap.add_argument("--out", default="/tmp/model_a_out")
     ap.add_argument("--top-k", type=int, default=10, help="dossiers to render")
     ap.add_argument("--fixture", action="store_true",
@@ -130,6 +134,15 @@ def main() -> None:
         feats = pd.read_parquet(args.features)
         shells = pd.read_parquet(g / "rings" / "shared_address_shells.parquet")
         owners = pd.read_parquet(g / "rings" / "common_owner_clusters.parquet")
+        if args.spending:
+            from .exposure import annual_payments_per_org, attach_payments
+            npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
+            payments, recon = annual_payments_per_org(
+                pd.read_parquet(args.spending), npi_to_org)
+            log(f"    exposure: ${recon['total_matched']:,.0f} matched "
+                f"({recon['pct_dollars_matched']:.1%}); "
+                f"{recon['unresolved_npis']} unresolved billing NPIs")
+            feats = attach_payments(feats, payments)
 
     run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k)
 

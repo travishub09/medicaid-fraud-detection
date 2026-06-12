@@ -61,7 +61,7 @@ def test_no_fanout_partition(tables):
 def test_pac_subparts_collapse_to_one_org(tables):
     _, npi_to_org = resolve_organizations(
         tables["provider_dim"], tables["npi_xwalk"], tables["owner_edges"])
-    sub = npi_to_org[npi_to_org["npi"].isin(["1003000030", "1003000031"])]
+    sub = npi_to_org[npi_to_org["npi"].isin(["1003000308", "1003000316"])]
     assert sub["org_node_id"].nunique() == 1                    # merged
     assert (sub["merge_basis_raw"] == "pac_id").all()
 
@@ -69,7 +69,7 @@ def test_pac_subparts_collapse_to_one_org(tables):
 def test_name_aliases_collapse_to_one_org(tables):
     org_nodes, npi_to_org = resolve_organizations(
         tables["provider_dim"], tables["npi_xwalk"], tables["owner_edges"])
-    alias = npi_to_org[npi_to_org["npi"].isin(["1003000050", "1003000051"])]
+    alias = npi_to_org[npi_to_org["npi"].isin(["1003000506", "1003000514"])]
     assert alias["org_node_id"].nunique() == 1                  # "ACME HEALTH LLC" == "Acme Health, LLC."
     assert (alias["merge_basis_raw"] == "name").all()
     org = org_nodes[org_nodes["org_node_id"] == alias["org_node_id"].iloc[0]].iloc[0]
@@ -82,16 +82,16 @@ def test_excluded_party_distance(built):
     npi_to_org = outputs["npi_to_org"].set_index("npi")["org_node_id"]
 
     # the directly-excluded provider's org sits within 2 hops of the exclusion
-    excl_org = npi_to_org.loc["1003000020"]
+    excl_org = npi_to_org.loc["1003000209"]
     assert feats.loc[excl_org, "within_2_hops_of_exclusion"] == 1
     assert 0 < feats.loc[excl_org, "excluded_party_distance"] <= 2
 
     # an org owned by the excluded owner BADCO is within 2 hops too
-    badco_org = npi_to_org.loc["1003000010"]
+    badco_org = npi_to_org.loc["1003000100"]
     assert feats.loc[badco_org, "within_2_hops_of_exclusion"] == 1
 
     # a clean independent org is NOT near any exclusion (unreached → -1)
-    clean_org = npi_to_org.loc["1003000041"]
+    clean_org = npi_to_org.loc["1003000415"]
     assert feats.loc[clean_org, "excluded_party_distance"] == -1
 
 

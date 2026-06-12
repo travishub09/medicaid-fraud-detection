@@ -105,6 +105,9 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Scheme subscores → noisy-OR → ERV (v1, label-free) | **Built** | `src/model_a/scheme_subscores.py`, `scoring.py`, `__main__.py` (run: `python -m src.model_a --fixture`) |
 | Enforcement-prior sector map (placeholder multipliers) | **Built** | `src/model_a/sector_priors.py` — re-derive from the DOJ case DB (GAPS #13) |
 | Target dossiers (drivers + alternative explanations + disclaimer) | **Built** | `src/model_a/dossier.py` |
+| Real exposure from spending (dollar-conserving) | **Built** | `src/model_a/exposure.py` (`--spending`) |
+| Part B / Part D / DMEPOS feature adapters | **Built** | `src/ingest_cms/` (awaiting the real files) |
+| Enforcement case DB + derived sector priors | **Built** (fetcher stub) | `src/enforcement/` |
 | PU supervised graduation + quantile exposure | Scaffold | `src/model_a/supervised.py` |
 | Temporal-holdout precision@k harness (generalized) | Scaffold | `src/model_a/validation.py` |
 
@@ -114,6 +117,6 @@ columns so the procurement files (09) drop in without code changes. Graph featur
 feed the ownership_integrity subscore; the separate graph-risk *boost* uses
 ring-structure membership only — one fact never counts twice.
 
-**Next increments:** real exposure (annual payments per org from spending_fact at
-company grain), Part B adapter, then the supervised graduation once the DOJ case DB
-exists.
+**Next increments:** run the adapters against the real procured files, the Open
+Payments adapter + kickback correlation, the DOJ fetcher/backfill, then supervised
+graduation once labels accumulate.

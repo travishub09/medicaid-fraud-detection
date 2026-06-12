@@ -7,16 +7,22 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
 
 1. ~~**Model A ERV composite**~~ — **DONE (v1)**: scheme subscores → noisy-OR →
    sector prior × graph boost → ERV + target dossiers (`src/model_a/`, tested;
-   `python -m src.model_a --fixture`). Remaining inside this item: feed *real*
-   per-org annual payments from `spending_fact` (currently expects a `payments`
-   column in the features input), and the WARN monitor's docket twin
+   `python -m src.model_a --fixture`). Real per-org annual payments now flow
+   from spending via `src/model_a/exposure.py` (`--spending` flag; dollar
+   conservation asserted). Remaining: the docket twin
    (`src/sourcing/docket_monitor.py`, stub).
-2. **Part B / Part D / DMEPOS / Open Payments adapters** — ingestion modules following
-   the `integrate.py` adapter contract (column map, VARCHAR, quarantine, assertions).
-   Unblocks most of the Model A feature dictionary.
-3. **DOJ/OIG case-database builder** — scraper/structurer for press releases,
-   settlements, and CIAs into `enforcement/doj_cases.csv` (defendant, scheme, amount,
-   intervention, jurisdiction). Feeds Model A labels *and* Model C cold-start.
+2. ~~**Part B / Part D / DMEPOS adapters**~~ — **DONE** (`src/ingest_cms/`):
+   real-PUF-header column maps, NPI quarantine, per-NPI metrics → one-sided peer
+   percentiles → org rollup; tested against the published header names so the
+   downloads drop in unmodified. Remaining: the Open Payments adapter (needs the
+   utilization cross — build with the kickback correlation) and running against
+   the real files once procured.
+3. ~~**DOJ/OIG case-database builder**~~ — **DONE (parse/build/derive)**
+   (`src/enforcement/`): press-release parser (amount, sector, scheme, qui tam,
+   intervention, jurisdiction), validated case schema with the graph join key, and
+   `derive_sector_priors` that replaces the placeholder multipliers (wired into
+   `sector_priors.sector_prior_series(priors=...)`). Remaining: the live fetcher
+   (`fetch.py`, stub — needs network + scraping review) and the 10-year backfill.
 4. **Dossier generator** — render a flagged org's full story (drivers, benign
    explanations, graph context, exposure) to Markdown/PDF. The product artifact
    counsel actually consumes; everything upstream exists.

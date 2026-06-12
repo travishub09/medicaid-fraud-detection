@@ -54,7 +54,7 @@ def test_surge_lead_fires_for_flagged_org(world):
     # asof inside the 6–18 month window after the 2024-10-01 layoff
     leads = surge_leads(matched, erv, top_fraction=0.5,
                         asof=pd.Timestamp("2025-06-01"))
-    badco_org = outputs["npi_to_org"].set_index("npi")["org_node_id"].loc["1003000010"]
+    badco_org = outputs["npi_to_org"].set_index("npi")["org_node_id"].loc["1003000100"]
     hit = leads[leads["org_node_id"] == badco_org]
     assert len(hit) == 1
     assert hit.iloc[0]["window_status"] == "active"

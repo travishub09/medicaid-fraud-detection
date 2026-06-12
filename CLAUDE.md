@@ -37,6 +37,9 @@ src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
 src/model_b/        whistleblower id/propensity (scaffold; scheme-role matrix populated)
 src/model_c/        case underwriting (scaffold)
 src/lookup_tool/    public billing-risk lookup (scaffold)
+src/sourcing/       WARN surge monitor (built); docket monitor (stub)
+src/ingest_cms/     Part B / Part D / DMEPOS adapters + peer percentiles (built)
+src/enforcement/    DOJ case DB parser + derived sector priors (fetcher stub)
 tests/              pytest; fixtures/synthetic.py generates data — no data files committed
 docs/platform/      architecture, roadmap, and component specs (the source of truth)
 ```
@@ -110,10 +113,10 @@ python -m pytest tests/ -v
 - **Built:** integration + corruption audit + 3-layer detection + company rollup +
   LEIE backtest (`attempt_2`, `backtest`); entity graph (`entity_graph`); Model A v1
   ERV composite + sector priors + target dossiers (`model_a`); WARN surge monitor
-  (`sourcing`). Full suite: `pytest tests/` (20 tests).
-- **Next increments:** real per-org payments into the ERV exposure; Part B/D/DMEPOS
-  adapters (docs/platform/09); the dossier generator against real data; docket
-  monitor (`sourcing/docket_monitor.py`).
+  (`sourcing`). Full suite: `pytest tests/` (32 tests).
+- **Next increments:** run adapters/exposure against real procured files; Open
+  Payments adapter (kickback correlation); DOJ fetcher + 10-year backfill; docket
+  monitor; Model B person-resolver (gated on people-data license).
 - **Gated on data/licensing:** person↔employer resolution (people-data vendors, FCRA
   review), Model C labels (DOJ/PACER case DB), `refers_to`/`pays` edges.
 - See `docs/platform/ROADMAP.md` for the full phase plan and

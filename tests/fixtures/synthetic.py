@@ -51,24 +51,24 @@ def build_provider_dim() -> pd.DataFrame:
     rows = [
         # shared-address shell cluster (3 distinct names, one address, single-NPI each)
         _provider_row("1003000001", "2", "SHELL ALPHA LLC", _SHELL_ADDR, "TX"),
-        _provider_row("1003000002", "2", "SHELL BETA LLC", _SHELL_ADDR, "TX"),
-        _provider_row("1003000003", "2", "SHELL GAMMA LLC", _SHELL_ADDR, "TX"),
+        _provider_row("1003000019", "2", "SHELL BETA LLC", _SHELL_ADDR, "TX"),
+        _provider_row("1003000027", "2", "SHELL GAMMA LLC", _SHELL_ADDR, "TX"),
         # common-owner ring: 4 distinct orgs (each its own PAC), owned by BADCO
-        _provider_row("1003000010", "2", "OWNED ONE LLC", "10 OAK AVE DALLAS TX 75201", "TX"),
-        _provider_row("1003000011", "2", "OWNED TWO LLC", "22 ELM ST DALLAS TX 75202", "TX"),
-        _provider_row("1003000012", "2", "OWNED THREE LLC", "33 ASH RD DALLAS TX 75203", "TX"),
-        _provider_row("1003000013", "2", "OWNED FOUR LLC", "44 FIR LN DALLAS TX 75204", "TX"),
+        _provider_row("1003000100", "2", "OWNED ONE LLC", "10 OAK AVE DALLAS TX 75201", "TX"),
+        _provider_row("1003000118", "2", "OWNED TWO LLC", "22 ELM ST DALLAS TX 75202", "TX"),
+        _provider_row("1003000126", "2", "OWNED THREE LLC", "33 ASH RD DALLAS TX 75203", "TX"),
+        _provider_row("1003000134", "2", "OWNED FOUR LLC", "44 FIR LN DALLAS TX 75204", "TX"),
         # directly excluded individual provider
-        _provider_row("1003000020", "1", "", "55 PINE ST HOUSTON TX 77001", "TX", person="EXCLUDED, JOHN"),
+        _provider_row("1003000209", "1", "", "55 PINE ST HOUSTON TX 77001", "TX", person="EXCLUDED, JOHN"),
         # PAC subparts: 2 NPIs, one PECOS PAC → one canonical org
-        _provider_row("1003000030", "2", "SUBPART HEALTH SYSTEM", "60 CEDAR BLVD AUSTIN TX 78702", "TX"),
-        _provider_row("1003000031", "2", "SUBPART HEALTH SYSTEM EAST", "61 CEDAR BLVD AUSTIN TX 78702", "TX"),
+        _provider_row("1003000308", "2", "SUBPART HEALTH SYSTEM", "60 CEDAR BLVD AUSTIN TX 78702", "TX"),
+        _provider_row("1003000316", "2", "SUBPART HEALTH SYSTEM EAST", "61 CEDAR BLVD AUSTIN TX 78702", "TX"),
         # alias pair → one canonical org by exact normalized name
-        _provider_row("1003000050", "2", "ACME HEALTH LLC", "70 BIRCH WAY AUSTIN TX 78703", "TX"),
-        _provider_row("1003000051", "2", "Acme Health, LLC.", "71 BIRCH WAY AUSTIN TX 78704", "TX"),
+        _provider_row("1003000506", "2", "ACME HEALTH LLC", "70 BIRCH WAY AUSTIN TX 78703", "TX"),
+        _provider_row("1003000514", "2", "Acme Health, LLC.", "71 BIRCH WAY AUSTIN TX 78704", "TX"),
         # negative controls: independent, unflagged
-        _provider_row("1003000040", "1", "", "80 MAPLE CT WACO TX 76701", "TX", person="CLEAN, JANE"),
-        _provider_row("1003000041", "2", "INDEPENDENT CLINIC LLC", "90 WALNUT DR WACO TX 76702", "TX"),
+        _provider_row("1003000407", "1", "", "80 MAPLE CT WACO TX 76701", "TX", person="CLEAN, JANE"),
+        _provider_row("1003000415", "2", "INDEPENDENT CLINIC LLC", "90 WALNUT DR WACO TX 76702", "TX"),
     ]
     return pd.DataFrame(rows)
 
@@ -76,13 +76,13 @@ def build_provider_dim() -> pd.DataFrame:
 def build_npi_xwalk() -> pd.DataFrame:
     rows = [
         # each owned org gets its OWN pac → resolves to a distinct org (not merged)
-        ("1003000010", "PAC10", ""),
-        ("1003000011", "PAC11", ""),
-        ("1003000012", "PAC12", ""),
-        ("1003000013", "PAC13", ""),
+        ("1003000100", "PAC10", ""),
+        ("1003000118", "PAC11", ""),
+        ("1003000126", "PAC12", ""),
+        ("1003000134", "PAC13", ""),
         # the two subpart NPIs SHARE one pac → collapse into one org
-        ("1003000030", "PAC_SUB", "O1003000030"),
-        ("1003000031", "PAC_SUB", "O1003000031"),
+        ("1003000308", "PAC_SUB", "O1003000308"),
+        ("1003000316", "PAC_SUB", "O1003000316"),
     ]
     return pd.DataFrame(rows, columns=["npi", "pac_id", "enrollment_id"])
 
@@ -109,7 +109,7 @@ def _owner_row(facility_npi):
 
 def build_owner_edges() -> pd.DataFrame:
     return pd.DataFrame([_owner_row(n) for n in
-                         ["1003000010", "1003000011", "1003000012", "1003000013"]])
+                         ["1003000100", "1003000118", "1003000126", "1003000134"]])
 
 
 def build_exclusions() -> pd.DataFrame:
@@ -119,7 +119,7 @@ def build_exclusions() -> pd.DataFrame:
          "excl_type": "1128b8", "excl_date": pd.Timestamp("2021-06-01"),
          "reinstate_date": pd.NaT, "currently_active": 1},
         # excluded individual PROVIDER, matched by NPI
-        {"npi": "1003000020", "entity_name": "EXCLUDED, JOHN", "name_key": "EXCLUDED JOHN",
+        {"npi": "1003000209", "entity_name": "EXCLUDED, JOHN", "name_key": "EXCLUDED JOHN",
          "excl_type": "1128a1", "excl_date": pd.Timestamp("2020-03-15"),
          "reinstate_date": pd.NaT, "currently_active": 1},
     ]
@@ -140,11 +140,11 @@ def build_company_features(org_nodes: pd.DataFrame) -> pd.DataFrame:
     """Company-grain v3 concept percentiles + payments, keyed by org_node_id.
 
     Planted patterns for Model A tests:
-      * the org containing NPI 1003000041 (INDEPENDENT CLINIC) is the MILL —
+      * the org containing NPI 1003000415 (INDEPENDENT CLINIC) is the MILL —
         extreme concentration + payment intensity, big payments → must rank top;
       * BADCO-owned orgs (PAC10–13) are mid-anomaly but get the graph boost
         (excluded-owner cluster) → must outrank equal-anomaly unboosted peers;
-      * the org containing NPI 1003000040 (CLEAN, JANE) is the negative control —
+      * the org containing NPI 1003000407 (CLEAN, JANE) is the negative control —
         benign on every concept → must rank at/near bottom with ERV ≈ low.
     """
     mid = {"concentration": 0.60, "payment_intensity": 0.55, "service_intensity": 0.50,
@@ -154,20 +154,45 @@ def build_company_features(org_nodes: pd.DataFrame) -> pd.DataFrame:
         npis = str(getattr(r, "member_npis", ""))
         f = dict(mid)
         payments = 2_000_000.0
-        if "1003000041" in npis:                      # the mill
+        if "1003000415" in npis:                      # the mill
             f = {"concentration": 0.99, "payment_intensity": 0.97,
                  "service_intensity": 0.90, "specialty_mismatch": 0.85,
                  "temporal": 0.70}
             payments = 25_000_000.0
-        elif "1003000040" in npis:                    # the clean control
+        elif "1003000407" in npis:                    # the clean control
             f = {"concentration": 0.10, "payment_intensity": 0.12,
                  "service_intensity": 0.15, "specialty_mismatch": 0.05,
                  "temporal": 0.10}
             payments = 1_000_000.0
-        elif any(n in npis for n in ["1003000010", "1003000011",
-                                     "1003000012", "1003000013"]):
+        elif any(n in npis for n in ["1003000100", "1003000118",
+                                     "1003000126", "1003000134"]):
             payments = 5_000_000.0                    # BADCO ring: mid anomaly + boost
         rows.append({"org_node_id": r.org_node_id, "payments": payments, **f})
+    return pd.DataFrame(rows)
+
+
+def build_spending() -> pd.DataFrame:
+    """Synthetic spending rows shaped like spending_fact (billing_npi ×
+    service_month × total_paid), spanning two years.
+
+    Planted: the mill (1003000415) bills $25M/yr; the clean control $1M/yr; one
+    row carries an unknown billing NPI → must land in the unresolved bucket with
+    dollars conserved, never silently dropped.
+    """
+    rows = []
+    for year in ["2023", "2024"]:
+        rows += [
+            {"billing_npi": "1003000415", "service_month": f"{year}-03", "total_paid": 12_500_000.0},
+            {"billing_npi": "1003000415", "service_month": f"{year}-09", "total_paid": 12_500_000.0},
+            {"billing_npi": "1003000407", "service_month": f"{year}-06", "total_paid": 1_000_000.0},
+            {"billing_npi": "1003000100", "service_month": f"{year}-01", "total_paid": 5_000_000.0},
+            # two subpart NPIs of ONE org: payments must combine at org grain
+            {"billing_npi": "1003000308", "service_month": f"{year}-02", "total_paid": 3_000_000.0},
+            {"billing_npi": "1003000316", "service_month": f"{year}-02", "total_paid": 2_000_000.0},
+        ]
+    # unknown billing NPI → unresolved bucket
+    rows.append({"billing_npi": "1999999992", "service_month": "2024-05",
+                 "total_paid": 777_777.0})
     return pd.DataFrame(rows)
 
 
