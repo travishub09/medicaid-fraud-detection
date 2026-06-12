@@ -24,7 +24,8 @@ import pandas as pd
 
 from .scheme_subscores import compute_subscores
 from .scoring import expected_recoverable_value, graph_risk_boost
-from .sector_priors import sector_prior_series
+from .sector_priors import sector_prior_series, sector_for_taxonomy
+from .government_interest import government_interest_overlay
 from .dossier import render_dossier
 
 
@@ -42,7 +43,8 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         company_features: pd.DataFrame, shell_clusters: pd.DataFrame | None,
         common_owner_clusters: pd.DataFrame | None, out_dir: Path,
         top_k_dossiers: int = 10,
-        scoped_payments: pd.DataFrame | None = None) -> pd.DataFrame:
+        scoped_payments: pd.DataFrame | None = None,
+        disclosure: pd.DataFrame | None = None) -> pd.DataFrame:
     """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/."""
     n0 = len(org_nodes)
     df = org_nodes.merge(org_graph_features, on="org_node_id", how="left")
@@ -53,16 +55,22 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
 
     subscores, coverage = compute_subscores(df)
     boost = graph_risk_boost(df["org_node_id"], shell_clusters, common_owner_clusters)
-    prior = sector_prior_series(df.get("primary_taxonomy", pd.Series("", index=df.index)))
+    taxonomies = df.get("primary_taxonomy", pd.Series("", index=df.index))
+    prior = sector_prior_series(taxonomies)
+    # A6: the OIG Work Plan overlay multiplies INTO the sector prior; both
+    # components stay visible (sector_prior_base + gov_interest_* drivers).
+    gov = government_interest_overlay(taxonomies.map(sector_for_taxonomy))
+    combined_prior = prior * gov["gov_interest_multiplier"]
     payments = df.get("payments", pd.Series(0.0, index=df.index)).fillna(0.0)
 
     scoped_idx = None
     if scoped_payments is not None and len(scoped_payments):
         scoped_idx = (scoped_payments.set_index("org_node_id")
                       .reindex(df["org_node_id"]).set_axis(df.index))
-    scored = expected_recoverable_value(subscores, payments, prior,
+    scored = expected_recoverable_value(subscores, payments, combined_prior,
                                         boost["graph_risk_boost"],
                                         scoped_payments=scoped_idx)
+    gov.insert(0, "sector_prior_base", prior.round(3))
     from src.analytics.confidence import confidence_band
     conf = confidence_band(pd.concat([df, subscores, scored], axis=1)
                            .loc[:, lambda d: ~d.columns.duplicated()])
@@ -70,13 +78,24 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     # column arriving in the features input must never survive the concat
     # (duplicated() keeps the FIRST copy — found by probing: a poisoned input
     # column silently overrode the entire ranking).
+    disc = None
+    if disclosure is not None and len(disclosure):
+        # A3: the public-disclosure screen, aligned per org. Orgs the screen
+        # never saw stay NaN — "unchecked" must never render as "clear".
+        disc = (disclosure.set_index("org_node_id")
+                .reindex(df["org_node_id"]).set_axis(df.index))
+
     computed_cols = (set(subscores.columns) | set(boost.columns)
-                     | set(scored.columns) | set(conf.columns)
-                     | {"erv_rank", "payments_joined"})
+                     | set(scored.columns) | set(conf.columns) | set(gov.columns)
+                     | {"erv_rank", "payments_joined", "public_disclosure_flag",
+                        "public_disclosure_citations", "disclosure_sources_checked"})
     df = df.drop(columns=[c for c in df.columns if c in computed_cols],
                  errors="ignore")
-    out = pd.concat([df, subscores, boost.drop(columns=["graph_risk_boost"]),
-                     scored, conf, payments.rename("payments_joined")], axis=1)
+    pieces = [df, subscores, boost.drop(columns=["graph_risk_boost"]),
+              scored, gov, conf, payments.rename("payments_joined")]
+    if disc is not None:
+        pieces.append(disc)
+    out = pd.concat(pieces, axis=1)
     assert not out.columns.duplicated().any(), \
         f"duplicate output columns: {out.columns[out.columns.duplicated()].tolist()}"
     out = out.sort_values("erv", ascending=False)
@@ -131,6 +150,12 @@ def main() -> None:
                          "(overrides any payments column in --features)")
     ap.add_argument("--out", default="/tmp/model_a_out")
     ap.add_argument("--top-k", type=int, default=10, help="dossiers to render")
+    ap.add_argument("--case-db", default=None,
+                    help="DOJ/OIG case table (csv or parquet) for the "
+                         "public-disclosure screen (A3)")
+    ap.add_argument("--dockets", default=None,
+                    help="qui_tam_dockets.parquet from the docket monitor, "
+                         "for the public-disclosure screen (A3)")
     ap.add_argument("--fixture", action="store_true",
                     help="build everything from the synthetic fixture")
     args = ap.parse_args()
@@ -173,8 +198,23 @@ def main() -> None:
             assert len(feats) == pre, "growth join fan-out"
             log(f"    growth features attached for {growth['org_node_id'].nunique()} orgs")
 
+    disclosure = None
+    if args.case_db or args.dockets:
+        from src.model_c.public_disclosure import public_disclosure_screen
+        case_db = None
+        if args.case_db:
+            case_db = (pd.read_csv(args.case_db, dtype=str)
+                       if args.case_db.endswith(".csv")
+                       else pd.read_parquet(args.case_db))
+        dockets = pd.read_parquet(args.dockets) if args.dockets else None
+        disclosure = public_disclosure_screen(org_nodes, case_db, dockets)
+        log(f"    disclosure screen: {int(disclosure['public_disclosure_flag'].sum())} "
+            f"of {len(disclosure)} orgs flagged "
+            f"({disclosure['disclosure_sources_checked'].iloc[0]})")
+
     run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k,
-        scoped_payments=scoped if args.spending else None)
+        scoped_payments=scoped if args.spending else None,
+        disclosure=disclosure)
 
 
 if __name__ == "__main__":

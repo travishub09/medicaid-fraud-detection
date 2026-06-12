@@ -56,8 +56,11 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
                      f"{row.get('confidence_reasons', '')}\n")
     lines.append(f"- Composite org_prob (noisy-OR): {row.get('org_prob')}  →  "
                  f"adjusted {row.get('adjusted_prob')} "
-                 f"(sector prior ×{row.get('sector_prior')}, "
+                 f"(sector prior ×{row.get('sector_prior_base', row.get('sector_prior'))}, "
+                 f"gov interest ×{row.get('gov_interest_multiplier', 1.0)}, "
                  f"graph boost +{row.get('graph_risk_boost')})\n")
+    if str(row.get("gov_interest_items") or ""):
+        lines.append(f"- Government-interest driver: {row.get('gov_interest_items')}\n")
     lines.append("- Per-scheme subscores:\n")
     for c in subscore_cols:
         scheme = c.replace("subscore_", "")
@@ -92,6 +95,18 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
                      f"= exposure {_dollars(row.get('exposure'))} "
                      f"(scope: all payments — no code family for this scheme)\n")
     lines.append(f"- **ERV (expected recoverable value): {_dollars(row.get('erv'))}**\n")
+
+    if pd.notna(row.get("public_disclosure_flag", pd.NA)):
+        lines.append("\n## Public-disclosure screen (31 U.S.C. §3730(e)(4))\n")
+        if int(row.get("public_disclosure_flag", 0)) == 1:
+            lines.append(f"- **FLAGGED — allegations may already be public.** "
+                         f"Counsel must assess the public-disclosure bar before "
+                         f"any relator outreach.\n")
+            lines.append(f"- Citations: {row.get('public_disclosure_citations')}\n")
+        else:
+            lines.append(f"- No name matches (checked "
+                         f"{row.get('disclosure_sources_checked')}). This is a "
+                         f"screen, not clearance — counsel makes the call.\n")
 
     lines.append("\n## Alternative explanations (must be ruled out)\n")
     for alt in ALTERNATIVE_EXPLANATIONS:

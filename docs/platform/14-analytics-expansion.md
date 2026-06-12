@@ -35,7 +35,7 @@ reasons, printed on the dossier and carried in `erv_ranked`.
 (`peer_basis`/`peer_n` from the peer engine, `years_observed` from exposure,
 `not_scored_reason` from v3).
 
-### A3. Public-disclosure screen (the 4th legal gate, automated)
+### A3. Public-disclosure screen (the 4th legal gate, automated) — BUILT
 We built first-to-file alerts; the manifesto's case-viability score also wants
 **public-disclosure risk**: "whether allegations are already in public
 litigation, news, audits, or government reports." A relator whose story is
@@ -69,7 +69,7 @@ once Census county files are added — see B6).
 `specialty_mismatch` concept with finer drivers ("$2.1M in codes billed by
 <1% of hospices").
 
-### A6. Government-interest overlay
+### A6. Government-interest overlay — BUILT
 Manifesto's sixth sub-score: alignment to "OIG Work Plan, DOJ enforcement
 themes, CMS RADV focus, state MFCU activity." We already derive DOJ themes
 from the case DB (sector priors); the OIG Work Plan is a public, structured
@@ -147,7 +147,11 @@ score driver, always corroboration context (X-layer, per the manifesto).
 2. **B2 + B1** next (Market Saturation is an hour; PBJ/Care Compare is the
    ICP-1 signal package and introduces the CCN/facility grain).
 3. **A3 + A6** together (both reuse the case DB/dockets; both feed Model C's
-   first real functions).
+   first real functions). — DONE: `src/model_c/public_disclosure.py` (named
+   citations, sources-checked recorded, never reads as clearance) and
+   `src/model_a/government_interest.py` (curated Work Plan table, max-weight
+   combination, titles as named drivers); wired into the orchestrator
+   (`--case-db` / `--dockets`) and the dossier.
 4. **A7 + A8** once two months of owner snapshots accumulate (start keeping
    snapshots NOW — it's a runbook line, not code).
 5. **A9 + B10** after the DOJ backfill runs.
@@ -219,7 +223,8 @@ campaign-brief generation from dossiers ("data-to-audience transformation").
 P(intervene) + recovery-distribution model; USAO/jurisdiction intervention
 tendencies; scienter-likelihood and evidence-specificity intake features;
 counsel-interest fit; litigation-finance terms engine (the §7 unit-economics
-model). A1 built the damages-proxy input; A3/A6 build two more.
+model). A1 (damages proxy), A3 (public-disclosure screen), and A6
+(government-interest) are built — three of its inputs already exist.
 
 ### D5. The activation gate ("Final Practical Test")
 A buildable checklist gate: no target enters outbound activation until the

@@ -119,6 +119,8 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Scheme-scoped damages (payments at issue in the suspect code family, scope labeled) | **Built** | `src/model_a/scheme_code_families.py`, `exposure.scoped_payments_per_org` |
 | Confidence band on every dossier (graded, named reasons) | **Built** | `src/analytics/confidence.py` |
 | Growth-shock change-points (level shifts + new-code bursts) | **Built** | `src/analytics/growth.py` → `rapid_ramp` concept |
+| Government-interest overlay (OIG Work Plan → sector prior, named drivers) | **Built** | `src/model_a/government_interest.py` (curated table; refresh quarterly) |
+| Public-disclosure screen on every dossier (§3730(e)(4) gate) | **Built** | `src/model_c/public_disclosure.py` (`--case-db` / `--dockets`) |
 | Hierarchical peer engine: specialty×entity×state ladder, full-population baselines, robust complexity adjustment, degeneracy guards, peer report | **Built** | `src/analytics/peers.py` (wired into `ingest_cms.to_peer_percentiles`) |
 | Part B / Part D / DMEPOS feature adapters | **Built** | `src/ingest_cms/` (awaiting the real files) |
 | Enforcement case DB + derived sector priors | **Built** (fetcher stub) | `src/enforcement/` |

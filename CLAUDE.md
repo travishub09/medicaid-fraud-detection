@@ -37,7 +37,7 @@ src/model/          supervised LightGBM lead scorer (Travis's build — PU train
                     screening, exports; context in src/model/README.md)
 src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
 src/model_b/        whistleblower id/propensity — logic-complete, gated on people data
-src/model_c/        case underwriting (scaffold)
+src/model_c/        case underwriting (scaffold; public-disclosure screen BUILT)
 src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
 src/ingest_cms/     Part B/D/DMEPOS/OpenPayments adapters + NPPES API (built)
@@ -123,7 +123,11 @@ python -m pytest tests/ -v
   (`sourcing`). Model B scoring chain logic-complete (`model_b`); Open Payments adapter +
   kickback co-occurrence (`ingest_cms`); validation harness (`model_a/validation`);
   CI + Makefile. Lookup-tool v1 preview, append-only label store, MEDICAID_DATA_ROOT env
-  override, core-normalizer tests. API feed layer (DOJ/CourtListener/SAM/NPPES + freshness). Full suite: `pytest tests/` (99 tests).
+  override, core-normalizer tests. API feed layer (DOJ/CourtListener/SAM/NPPES + freshness).
+  Peer engine (`analytics/peers`), dossier-quality sprint (scoped damages, confidence
+  bands, growth shock), public-disclosure screen (`model_c/public_disclosure`),
+  government-interest overlay (`model_a/government_interest` — refresh the curated
+  Work Plan table quarterly). Full suite: `pytest tests/` (125 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

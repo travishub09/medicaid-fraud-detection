@@ -69,6 +69,13 @@ have produced the target MOIC on a historical case set — because a per-case
 well-calibrated model can still build a bad book if it never catches a whale.
 
 ## Current state in this repo
+- **Built (first real function):** `src/model_c/public_disclosure.py` — the
+  §3730(e)(4) public-disclosure screen (expansion plan A3). Matches every org's
+  name + aliases against the DOJ/OIG case DB and CourtListener docket pulls via
+  `norm_org_name`; emits a flag with NAMED citations plus a record of which
+  sources were checked. Wired into the Model A run (`--case-db` / `--dockets`)
+  and rendered on every dossier. A flag routes to counsel; no flag is a screen
+  result, never clearance.
 - **Scaffold:** `src/model_c/features.py`, `underwriting.py`, `portfolio.py`.
 - **Blocked on:** the structured DOJ/OIG/PACER case-outcome database (a Phase-1 data
   gap) and accumulated platform outcomes. Cold-start rules can ship before labels exist.
