@@ -19,6 +19,13 @@ context, never as a bare fraud accusation.
 - No PHI; education-first framing ("billing concerns", "compliance questions").
 
 ## Status
-Scaffold only. `api_stub.py` defines the route/response shapes
-(`/lookup/{npi}`, `/search`, `/healthz`) and the `ProviderRiskCard`. Wiring the
-live Model A features behind FastAPI is a later increment.
+**v1 preview built** (`app.py`): `GET /healthz`, `GET /lookup/{npi}` serving
+plain-language percentile risk cards from a percentile parquet
+(`ingest_cms.to_peer_percentiles` output shape) — drivers, benign explanations,
+disclaimer, structurally no fraud field (tested in
+`tests/test_label_store_lookup.py`). Run locally:
+`python -m src.lookup_tool --features <percentiles.parquet>`.
+
+**Public launch is gated** on Part B data + Phase-0 counsel sign-off
+(GAPS #18); the server binds to localhost by default. `api_stub.py` retains the
+original contract notes; `/search` is a later increment.

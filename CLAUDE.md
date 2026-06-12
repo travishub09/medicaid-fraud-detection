@@ -36,7 +36,7 @@ src/entity_graph/   canonical entity graph (nodes/edges/features/rings) — BUIL
 src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
 src/model_b/        whistleblower id/propensity — logic-complete, gated on people data
 src/model_c/        case underwriting (scaffold)
-src/lookup_tool/    public billing-risk lookup (scaffold)
+src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
 src/sourcing/       WARN surge monitor (built); docket monitor (stub)
 src/ingest_cms/     Part B / Part D / DMEPOS adapters + peer percentiles (built)
 src/enforcement/    DOJ case DB parser + derived sector priors (fetcher stub)
@@ -115,7 +115,8 @@ python -m pytest tests/ -v
   ERV composite + sector priors + target dossiers (`model_a`); WARN surge monitor
   (`sourcing`). Model B scoring chain logic-complete (`model_b`); Open Payments adapter +
   kickback co-occurrence (`ingest_cms`); validation harness (`model_a/validation`);
-  CI + Makefile. Full suite: `pytest tests/` (43 tests).
+  CI + Makefile. Lookup-tool v1 preview, append-only label store, MEDICAID_DATA_ROOT env
+  override, core-normalizer tests. Full suite: `pytest tests/` (57 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

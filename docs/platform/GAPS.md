@@ -36,21 +36,28 @@ The honest punch list, ordered by leverage. Data gaps are detailed separately in
    (`src/model_b/` — knowledge gate, propensity + distress review flag,
    reachability, audience roll-up with the no-identifier tripwire) and tested on
    synthetic people; this resolver is the only missing piece to activate it.
-7. **Public lookup tool** — FastAPI app behind Model A percentile features
-   (`src/lookup_tool/`). Gated on Part B ingestion (its data) + Phase-0 sign-off
-   (its legal frame).
-8. **Tests for the attempt_2 core** — the 13-stage pipeline has assertions but zero
-   unit tests; `tests/` covers only the entity graph. Add fixture-driven tests for
-   `clean_data` normalizers, `integrate` joins, and v3 concept scoring.
+7. **Public lookup tool** — **v1 PREVIEW BUILT** (`src/lookup_tool/app.py`):
+   FastAPI over a percentile parquet; plain-language risk cards with drivers,
+   benign explanations, disclaimer, and structurally no fraud field (tested).
+   PUBLIC launch remains gated on Part B data + Phase-0 sign-off; binds to
+   localhost by default.
+8. **Tests for the attempt_2 core** — **PARTIAL**: the shared core
+   (`clean_data` NPI Luhn + name/address normalizers + header resolution) is now
+   covered (`tests/test_clean_data.py`); `integrate` joins and v3 concept
+   scoring still need fixture-driven tests.
 9. ~~**CI**~~ — **DONE** (`.github/workflows/tests.yml`): pytest + fixture
    end-to-end + doc-link check on every push/PR. Activates when the branch
    reaches GitHub.
 10. ~~**Orchestration**~~ — **DONE** (`Makefile`): `make demo|test|pipeline|
     graph|model-a|warn|ci-local`; refresh scheduling later.
-11. **Config hygiene** — `.env.example` exists but stages hardcode
-    `~/Desktop/data` defaults; route through one config module.
-12. **Label store** — a small, append-only outcomes table (case → outcome → date)
-    that W6 retraining reads. Trivial now, priceless in year two.
+11. ~~**Config hygiene**~~ — **DONE (root)**: `MEDICAID_DATA_ROOT` env var now
+    controls the data root (`clean_data.DATA_ROOT`/`PRECLEAN_DIR`, tested);
+    per-stage CLI flags still override. Full config module deferred until a
+    second knob actually exists.
+12. ~~**Label store**~~ — **DONE** (`src/enforcement/label_store.py`):
+    append-only (existing label_ids immutable), validated outcomes vocabulary,
+    `outcomes_for_validation` feeds the holdout harness directly. Lives under
+    `MEDICAID_DATA_ROOT/labels/` — runtime data, never in git.
 
 ## Modeling / data-science
 

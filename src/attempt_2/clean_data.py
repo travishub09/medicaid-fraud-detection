@@ -45,6 +45,7 @@ optional; if omitted, those tables are skipped (assemble tolerates it).
 """
 
 import argparse
+import os
 import re
 from pathlib import Path
 
@@ -52,8 +53,13 @@ import duckdb
 import numpy as np
 import pandas as pd
 
-# Where Travis's raw extracts live (the "preclean" drop). CLI flags override.
-PRECLEAN_DIR = Path.home() / "Desktop" / "data" / "preclean"
+# Where the raw extracts live (the "preclean" drop). Resolution order:
+#   1. MEDICAID_DATA_ROOT env var (the data root; preclean/ sits under it)
+#   2. the historical default ~/Desktop/data
+# CLI flags on each stage still override per-run.
+DATA_ROOT = Path(os.environ.get("MEDICAID_DATA_ROOT",
+                                str(Path.home() / "Desktop" / "data")))
+PRECLEAN_DIR = DATA_ROOT / "preclean"
 
 # Most recent N months of claims are incomplete ("run-out"); flag them so they
 # never feed a trend/outlier feature. CMS guidance is ~6-12 months; 12 is safe.
