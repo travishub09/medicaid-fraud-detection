@@ -153,6 +153,9 @@ def main() -> None:
     ap.add_argument("--out", default="/tmp/graph_out", help="output dir")
     ap.add_argument("--fixture", action="store_true",
                     help="use the in-repo synthetic fixture instead of --input")
+    ap.add_argument("--neo4j-bulk", default=None,
+                    help="also write neo4j-admin bulk-import CSVs + import.sh "
+                         "to this dir (offline Neo4j load; no server needed)")
     args = ap.parse_args()
 
     if args.fixture:
@@ -163,6 +166,11 @@ def main() -> None:
             ap.error("either --input <dir> or --fixture is required")
         tables = _load(Path(args.input))
     run(tables, Path(args.out))
+
+    if args.neo4j_bulk:
+        from .neo4j_export import write_bulk_import
+        manifest = write_bulk_import(Path(args.out), Path(args.neo4j_bulk))
+        log(f"Neo4j bulk import written to {args.neo4j_bulk}: {manifest}")
 
 
 if __name__ == "__main__":

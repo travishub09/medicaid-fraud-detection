@@ -17,6 +17,11 @@ that power the dormant schemes in Model A's feature registry:
   facility.py          PBJ nurse staffing + Care Compare hospice/deficiencies at
                        the CCN grain → worthless-services / hospice-ineligibility
                        signals; facility peer cells = size band × region (B1)
+  opioid.py            Part D Opioid Prescriber rates → pill_mill scheme (sweep E1)
+  nppes_deactivation.py  billing on/after an NPI's deactivation date →
+                       invalid_identity scheme (sweep E1)
+  hrsa_340b.py         340B OPAIS covered entities + contract-pharmacy footprint →
+                       contract_pharmacy scheme (sweep E1)
   peer_percentiles.py  raw metrics → one-sided peer-relative percentiles (the 0–1
                        inputs the registry expects) → NPI→org rollup
 
@@ -41,6 +46,9 @@ from .saturation import (compute_saturation_metrics, state_saturation_index,
 from .facility import (compute_pbj_metrics, compute_hospice_metrics,
                        compute_deficiency_counts, facility_peer_percentiles,
                        rollup_ccn_to_org)
+from .opioid import compute_opioid_metrics
+from .nppes_deactivation import deactivated_npis, billing_after_deactivation
+from .hrsa_340b import covered_entities, attach_340b
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
 __all__ = [
@@ -57,6 +65,11 @@ __all__ = [
     "compute_deficiency_counts",
     "facility_peer_percentiles",
     "rollup_ccn_to_org",
+    "compute_opioid_metrics",
+    "deactivated_npis",
+    "billing_after_deactivation",
+    "covered_entities",
+    "attach_340b",
     "to_peer_percentiles",
     "rollup_to_org",
 ]

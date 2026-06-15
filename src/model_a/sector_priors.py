@@ -71,6 +71,9 @@ SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {
     "worthless_services": 0.40,
     "hospice_ineligibility": 0.50,   # ineligible patients = full payments at issue
     "saturation_fraud": 0.20,        # a geographic prior, weakest scheme on its own
+    "pill_mill": 0.45,
+    "contract_pharmacy": 0.35,
+    "invalid_identity": 0.85,        # billing under a deactivated NPI = near-fully unsupported
     "default": 0.25,
 }
 

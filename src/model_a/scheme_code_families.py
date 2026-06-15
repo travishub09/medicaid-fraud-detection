@@ -43,6 +43,10 @@ SCHEME_FAMILIES: dict[str, tuple[str, object]] = {
     "hospice_ineligibility": ("prefixes", ("Q50", "T204")),
     "worthless_services": ("all", None),
     "saturation_fraud": ("all", None),
+    # June-2026 sweep schemes
+    "pill_mill": ("prefixes", ("J",)),       # drug J-codes (opioid billing proxy)
+    "contract_pharmacy": ("prefixes", ("J",)),
+    "invalid_identity": ("all", None),       # all post-deactivation dollars at issue
 }
 DEFAULT_FAMILY: tuple[str, object] = ("all", None)
 

@@ -274,14 +274,16 @@ A deliberate web sweep (data cutoff was Jan 2026) to confirm nothing free or
 cheap-license was being left on the table, beyond the manifesto's catalog and
 Sections A–D above. Findings, grouped; each names where it would plug in.
 
-### E0. URGENT infra correction — Kùzu is retired
-**Kùzu (the planned graph viewer) was acquired by Apple and its repo archived in
-Oct 2025 — no longer maintained.** Replacement: **DuckPGQ**, a DuckDB community
-extension adding SQL/PGQ graph pattern-matching/path-finding. We already run
-DuckDB everywhere, so this adds graph queries with zero new infrastructure (no
-built-in viz — pair with the Neo4j visualization JS lib or Gephi export).
-Alternatives if a bundled-viz server is wanted: a maintained Kùzu fork,
-FalkorDB, or Memgraph. `TREY_BUILD_PLAN.md` Phase 5 updated.
+### E0. Graph database — Kùzu retired → Neo4j (BUILT)
+**Kùzu (the originally planned viewer) was acquired by Apple and its repo
+archived in Oct 2025.** Decision: **Neo4j** (mature, first-class visualization
+via Browser/Bloom). BUILT in `src/entity_graph/neo4j_export.py` — offline
+`neo4j-admin` bulk-import CSVs (`--neo4j-bulk`) and an idempotent online driver
+load; tested without a live server. The scoring pipeline still needs no graph DB
+(NetworkX on the relational tables); Neo4j is the analyst lens. Full detail and
+the model/data write-ups: **docs/platform/15-new-sources-and-models.md**.
+(DuckPGQ — a DuckDB graph extension — remains a zero-infra alternative if a
+serverless query path is ever wanted, but Neo4j is the chosen layer.)
 
 ### E1. Free public datasets we had not listed
 - **Splink** is infra (E3), but these are *data*:
@@ -292,12 +294,15 @@ FalkorDB, or Memgraph. `TREY_BUILD_PLAN.md` Phase 5 updated.
 - **DEA ARCOS** (opioid distribution, court-ordered public via Univ. of Notre
   Dame / Washington Post, 2006–2019) — pharmacy/opioid corroboration; historical
   but structural. Feeds `drug_outlier` / pill-mill.
-- **CMS Part D Opioid Prescriber Summary + Opioid Prescribing Rates by
-  geography** (data.cms.gov) — a ready-made prescriber-level opioid-rate signal
-  sharper than deriving it from Part-D-by-drug. Drops into the partd adapter.
-- **HRSA 340B OPAIS** (free Excel: covered entities + contract pharmacies) —
-  lights up the pharmacy/340B typology (D1): contract-pharmacy exclusivity,
-  geography mismatch. New `ingest_cms`-style adapter.
+- **CMS Part D Opioid Prescriber Summary** — BUILT (`ingest_cms/opioid.py` →
+  `pill_mill` scheme). Ready-made prescriber-level opioid rate + long-acting
+  split, sharper than deriving from Part-D-by-drug.
+- **NPPES deactivation file** — BUILT (`ingest_cms/nppes_deactivation.py` →
+  `invalid_identity` scheme): billing on/after an NPI's deactivation date, exact
+  NPI match — the defensible version of the SSA-DMF idea.
+- **HRSA 340B OPAIS** — BUILT (`ingest_cms/hrsa_340b.py` → `contract_pharmacy`
+  scheme): covered entities + contract-pharmacy footprint for the pharmacy/340B
+  typology.
 - **CMS Provider of Services (POS) file** — facility characteristics/capacity
   (beds, CLIA, services) → the "capacity-vs-billing reconciliation" idea in D2
   and sharper facility peer cells. Free.

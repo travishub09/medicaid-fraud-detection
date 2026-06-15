@@ -58,6 +58,11 @@ model-c:
 	$(PY) -m src.model_c --erv $(DATA_ROOT)/model_a/erv_ranked.parquet \
 		--out $(DATA_ROOT)/model_c
 
+neo4j-bulk:
+	$(PY) -m src.entity_graph --input $(DATA_ROOT)/processed \
+		--out $(DATA_ROOT)/graph --neo4j-bulk $(DATA_ROOT)/neo4j
+	@echo "Run $(DATA_ROOT)/neo4j/import.sh against a stopped Neo4j database"
+
 warn:
 	$(PY) -m src.sourcing.warn_monitor --warn $(WARN_CSV) \
 		--graph-dir $(DATA_ROOT)/graph \

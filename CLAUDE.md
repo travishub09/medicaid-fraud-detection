@@ -41,7 +41,8 @@ src/model_c/        case underwriting — cold-start rules BUILT (priors/feature
                     underwriting/portfolio + public-disclosure screen)
 src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
-src/ingest_cms/     Part B/D/DMEPOS/OpenPayments adapters + NPPES API (built)
+src/ingest_cms/     Part B/D/DMEPOS/OpenPayments/Saturation/Facility adapters +
+                    opioid/340B/NPPES-deactivation (sweep E1) + NPPES API (built)
 src/feeds/          API-feed plumbing: cached transport, cursors, freshness probe
 src/analytics/      peer engine: ladder groups, robust complexity adjust (built)
 src/enforcement/    DOJ case DB + API fetcher + SAM client + label store (built)
@@ -102,7 +103,10 @@ python -m pytest tests/ -v
 ## Conventions
 
 - Python 3.11+, DuckDB for heavy joins, pandas for orchestration/assertions, Parquet
-  everywhere; NetworkX for graph features (no Neo4j dependency — export is a stub).
+  everywhere; NetworkX for graph features (the scoring pipeline needs no graph DB).
+  Neo4j is the optional interactive layer — `entity_graph/neo4j_export.py` BUILT
+  (offline `--neo4j-bulk` CSV import + online driver load; `pip install neo4j`
+  only for the online path).
 - Stages are CLI modules: `python -m src.<pkg>.<module>` with argparse; idempotent;
   read-only on inputs; write outputs + a Markdown report (`QA_REPORT.md` pattern).
 - Node ids are namespaced strings: `provider:<npi>`, `org:<company_id>`,
@@ -140,8 +144,11 @@ python -m pytest tests/ -v
   CHOW (`entity_graph/ownership_churn` → ownership_turnover, A7), org event
   timeline + catalyst score (`sourcing/event_timeline`, A8), enforcement
   lookalikes (`model_a/lookalikes` → dossier corroboration, A9) — the last three
-  dormant until owner snapshots / the DOJ backfill accumulate.
-  Full suite: `pytest tests/` (167 tests).
+  dormant until owner snapshots / the DOJ backfill accumulate. Neo4j export
+  (`entity_graph/neo4j_export`, `--neo4j-bulk`); June-2026 sweep adapters +
+  schemes (`ingest_cms/opioid` → pill_mill, `nppes_deactivation` →
+  invalid_identity, `hrsa_340b` → contract_pharmacy; see docs/platform/15).
+  Full suite: `pytest tests/` (175 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

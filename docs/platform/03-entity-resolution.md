@@ -83,8 +83,10 @@ sensitive from creation.
 Persist resolved entities/edges in a graph DB (Neo4j or TigerGraph) for interactive
 exploration; keep relational/columnar feature tables in the lakehouse for training;
 sync graph-derived features (centrality, community, excluded-party distance) back to
-the feature store on each refresh. **In this repo the graph is relational + NetworkX**;
-Neo4j export is optional (`neo4j_export.py`).
+the feature store on each refresh. **In this repo the scoring graph is relational +
+NetworkX** (no graph-DB dependency); **Neo4j is the BUILT interactive layer** —
+`neo4j_export.py` writes `neo4j-admin` bulk-import CSVs or loads via the driver
+(docs/platform/15 Part 1).
 
 ## Ring & network detection
 
@@ -151,4 +153,6 @@ and common-owner detection).
   to Model B; needs licensed people-data + Splink + the privacy guardrails above, and
   builds the temporal `employed_by` edges the tenure gate queries.
 - **`refers_to` / `pays` edges:** need referral-pair and Open Payments ingestion.
-- **Optional Neo4j export** (`neo4j_export.py`, stub) for interactive Cypher.
+- **Neo4j export** (`neo4j_export.py`, **BUILT**): offline `neo4j-admin`
+  bulk-import CSVs (`--neo4j-bulk`) + idempotent online driver load for
+  interactive Cypher / Bloom exploration (docs/platform/15 Part 1).

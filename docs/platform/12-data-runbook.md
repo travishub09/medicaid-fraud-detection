@@ -133,6 +133,30 @@ CCN grain, joined to orgs via the PECOS enrollment CCN↔NPI crosswalk).
 - **Powers:** government-wide debarments beyond LEIE; more exclusion nodes in
   the graph.
 
+### 1.7 June-2026 sweep files (see docs/platform/15 for the full rationale)
+All free; each lights up a scheme automatically once loaded.
+1. **Opioid prescriber rates** → `opioid/opioid_prescriber_YYYY.csv`
+   - data.cms.gov → "Medicare Part D Opioid Prescriber Summary File".
+   - **Verify:** header has `Prscrbr_NPI`, `Opioid_Tot_Clms`, `Tot_Clms`.
+   - **Powers:** the `pill_mill` scheme (`ingest_cms/opioid.py`).
+2. **NPPES deactivation** → `nppes/npi_deactivation.csv`
+   - download.cms.gov/nppes → monthly NPI deactivation file.
+   - **Verify:** header has `NPI`, `NPI Deactivation Date`.
+   - **Powers:** the `invalid_identity` scheme — billing after deactivation
+     (`ingest_cms/nppes_deactivation.py`; needs the spending fact too).
+3. **HRSA 340B OPAIS** → `hrsa/opais_daily.csv`
+   - 340bopais.hrsa.gov → Daily Report (covered entities + contract pharmacies).
+   - **Verify:** header has an entity-name column + `Contract Pharmacy Name`.
+   - **Powers:** the `contract_pharmacy` scheme (`ingest_cms/hrsa_340b.py`).
+
+### 1.8 Neo4j interactive graph (optional)
+After the graph build, also emit a Neo4j bulk import:
+`python3 -m src.entity_graph --input <dir> --out <graph> --neo4j-bulk <neo4j_dir>`,
+then run the generated `import.sh` against a stopped Neo4j (Community or Aura).
+For an idempotent online load instead, `pip install neo4j` and call
+`export_to_neo4j(graph_dir, session=...)`. No PHI in the graph (IDs/structure
+only), but host it on the same secured machine.
+
 ---
 
 ## Block 2 — Free people-side signals (no license needed)

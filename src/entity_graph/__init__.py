@@ -43,6 +43,11 @@ from .ownership_churn import (
     ownership_change_events,
     ownership_turnover_features,
 )
+from .neo4j_export import (
+    export_to_neo4j,
+    write_bulk_import,
+    ANALYST_QUERIES,
+)
 
 __all__ = [
     "build_provider_nodes",
@@ -61,4 +66,7 @@ __all__ = [
     "referral_rings",
     "ownership_change_events",
     "ownership_turnover_features",
+    "export_to_neo4j",
+    "write_bulk_import",
+    "ANALYST_QUERIES",
 ]

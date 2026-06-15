@@ -63,6 +63,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "worthless_services": {"pbj_understaffing": 0.7, "deficiency_count": 0.4},
     "hospice_ineligibility": {"hospice_live_discharge_rate": 1.0},
     "saturation_fraud": {"market_saturation_index": 1.0},
+    # future (June-2026 sweep adapters: ingest_cms/opioid.py, hrsa_340b.py,
+    # nppes_deactivation.py) — absent until those files are loaded
+    "pill_mill": {"opioid_claim_share": 0.6, "opioid_long_acting_share": 0.4},
+    "contract_pharmacy": {"contract_pharmacy_concentration": 1.0},
+    "invalid_identity": {"billing_after_deactivation": 1.0},
 }
 
 
