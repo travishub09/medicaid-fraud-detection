@@ -1,0 +1,23 @@
+# requirements-trey.txt — OPTIONAL deps for the build-out tracks, kept out of the
+# core install (requirements.txt) so the pipeline stays light. Install when you
+# work on the feature that needs them. All free, CPU-only, no GPU/hosting.
+
+# Probabilistic entity resolution (src/entity_graph/probabilistic_resolver.py).
+# Optional backend; the deterministic resolver is the default. Runs on DuckDB.
+splink>=4.0
+
+# Interactive graph layer (src/entity_graph/neo4j_export.py online load only;
+# the offline --neo4j-bulk path needs nothing).
+neo4j>=5.0
+
+# Zero-shot entity/relation extraction for unstructured text (dockets, press
+# releases, 990 PDFs, reviews) — doc 15 §4.3.
+gliner>=0.2
+
+# Embeddings for name matching / record linkage (doc 15 §4.5).
+sentence-transformers>=3.0
+
+# Collectors for the people-side signals (gated on counsel review before use).
+praw>=7.7
+playwright>=1.44
+beautifulsoup4>=4.12

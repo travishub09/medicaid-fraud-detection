@@ -314,9 +314,10 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
   ownership. Free on data.cms.gov.
 - **NPPES deactivation file (weekly)** — short-lived / deactivated-entity signal
   (fly-by-night), complements `rapid_ramp` and ownership-churn (A7). Free.
-- **T-MSIS DQ Atlas** — NOT the (gated) claims: the public per-state Medicaid
-  data-QUALITY scores. Feeds the data-confidence band (A2): down-weight states
-  with poor reporting. The lawful public face of T-MSIS. Free.
+- **T-MSIS DQ Atlas** — BUILT (`src/analytics/tmsis_quality.py`): the public
+  per-state Medicaid data-QUALITY scores (NOT the gated claims) downgrade the
+  confidence band (A2) for poor-reporting states. The lawful public face of
+  T-MSIS. Free.
 - **USAspending.gov API** (no key) — federal grants/contracts to providers
   (HRSA grants, COVID relief) → the procurement/vendor graph (D2) + a
   defendant size/solvency feature for Model C. Free.
@@ -340,11 +341,12 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
   persona-mapping needs it; far cheaper entry than DH / IQVIA.
 
 ### E3. ML / tooling (Hugging Face + open source) beyond the current HF plan
-- **Splink** (MOJ, MIT, free) — production-grade probabilistic record linkage
-  (Fellegi-Sunter) on DuckDB, unsupervised, millions of records on a laptop.
-  The manifesto calls entity resolution "the hard part"; our resolver is
-  exact-key + alias today. This is the upgrade path for person↔employer
-  resolution (Model B) and org dedup. Highest-leverage infra find.
+- **Splink** (MOJ, MIT, free) — BUILT as an optional backend
+  (`src/entity_graph/probabilistic_resolver.py`): Fellegi-Sunter record linkage
+  on DuckDB with cold-start weights (EM recalibration on real data), comparing
+  on the shared normalized name key. The probabilistic upgrade path for
+  person↔employer resolution (Model B) and org dedup; deterministic resolver
+  stays default.
 - **GLiNER / GLiNER2** (free, CPU) — zero-shot NER + text classification +
   relation extraction in one small model; extracts org/person/role entities
   from dockets, news, 990 PDFs, reviews, intake text. Serves both the planned

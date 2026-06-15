@@ -53,6 +53,10 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     df = df.merge(company_features, on="org_node_id", how="left")
     require("company_feature_join_no_fanout", len(df) == n0, f"{len(df)} vs {n0}")
     df = df.set_index("org_node_id", drop=False)
+    # T-MSIS DQ Atlas state-quality → the confidence band down-weights signals
+    # from states CMS flags as poor Medicaid reporters (doc 15 §2.8).
+    from src.analytics.tmsis_quality import attach_state_quality
+    df = attach_state_quality(df)
 
     subscores, coverage = compute_subscores(df)
     boost = graph_risk_boost(df["org_node_id"], shell_clusters, common_owner_clusters)

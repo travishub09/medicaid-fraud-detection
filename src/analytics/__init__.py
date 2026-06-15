@@ -24,6 +24,7 @@ itself, not just the score.
 """
 
 from .confidence import confidence_band
+from .tmsis_quality import state_quality, attach_state_quality
 from .growth import growth_features, growth_percentiles
 from .plausibility import (
     code_prevalence_matrix,
@@ -41,6 +42,8 @@ from .peers import (
 
 __all__ = [
     "confidence_band",
+    "state_quality",
+    "attach_state_quality",
     "growth_features",
     "growth_percentiles",
     "code_prevalence_matrix",

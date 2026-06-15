@@ -14,6 +14,8 @@ Downgrade rules (each carries its reason string):
   ≤ MEDIUM payment history short (<2 years) or absent
   ≤ MEDIUM peer comparison fell back below the most specific ladder level
   ≤ MEDIUM fewer than 3 scheme subscores had data (thin feature coverage)
+  → LOW    state's Medicaid reporting is a high T-MSIS DQ Atlas concern
+  ≤ MEDIUM state's Medicaid reporting is a medium DQ Atlas concern
 """
 
 from __future__ import annotations
@@ -66,6 +68,13 @@ def confidence_band(df: pd.DataFrame) -> pd.DataFrame:
     if sub_cols:
         coverage = df[sub_cols].notna().sum(axis=1)
         cap(coverage < 3, MEDIUM, "thin feature coverage (under 3 schemes scored)")
+
+    if "state_data_quality" in df.columns:
+        dq = df["state_data_quality"].astype(str)
+        cap(dq == "low", LOW,
+            "state Medicaid reporting is a high T-MSIS DQ Atlas concern")
+        cap(dq == "medium", MEDIUM,
+            "state Medicaid reporting is a medium T-MSIS DQ Atlas concern")
 
     return pd.DataFrame({
         "confidence": band,

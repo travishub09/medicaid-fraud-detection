@@ -130,15 +130,17 @@ names, structure only) — but host it on the same secured box as the rest.
 - **How to build:** new `reassigns_to` edges in the entity graph; feeds
   `ownership_turnover` (A7) and the graph features.
 
-### 2.8 T-MSIS DQ Atlas — CONTRACT (cheap, high-value)
+### 2.8 T-MSIS DQ Atlas — BUILT (`src/analytics/tmsis_quality.py`)
 - **Download:** medicaid.gov DQ Atlas → per-state data-quality scores (public;
   NOT the gated claims). Free.
 - **What it is:** CMS's own assessment of each state's Medicaid reporting
   quality.
 - **Good for:** the data-confidence band (A2) — down-weight signals from states
   with poor reporting so we don't over-flag a data artifact.
-- **How to build:** a curated state→quality table multiplied into
-  `src/analytics/confidence.py`; small and immediately useful.
+- **How we use it:** `attach_state_quality` maps the org's state through the
+  curated `STATE_DQ` tier table (refresh from the Atlas, like the OIG Work Plan
+  table); `confidence_band` then downgrades — a high DQ-Atlas concern → LOW, a
+  medium concern → MEDIUM, each with a named reason. Wired into the Model A run.
 
 ### 2.9 USAspending.gov API — CONTRACT
 - **Download:** api.usaspending.gov/api/v2 (no key). Free.
@@ -193,7 +195,11 @@ names, structure only) — but host it on the same secured box as the rest.
 Storage + query, not a predictive model. Cypher pattern-matching finds rings the
 relational pipeline already scores; Bloom/Browser is the visualization.
 
-### 4.2 Splink — probabilistic entity resolution (CONTRACT, high-leverage)
+### 4.2 Splink — probabilistic entity resolution (BUILT, optional backend)
+`src/entity_graph/probabilistic_resolver.py` — `resolve_probabilistic(records)`
+clusters records into resolved entities. Splink is an optional dependency
+(`requirements-trey.txt`); the deterministic resolver stays the default. Below is
+how the model works.
 - **What it is:** a free (MIT) probabilistic record-linkage library implementing
   the Fellegi-Sunter model on DuckDB — the database we already use.
 - **How it works:** for each candidate record pair it estimates, per field
@@ -209,9 +215,14 @@ relational pipeline already scores; Bloom/Browser is the visualization.
   to spelling). Splink is the upgrade path for (a) org dedup across CMS files and
   registries and (b) the gated person↔employer resolution Model B needs. It runs
   in-process on DuckDB; no new infrastructure.
-- **How we'd plug it in:** `src/entity_graph/resolve_entities.py` gains a Splink
-  backend behind the same interface; the deterministic keys become blocking
-  rules. Add `splink` to `requirements-trey.txt`.
+- **How it's built here:** `resolve_probabilistic` reduces names with the shared
+  `norm_org_name`, compares on the normalized name (exact / Jaro-Winkler), state,
+  and optional address, and clusters pairs above a threshold. The Fellegi-Sunter
+  weights ship as DOCUMENTED COLD-START values (exact name ≈0.99, near-name
+  ≈0.85, distinct ≈0.02 at the default prior) — the same cold-start discipline as
+  Model A's priors. On real data, `calibrate=True` refines them with Splink's
+  unsupervised EM (EM doesn't converge meaningfully on tiny fixtures, so the
+  cold-start weights are the tested default).
 
 ### 4.3 GLiNER / GLiNER2 — zero-shot entity & relation extraction (CONTRACT)
 - **What it is:** a small (≈200–400M param) BERT-family model that does
