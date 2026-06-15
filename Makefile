@@ -51,7 +51,12 @@ model-a:
 	$(PY) -m src.model_a --graph-dir $(DATA_ROOT)/graph \
 		--features $(DATA_ROOT)/detection/company_features.parquet \
 		--spending $(DATA_ROOT)/processed/spending_fact.parquet \
+		--provider-dim $(DATA_ROOT)/processed/provider_dim.parquet \
 		--out $(DATA_ROOT)/model_a
+
+model-c:
+	$(PY) -m src.model_c --erv $(DATA_ROOT)/model_a/erv_ranked.parquet \
+		--out $(DATA_ROOT)/model_c
 
 warn:
 	$(PY) -m src.sourcing.warn_monitor --warn $(WARN_CSV) \
@@ -63,6 +68,8 @@ ci-local: test
 	$(PY) -m src.entity_graph --fixture --out /tmp/graph_ci
 	$(PY) -m src.model_a --fixture --out /tmp/model_a_ci --top-k 1
 	@test -f /tmp/model_a_ci/MODEL_A_REPORT.md && echo "fixture e2e OK"
+	$(PY) -m src.model_c --fixture --out /tmp/model_c_ci
+	@test -f /tmp/model_c_ci/MODEL_C_REPORT.md && echo "model-c fixture e2e OK"
 
 feeds-backfill:
 	$(PY) -m src.enforcement.fetch --backfill-years 10

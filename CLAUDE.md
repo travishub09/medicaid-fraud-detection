@@ -37,7 +37,8 @@ src/model/          supervised LightGBM lead scorer (Travis's build — PU train
                     screening, exports; context in src/model/README.md)
 src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
 src/model_b/        whistleblower id/propensity — logic-complete, gated on people data
-src/model_c/        case underwriting (scaffold; public-disclosure screen BUILT)
+src/model_c/        case underwriting — cold-start rules BUILT (priors/features/
+                    underwriting/portfolio + public-disclosure screen)
 src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
 src/ingest_cms/     Part B/D/DMEPOS/OpenPayments adapters + NPPES API (built)
@@ -132,7 +133,11 @@ python -m pytest tests/ -v
   hospice_ineligibility / saturation_fraud schemes, dormant until files land),
   data-derived clinical plausibility (`analytics/plausibility.py` →
   `clinical_implausibility` blended into specialty_mismatch; `--provider-dim`).
-  Full suite: `pytest tests/` (142 tests).
+  Model C cold-start underwriting (`model_c/priors|features|underwriting|portfolio`
+  + `python -m src.model_c --fixture`): rules-based P(intervene) → recovery
+  distribution → fund/pass/fund-with-terms + portfolio Monte Carlo, label-free,
+  retires to a trained model when the case-outcome DB lands.
+  Full suite: `pytest tests/` (157 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

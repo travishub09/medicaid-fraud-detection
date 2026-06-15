@@ -235,12 +235,17 @@ estimator + evidence-checklist lead magnets, confidential structured intake
 first contact), triage scoring, counsel case-packet generator, and
 campaign-brief generation from dossiers ("data-to-audience transformation").
 
-### D4. Model C remaining surface (beyond the scaffold)
-P(intervene) + recovery-distribution model; USAO/jurisdiction intervention
-tendencies; scienter-likelihood and evidence-specificity intake features;
-counsel-interest fit; litigation-finance terms engine (the §7 unit-economics
-model). A1 (damages proxy), A3 (public-disclosure screen), and A6
-(government-interest) are built — three of its inputs already exist.
+### D4. Model C — cold-start underwriting BUILT; trained model remaining
+BUILT (rules-based, label-free): P(intervene) with jurisdiction intervention
+tendencies (incl. Zafirov venue discount), recovery-distribution P10/P50/P90,
+the fund/pass/fund-with-terms terms engine, and the portfolio Monte Carlo
+(`src/model_c/priors|features|underwriting|portfolio.py`, `python -m
+src.model_c`). Consumes A1 (damages proxy), A3 (public-disclosure screen), A6
+(government-interest) and the docket first-to-file alerts. **Remaining (gated
+on data):** the trained calibrated GBM + quantile recovery model that retires
+the cold-start priors; richer scienter-likelihood / evidence-specificity intake
+features (need a real intake form); the reject-inference exploration tranche
+once financing is live.
 
 ### D5. The activation gate ("Final Practical Test")
 A buildable checklist gate: no target enters outbound activation until the

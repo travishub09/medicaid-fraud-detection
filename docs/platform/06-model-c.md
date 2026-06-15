@@ -69,13 +69,39 @@ have produced the target MOIC on a historical case set — because a per-case
 well-calibrated model can still build a bad book if it never catches a whale.
 
 ## Current state in this repo
-- **Built (first real function):** `src/model_c/public_disclosure.py` — the
-  §3730(e)(4) public-disclosure screen (expansion plan A3). Matches every org's
-  name + aliases against the DOJ/OIG case DB and CourtListener docket pulls via
-  `norm_org_name`; emits a flag with NAMED citations plus a record of which
-  sources were checked. Wired into the Model A run (`--case-db` / `--dockets`)
-  and rendered on every dossier. A flag routes to counsel; no flag is a screen
-  result, never clearance.
-- **Scaffold:** `src/model_c/features.py`, `underwriting.py`, `portfolio.py`.
-- **Blocked on:** the structured DOJ/OIG/PACER case-outcome database (a Phase-1 data
-  gap) and accumulated platform outcomes. Cold-start rules can ship before labels exist.
+- **Built — public-disclosure screen:** `src/model_c/public_disclosure.py` — the
+  §3730(e)(4) screen (A3). Matches every org's name + aliases against the DOJ/OIG
+  case DB and CourtListener docket pulls via `norm_org_name`; emits a flag with
+  NAMED citations plus a record of which sources were checked. Wired into the
+  Model A run (`--case-db` / `--dockets`) and every dossier. A flag routes to
+  counsel; no flag is a screen result, never clearance.
+- **Built — cold-start underwriting (rules-based, label-free, explainable):**
+  - `priors.py` — the curated rule tables (scheme-priority multipliers,
+    jurisdiction intervention tendencies incl. the Zafirov FL-venue discount,
+    statutory relator shares, magnitude/discount assumptions). One auditable
+    `UnderwritingAssumptions` dataclass; every constant RETIRES once the case DB
+    exists, the same way Model A's sector priors do.
+  - `features.py` — `build_case_features` assembles a per-case row from the
+    Model A ERV signal plus optional relator intake; with no intake the row is a
+    PRE-RELATOR pre-screen (the manifesto's org-level Case Viability Score),
+    `has_relator = 0`, neutral relator priors — the underwriter never pretends a
+    witness exists.
+  - `underwriting.py` — `predict_intervention` (base rate × named bounded
+    multipliers → P(intervene) + the outcome-class split; first-to-file-not-
+    cleared floors it, public-disclosure penalizes it), `recovery_distribution`
+    (damages proxy → realized settlement P10/P50/P90, low data-confidence widens
+    the band but never shifts the median), and `underwrite` (expected relator
+    gross → **fund / pass / fund-with-terms** with capital and a take % priced to
+    the portfolio MOIC target; hard gates: first-to-file, public-disclosure, EV
+    floor, take cap). Every row carries its drivers — the investment-memo spine.
+  - `portfolio.py` — `monte_carlo_portfolio` simulates the funded book
+    (Bernoulli recovery × log-normal magnitude) → MOIC P10/P50/P90, P(loss),
+    P(≥3×), and whale probability, because a per-case-calibrated model can still
+    build a bad book if it never catches a whale.
+  - Orchestrator: `python -m src.model_c --fixture` (builds graph + Model A
+    first) or `--erv <erv_ranked.parquet> [--intake] [--case-db]`; writes
+    `case_underwriting.parquet`, per-case memos, and `MODEL_C_REPORT.md`.
+- **Graduates to** a calibrated GBM (outcome class) + quantile recovery model the
+  moment the structured DOJ/OIG/PACER outcome database accumulates; the portfolio
+  Monte Carlo and the decision/terms layer run unchanged on the trained
+  distributions. Mind the selection-bias trap (§above) when that data arrives.
