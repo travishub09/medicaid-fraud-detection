@@ -110,18 +110,29 @@ as a "window open" signal alongside its ERV rank.
 
 ---
 
-## Phase 5 — Kùzu graph viewer (week 4–6, parallel, low effort)
+## Phase 5 — graph viewer (week 4–6, parallel, low effort)
 
 The interactive lens for investigating ownership networks. Optional to the
 pipeline, valuable to a human analyst.
 
-- [ ] `pip install kuzu` (free, embedded, nothing to buy/host).
-- [ ] Build out `src/entity_graph/neo4j_export.py`'s sibling `kuzu_export.py`:
-      load the node/edge parquet the graph build already produces into a local
-      Kùzu database.
-- [ ] Write 5–6 canned Cypher queries (within-2-hops-of-an-exclusion,
+> **Plan change (June 2026 research sweep):** Kùzu was acquired by Apple and its
+> repo was archived in Oct 2025 — no longer maintained. Two viable replacements,
+> both free/embedded, no server to host:
+> 1. **DuckPGQ** (recommended) — a DuckDB community extension that adds SQL/PGQ
+>    graph pattern-matching and path-finding. We already run DuckDB everywhere,
+>    so this adds graph queries with ZERO new infrastructure; the node/edge
+>    parquet loads straight in. (No built-in visualization — pair with the Neo4j
+>    visualization JS library or export to Gephi for the clickable view.)
+> 2. **A maintained Kùzu fork / FalkorDB / Memgraph** — if a dedicated graph
+>    server with bundled visualization is preferred over query-in-DuckDB.
+
+- [ ] `INSTALL duckpgq; LOAD duckpgq;` (DuckDB community extension, free).
+- [ ] Build `src/entity_graph/duckpgq_export.py` (sibling of the existing
+      `neo4j_export.py` stub): register a property graph over the node/edge
+      parquet the graph build already produces.
+- [ ] Write 5–6 canned SQL/PGQ queries (within-2-hops-of-an-exclusion,
       common-owner clusters, shared-address shells) — the patterns
-      `ring_detection.py` already computes, but clickable.
+      `ring_detection.py` already computes, but interactive.
 - [ ] Runs locally on the analysis machine, inherits the same security posture
       as the rest (no server to expose).
 
@@ -162,9 +173,11 @@ top-ranked target pages me within a week of hitting the docket.
 ## Dependencies I'll add (all free, CPU-only, no GPU/hosting)
 
 `sentence-transformers`, `transformers`, `torch` (CPU build), `praw`,
-`playwright`, `beautifulsoup4`, `kuzu`. I'll pin these in a separate
-`requirements-trey.txt` so they don't weigh down the core install until the
-features land.
+`playwright`, `beautifulsoup4`, `splink` (probabilistic entity resolution on
+DuckDB), `gliner` (zero-shot NER for org/person/role extraction). The graph
+viewer is the DuckPGQ DuckDB extension (no pip dep) — Kùzu is retired. I'll pin
+these in a separate `requirements-trey.txt` so they don't weigh down the core
+install until the features land.
 
 ## Sequencing logic (why this order)
 

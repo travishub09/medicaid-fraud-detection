@@ -268,6 +268,96 @@ the small-scale equivalent; revisit at real-data volume. `fraud_typology_score`
 output tables per provider/org. Supervised graduation (PU + isotonic + SHAP +
 quantile-regression exposure) remains scaffolded in `model_a/supervised.py`.
 
+## E. June 2026 research sweep — additive sources NOT previously catalogued
+
+A deliberate web sweep (data cutoff was Jan 2026) to confirm nothing free or
+cheap-license was being left on the table, beyond the manifesto's catalog and
+Sections A–D above. Findings, grouped; each names where it would plug in.
+
+### E0. URGENT infra correction — Kùzu is retired
+**Kùzu (the planned graph viewer) was acquired by Apple and its repo archived in
+Oct 2025 — no longer maintained.** Replacement: **DuckPGQ**, a DuckDB community
+extension adding SQL/PGQ graph pattern-matching/path-finding. We already run
+DuckDB everywhere, so this adds graph queries with zero new infrastructure (no
+built-in viz — pair with the Neo4j visualization JS lib or Gephi export).
+Alternatives if a bundled-viz server is wanted: a maintained Kùzu fork,
+FalkorDB, or Memgraph. `TREY_BUILD_PLAN.md` Phase 5 updated.
+
+### E1. Free public datasets we had not listed
+- **Splink** is infra (E3), but these are *data*:
+- **SSA Death Master File (public)** — billing under a deceased provider's or
+  beneficiary's ID is a clean phantom/identity-fraud signal we have no analog
+  for. Public file free; Limited Access (<3 yr) needs certification. New scheme
+  candidate (`deceased_identity`) or an integrity-subscore feature.
+- **DEA ARCOS** (opioid distribution, court-ordered public via Univ. of Notre
+  Dame / Washington Post, 2006–2019) — pharmacy/opioid corroboration; historical
+  but structural. Feeds `drug_outlier` / pill-mill.
+- **CMS Part D Opioid Prescriber Summary + Opioid Prescribing Rates by
+  geography** (data.cms.gov) — a ready-made prescriber-level opioid-rate signal
+  sharper than deriving it from Part-D-by-drug. Drops into the partd adapter.
+- **HRSA 340B OPAIS** (free Excel: covered entities + contract pharmacies) —
+  lights up the pharmacy/340B typology (D1): contract-pharmacy exclusivity,
+  geography mismatch. New `ingest_cms`-style adapter.
+- **CMS Provider of Services (POS) file** — facility characteristics/capacity
+  (beds, CLIA, services) → the "capacity-vs-billing reconciliation" idea in D2
+  and sharper facility peer cells. Free.
+- **CMS Order & Referring file** — who is eligible to order/refer → validate
+  DME/lab referral chains and catch orders from ineligible/excluded orderers.
+  Free; pairs with the DME ring scheme.
+- **CMS Revalidation / Clinic-Group-Practice Reassignment file** — physician↔
+  group reassignment edges, an affiliation-graph layer complementing PECOS
+  ownership. Free on data.cms.gov.
+- **NPPES deactivation file (weekly)** — short-lived / deactivated-entity signal
+  (fly-by-night), complements `rapid_ramp` and ownership-churn (A7). Free.
+- **T-MSIS DQ Atlas** — NOT the (gated) claims: the public per-state Medicaid
+  data-QUALITY scores. Feeds the data-confidence band (A2): down-weight states
+  with poor reporting. The lawful public face of T-MSIS. Free.
+- **USAspending.gov API** (no key) — federal grants/contracts to providers
+  (HRSA grants, COVID relief) → the procurement/vendor graph (D2) + a
+  defendant size/solvency feature for Model C. Free.
+- **openFDA** (warning letters, 483 inspections, debarment list; real API) —
+  lab/pharma/device integrity signal. Free.
+- **ProPublica Nonprofit Explorer API** (free, no key) — 990s incl. nonprofit
+  hospital exec comp + Schedule R related orgs → available NOW for the B8
+  owner/related-party enrichment without parsing raw EDGAR.
+- **CMS DE-SynPUF** (synthetic Medicare claims, public) — a realistic synthetic
+  claims set to harden the pipeline and dev the supervised graduations WITHOUT
+  touching PHI (beyond our tiny fixture). Free.
+
+### E2. Cheap-license data (Brad decision; modest, not enterprise)
+- **OpenSanctions** — aggregates HHS-OIG LEIE + ~45 state Medicaid exclusion
+  lists + SAM + global PEP/sanctions into ONE normalized feed with an API.
+  This essentially *is* our B3 (state exclusions) pre-built, plus owner PEP
+  screening. Free for non-commercial; a commercial license is required for us
+  (modest) — likely cheaper than building/maintaining 45 per-state scrapers.
+- **Definitive Healthcare alternatives** — Provyx (pay-per-record, no annual
+  contract) / AcuityMD for facility org-charts and affiliation data when Model B
+  persona-mapping needs it; far cheaper entry than DH / IQVIA.
+
+### E3. ML / tooling (Hugging Face + open source) beyond the current HF plan
+- **Splink** (MOJ, MIT, free) — production-grade probabilistic record linkage
+  (Fellegi-Sunter) on DuckDB, unsupervised, millions of records on a laptop.
+  The manifesto calls entity resolution "the hard part"; our resolver is
+  exact-key + alias today. This is the upgrade path for person↔employer
+  resolution (Model B) and org dedup. Highest-leverage infra find.
+- **GLiNER / GLiNER2** (free, CPU) — zero-shot NER + text classification +
+  relation extraction in one small model; extracts org/person/role entities
+  from dockets, news, 990 PDFs, reviews, intake text. Serves both the planned
+  grievance classifier and the D2 creative-data extraction.
+- **Embedding models** — our planned `bge-small` is fine; newer small open
+  options (Jina v5-small, Qwen3-Embedding) are available if we want more headroom
+  for the name-matching embeddings.
+- **Clinical coding models** (OpenMed NER 2025, MedGemma, automated ICD/CPT
+  coders) — for the eventual intake-document parsing and plausibility
+  enrichment; lower priority since A5 derives plausibility from data directly.
+
+**Bottom line of the sweep:** one urgent correction (Kùzu → DuckPGQ), one
+high-value infra upgrade (Splink for entity resolution), and ~a dozen free or
+cheap additive data sources — none of which change the legal frame or require
+crossing a new gate. The full procurement detail belongs in
+`09-data-procurement.md`; the highest-ROI next adds are SSA DMF, the CMS opioid
+files, 340B OPAIS, T-MSIS DQ Atlas (cheap A2 win), and Splink.
+
 ## Explicitly not doing (manifesto-consistent)
 
 T-MSIS RIFs / LDS (DUA-barred), commercial claims (license-barred), anything
