@@ -145,9 +145,13 @@ def main() -> None:
     ap.add_argument("--features", default=None,
                     help="parquet: org_node_id + concept percentiles (+ payments)")
     ap.add_argument("--spending", default=None,
-                    help="spending parquet (billing_npi, service_month, total_paid): "
-                         "computes REAL per-org annual payments for the exposure "
-                         "(overrides any payments column in --features)")
+                    help="spending parquet (billing_npi, service_month, total_paid, "
+                         "hcpcs_code): computes REAL per-org annual payments for the "
+                         "exposure (overrides any payments column in --features); with "
+                         "--provider-dim also drives growth + clinical plausibility")
+    ap.add_argument("--provider-dim", default=None,
+                    help="provider_dim parquet (npi, taxonomy_code) — the file the "
+                         "graph build consumed; enables clinical plausibility (A5)")
     ap.add_argument("--out", default="/tmp/model_a_out")
     ap.add_argument("--top-k", type=int, default=10, help="dossiers to render")
     ap.add_argument("--case-db", default=None,
@@ -197,6 +201,20 @@ def main() -> None:
             feats = feats.merge(growth, on="org_node_id", how="left")
             assert len(feats) == pre, "growth join fan-out"
             log(f"    growth features attached for {growth['org_node_id'].nunique()} orgs")
+
+            if args.provider_dim:
+                from src.analytics.plausibility import (
+                    org_clinical_plausibility, plausibility_percentiles)
+                provider_dim = pd.read_parquet(args.provider_dim)
+                plaus = plausibility_percentiles(org_clinical_plausibility(
+                    spending, provider_dim, npi_to_org))
+                pre = len(feats)
+                feats = feats.merge(plaus, on="org_node_id", how="left")
+                assert len(feats) == pre, "plausibility join fan-out"
+                flagged = int((plaus.get("clinical_implausibility", pd.Series(
+                    dtype=float)) > 0.9).sum())
+                log(f"    clinical plausibility attached for "
+                    f"{plaus['org_node_id'].nunique()} orgs ({flagged} in top decile)")
 
     disclosure = None
     if args.case_db or args.dockets:

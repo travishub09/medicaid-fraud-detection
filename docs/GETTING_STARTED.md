@@ -112,11 +112,14 @@ python3 -m src.attempt_2.export.export_final_leads --min-net-paid 10000000
 # C. Build the entity graph (organizations, owners, exclusions, networks)
 python3 -m src.entity_graph --input ~/Desktop/data/processed --out ~/Desktop/data/graph
 
-# D. Score organizations and render dossiers (with REAL dollars from spending)
+# D. Score organizations and render dossiers (with REAL dollars from spending).
+#    --provider-dim adds clinical-plausibility drivers (codes rare for the org's
+#    specialty); --case-db / --dockets add the public-disclosure screen.
 python3 -m src.model_a \
     --graph-dir ~/Desktop/data/graph \
     --features <your company-features parquet> \
     --spending ~/Desktop/data/processed/spending_fact.parquet \
+    --provider-dim ~/Desktop/data/processed/provider_dim.parquet \
     --out ~/Desktop/data/model_a
 
 # E. (Optional) Cross WARN layoff notices against the flagged orgs for

@@ -67,6 +67,9 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
         feats = ", ".join(coverage.get(scheme, []))
         lines.append(f"    - {scheme}: {round(float(row.get(c, 0)), 3)}"
                      f"  (features: {feats})\n")
+    if str(row.get("clinical_implausibility_driver") or ""):
+        lines.append(f"- Clinical-implausibility driver: "
+                     f"{row.get('clinical_implausibility_driver')}\n")
 
     lines.append("\n## Graph context\n")
     lines.append(f"- Hops to nearest exclusion: {row.get('excluded_party_distance')}"

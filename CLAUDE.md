@@ -129,8 +129,10 @@ python -m pytest tests/ -v
   government-interest overlay (`model_a/government_interest` — refresh the curated
   Work Plan table quarterly), Market Saturation + PBJ/Care Compare facility adapters
   (`ingest_cms/saturation.py`, `facility.py` → worthless_services /
-  hospice_ineligibility / saturation_fraud schemes, dormant until files land).
-  Full suite: `pytest tests/` (134 tests).
+  hospice_ineligibility / saturation_fraud schemes, dormant until files land),
+  data-derived clinical plausibility (`analytics/plausibility.py` →
+  `clinical_implausibility` blended into specialty_mismatch; `--provider-dim`).
+  Full suite: `pytest tests/` (142 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

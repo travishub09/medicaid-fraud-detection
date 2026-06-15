@@ -34,7 +34,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "single_service_mill": {"concentration": 1.0},
     "payment_outlier": {"payment_intensity": 1.0},
     "overutilization": {"service_intensity": 1.0},
-    "specialty_mismatch": {"specialty_mismatch": 1.0},
+    "specialty_mismatch": {"specialty_mismatch": 0.6,
+                           # data-derived clinical plausibility (A5); absent
+                           # until spending + taxonomy are attached, then blends
+                           "clinical_implausibility": 0.4},
     "rapid_ramp": {"temporal": 0.6,
                    # growth-shock signals from src/analytics/growth.py (A4):
                    # absent until spending-derived features are attached

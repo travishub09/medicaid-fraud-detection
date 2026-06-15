@@ -58,16 +58,24 @@ enrollment dates. Output 0–1 percentiles feeding a `growth_shock` concept.
 **Where:** new `src/analytics/growth.py` → registers in
 `model_a/scheme_subscores.py` (registry already absorbs new columns).
 
-### A5. Clinical-plausibility score, data-derived
+### A5. Clinical-plausibility score, data-derived — BUILT (specialty half)
 Manifesto: "specialty-to-code compatibility, volume vs local denominator."
 No external code-to-specialty table needed: derive compatibility FROM the data
 — a code billed by <1% of an org's taxonomy peers is implausible for that
 specialty (v3's `rare_share_te` is the seed; extend to a proper per-code
 plausibility matrix with dollar weighting and a county-population denominator
 once Census county files are added — see B6).
-**Where:** extend `src/analytics/` with `plausibility.py`; feeds the
-`specialty_mismatch` concept with finer drivers ("$2.1M in codes billed by
-<1% of hospices").
+**Where:** `src/analytics/plausibility.py`. `code_prevalence_matrix` builds the
+per-(taxonomy, HCPCS) prevalence from the spending data itself (taxonomies with
+too few providers can't anchor a prevalence and are excluded — a code billed by
+the only provider in a specialty is 100% "prevalent" and 0% informative);
+`org_clinical_plausibility` gives each org its dollar-weighted implausible share
+plus a named driver ("$2.1M on T1019, billed by 0.3% of 251G peers");
+`plausibility_percentiles` feeds the `clinical_implausibility` registry input,
+blended 0.4 into the `specialty_mismatch` scheme alongside the v3 concept (0.6).
+Wired into the Model A `--spending --provider-dim` path; driver rendered on the
+dossier. **Still to come (the "volume vs local denominator" half):** billing
+rate vs county population, gated on the Census county file (B6).
 
 ### A6. Government-interest overlay — BUILT
 Manifesto's sixth sub-score: alignment to "OIG Work Plan, DOJ enforcement
@@ -155,10 +163,13 @@ score driver, always corroboration context (X-layer, per the manifesto).
    `src/model_a/government_interest.py` (curated Work Plan table, max-weight
    combination, titles as named drivers); wired into the orchestrator
    (`--case-db` / `--dockets`) and the dossier.
-4. **A7 + A8** once two months of owner snapshots accumulate (start keeping
+4. **A5** clinical plausibility (pure code on the spending fact + taxonomy).
+   — DONE: `src/analytics/plausibility.py`, blended into `specialty_mismatch`;
+   the county-denominator half waits on B6.
+5. **A7 + A8** once two months of owner snapshots accumulate (start keeping
    snapshots NOW — it's a runbook line, not code).
-5. **A9 + B10** after the DOJ backfill runs.
-6. B3/B4/B5/B6/B8/B9 fill in alongside, smallest-first.
+6. **A9 + B10** after the DOJ backfill runs.
+7. B3/B4/B5/B6/B8/B9 fill in alongside, smallest-first.
 
 ## D. Manifesto features not captured anywhere else (inventory, June 2026)
 
