@@ -47,6 +47,9 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
         "within_2_hops_of_exclusion": 0.6,
         "shell_score": 0.5,
         "related_party_density_norm": 0.3,
+        # CHOW churn from diffed owner snapshots (A7); absent until two+ monthly
+        # snapshots accumulate (src/entity_graph/ownership_churn.py)
+        "ownership_turnover": 0.3,
     },
     # future (Part B): upcoding/impossible-day
     "upcoding": {"em_high_level_share": 0.7, "em_level_mean": 0.3},

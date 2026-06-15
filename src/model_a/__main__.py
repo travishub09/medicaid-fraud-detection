@@ -44,7 +44,8 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         common_owner_clusters: pd.DataFrame | None, out_dir: Path,
         top_k_dossiers: int = 10,
         scoped_payments: pd.DataFrame | None = None,
-        disclosure: pd.DataFrame | None = None) -> pd.DataFrame:
+        disclosure: pd.DataFrame | None = None,
+        settled_org_ids: list[str] | None = None) -> pd.DataFrame:
     """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/."""
     n0 = len(org_nodes)
     df = org_nodes.merge(org_graph_features, on="org_node_id", how="left")
@@ -102,6 +103,14 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     out["erv_rank"] = range(1, len(out) + 1)
     out = out.reset_index(drop=True)
     require("scored_one_row_per_org", len(out) == n0, f"{len(out)} vs {n0}")
+
+    # A9: enforcement lookalikes — X-layer corroboration only, never a driver.
+    # Dormant (empty string) until settled orgs resolve from the case DB.
+    if settled_org_ids:
+        from .lookalikes import enforcement_lookalikes
+        la = enforcement_lookalikes(out, settled_org_ids)
+        out = out.merge(la, on="org_node_id", how="left")
+        log(f"    enforcement lookalikes vs {len(set(settled_org_ids))} settled orgs")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out.to_parquet(out_dir / "erv_ranked.parquet", index=False)
@@ -216,7 +225,7 @@ def main() -> None:
                 log(f"    clinical plausibility attached for "
                     f"{plaus['org_node_id'].nunique()} orgs ({flagged} in top decile)")
 
-    disclosure = None
+    disclosure, settled_ids = None, None
     if args.case_db or args.dockets:
         from src.model_c.public_disclosure import public_disclosure_screen
         case_db = None
@@ -229,10 +238,14 @@ def main() -> None:
         log(f"    disclosure screen: {int(disclosure['public_disclosure_flag'].sum())} "
             f"of {len(disclosure)} orgs flagged "
             f"({disclosure['disclosure_sources_checked'].iloc[0]})")
+        if case_db is not None:
+            from .lookalikes import resolve_settled_orgs
+            settled = resolve_settled_orgs(org_nodes, case_db)
+            settled_ids = settled["org_node_id"].tolist() or None
 
     run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k,
         scoped_payments=scoped if args.spending else None,
-        disclosure=disclosure)
+        disclosure=disclosure, settled_org_ids=settled_ids)
 
 
 if __name__ == "__main__":

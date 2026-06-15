@@ -88,7 +88,7 @@ that multiplies into the sector prior. Effectively "the government is already
 looking here" — which is exactly what predicts intervention (Model C reuses it).
 **Where:** `src/model_a/government_interest.py` + a YAML/CSV the team can edit.
 
-### A7. Ownership-churn / CHOW detection
+### A7. Ownership-churn / CHOW detection — BUILT (dormant until snapshots accumulate)
 Manifesto: "short-lived entities, ownership churn, changes-of-ownership" as
 concealment signals. We ingest the All-Owners files but only the latest
 snapshot; `association_date` is already carried.
@@ -99,7 +99,7 @@ docket/WARN surge logic can treat as "exit-after-event" catalysts.
 **Where:** `src/entity_graph/ownership_churn.py`; runbook gains "keep monthly
 owner files, don't overwrite."
 
-### A8. Exit-after-event timing (Model B2 sharpener)
+### A8. Exit-after-event timing (Model B2 sharpener) — BUILT (org-level)
 Manifesto: "exits after audits, acquisitions, layoffs, leadership changes,
 payer terminations are high-signal." We have layoffs (WARN) and will have
 ownership changes (A7) and enforcement events (case DB).
@@ -108,7 +108,7 @@ events) and a B2 feature: departure within N months AFTER an event scores
 higher than a cold departure. Org-level until people data exists; slots into
 `model_b/propensity.py` (the weights table already anticipates it).
 
-### A9. Enforcement lookalikes (exemplar-based, explainable)
+### A9. Enforcement lookalikes (exemplar-based, explainable) — BUILT (dormant until DOJ backfill)
 Manifesto: "public enforcement lookalikes" as corroboration. Once the DOJ
 backfill runs, we have feature vectors for orgs that settled.
 **Build:** nearest-neighbor distance from each scored org to the settled-org
@@ -166,9 +166,15 @@ score driver, always corroboration context (X-layer, per the manifesto).
 4. **A5** clinical plausibility (pure code on the spending fact + taxonomy).
    — DONE: `src/analytics/plausibility.py`, blended into `specialty_mismatch`;
    the county-denominator half waits on B6.
-5. **A7 + A8** once two months of owner snapshots accumulate (start keeping
-   snapshots NOW — it's a runbook line, not code).
-6. **A9 + B10** after the DOJ backfill runs.
+5. **A7 + A8** — DONE (code): `src/entity_graph/ownership_churn.py` (diff owner
+   snapshots → entry/exit events + `ownership_turnover`) and
+   `src/sourcing/event_timeline.py` (WARN+CHOW+enforcement+docket timeline →
+   recency-weighted org catalyst score, with the org-level B2 propensity hook).
+   Dormant until two monthly owner snapshots accumulate — start keeping them NOW.
+6. **A9** — DONE (code): `src/model_a/lookalikes.py` (nearest settled org in
+   subscore space; corroboration only, never a driver), wired through the Model A
+   `--case-db` path; dormant until the DOJ backfill populates settled defendants.
+   **B10** still pending the DocGraph shared-patient files.
 7. B3/B4/B5/B6/B8/B9 fill in alongside, smallest-first.
 
 ## D. Manifesto features not captured anywhere else (inventory, June 2026)

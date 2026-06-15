@@ -39,6 +39,10 @@ from .ring_detection import (
     excluded_party_proximity,
     referral_rings,
 )
+from .ownership_churn import (
+    ownership_change_events,
+    ownership_turnover_features,
+)
 
 __all__ = [
     "build_provider_nodes",
@@ -55,4 +59,6 @@ __all__ = [
     "common_owner_clusters",
     "excluded_party_proximity",
     "referral_rings",
+    "ownership_change_events",
+    "ownership_turnover_features",
 ]

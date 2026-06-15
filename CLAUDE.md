@@ -136,8 +136,12 @@ python -m pytest tests/ -v
   Model C cold-start underwriting (`model_c/priors|features|underwriting|portfolio`
   + `python -m src.model_c --fixture`): rules-based P(intervene) → recovery
   distribution → fund/pass/fund-with-terms + portfolio Monte Carlo, label-free,
-  retires to a trained model when the case-outcome DB lands.
-  Full suite: `pytest tests/` (157 tests).
+  retires to a trained model when the case-outcome DB lands. Ownership-churn /
+  CHOW (`entity_graph/ownership_churn` → ownership_turnover, A7), org event
+  timeline + catalyst score (`sourcing/event_timeline`, A8), enforcement
+  lookalikes (`model_a/lookalikes` → dossier corroboration, A9) — the last three
+  dormant until owner snapshots / the DOJ backfill accumulate.
+  Full suite: `pytest tests/` (167 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

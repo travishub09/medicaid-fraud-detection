@@ -102,6 +102,11 @@ properly.
   `reachability.py` (channel availability × persona fit), `audiences.py`
   (role×org×channel roll-up with education-first message angles and the
   `assert_no_identifiers` export tripwire — the guardrail is code, not policy).
+- **Org-level catalyst ready (A8):** `src/sourcing/event_timeline.py` builds the
+  exit-after-event timeline (WARN + CHOW + enforcement + docket) and a
+  recency-weighted org catalyst score; `apply_catalyst_to_propensity` is the
+  org-level hook that multiplies B2 propensity once people data exists — no
+  person-level signal added, guardrails unchanged.
 - **Blocked on (activation):** people-data licensing + FCRA review, and the
   probabilistic person↔employer resolver + temporal `employed_by` edges
   (`src/entity_graph/person_resolver.py`) — the only missing piece.

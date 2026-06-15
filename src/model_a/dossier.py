@@ -71,6 +71,10 @@ def render_dossier(row: pd.Series, subscore_cols: list[str],
         lines.append(f"- Clinical-implausibility driver: "
                      f"{row.get('clinical_implausibility_driver')}\n")
 
+    if str(row.get("enforcement_lookalikes") or ""):
+        lines.append(f"- Enforcement lookalikes (corroboration, NOT a driver): "
+                     f"{row.get('enforcement_lookalikes')}\n")
+
     lines.append("\n## Graph context\n")
     lines.append(f"- Hops to nearest exclusion: {row.get('excluded_party_distance')}"
                  f" · related-party density: {row.get('related_party_density')}"
