@@ -27,6 +27,10 @@ python3 -m pytest tests/ -v
 
 # 4. Run the full scoring pipeline on the synthetic data
 python3 -m src.model_a --fixture --out /tmp/demo --top-k 3
+
+# 5. (Optional) Run the case-underwriting end on the same synthetic data:
+#    fund / pass / fund-with-terms recommendations + per-case investment memos
+python3 -m src.model_c --fixture --out /tmp/demo_mc   # then read /tmp/demo_mc/memos/
 ```
 
 **What you should see:** lines like `[assert PASS] ...` (the system checks its
