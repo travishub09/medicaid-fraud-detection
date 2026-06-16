@@ -1,5 +1,12 @@
 # What We Built, What Data to Get, and How to Turn It On
 
+> **Two companion deliverables (also rendered as PDFs):**
+> [**SETUP_GUIDE.md**](SETUP_GUIDE.md) — the numbered, do-this-then-this setup
+> instructions for a non-technical owner; and
+> [**CONSULTING_DELIVERABLE.md**](CONSULTING_DELIVERABLE.md) — the polished,
+> shareable overview of everything that was built. This file is the quick
+> reference that ties them together.
+
 The single briefing document, in plain English. No coding knowledge needed to
 read it. It covers three things: **what the platform is and what we built**,
 **exactly what data to procure (and where)**, and **the step-by-step to turn it
