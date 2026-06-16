@@ -1,242 +1,222 @@
 # Healthcare Fraud Whistleblower Origination Platform
-## What Was Built — A Plain-English Briefing
+### Capabilities Briefing & Build Assessment
 
-*Prepared for the founding team and advisors. This document explains, without
-technical jargon, what the platform does, what has been built, how it stays on
-the right side of the law, and what remains. A companion document,
-**SETUP_GUIDE.md**, gives the step-by-step instructions to run it.*
+*Prepared by: ________________________  |  Date: ____________  |  Confidential*
+
+---
+
+This briefing describes a working software platform for originating, qualifying,
+and underwriting qui tam (False Claims Act) healthcare-fraud cases. It is written
+for a non-technical audience. It covers what the platform does, the capabilities
+delivered to date, how it maintains legal and ethical defensibility, and the
+specific steps required to bring it into production.
 
 ---
 
 ## Executive summary
 
-We set out to build an intelligence-and-acquisition engine for **qui tam (False
-Claims Act) cases** — the legal mechanism under which a private whistleblower who
-exposes fraud against the government can receive **15–30% of what the government
-recovers**. In healthcare alone the government recovered over $2.9 billion in a
-recent year, the large majority from cases a whistleblower brought.
+Under the False Claims Act, a private whistleblower who exposes fraud against the
+government may receive 15–30% of the funds recovered. Healthcare is the largest
+category of these recoveries — several billion dollars annually, the majority
+originating from whistleblower-brought cases.
 
-The platform does three things, in a chain:
+The platform operationalizes this opportunity through three connected models:
 
-1. **Finds where fraud concentrates.** It reads public government healthcare data
-   and ranks organizations whose billing and ownership patterns match known fraud
-   schemes — producing a plain-English case file ("dossier") for each.
-2. **Finds who could be the whistleblower.** For a flagged organization, it maps
-   the job roles that would have witnessed the scheme into compliant marketing
-   *audiences* — never named individuals.
-3. **Decides which cases are worth backing.** It underwrites each resulting case —
-   the odds the government takes it and the likely recovery — to direct financing
-   to the winners.
+- **Model A — Where:** reads public government healthcare data and ranks
+  organizations whose billing and ownership patterns match known fraud schemes,
+  producing a plain-English case file for each.
+- **Model B — Who:** for a flagged organization, maps the job roles that would
+  have witnessed the scheme into compliant marketing audiences.
+- **Model C — Which:** underwrites each resulting case — the likelihood the
+  government intervenes and the probable recovery — to direct financing to the
+  strongest opportunities.
 
-**Status today:** the core platform is built and verified by roughly 220
-automated tests. It runs end-to-end on demonstration data right now. Turning it
-on for real is mostly **data procurement** (downloading public files) plus a few
-**business and legal decisions** (a people-data license, counsel sign-off) that
-are described precisely at the end of this document. Critically, every output is
-an **investigative hypothesis for human and legal review — never an accusation**,
-and that principle is enforced in the software itself, not just in policy.
+**Assessment of current state.** The core platform is built and verified by
+approximately 220 automated tests, and runs end-to-end on demonstration data
+today. Bringing it into production is principally a matter of **data procurement**
+(loading public files) and a small number of **business and legal decisions**
+(a people-data license, counsel sign-off), each itemized in Section 5. Every
+output is an investigative hypothesis for human and legal review — never an
+accusation — a principle enforced in the software itself.
 
 ---
 
 ## 1. The opportunity
 
-Healthcare fraud is large, persistent, and concentrated in identifiable patterns:
+Healthcare fraud is large, persistent, and expressed in identifiable patterns:
 upcoding, billing for services never rendered, kickbacks, medically unnecessary
-care, hospice and home-health abuse, and more. The government relies heavily on
-**insiders** to surface it, and rewards them well for doing so.
+care, and hospice and home-health abuse, among others. The government relies on
+insiders to surface these schemes and rewards them substantially for doing so.
 
-The hard parts of the business are not legal theory — they are **finding the
-right organizations, finding the right insiders, and choosing the right cases to
-finance.** Each is a data and modeling problem. The platform is built to solve
-all three while staying inside strict legal and ethical lines, because the asset
-that makes a case is a credible human witness, and the discipline that keeps the
-business alive is trust.
-
----
-
-## 2. What was built
-
-The platform is organized as three "models" (A, B, C) sitting on one shared map
-of the healthcare world, plus the supporting machinery that feeds and operates
-them.
-
-### The shared map: entity resolution and the graph
-Before anything can be scored, the system must know **who is who and who is
-connected to whom** — which billing numbers belong to one company, who owns each
-facility, who shares an address, and who sits near a party already banned from
-federal programs. This "entity graph" is built and tested. It also loads into
-**Neo4j**, a visual database, so an analyst can click through an ownership
-network by hand, and includes an optional advanced matching engine (Splink) for
-reconciling messy, inconsistently-spelled company names.
-
-### Model A — Where is the fraud? (built)
-Model A ranks organizations by **expected recoverable value** — the likelihood
-of recoverable fraud multiplied by the dollars plausibly at stake — and writes a
-dossier for each. Every dossier names a specific fraud-type hypothesis, shows the
-evidence and the network context, estimates the dollars *specifically at issue*
-(not just total billing), states a **confidence level**, runs a check for whether
-the allegation is already public, and lists the **innocent explanations that must
-be ruled out**. The scoring needs no prior "labeled" examples to start — it works
-from domain knowledge on day one and sharpens as real case outcomes accumulate.
-
-It detects a broad library of schemes — upcoding, impossible-day billing,
-single-code "mills," over-utilization, opioid pill-mills, kickbacks, durable-
-medical-equipment rings, hospice ineligibility, worthless services and
-under-staffing, geographic over-saturation, ownership and shell-company
-integrity, billing under deactivated or deceased identities, 340B contract-
-pharmacy abuse, cost-report fraud, sudden ramp-ups, and clinical implausibility.
-Each detector activates automatically when its data file is loaded.
-
-A historical back-test is the proof point: organizations the early system ranked
-in the top 10% were **twice as likely** to later be banned by the government.
-
-### Model B — Who saw it? (built; gated on a data license)
-For a flagged organization, Model B identifies the **job roles** that would have
-had line-of-sight to the suspected scheme (a coder for upcoding, a sales rep for
-kickbacks, a nurse for hospice abuse), weighs who was employed during the relevant
-period, and estimates who is reachable and receptive — for example, someone who
-recently left after a layoff. Its output is **advertising audiences (role × org ×
-channel), never a list of named individuals to solicit.** That boundary is a
-legal guardrail written into the code: person-identifying information is
-structurally blocked from any export.
-
-The hardest piece — matching a workforce record's employer to the right company —
-is built. It runs only on licensed people-data after a privacy/FCRA legal review,
-which is a business decision, not a missing feature.
-
-### Model C — Which cases are worth backing? (built, cold-start)
-Model C is the underwriting brain — the part that turns a portfolio of leads into
-a financeable book. For a case in hand it predicts the **probability the
-government intervenes** (which is nearly the whole difference between a recovery
-and a zero), a **recovery range** (low / middle / high), and a **fund / pass /
-fund-with-terms** recommendation with the capital to deploy and the take priced
-to a target return — then simulates the whole fund to show the range of outcomes
-and the chance of catching a large case. It runs on transparent rules today and
-upgrades itself to a trained statistical model the moment real case outcomes
-accumulate.
-
-### The acquisition funnel (built; public launch gated on counsel)
-The machinery to convert interest into qualified, counsel-ready leads: a website
-event-tracking taxonomy that automatically suppresses sensitive information, a
-composite lead score that prioritizes who to nurture, and a confidential intake
-process that captures only what is appropriate and routes anything sensitive to
-secure, lawyer-reviewed handling. The public launch waits on counsel sign-off.
-
-### Live feeds and monitors (built)
-The platform watches the outside world: a Department of Justice settlement
-fetcher (which also trains the risk weights), a court-docket monitor that raises
-**first-to-file alerts** (existential — only the first whistleblower recovers)
-and surfaces retaliation lawsuits (the warmest leads), a layoff monitor, and
-on-demand lookups against provider, nonprofit, federal-award, and FDA records.
-Everything pulled is cached for an audit trail.
-
-### Safety and quality (built)
-The system checks its own arithmetic at every step and **stops rather than emit a
-wrong number**. Person-identifying exports are blocked in code. The public lookup
-tool shows comparative percentiles and context, **never a "fraud" verdict**.
-Roughly 220 automated tests re-verify the whole system on every change, and a
-dedicated review pass hardened the recent additions.
+The commercial challenge is not legal theory; it is execution against three data
+problems: identifying the right organizations, identifying the right insiders,
+and selecting the right cases to finance. The platform addresses all three while
+operating inside strict legal and ethical boundaries — because the asset that
+makes a case is a credible human witness, and the discipline that sustains the
+business is trust.
 
 ---
 
-## 3. How it works, end to end
+## 2. Capabilities delivered
 
-Public data finds and corroborates; it does **not** make the legal claim — the
-human insider does. The flow:
+The platform comprises three models on a shared data foundation, plus the
+supporting systems that feed and operate them.
 
-> **Model A** ranks suspect organizations and writes dossiers → **Model B** maps
-> the witness roles inside them into compliant audiences → the **funnel** educates
-> and converts those audiences into confidential, counsel-reviewed intake →
-> **Model C** underwrites which resulting cases to finance. Outcomes feed back and
-> make all three models smarter over time.
+### The shared foundation: entity resolution and the graph
+Before any scoring occurs, the system establishes who is who and who is connected
+to whom — which billing numbers belong to one company, who owns each facility,
+who shares an address, and who sits near a party already barred from federal
+programs. This relationship map is built and tested. It loads into Neo4j, a
+visual database that lets an analyst explore ownership networks interactively,
+and includes an advanced matching capability for reconciling inconsistently
+recorded company names.
 
-The compounding data advantage — every resolved case sharpening the next
-prediction — is the real moat.
+### Model A — organization risk and case files
+Model A ranks organizations by expected recoverable value — the likelihood of
+recoverable fraud multiplied by the dollars plausibly at stake — and produces a
+case file for each. Every case file states a specific fraud-type hypothesis,
+presents the supporting evidence and network context, estimates the dollars
+specifically at issue, assigns a confidence level, checks whether the matter is
+already public, and lists the innocent explanations that must be ruled out. The
+scoring requires no prior labeled examples to begin; it operates from domain
+knowledge immediately and improves as real case outcomes accumulate.
+
+The system detects a broad library of schemes — including upcoding,
+impossible-day billing, single-code mills, over-utilization, opioid diversion,
+kickbacks, durable-medical-equipment rings, hospice ineligibility, worthless
+services, geographic over-saturation, ownership and shell-company integrity,
+billing under invalid provider identities, 340B pharmacy abuse, and cost-report
+fraud. Each detector activates automatically when its data file is loaded.
+
+A historical validation supports the approach: organizations the early system
+ranked in its top decile were approximately twice as likely to be subsequently
+barred by the government.
+
+### Model B — witness identification (audiences)
+For a flagged organization, Model B identifies the job roles that would have had
+direct line of sight to the suspected scheme, weighs who was employed during the
+relevant period, and estimates who is reachable. Its output is marketing
+audiences defined by role, organization, and channel — never lists of named
+individuals to solicit. That boundary is enforced in code: person-identifying
+information is structurally prevented from leaving the system. The component is
+built; it operates on licensed people-data only after a privacy review.
+
+### Model C — case underwriting
+Model C is the underwriting function that converts a pipeline of leads into a
+financeable portfolio. For each case it estimates the probability of government
+intervention, a recovery range, and a fund / pass / fund-with-terms recommendation
+with capital and economic terms, then simulates the portfolio to characterize the
+range of outcomes. It operates on transparent rules today and graduates to a
+trained statistical model once real case outcomes accumulate.
+
+### The acquisition funnel
+The system to convert interest into qualified, counsel-ready leads: a website
+analytics framework that automatically suppresses sensitive information, a lead
+score that prioritizes outreach, and a confidential intake process that routes
+any sensitive content to secure, attorney-reviewed handling. The public launch is
+contingent on counsel sign-off.
+
+### Live monitoring and lookups
+The platform monitors external developments: a Department of Justice settlement
+feed, a court-docket monitor that raises first-to-file alerts and surfaces
+retaliation suits, a layoff monitor, and on-demand lookups against provider,
+nonprofit, federal-award, and FDA records. All retrieved data is retained for
+audit.
+
+### Quality and safety
+The system validates its own calculations at each step and halts rather than
+emit an unreliable figure. Person-identifying exports are blocked in code. The
+public lookup tool presents comparative percentiles and context, never a fraud
+determination. Approximately 220 automated tests re-verify the system on every
+change.
 
 ---
 
-## 4. Legal and ethical posture (built into the software)
+## 3. How the platform operates, end to end
 
-This is not a bolt-on; it shapes the design:
+Public data identifies and corroborates; it does not constitute the legal claim,
+which rests with the human insider. The operating sequence:
 
-- **Outputs are hypotheses, never accusations.** Every dossier carries the
-  innocent explanations that must be ruled out and a standing disclaimer.
-- **No accusations about people.** Model B produces role-based audiences; named
-  individual handling is gated behind counsel and a privacy/FCRA review, and the
-  "likely whistleblower at employer X" inference is treated as sensitive from the
-  moment it exists.
-- **The public lookup tool never labels anyone a fraudster** — only comparative,
-  factual percentiles with benign explanations and a method disclaimer.
-- **No protected health information** ever enters the code repository, and the
-  system has **no dependency on any dataset whose license bars this use**
-  (research claims files, commercial claims products) — by deliberate design.
-- **The math is conservative and self-checking** — it refuses to produce a number
-  it cannot stand behind.
+> Model A ranks suspect organizations and produces case files. Model B maps the
+> witness roles within them into compliant audiences. The funnel educates and
+> converts those audiences into confidential, attorney-reviewed intake. Model C
+> underwrites which resulting cases to finance. Outcomes feed back and improve all
+> three models over time.
 
-These are the credibility foundations for working with relator-side counsel and
-for any public-facing product.
+The compounding data advantage — each resolved case sharpening the next
+prediction — is the durable competitive moat.
 
 ---
 
-## 5. Current status — what is live, what is gated
+## 4. Legal and ethical posture
 
-**Built and verified (runs today on demonstration data):** the entity graph and
-Neo4j layer, Model A and all its detectors, the dossier product, Model C
-cold-start underwriting, the acquisition-funnel machinery, the live feeds and
-monitors, Model B's logic and the person-matching engine, and the full safety and
-test infrastructure.
+Defensibility is a design principle, not an afterthought:
 
-**Waiting on data you can download (no engineering required):** the detectors are
-pre-built against the government's real file formats. Each one switches on the day
-its public file is loaded. The full, prioritized shopping list — where to get
-each file, whether it is free, and what it unlocks — is in **WHAT_WAS_BUILT.md**
-and the click-by-click **Data Runbook**.
+- Outputs are hypotheses, never accusations; each case file includes the innocent
+  explanations to rule out and a standing disclaimer.
+- Model B produces role-based audiences; named-individual handling is gated behind
+  counsel and a privacy review.
+- The public lookup tool never labels any party fraudulent — only factual,
+  comparative percentiles with benign explanations and a method disclaimer.
+- No protected health information enters the code repository, and the platform has
+  no dependency on any dataset whose license would bar this use.
+- The analytics are conservative and self-checking, declining to produce figures
+  they cannot support.
 
-**Gated on a business or legal decision (the code is done; the gate is real-world):**
-
-| Gate | Unlocks | What it takes |
-|---|---|---|
-| People-data license + FCRA/privacy review | Model B activation (the witness engine) | A vendor decision and a legal review |
-| Defamation / advertising counsel sign-off | Public lookup tool + marketing launch | The "Phase-0" legal review |
-| Accumulated case outcomes | Model C's trained (vs. rules) version | The DOJ backfill + time |
-| A modest commercial license | A pre-built feed of ~45 state exclusion lists | A purchasing decision |
-| Secure storage with a healthcare agreement | A safe home for large/sensitive files | Standard cloud setup (S3 + BAA) |
+These properties are the foundation for working with relator-side counsel and for
+any public-facing product.
 
 ---
 
-## 6. The path to first revenue
+## 5. Path to production
 
-1. **Stand up secure storage and load the core public data** → produce the first
-   real ranked dossiers. *(Days, once data is in hand.)*
-2. **Engage counsel** (False Claims Act + advertising + privacy) for the Phase-0
+The remaining work is procurement, partnerships, and legal foundation — not
+engineering. The sequence:
+
+1. **Establish secure storage and load the core public data**, producing the
+   first real ranked case files. *(Days, once data is in hand.)*
+2. **Engage counsel** (False Claims Act, advertising, and privacy) for the
    sign-off that gates marketing, intake, and the public tool. *(In parallel.)*
-3. **License people-data and complete the FCRA review** → activate Model B and
-   begin building compliant audiences. *(The key unlock for origination.)*
-4. **Launch the education-first funnel and the lookup tool** → inbound,
-   self-qualifying whistleblower leads.
-5. **Run intake through partner relator-side counsel; underwrite with Model C;**
-   finance the strongest cases. **Outcomes feed back and compound the advantage.**
+3. **License people-data and complete the privacy review**, activating Model B
+   and compliant audience construction. *(The principal origination unlock.)*
+4. **Launch the education-first funnel and lookup tool**, generating inbound,
+   self-qualifying leads.
+5. **Route intake through partner counsel, underwrite with Model C, and finance
+   the strongest cases.** Outcomes feed back and compound the advantage.
 
-The engineering is largely complete. The remaining work is procurement,
-partnerships, and the legal foundation — the things that turn a built platform
-into a operating business.
+The items below are deliberate holds for legal or business reasons; in each case
+the software is complete and the gate is an external decision.
+
+| Gate | Unlocks | Requirement |
+|---|---|---|
+| People-data license + privacy review | Model B activation | Vendor selection + legal review |
+| Advertising / defamation counsel | Public tool + marketing | Counsel sign-off |
+| Accumulated case outcomes | Model C trained model | Data collection over time |
+| Commercial data license | State exclusion-list feed | Purchasing decision |
+| Secure storage agreement | Safe handling of large files | Standard cloud setup |
 
 ---
 
-## Appendix — technical inventory (for a technical reviewer)
+## 6. Summary
 
-- **Languages/tools:** Python; DuckDB and pandas for data; NetworkX and Neo4j for
-  the graph; LightGBM and scikit-learn for the trained models; Splink for
-  probabilistic matching.
-- **Scale of build:** ~220 automated tests, all passing; a synthetic-data
-  generator so the whole system is verifiable without any sensitive data.
-- **Major components:** `entity_graph` (resolution, graph features, rings, Neo4j
-  export, person resolver), `model_a` (scoring, schemes, dossiers, supervised
-  graduation), `model_b` (knowledge, propensity, reachability, audiences),
-  `model_c` (priors, features, underwriting, portfolio, public-disclosure screen),
-  `ingest_cms` (~14 data adapters), `feeds` (DOJ, dockets, exclusions, registry,
-  nonprofits, awards, FDA), `enforcement`, `sourcing`, `analytics`, `funnel`,
-  `lookup_tool`, `nlp`.
-- **Deeper documentation:** `docs/HOW_IT_WORKS.md` (the concepts),
-  `docs/platform/` (full architecture and component specs), and
-  `docs/platform/12-data-runbook.md` (the data click-by-click).
+The platform delivers a working, defensible engine for the three hardest problems
+in qui tam origination: finding the organizations, finding the witnesses, and
+selecting the cases. The engineering is substantially complete and verified. The
+path to revenue runs through data procurement, legal sign-off, and partnerships —
+well-defined steps, each itemized above.
+
+---
+
+### Appendix — technical inventory
+
+| Area | Detail |
+|---|---|
+| Core technologies | Python; DuckDB and pandas; NetworkX and Neo4j; LightGBM and scikit-learn; Splink |
+| Verification | ~220 automated tests, all passing; synthetic-data generator (no sensitive data required) |
+| Model A | scoring, scheme detectors, case files, supervised graduation |
+| Model B | knowledge, propensity, reachability, audiences, person resolver |
+| Model C | priors, features, underwriting, portfolio simulation, public-disclosure screen |
+| Data adapters | ~14 government data loaders; live feeds (DOJ, dockets, exclusions, registry, nonprofits, awards, FDA) |
+| Supporting | entity graph, enforcement database, sourcing monitors, analytics, funnel, lookup tool, text extraction |
+
+*Detailed setup instructions accompany this briefing in the Setup Guide.*
