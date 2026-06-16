@@ -74,8 +74,11 @@ plus a named driver ("$2.1M on T1019, billed by 0.3% of 251G peers");
 `plausibility_percentiles` feeds the `clinical_implausibility` registry input,
 blended 0.4 into the `specialty_mismatch` scheme alongside the v3 concept (0.6).
 Wired into the Model A `--spending --provider-dim` path; driver rendered on the
-dossier. **Still to come (the "volume vs local denominator" half):** billing
-rate vs county population, gated on the Census county file (B6).
+dossier. **Both halves now built:** the "volume vs local denominator" half is
+`local_denominator_plausibility` (per-capita volume vs county population →
+`local_volume_implausibility`, blended into specialty_mismatch), with the Census
+population + ZIP→county parsers in `ingest_cms/census_population.py` (the org→
+county join awaits the ZIP crosswalk + address ZIPs).
 
 ### A6. Government-interest overlay — BUILT
 Manifesto's sixth sub-score: alignment to "OIG Work Plan, DOJ enforcement
@@ -128,7 +131,7 @@ score driver, always corroboration context (X-layer, per the manifesto).
 | B3 | **State Medicaid exclusion/sanction lists** | ~40 states publish their own lists beyond OIG LEIE | more exclusion nodes; state actions often precede federal | normalize to the `exclusions` schema (same as `sam_api.py` did); start with ICP states |
 | B4 | **NADAC drug pricing** | data.medicaid.gov (weekly) | normalizes Part D cost signals; spread/markup anomalies; 340B groundwork | `ingest_cms/nadac.py` → refines `high_cost_drug_share` |
 | B5 | **HCRIS cost reports** | cms.gov (P2 #9) | `hcris_cost_alloc_anomaly` (cost-report fraud — a distinct scheme) + the finance-persona targeting hint for Model B | `ingest_cms/hcris.py`; CCN grain |
-| B6 | **Census county population** | census.gov (one small file) | the "volume vs local denominator" in clinical plausibility (A5) and saturation context | joins Market Saturation by FIPS |
+| B6 | **Census county population + ZIP→county** — BUILT (parsers) | census.gov / HUD (free) | the "volume vs local denominator" half of A5 (now built: `local_denominator_plausibility`) + saturation context | `ingest_cms/census_population.py`; org→county join awaits the ZIP crosswalk + address ZIPs |
 | B7 | **OIG Work Plan items** | oig.hhs.gov (structured list, scrape-light) | feeds A6 | quarterly refresh, curated CSV |
 | B8 | **Form 990 Schedule R / OpenCorporates / SEC EDGAR** | ProPublica API (free), opencorporates (free tier), EDGAR API (free) | owner/officer enrichment beyond CMS All-Owners: nonprofit related parties, corporate families, PE disclosures | new `owner:`/`also_owns` edges in the entity graph; EDGAR full-text for acquisition/recap events (A8 catalysts) |
 | B9 | **State licensing boards** (ICP states first) | per-state | provider discipline (sanctions beyond LEIE) + later person-level B2 credibility markers | exclusion-adjacent nodes; person side waits on the people-data gate |
@@ -309,9 +312,10 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
 - **CMS Order & Referring file** — BUILT (`ingest_cms/order_referring.py`):
   per-NPI order/refer eligibility → `ineligible_referral_share` (DME orders from
   ineligible referrers) sharpening `dme_ring`. Free.
-- **CMS Revalidation / Clinic-Group-Practice Reassignment file** — physician↔
-  group reassignment edges, an affiliation-graph layer complementing PECOS
-  ownership. Free on data.cms.gov.
+- **CMS Revalidation / Clinic-Group-Practice Reassignment file** — BUILT
+  (`entity_graph/build_edges.build_reassignment_edges`): provider→group
+  `reassigns_to` affiliation edges complementing PECOS ownership, optional input
+  to the graph build. Free.
 - **NPPES deactivation file (weekly)** — short-lived / deactivated-entity signal
   (fly-by-night), complements `rapid_ramp` and ownership-churn (A7). Free.
 - **T-MSIS DQ Atlas** — BUILT (`src/analytics/tmsis_quality.py`): the public

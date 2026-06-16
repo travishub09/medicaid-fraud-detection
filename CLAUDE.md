@@ -150,7 +150,10 @@ python -m pytest tests/ -v
   (`entity_graph/neo4j_export`, `--neo4j-bulk`); June-2026 sweep adapters +
   schemes (`ingest_cms/opioid` → pill_mill, `nppes_deactivation` →
   invalid_identity, `hrsa_340b` → contract_pharmacy; see docs/platform/15).
-  Full suite: `pytest tests/` (190 tests).
+  Reassignment affiliation edges (`entity_graph/build_edges.build_reassignment_edges`,
+  optional graph input) + Census county-population/ZIP→county parsers
+  (`ingest_cms/census_population.py`) completing A5's local-denominator half.
+  Full suite: `pytest tests/` (197 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

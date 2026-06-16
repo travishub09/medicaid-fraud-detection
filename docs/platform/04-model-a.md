@@ -119,7 +119,8 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Scheme-scoped damages (payments at issue in the suspect code family, scope labeled) | **Built** | `src/model_a/scheme_code_families.py`, `exposure.scoped_payments_per_org` |
 | Confidence band on every dossier (graded, named reasons) | **Built** | `src/analytics/confidence.py` |
 | Growth-shock change-points (level shifts + new-code bursts) | **Built** | `src/analytics/growth.py` → `rapid_ramp` concept |
-| Clinical-plausibility (per-code specialty prevalence, dollar-weighted, named drivers) | **Built** (specialty half; county denominator gated on B6) | `src/analytics/plausibility.py` → `clinical_implausibility` blended into `specialty_mismatch` |
+| Clinical-plausibility (per-code specialty prevalence + per-capita local denominator, named drivers) | **Built** (both halves) | `src/analytics/plausibility.py` → `clinical_implausibility` + `local_volume_implausibility` blended into `specialty_mismatch` |
+| Reassignment affiliation edges (provider→group `reassigns_to`) | **Built** (optional graph input) | `src/entity_graph/build_edges.py` (`build_reassignment_edges`) |
 | Ownership-churn / CHOW (diffed owner snapshots → entry/exit events) | **Built** (dormant until 2+ snapshots) | `src/entity_graph/ownership_churn.py` → `ownership_turnover` in ownership_integrity |
 | Enforcement lookalikes (nearest settled org in subscore space; corroboration, never a driver) | **Built** (dormant until DOJ backfill) | `src/model_a/lookalikes.py` (`--case-db` resolves the exemplars) |
 | Government-interest overlay (OIG Work Plan → sector prior, named drivers) | **Built** | `src/model_a/government_interest.py` (curated table; refresh quarterly) |

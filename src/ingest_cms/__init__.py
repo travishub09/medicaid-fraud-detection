@@ -55,6 +55,7 @@ from .nppes_deactivation import deactivated_npis, billing_after_deactivation
 from .hrsa_340b import covered_entities, attach_340b
 from .pos import compute_pos_capacity, capacity_billing_mismatch
 from .order_referring import eligible_referrers, ineligible_referral_share
+from .census_population import county_population, zip_to_county
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
 __all__ = [
@@ -80,6 +81,8 @@ __all__ = [
     "capacity_billing_mismatch",
     "eligible_referrers",
     "ineligible_referral_share",
+    "county_population",
+    "zip_to_county",
     "to_peer_percentiles",
     "rollup_to_org",
 ]

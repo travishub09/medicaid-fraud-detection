@@ -23,6 +23,7 @@ from .build_nodes import build_provider_nodes, build_owner_nodes, build_exclusio
 from .resolve_entities import resolve_organizations
 from .build_edges import (
     build_member_edges, build_owned_by_edges, build_excluded_in_edges, build_co_located_edges,
+    build_reassignment_edges,
 )
 from .graph_features import compute_graph_features
 from .ring_detection import (
@@ -86,6 +87,11 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path) -> dict[str, pd.DataFram
     co_located_edges = build_co_located_edges(org_nodes)
     require("member_edges_match_npis", len(member_edges) == n_npi,
             f"{len(member_edges)} vs {n_npi}")
+    # optional affiliation layer: provider→group reassignment edges (sweep 2.7),
+    # only when the Revalidation Reassignment file is supplied
+    reassignment = tables.get("reassignment")
+    reassigns_to_edges = build_reassignment_edges(reassignment, npi_to_org, org_nodes) \
+        if reassignment is not None else None
 
     log("Computing graph features …")
     org_features = compute_graph_features(
@@ -118,6 +124,8 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path) -> dict[str, pd.DataFram
         "rings/excluded_party_proximity": proximity,
         "rings/referral_rings": rings,
     }
+    if reassigns_to_edges is not None:
+        outputs["edges/reassigns_to_edges"] = reassigns_to_edges
     out_dir.mkdir(parents=True, exist_ok=True)
     for rel, df in outputs.items():
         path = out_dir / f"{rel}.parquet"

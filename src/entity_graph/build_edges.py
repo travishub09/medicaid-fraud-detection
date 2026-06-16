@@ -35,6 +35,85 @@ def build_member_edges(npi_to_org: pd.DataFrame) -> pd.DataFrame:
     return e.reset_index(drop=True)
 
 
+_REASSIGN_COLS = {
+    "individual_npi": ["Individual NPI", "individual_npi", "IND_NPI", "NPI"],
+    "group_npi": ["Group NPI", "group_npi", "GRP_NPI"],
+    "group_pac_id": ["Group PAC ID", "group_pac_id", "GRP_PAC_ID"],
+    "group_name": ["Group Legal Business Name", "group_legal_business_name",
+                   "GRP_LGL_BUS_NAME"],
+}
+
+
+def build_reassignment_edges(reassignment: pd.DataFrame,
+                             npi_to_org: pd.DataFrame,
+                             org_nodes: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Individual provider → group practice ``reassigns_to`` edges (sweep 2.7).
+
+    Source: the CMS Revalidation Clinic Group Practice Reassignment file — who
+    reassigns their Medicare billing to which group. This is the affiliation
+    layer that complements PECOS ownership: a provider working through a group
+    practice. The group is resolved to a canonical org by its NPI (via
+    ``npi_to_org``) when present, else by ``org:pac:<group_pac_id>``; rows whose
+    group can't be resolved to a known org are dropped (counted, not guessed).
+    Edge columns: src_id (provider:<npi>), dst_id (org:<...>), edge_type, basis.
+    """
+    from src.attempt_2.clean_data import _resolve_columns, canonicalize_series
+    cols = ["src_id", "dst_id", "edge_type", "basis"]
+    if reassignment is None or not len(reassignment):
+        return pd.DataFrame(columns=cols)
+    resolved = _resolve_columns(list(reassignment.columns), _REASSIGN_COLS)
+    if "individual_npi" not in resolved:
+        return pd.DataFrame(columns=cols)
+    df = reassignment.rename(columns={v: k for k, v in resolved.items()}).copy()
+
+    ind = canonicalize_series(df["individual_npi"])
+    df = df.assign(individual_npi=ind)[ind.notna()].copy()
+
+    npi2org = dict(zip(npi_to_org["npi"].astype(str),
+                       npi_to_org["org_node_id"].astype(str)))
+    known_orgs = set(org_nodes["org_node_id"].astype(str)) if org_nodes is not None else None
+
+    def _group_org(row) -> str:
+        gnpi = str(row.get("group_npi", "") or "").strip()
+        if gnpi and gnpi in npi2org:
+            return npi2org[gnpi]
+        pac = str(row.get("group_pac_id", "") or "").strip()
+        if pac:
+            cand = f"org:pac:{pac}"
+            if known_orgs is None or cand in known_orgs:
+                return cand
+        return ""
+
+    df["dst_id"] = df.apply(_group_org, axis=1)
+    df = df[df["dst_id"] != ""]
+    if not len(df):
+        return pd.DataFrame(columns=cols)
+    basis = ("group_npi" if "group_npi" in df.columns else "group_pac")
+    e = pd.DataFrame({
+        "src_id": "provider:" + df["individual_npi"].astype(str),
+        "dst_id": df["dst_id"].astype(str),
+        "edge_type": "reassigns_to",
+        "basis": basis,
+    })
+    return e.drop_duplicates(subset=["src_id", "dst_id"]).reset_index(drop=True)
+
+
+def reassignment_features(reassignment_edges: pd.DataFrame) -> pd.DataFrame:
+    """Per-group affiliation context: n_reassigned_providers (group size).
+
+    A benign structural attribute (large groups aren't inherently suspect) —
+    reassignment *churn* (entries/exits over time) is the concealment signal, and
+    it folds into A7's ownership_turnover once monthly snapshots accumulate.
+    """
+    if reassignment_edges is None or not len(reassignment_edges):
+        return pd.DataFrame(columns=["org_node_id", "n_reassigned_providers"])
+    g = (reassignment_edges.groupby("dst_id")["src_id"].nunique()
+         .rename("n_reassigned_providers").reset_index()
+         .rename(columns={"dst_id": "org_node_id"}))
+    return g
+
+
+
 def build_owned_by_edges(owner_edges: pd.DataFrame,
                          npi_to_org: pd.DataFrame) -> pd.DataFrame:
     """Organization → Owner, with ownership pct / role / association date.

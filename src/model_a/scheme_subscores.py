@@ -34,10 +34,13 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "single_service_mill": {"concentration": 1.0},
     "payment_outlier": {"payment_intensity": 1.0},
     "overutilization": {"service_intensity": 1.0},
-    "specialty_mismatch": {"specialty_mismatch": 0.6,
+    "specialty_mismatch": {"specialty_mismatch": 0.5,
                            # data-derived clinical plausibility (A5); absent
                            # until spending + taxonomy are attached, then blends
-                           "clinical_implausibility": 0.4},
+                           "clinical_implausibility": 0.3,
+                           # A5 second half: per-capita volume vs county pop
+                           # (Census denominator); absent until ZIP→county lands
+                           "local_volume_implausibility": 0.2},
     "rapid_ramp": {"temporal": 0.6,
                    # growth-shock signals from src/analytics/growth.py (A4):
                    # absent until spending-derived features are attached

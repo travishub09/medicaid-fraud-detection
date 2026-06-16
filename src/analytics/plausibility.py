@@ -149,6 +149,36 @@ def org_clinical_plausibility(spending: pd.DataFrame, provider_dim: pd.DataFrame
     return pd.DataFrame(rows)
 
 
+def local_denominator_plausibility(org_volume_by_fips: pd.DataFrame,
+                                   county_pop: pd.DataFrame,
+                                   volume_col: str = "volume") -> pd.DataFrame:
+    """The manifesto's "volume vs local denominator" — A5's second half.
+
+    An org billing more services/beneficiaries per capita than its county's
+    population plausibly supports is the phantom-patient shape. ``org_volume_by_
+    fips``: org_node_id, fips, ``volume`` (services or distinct beneficiaries the
+    org bills in that county — assembled once an org→county mapping exists via
+    the Census ZIP→county crosswalk). ``county_pop``: fips, population. Returns
+    org_node_id, per_capita_rate, and ``local_volume_implausibility`` (one-sided
+    global percentile — the registry feature). Counties with no population are
+    NaN (unjudgeable, never forced).
+    """
+    out_cols = ["org_node_id", "per_capita_rate", "local_volume_implausibility"]
+    v = org_volume_by_fips.copy()
+    v["fips"] = v["fips"].astype(str)
+    v[volume_col] = pd.to_numeric(v[volume_col], errors="coerce").fillna(0.0)
+    pop = dict(zip(county_pop["fips"].astype(str),
+                   pd.to_numeric(county_pop["population"], errors="coerce")))
+    v["population"] = v["fips"].map(pop)
+    # an org may bill across counties: total volume / total population it covers
+    g = v.groupby("org_node_id").agg(volume=(volume_col, "sum"),
+                                     population=("population", "sum"))
+    g["per_capita_rate"] = (g["volume"] / g["population"]).where(g["population"] > 0)
+    g["local_volume_implausibility"] = g["per_capita_rate"].rank(
+        method="average", pct=True)
+    return g.reset_index()[out_cols]
+
+
 def plausibility_percentiles(org_plausibility: pd.DataFrame) -> pd.DataFrame:
     """Implausible-dollar-share → global one-sided percentile (the registry input
     ``clinical_implausibility``). NaN shares (nothing assessable) stay NaN —

@@ -123,14 +123,34 @@ names, structure only) — but host it on the same secured box as the rest.
   referrer isn't eligible for that order type → `ineligible_referral_share`,
   sharpening `dme_ring`.
 
-### 2.7 CMS Revalidation / Reassignment file — CONTRACT
-- **Download:** data.cms.gov → "Revalidation Clinic Group Practice Reassignment".
-  Free.
+### 2.7 CMS Revalidation / Reassignment file — BUILT (`entity_graph/build_edges.py`)
+- **Download:** data.cms.gov → "Revalidation Clinic Group Practice Reassignment"
+  → `preclean/reassignment/reassignment.csv`. Free.
 - **What it is:** physician ↔ group-practice reassignment relationships.
-- **Good for:** an affiliation-graph layer complementing PECOS ownership — dense
-  reassignment churn is a roll-up/concealment signal.
-- **How to build:** new `reassigns_to` edges in the entity graph; feeds
-  `ownership_turnover` (A7) and the graph features.
+- **Good for:** an affiliation-graph layer complementing PECOS ownership; dense
+  reassignment churn is a roll-up/concealment signal (folds into A7 once monthly
+  snapshots accumulate).
+- **How we use it:** `build_reassignment_edges` emits provider→group
+  `reassigns_to` edges (group resolved by NPI via `npi_to_org`, else
+  `org:pac:<pac>`; unresolvable groups dropped, never guessed);
+  `reassignment_features` gives per-group size. Wired into the graph build as an
+  optional input (`tables["reassignment"]`) — the fixture build is unchanged
+  when it's absent.
+
+### 2.x Census county population + ZIP→county — BUILT (`ingest_cms/census_population.py`)
+- **Download:** Census county population estimates + the HUD/Census ZIP→county
+  crosswalk (both free) → `preclean/census/`.
+- **What it is:** county populations and the ZIP→county bridge.
+- **Good for:** the "volume vs local denominator" HALF of A5 clinical
+  plausibility (the piece previously deferred) — an org billing more
+  services/beneficiaries per capita than its county supports is the
+  phantom-patient shape; also context for market saturation.
+- **How we use it:** `county_population` / `zip_to_county` parse the files
+  (string FIPS/ZIP); `analytics.plausibility.local_denominator_plausibility`
+  computes per-capita rate vs county population → `local_volume_implausibility`,
+  blended into `specialty_mismatch` (0.5 v3 / 0.3 clinical / 0.2 local). The
+  org→county join awaits the ZIP crosswalk + address ZIPs on orgs (the parsers
+  are built).
 
 ### 2.8 T-MSIS DQ Atlas — BUILT (`src/analytics/tmsis_quality.py`)
 - **Download:** medicaid.gov DQ Atlas → per-state data-quality scores (public;

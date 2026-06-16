@@ -30,6 +30,7 @@ from .plausibility import (
     code_prevalence_matrix,
     org_clinical_plausibility,
     plausibility_percentiles,
+    local_denominator_plausibility,
 )
 from .peers import (
     assign_peer_groups,
@@ -49,6 +50,7 @@ __all__ = [
     "code_prevalence_matrix",
     "org_clinical_plausibility",
     "plausibility_percentiles",
+    "local_denominator_plausibility",
     "assign_peer_groups",
     "one_sided_percentiles",
     "complexity_adjust",

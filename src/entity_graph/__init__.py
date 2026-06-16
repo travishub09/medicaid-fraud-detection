@@ -26,11 +26,13 @@ What is intentionally NOT here yet (stubs / next increments):
 
 from .build_nodes import build_provider_nodes, build_owner_nodes, build_exclusion_nodes
 from .resolve_entities import resolve_organizations, norm_org_name
-from .build_edges import (
+from .build_edges import (  # noqa: F401 (re-exported below)
     build_member_edges,
     build_owned_by_edges,
     build_excluded_in_edges,
     build_co_located_edges,
+    build_reassignment_edges,
+    reassignment_features,
 )
 from .graph_features import compute_graph_features
 from .ring_detection import (
@@ -59,6 +61,8 @@ __all__ = [
     "build_owned_by_edges",
     "build_excluded_in_edges",
     "build_co_located_edges",
+    "build_reassignment_edges",
+    "reassignment_features",
     "compute_graph_features",
     "shared_address_shell_clusters",
     "common_owner_clusters",
