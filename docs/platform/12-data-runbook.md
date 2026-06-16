@@ -148,6 +148,16 @@ All free; each lights up a scheme automatically once loaded.
    - 340bopais.hrsa.gov → Daily Report (covered entities + contract pharmacies).
    - **Verify:** header has an entity-name column + `Contract Pharmacy Name`.
    - **Powers:** the `contract_pharmacy` scheme (`ingest_cms/hrsa_340b.py`).
+4. **Provider of Services (POS)** → `pos/pos_facility.csv`
+   - data.cms.gov → "Provider of Services" (facility / clinical-lab files).
+   - **Verify:** header has `PRVDR_NUM` (CCN) + a bed-count column.
+   - **Powers:** `capacity_mismatch` → `worthless_services` (`ingest_cms/pos.py`;
+     needs a per-CCN billed-volume table too).
+5. **Order & Referring** → `order_referring/order_referring.csv`
+   - data.cms.gov → "Order and Referring".
+   - **Verify:** header has `NPI` + `DME`/`PARTB`/`HHA`/`PMD` eligibility flags.
+   - **Powers:** `ineligible_referral_share` → sharpens `dme_ring`
+     (`ingest_cms/order_referring.py`; needs DME claims with a referring NPI).
 
 ### 1.8 Neo4j interactive graph (optional)
 After the graph build, also emit a Neo4j bulk import:

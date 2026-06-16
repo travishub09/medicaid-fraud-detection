@@ -22,6 +22,10 @@ that power the dormant schemes in Model A's feature registry:
                        invalid_identity scheme (sweep E1)
   hrsa_340b.py         340B OPAIS covered entities + contract-pharmacy footprint →
                        contract_pharmacy scheme (sweep E1)
+  pos.py               Provider of Services capacity → capacity-vs-billing
+                       "impossible org" → worthless_services (sweep 2.5)
+  order_referring.py   Order & Referring eligibility → orders from ineligible
+                       referrers → dme_ring sharpener (sweep 2.6)
   peer_percentiles.py  raw metrics → one-sided peer-relative percentiles (the 0–1
                        inputs the registry expects) → NPI→org rollup
 
@@ -49,6 +53,8 @@ from .facility import (compute_pbj_metrics, compute_hospice_metrics,
 from .opioid import compute_opioid_metrics
 from .nppes_deactivation import deactivated_npis, billing_after_deactivation
 from .hrsa_340b import covered_entities, attach_340b
+from .pos import compute_pos_capacity, capacity_billing_mismatch
+from .order_referring import eligible_referrers, ineligible_referral_share
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
 __all__ = [
@@ -70,6 +76,10 @@ __all__ = [
     "billing_after_deactivation",
     "covered_entities",
     "attach_340b",
+    "compute_pos_capacity",
+    "capacity_billing_mismatch",
+    "eligible_referrers",
+    "ineligible_referral_share",
     "to_peer_percentiles",
     "rollup_to_org",
 ]

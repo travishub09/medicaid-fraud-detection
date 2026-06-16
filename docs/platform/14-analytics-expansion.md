@@ -303,12 +303,12 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
 - **HRSA 340B OPAIS** — BUILT (`ingest_cms/hrsa_340b.py` → `contract_pharmacy`
   scheme): covered entities + contract-pharmacy footprint for the pharmacy/340B
   typology.
-- **CMS Provider of Services (POS) file** — facility characteristics/capacity
-  (beds, CLIA, services) → the "capacity-vs-billing reconciliation" idea in D2
-  and sharper facility peer cells. Free.
-- **CMS Order & Referring file** — who is eligible to order/refer → validate
-  DME/lab referral chains and catch orders from ineligible/excluded orderers.
-  Free; pairs with the DME ring scheme.
+- **CMS Provider of Services (POS) file** — BUILT (`ingest_cms/pos.py`):
+  facility beds/type/CLIA → `capacity_mismatch` ("impossible org" billed-per-bed)
+  feeding `worthless_services`. Free.
+- **CMS Order & Referring file** — BUILT (`ingest_cms/order_referring.py`):
+  per-NPI order/refer eligibility → `ineligible_referral_share` (DME orders from
+  ineligible referrers) sharpening `dme_ring`. Free.
 - **CMS Revalidation / Clinic-Group-Practice Reassignment file** — physician↔
   group reassignment edges, an affiliation-graph layer complementing PECOS
   ownership. Free on data.cms.gov.

@@ -101,25 +101,27 @@ names, structure only) — but host it on the same secured box as the rest.
   (2.2) already captures most of the "billing under an invalid identity" signal
   with an exact key.
 
-### 2.5 CMS Provider of Services (POS) file — CONTRACT
+### 2.5 CMS Provider of Services (POS) file — BUILT (`ingest_cms/pos.py`)
 - **Download:** data.cms.gov → "Provider of Services" (facility + clinical-lab
-  files), CCN grain. Free.
-- **What it is:** facility characteristics — beds, services, CLIA capacity.
+  files), CCN grain → `preclean/pos/pos_facility.csv`. Free.
+- **What it is:** facility characteristics — beds, facility type, CLIA capacity.
 - **Good for:** capacity-vs-billing reconciliation (billed volume that exceeds a
   facility's physical/licensed capacity = the "impossible org").
-- **How to build:** extend `ingest_cms/facility.py` (already CCN-grain) with a
-  `capacity_billing_mismatch` metric = billed services ÷ capacity, one-sided
-  percentile within facility peers.
+- **How we use it:** `compute_pos_capacity` → per-CCN beds/type/state;
+  `capacity_billing_mismatch` divides a supplied per-CCN billed volume by beds
+  and one-sided percentile-ranks within facility peers (size band × state) →
+  `capacity_mismatch`, feeding `worthless_services`.
 
-### 2.6 CMS Order & Referring file — CONTRACT
+### 2.6 CMS Order & Referring file — BUILT (`ingest_cms/order_referring.py`)
 - **Download:** data.cms.gov → "Order and Referring" (NPIs eligible to order/
-  refer). Free, refreshed often.
-- **What it is:** which NPIs may legally order/refer DME, labs, imaging, home
-  health.
-- **Good for:** catching DME/lab claims whose ordering NPI is ineligible or
-  excluded — a sharp kickback/phantom-order tell.
-- **How to build:** a membership table; an `ingest_cms/order_referring.py`
-  helper flags orders from non-eligible referrers, sharpening `dme_ring`.
+  refer) → `preclean/order_referring/order_referring.csv`. Free, refreshed often.
+- **What it is:** which NPIs may legally order/refer DME, Part B, HHA, PMD.
+- **Good for:** catching DME/HHA claims whose ordering NPI is ineligible — a
+  sharp kickback/phantom-order tell.
+- **How we use it:** `eligible_referrers` → per-NPI eligibility flags;
+  `ineligible_referral_share` flags the share of an org's referred dollars whose
+  referrer isn't eligible for that order type → `ineligible_referral_share`,
+  sharpening `dme_ring`.
 
 ### 2.7 CMS Revalidation / Reassignment file — CONTRACT
 - **Download:** data.cms.gov → "Revalidation Clinic Group Practice Reassignment".

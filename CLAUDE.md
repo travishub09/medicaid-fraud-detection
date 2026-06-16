@@ -42,7 +42,8 @@ src/model_c/        case underwriting — cold-start rules BUILT (priors/feature
 src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
 src/ingest_cms/     Part B/D/DMEPOS/OpenPayments/Saturation/Facility adapters +
-                    opioid/340B/NPPES-deactivation (sweep E1) + NPPES API (built)
+                    opioid/340B/NPPES-deactivation/POS-capacity/order-referring
+                    (sweep) + NPPES API (built)
 src/feeds/          API-feed plumbing: cached transport, cursors, freshness probe
 src/analytics/      peer engine: ladder groups, robust complexity adjust (built)
 src/enforcement/    DOJ case DB + API fetcher + SAM client + label store (built)
@@ -148,7 +149,7 @@ python -m pytest tests/ -v
   (`entity_graph/neo4j_export`, `--neo4j-bulk`); June-2026 sweep adapters +
   schemes (`ingest_cms/opioid` → pill_mill, `nppes_deactivation` →
   invalid_identity, `hrsa_340b` → contract_pharmacy; see docs/platform/15).
-  Full suite: `pytest tests/` (175 tests).
+  Full suite: `pytest tests/` (185 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).
