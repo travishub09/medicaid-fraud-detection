@@ -129,13 +129,13 @@ score driver, always corroboration context (X-layer, per the manifesto).
 | B1 | **PBJ Daily Nurse Staffing + Care Compare** — BUILT | data.cms.gov (runbook §1.6) | `pbj_understaffing` (negated HPRD: billed acuity vs. actual staffing = worthless-services), `hospice_live_discharge_rate` (ICP-1's sharpest signal) → `hospice_ineligibility` scheme, `deficiency_count` | `ingest_cms/facility.py` — CCN grain; facility peers = size band × state via the peer engine's custom-ladder support; `rollup_ccn_to_org` awaits the PECOS CCN↔NPI crosswalk file |
 | B2 | **Market Saturation** — BUILT | data.cms.gov (runbook §1.4) | county over-supply index for HH/hospice/SNF/lab — the CMS program-integrity prior → `saturation_fraud` scheme | `ingest_cms/saturation.py` → `market_saturation_index`; state-grain attach until ZIP→county (B6) lands |
 | B3 | **State Medicaid exclusion/sanction lists** | ~40 states publish their own lists beyond OIG LEIE | more exclusion nodes; state actions often precede federal | normalize to the `exclusions` schema (same as `sam_api.py` did); start with ICP states |
-| B4 | **NADAC drug pricing** | data.medicaid.gov (weekly) | normalizes Part D cost signals; spread/markup anomalies; 340B groundwork | `ingest_cms/nadac.py` → refines `high_cost_drug_share` |
-| B5 | **HCRIS cost reports** | cms.gov (P2 #9) | `hcris_cost_alloc_anomaly` (cost-report fraud — a distinct scheme) + the finance-persona targeting hint for Model B | `ingest_cms/hcris.py`; CCN grain |
+| B4 | **NADAC drug pricing** — BUILT | data.medicaid.gov (weekly) | spread/markup anomaly vs benchmark | `ingest_cms/nadac.py` → `drug_spread_anomaly` into drug_outlier (needs NDC-level claims) |
+| B5 | **HCRIS cost reports** — BUILT | cms.gov | the new `cost_report_fraud` scheme (admin/related-party cost anomalies) | `ingest_cms/hcris.py` (needs the flattened HCRIS extract) |
 | B6 | **Census county population + ZIP→county** — BUILT (parsers) | census.gov / HUD (free) | the "volume vs local denominator" half of A5 (now built: `local_denominator_plausibility`) + saturation context | `ingest_cms/census_population.py`; org→county join awaits the ZIP crosswalk + address ZIPs |
 | B7 | **OIG Work Plan items** | oig.hhs.gov (structured list, scrape-light) | feeds A6 | quarterly refresh, curated CSV |
 | B8 | **Form 990 Schedule R / OpenCorporates / SEC EDGAR** | ProPublica API (free), opencorporates (free tier), EDGAR API (free) | owner/officer enrichment beyond CMS All-Owners: nonprofit related parties, corporate families, PE disclosures | new `owner:`/`also_owns` edges in the entity graph; EDGAR full-text for acquisition/recap events (A8 catalysts) |
 | B9 | **State licensing boards** (ICP states first) | per-state | provider discipline (sanctions beyond LEIE) + later person-level B2 credibility markers | exclusion-adjacent nodes; person side waits on the people-data gate |
-| B10 | **CMS DocGraph shared-patient files** (historical public releases) | archived CMS/DocGraph 30-day shared-patient data | the `refers_to` edges ring detection was built for — referral HHI, exclusivity, closed loops | `entity_graph` referral edges + un-gates `ring_detection.referral_rings`. Honest caveat: public vintages are old (2009–2015); structural rings persist, but treat as historical corroboration |
+| B10 | **CMS DocGraph shared-patient** — BUILT | archived CMS/DocGraph data | `refers_to` edges + closed referral-loop detection | `ingest_cms/docgraph.build_referral_edges` + `ring_detection.referral_rings` (un-gated). Public vintages old (2009–2015) → historical corroboration |
 
 ## C. Bigger swings (sequenced after A+B prove out)
 
@@ -290,10 +290,10 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
 
 ### E1. Free public datasets we had not listed
 - **Splink** is infra (E3), but these are *data*:
-- **SSA Death Master File (public)** — billing under a deceased provider's or
-  beneficiary's ID is a clean phantom/identity-fraud signal we have no analog
-  for. Public file free; Limited Access (<3 yr) needs certification. New scheme
-  candidate (`deceased_identity`) or an integrity-subscore feature.
+- **SSA Death Master File** — BUILT (`enforcement/death_master.py`): DOB-
+  corroborated deceased-provider matches feed `invalid_identity` via
+  `billing_after_death`; name-only matches are a review flag, never a driver
+  (defamation guardrail).
 - **DEA ARCOS** (opioid distribution, court-ordered public via Univ. of Notre
   Dame / Washington Post, 2006–2019) — pharmacy/opioid corroboration; historical
   but structural. Feeds `drug_outlier` / pill-mill.
@@ -325,9 +325,9 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
 - **USAspending.gov API** — BUILT (`src/feeds/usaspending.py`): per-org
   federal-award footprint → Model C `defendant_size` (mult_defendant_size on
   P(intervene), neutral when absent) + the procurement graph. Free, no key.
-- **openFDA** (warning letters, 483 inspections, debarment list; real API) —
-  lab/pharma/device integrity signal. Free. CONTRACT (the warning-letter / 483
-  signals we want aren't all in the API — needs the dashboard FOIA path).
+- **openFDA** — BUILT (`feeds/openfda.py`): drug/device recall/enforcement
+  events matched to orgs → A8 timeline. Honest scope — recalls, not the
+  warning-letter/483 signals (those need the dashboard FOIA path).
 - **ProPublica Nonprofit Explorer API** — BUILT
   (`src/feeds/propublica_nonprofits.py`): 990s incl. nonprofit hospital exec
   comp + Schedule R related orgs → B8 owner/related-party enrichment by name

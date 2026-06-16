@@ -1,0 +1,81 @@
+"""
+hcris.py — HCRIS cost-report anomalies (doc 14 B5).
+
+Source: CMS HCRIS (Healthcare Cost Report Information System) — hospital/SNF/HHA/
+hospice cost reports (free, cms.gov). Cost-report fraud (inflated DSH, wage
+index, cost allocation, related-party costs) is a distinct scheme the manifesto
+calls out, and HCRIS is its evidence base.
+
+HCRIS raw is worksheet/line/column-coded and genuinely messy; the documented
+INPUT CONTRACT here is a per-CCN flattened frame carrying a few cost fields
+(the team's HCRIS extraction step produces these). The adapter computes the
+ratios and the anomaly signal:
+
+  compute_hcris_metrics   per-CCN cost_to_charge_ratio, admin_cost_share,
+                          related_party_cost_share — the levers most abused.
+  hcris_anomaly           one-sided peer-percentile blend → ``hcris_cost_anomaly``
+                          (0–1), feeding the new ``cost_report_fraud`` scheme.
+
+CCNs are strings (leading zeros kept). Dormant until the flattened HCRIS extract
+is loaded.
+"""
+
+from __future__ import annotations
+
+import pandas as pd
+
+from src.attempt_2.clean_data import _resolve_columns
+from .facility import _canon_ccn, facility_peer_percentiles
+
+HCRIS_COLS = {
+    "ccn": ["PRVDR_NUM", "prvdr_num", "CCN", "ccn", "Provider CCN"],
+    "total_costs": ["TOTAL_COSTS", "total_costs", "Total Costs"],
+    "total_charges": ["TOTAL_CHARGES", "total_charges", "Total Charges"],
+    "admin_costs": ["ADMIN_COSTS", "admin_costs", "G&A Costs", "GA_COSTS"],
+    "related_party_costs": ["RELATED_PARTY_COSTS", "related_party_costs",
+                            "Related Org Costs"],
+    "state": ["STATE", "state", "PRVDR_STATE"],
+}
+
+
+def compute_hcris_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Per-CCN cost-report ratios. Returns (metrics, n_quarantined)."""
+    resolved = _resolve_columns(list(raw.columns), HCRIS_COLS)
+    if "ccn" not in resolved:
+        raise ValueError(f"HCRIS extract missing a CCN column; "
+                         f"saw {list(raw.columns)[:12]}")
+    df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    ccn = _canon_ccn(df["ccn"])
+    quarantined = int(ccn.isna().sum())
+    df = df.assign(ccn=ccn)[ccn.notna()].copy()
+    for c in ("total_costs", "total_charges", "admin_costs", "related_party_costs"):
+        df[c] = pd.to_numeric(df.get(c), errors="coerce").fillna(0.0)
+    df["state"] = (df["state"] if "state" in df.columns else "").fillna("").astype(str).str.upper()
+
+    g = df.groupby("ccn", as_index=False).agg(
+        total_costs=("total_costs", "sum"), total_charges=("total_charges", "sum"),
+        admin_costs=("admin_costs", "sum"),
+        related_party_costs=("related_party_costs", "sum"),
+        state=("state", lambda s: s.mode().iat[0] if len(s) else ""))
+    g["cost_to_charge_ratio"] = (g["total_costs"] / g["total_charges"]).where(
+        g["total_charges"] > 0)
+    g["admin_cost_share"] = (g["admin_costs"] / g["total_costs"]).where(
+        g["total_costs"] > 0)
+    g["related_party_cost_share"] = (g["related_party_costs"] / g["total_costs"]).where(
+        g["total_costs"] > 0)
+    return g, quarantined
+
+
+def hcris_anomaly(metrics: pd.DataFrame, min_peer: int = 30) -> pd.DataFrame:
+    """One-sided peer-percentile of the abused ratios → ccn, hcris_cost_anomaly.
+
+    admin and related-party shares are one-sided high (excess is suspicious);
+    they are percentile-ranked within facility peers and the max taken (an org is
+    as suspicious as its worst cost lever)."""
+    m = metrics.copy()
+    m["avg_daily_census"] = pd.to_numeric(m.get("total_costs"), errors="coerce")  # size proxy
+    cols = ["admin_cost_share", "related_party_cost_share"]
+    pct = facility_peer_percentiles(m, cols, min_peer=min_peer)
+    out = m[["ccn"]].merge(pct, on="ccn", how="left")
+    out["hcris_cost_anomaly"] = out[[c for c in cols if c in out.columns]].max(axis=1)
+    return out[["ccn", "hcris_cost_anomaly"]]

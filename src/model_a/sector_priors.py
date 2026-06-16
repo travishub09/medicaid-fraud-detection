@@ -73,7 +73,8 @@ SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {
     "saturation_fraud": 0.20,        # a geographic prior, weakest scheme on its own
     "pill_mill": 0.45,
     "contract_pharmacy": 0.35,
-    "invalid_identity": 0.85,        # billing under a deactivated NPI = near-fully unsupported
+    "invalid_identity": 0.85,        # billing under a deactivated/deceased NPI = near-fully unsupported
+    "cost_report_fraud": 0.30,
     "default": 0.25,
 }
 

@@ -20,10 +20,12 @@ from .state import load_state, save_state
 from .propublica_nonprofits import (
     search_nonprofits, fetch_organization, nonprofit_owner_edges)
 from .usaspending import fetch_recipient_awards, org_federal_funding
+from .openfda import fetch_enforcement, enforcement_events
 
 __all__ = [
     "default_fetch_json", "default_post_json", "cache_raw",
     "load_state", "save_state",
     "search_nonprofits", "fetch_organization", "nonprofit_owner_edges",
     "fetch_recipient_awards", "org_federal_funding",
+    "fetch_enforcement", "enforcement_events",
 ]

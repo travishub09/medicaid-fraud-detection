@@ -121,6 +121,8 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Growth-shock change-points (level shifts + new-code bursts) | **Built** | `src/analytics/growth.py` → `rapid_ramp` concept |
 | Clinical-plausibility (per-code specialty prevalence + per-capita local denominator, named drivers) | **Built** (both halves) | `src/analytics/plausibility.py` → `clinical_implausibility` + `local_volume_implausibility` blended into `specialty_mismatch` |
 | Reassignment affiliation edges (provider→group `reassigns_to`) | **Built** (optional graph input) | `src/entity_graph/build_edges.py` (`build_reassignment_edges`) |
+| DocGraph referral edges + closed-loop ring detection | **Built** (un-gated) | `src/ingest_cms/docgraph.py` + `entity_graph/ring_detection.referral_rings` |
+| Sweep schemes: pill_mill, contract_pharmacy, invalid_identity, cost_report_fraud, +drug_spread/billing_after_death | **Built** (dormant until files) | `ingest_cms/opioid|hrsa_340b|nppes_deactivation|nadac|hcris`, `enforcement/death_master` |
 | Ownership-churn / CHOW (diffed owner snapshots → entry/exit events) | **Built** (dormant until 2+ snapshots) | `src/entity_graph/ownership_churn.py` → `ownership_turnover` in ownership_integrity |
 | Enforcement lookalikes (nearest settled org in subscore space; corroboration, never a driver) | **Built** (dormant until DOJ backfill) | `src/model_a/lookalikes.py` (`--case-db` resolves the exemplars) |
 | Government-interest overlay (OIG Work Plan → sector prior, named drivers) | **Built** | `src/model_a/government_interest.py` (curated table; refresh quarterly) |

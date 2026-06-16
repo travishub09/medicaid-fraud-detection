@@ -158,6 +158,26 @@ All free; each lights up a scheme automatically once loaded.
    - **Verify:** header has `NPI` + `DME`/`PARTB`/`HHA`/`PMD` eligibility flags.
    - **Powers:** `ineligible_referral_share` → sharpens `dme_ring`
      (`ingest_cms/order_referring.py`; needs DME claims with a referring NPI).
+6. **NADAC drug pricing** → `nadac/nadac.csv` (data.medicaid.gov, weekly):
+   `drug_spread_anomaly` → drug_outlier (needs NDC-level claims; `nadac.py`).
+7. **HCRIS cost reports** → `hcris/hcris_flat.csv` (cms.gov; the team flattens the
+   worksheet extract to per-CCN cost fields): the `cost_report_fraud` scheme
+   (`hcris.py`).
+8. **DocGraph shared-patient** → `docgraph/shared_patient.csv` (archived
+   CMS/DocGraph): `refers_to` edges + closed-loop ring detection
+   (`docgraph.py` + `ring_detection.referral_rings`). Vintages are old → treat as
+   historical corroboration.
+9. **Census county population + ZIP→county** → `census/` (census.gov / HUD):
+   the local-denominator half of A5 (`census_population.py`).
+10. **SSA Death Master File** → `dmf/dmf.csv` (public/NTIS): DOB-corroborated
+    deceased-provider billing → `invalid_identity` (`enforcement/death_master.py`).
+11. **State licensing boards** → `state_licensing/<ST>.csv` (per-state): adverse
+    board actions → exclusion nodes (`enforcement/state_licensing.py`, per-state
+    column map).
+12. **openFDA recalls** (live API, no file): drug/device recall events matched to
+    orgs (`feeds/openfda.py`).
+13. **OpenSanctions** (commercial license — Brad): aggregated LEIE + ~45 state
+    exclusion lists → exclusion nodes (`enforcement/opensanctions.py`).
 
 ### 1.8 Neo4j interactive graph (optional)
 After the graph build, also emit a Neo4j bulk import:

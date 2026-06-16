@@ -89,17 +89,20 @@ names, structure only) — but host it on the same secured box as the rest.
   `is_340b_covered_entity` + `contract_pharmacy_concentration` (0–1) → the
   **`contract_pharmacy`** scheme. Name-key match, so it's corroborative context.
 
-### 2.4 SSA Death Master File — CONTRACT
+### 2.4 SSA Death Master File — BUILT (`enforcement/death_master.py`)
 - **Download:** public DMF (free, FOIA) or the NTIS Limited-Access DMF (<3 yr,
   certification required) at dmf.ntis.gov.
-- **What it is:** deceased SSNs + name + dates.
-- **Good for:** services billed under a deceased provider/beneficiary.
-- **Why CONTRACT not BUILT:** the clean application needs SSN or beneficiary
-  linkage we don't hold publicly; matching providers by name alone is too noisy
-  to be defensible under our explainability rule. Build only if a vetted
-  name+DOB linkage or beneficiary key becomes available; the deactivation file
-  (2.2) already captures most of the "billing under an invalid identity" signal
-  with an exact key.
+- **What it is:** deceased names + dates of birth/death.
+- **Good for:** services billed under a deceased provider's identity.
+- **How we use it — with the noise guardrail baked in:** `parse_dmf` +
+  `match_deceased_providers` match on order-invariant name tokens; a match is
+  ``high`` confidence ONLY when both sides carry a date of birth and it agrees,
+  else ``low`` (name-only). `billing_after_death` feeds the `invalid_identity`
+  scheme from HIGH-confidence matches only (`high_confidence_only=True`);
+  name-only matches surface as a review flag, never a score driver — the
+  defamation/explainability guardrail. The exact-keyed NPPES deactivation file
+  (2.2) remains the primary "invalid identity" signal; this adds the deceased
+  case where a DOB corroborates.
 
 ### 2.5 CMS Provider of Services (POS) file — BUILT (`ingest_cms/pos.py`)
 - **Download:** data.cms.gov → "Provider of Services" (facility + clinical-lab
@@ -177,13 +180,18 @@ names, structure only) — but host it on the same secured box as the rest.
   — neutral when there's no funding, so it never moves a defendant we know
   nothing about.
 
-### 2.10 openFDA — CONTRACT
-- **Download:** open.fda.gov API (warning letters, 483 inspections, debarment).
-  Free.
-- **What it is:** FDA enforcement/inspection events.
+### 2.10 openFDA — BUILT (`feeds/openfda.py`, recall/enforcement scope)
+- **Download:** open.fda.gov drug/device enforcement endpoints (free, real API).
+- **What it is — honest scope:** the API serves ENFORCEMENT (recall) reports and
+  adverse events; it does NOT cleanly serve warning letters / Form-483
+  inspections (those are in the FDA dashboard's FOIA reading room). So the client
+  pulls what the API actually provides — drug/device recalls.
 - **Good for:** lab/pharma/device integrity corroboration.
-- **How to build:** a feeds client → enforcement events into the case DB schema
-  + the A8 event timeline.
+- **How we use it:** `fetch_enforcement` pulls recall reports; `enforcement_events`
+  matches recalling firms to our org nodes by `norm_org_name` → `fda_recall`
+  events for the A8 timeline + dossier integrity context. Corroboration, not an
+  accusation. (Warning-letter/483 ingestion stays a documented gap — needs the
+  dashboard FOIA path, not the API.)
 
 ### 2.11 ProPublica Nonprofit Explorer API — BUILT (`src/feeds/propublica_nonprofits.py`)
 - **Download:** projects.propublica.org/nonprofits/api (free, no key).
@@ -200,15 +208,16 @@ names, structure only) — but host it on the same secured box as the rest.
 
 ## Part 3 — Cheap-license data (Brad decision; not enterprise-priced)
 
-### 3.1 OpenSanctions — replaces building 45 state scrapers
-- **What it is:** one normalized feed/API aggregating HHS-OIG LEIE + ~45 state
+### 3.1 OpenSanctions — adapter BUILT (`enforcement/opensanctions.py`); license is Brad's call
+- **What it is:** one normalized feed aggregating HHS-OIG LEIE + ~45 state
   Medicaid exclusion lists + SAM + global PEPs/sanctions (opensanctions.org).
 - **Good for:** this *is* doc 14 B3 (state exclusions) pre-built, plus owner PEP
-  screening. Free for non-commercial; **we need a commercial license** (modest)
-  — likely cheaper than maintaining 45 per-state parsers.
-- **How we'd use it:** normalize into the existing `exclusions` schema (same as
-  `sam_api.py`) → more exclusion nodes in the graph; feeds
-  `excluded_party_distance` / `ownership_integrity`.
+  screening.
+- **How we use it:** `normalize_opensanctions` maps the OpenSanctions FtM entity
+  export into the shared `exclusions` schema → more exclusion nodes in the graph;
+  feeds `excluded_party_distance` / `ownership_integrity`. **The CODE is built;
+  the DATA needs a (modest) commercial license for our use** — building the
+  adapter doesn't require it, running it on the bulk feed does. Brad decision.
 
 ### 3.2 Definitive Healthcare alternatives (Provyx / AcuityMD)
 - **What it is:** facility org-chart + affiliation data, pay-per-record (Provyx)
@@ -254,7 +263,7 @@ how the model works.
   unsupervised EM (EM doesn't converge meaningfully on tiny fixtures, so the
   cold-start weights are the tested default).
 
-### 4.3 GLiNER / GLiNER2 — zero-shot entity & relation extraction (CONTRACT)
+### 4.3 GLiNER — zero-shot entity & relation extraction (BUILT, `src/nlp/extract.py`)
 - **What it is:** a small (≈200–400M param) BERT-family model that does
   named-entity recognition for ANY label you pass at inference time — no
   per-type training — and runs on CPU. GLiNER2 adds text classification and
@@ -267,9 +276,13 @@ how the model works.
   text — CourtListener docket case names, DOJ press releases, 990 PDFs, review
   text — and classifying grievance language. Serves both the planned
   grievance classifier and the doc 14 D2 creative-data extraction.
-- **How we'd plug it in:** a `src/nlp/extract.py` helper wrapping `gliner`,
-  feeding the case-DB parser, the docket monitor, and (later) Glassdoor/Reddit
-  collectors. CPU-only; in `requirements-trey.txt`.
+- **How it's built here:** `src/nlp/extract.py` — `extract_entities(texts,
+  labels=…, model=…)` returns a tidy (text_id, label, text, score) frame.
+  `load_gliner` lazy-loads the model (optional dep, downloads weights on first
+  use — runtime only). The `model` arg is INJECTABLE (anything exposing
+  `predict_entities`), so tests run against a fake and never download weights;
+  `gliner` is in `requirements-trey.txt`. Feeds the case-DB parser, the docket
+  monitor, and (counsel-cleared) review collectors.
 
 ### 4.4 The new Model-A schemes (BUILT)
 `pill_mill`, `contract_pharmacy`, and `invalid_identity` are not ML models —

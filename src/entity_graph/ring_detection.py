@@ -109,12 +109,37 @@ def excluded_party_proximity(org_nodes, owner_nodes, exclusion_nodes, member_edg
             .sort_values("hops_to_exclusion").reset_index(drop=True))
 
 
-def referral_rings(*_args, **_kwargs) -> pd.DataFrame:
+def referral_rings(referral_edges: pd.DataFrame | None = None,
+                   max_cycle: int = 4, min_volume: float = 0.0) -> pd.DataFrame:
     """Closed high-value referral loops (self-referral / kickback shape).
 
-    Gated: requires shared-patient / referral-pair edges (``refers_to``) that the
-    public CMS files do not provide. Returns empty with a reason until a referral
-    source (e.g. CMS referral data, commercial claims) is ingested and the
-    ``refers_to`` edge is built. See 03-entity-resolution.md §ring detection.
+    Consumes the org→org ``refers_to`` edges built from DocGraph shared-patient
+    data (``ingest_cms/docgraph.build_referral_edges``). Finds directed simple
+    cycles up to ``max_cycle`` orgs — a closed loop where A→B→C→A is the
+    self-referral/kickback ring shape — reporting each with the minimum
+    shared-patient volume along the loop (a loop is only as strong as its
+    thinnest edge). Empty when no referral source is loaded — the
+    historical-corroboration caveat is in docs/platform/15.
     """
-    return pd.DataFrame(columns=["cycle_node_ids", "shared_patient_volume", "reason"])
+    cols = ["cycle_node_ids", "cycle_len", "shared_patient_volume"]
+    if referral_edges is None or not len(referral_edges):
+        return pd.DataFrame(columns=cols)
+    import networkx as nx
+
+    g = nx.DiGraph()
+    for r in referral_edges.itertuples():
+        vol = float(getattr(r, "shared_patient_volume", 0) or 0)
+        if vol >= min_volume:
+            g.add_edge(str(r.src_id), str(r.dst_id), volume=vol)
+
+    rows = []
+    for cycle in nx.simple_cycles(g):
+        if not (2 <= len(cycle) <= max_cycle):
+            continue
+        vols = [g[cycle[i]][cycle[(i + 1) % len(cycle)]]["volume"]
+                for i in range(len(cycle))]
+        rows.append({"cycle_node_ids": ";".join(cycle), "cycle_len": len(cycle),
+                     "shared_patient_volume": float(min(vols))})
+    return (pd.DataFrame(rows, columns=cols)
+            .sort_values("shared_patient_volume", ascending=False)
+            .reset_index(drop=True))

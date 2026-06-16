@@ -41,12 +41,15 @@ src/model_c/        case underwriting — cold-start rules BUILT (priors/feature
                     underwriting/portfolio + public-disclosure screen)
 src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
-src/ingest_cms/     Part B/D/DMEPOS/OpenPayments/Saturation/Facility adapters +
-                    opioid/340B/NPPES-deactivation/POS-capacity/order-referring
-                    (sweep) + NPPES API (built)
-src/feeds/          API-feed plumbing: cached transport, cursors, freshness probe
-src/analytics/      peer engine: ladder groups, robust complexity adjust (built)
-src/enforcement/    DOJ case DB + API fetcher + SAM client + label store (built)
+src/ingest_cms/     Part B/D/DMEPOS/OpenPayments/Saturation/Facility/opioid/340B/
+                    NPPES-deactivation/POS/order-referring/census/NADAC/HCRIS/
+                    DocGraph adapters + NPPES API (built)
+src/feeds/          API-feed plumbing + DOJ/CourtListener/SAM/NPPES/ProPublica/
+                    USAspending/openFDA clients (cached, injectable transport)
+src/analytics/      peer engine + confidence + growth + plausibility (built)
+src/enforcement/    DOJ case DB + API fetcher + SAM/state-licensing/OpenSanctions/
+                    death-master + label store (built)
+src/nlp/            GLiNER zero-shot entity extraction (optional dep, injectable)
 tests/              pytest; fixtures/synthetic.py generates data — no data files committed
 docs/platform/      architecture, roadmap, and component specs (the source of truth)
 ```
@@ -150,10 +153,16 @@ python -m pytest tests/ -v
   (`entity_graph/neo4j_export`, `--neo4j-bulk`); June-2026 sweep adapters +
   schemes (`ingest_cms/opioid` → pill_mill, `nppes_deactivation` →
   invalid_identity, `hrsa_340b` → contract_pharmacy; see docs/platform/15).
-  Reassignment affiliation edges (`entity_graph/build_edges.build_reassignment_edges`,
-  optional graph input) + Census county-population/ZIP→county parsers
-  (`ingest_cms/census_population.py`) completing A5's local-denominator half.
-  Full suite: `pytest tests/` (197 tests).
+  Reassignment affiliation edges + Census denominator (A5 complete). Full
+  remaining build-out: NADAC drug spread (B4), HCRIS cost_report_fraud (B5),
+  DocGraph referral edges + referral-ring detection (B10, un-gated),
+  state-licensing + OpenSanctions → exclusion schema, SSA Death Master File
+  (DOB-corroborated → invalid_identity), openFDA recall events, GLiNER wrapper
+  (`src/nlp/`). New schemes: cost_report_fraud; drug_spread_anomaly +
+  billing_after_death folded into existing schemes. Legal/operational gates on
+  Model B activation, supervised graduation, the funnel/lookup launch, and the
+  OpenSanctions license REMAIN (code built, guardrails intact).
+  Full suite: `pytest tests/` (207 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

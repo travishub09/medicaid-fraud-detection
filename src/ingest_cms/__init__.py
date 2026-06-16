@@ -56,6 +56,9 @@ from .hrsa_340b import covered_entities, attach_340b
 from .pos import compute_pos_capacity, capacity_billing_mismatch
 from .order_referring import eligible_referrers, ineligible_referral_share
 from .census_population import county_population, zip_to_county
+from .nadac import compute_nadac_reference, drug_spread_anomaly
+from .hcris import compute_hcris_metrics, hcris_anomaly
+from .docgraph import build_referral_edges
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
 __all__ = [
@@ -83,6 +86,11 @@ __all__ = [
     "ineligible_referral_share",
     "county_population",
     "zip_to_county",
+    "compute_nadac_reference",
+    "drug_spread_anomaly",
+    "compute_hcris_metrics",
+    "hcris_anomaly",
+    "build_referral_edges",
     "to_peer_percentiles",
     "rollup_to_org",
 ]
