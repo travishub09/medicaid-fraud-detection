@@ -144,13 +144,18 @@ names, structure only) — but host it on the same secured box as the rest.
   table); `confidence_band` then downgrades — a high DQ-Atlas concern → LOW, a
   medium concern → MEDIUM, each with a named reason. Wired into the Model A run.
 
-### 2.9 USAspending.gov API — CONTRACT
-- **Download:** api.usaspending.gov/api/v2 (no key). Free.
+### 2.9 USAspending.gov API — BUILT (`src/feeds/usaspending.py`)
+- **Download:** api.usaspending.gov/api/v2 (no key). Free; the client calls it
+  live (POST), so it runs on Trey's box, not in CI.
 - **What it is:** federal grants/contracts to organizations.
-- **Good for:** the procurement/vendor graph (doc 14 D2) and a defendant
-  size/solvency feature for Model C.
-- **How to build:** a `src/feeds/`-style client; `pays`/`funded_by` edges +
-  a Model C `defendant_size` input.
+- **Good for:** a defendant size/solvency feature for Model C (a bigger
+  going-concern defendant raises intervention odds) and the procurement graph.
+- **How we use it:** `fetch_recipient_awards` / `org_federal_funding` sum each
+  org's federal-award footprint by `norm_org_name`; `build_case_features` maps
+  `federal_funding_total` (log-scaled, saturating at $50M) into Model C's
+  `defendant_size`, a bounded `mult_defendant_size` (1.0–1.25×) on P(intervene)
+  — neutral when there's no funding, so it never moves a defendant we know
+  nothing about.
 
 ### 2.10 openFDA — CONTRACT
 - **Download:** open.fda.gov API (warning letters, 483 inspections, debarment).
@@ -160,13 +165,16 @@ names, structure only) — but host it on the same secured box as the rest.
 - **How to build:** a feeds client → enforcement events into the case DB schema
   + the A8 event timeline.
 
-### 2.11 ProPublica Nonprofit Explorer API — CONTRACT
+### 2.11 ProPublica Nonprofit Explorer API — BUILT (`src/feeds/propublica_nonprofits.py`)
 - **Download:** projects.propublica.org/nonprofits/api (free, no key).
 - **What it is:** IRS 990 data — nonprofit hospital exec comp + Schedule R
   related orgs.
 - **Good for:** owner/related-party enrichment (doc 14 B8) without parsing raw
-  EDGAR.
-- **How to build:** a feeds client → `owner:`/`also_owns` edges for nonprofits.
+  EDGAR; a finance-persona hint for Model B.
+- **How we use it:** `search_nonprofits` / `fetch_organization` pull 990s;
+  `nonprofit_owner_edges` matches our org nodes to nonprofits by the shared
+  `norm_org_name` (conservative exact key) → enrichment rows the entity graph
+  turns into nonprofit-affiliation context. Public 990 data only.
 
 ---
 

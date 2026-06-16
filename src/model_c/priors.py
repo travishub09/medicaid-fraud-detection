@@ -67,6 +67,7 @@ class UnderwritingAssumptions:
     corroboration_range: tuple[float, float] = (0.70, 1.60)   # Model A signal: the edge
     evidence_range: tuple[float, float] = (0.60, 1.50)
     credibility_range: tuple[float, float] = (0.80, 1.30)
+    defendant_size_range: tuple[float, float] = (1.00, 1.25)  # bigger defendant → likelier intervention; neutral at size 0
     culpability_penalty: float = 0.40            # high culpability cuts up to 40%
     public_disclosure_penalty: float = 0.55      # already-public allegations
     intervention_floor: float = 0.01

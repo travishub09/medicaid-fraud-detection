@@ -15,7 +15,15 @@ Design rules (every feed client):
   * API keys come from the environment (.env): COURTLISTENER_TOKEN, SAM_API_KEY.
 """
 
-from .client import default_fetch_json, cache_raw
+from .client import default_fetch_json, default_post_json, cache_raw
 from .state import load_state, save_state
+from .propublica_nonprofits import (
+    search_nonprofits, fetch_organization, nonprofit_owner_edges)
+from .usaspending import fetch_recipient_awards, org_federal_funding
 
-__all__ = ["default_fetch_json", "cache_raw", "load_state", "save_state"]
+__all__ = [
+    "default_fetch_json", "default_post_json", "cache_raw",
+    "load_state", "save_state",
+    "search_nonprofits", "fetch_organization", "nonprofit_owner_edges",
+    "fetch_recipient_awards", "org_federal_funding",
+]

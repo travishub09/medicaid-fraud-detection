@@ -318,14 +318,16 @@ serverless query path is ever wanted, but Neo4j is the chosen layer.)
   per-state Medicaid data-QUALITY scores (NOT the gated claims) downgrade the
   confidence band (A2) for poor-reporting states. The lawful public face of
   T-MSIS. Free.
-- **USAspending.gov API** (no key) — federal grants/contracts to providers
-  (HRSA grants, COVID relief) → the procurement/vendor graph (D2) + a
-  defendant size/solvency feature for Model C. Free.
+- **USAspending.gov API** — BUILT (`src/feeds/usaspending.py`): per-org
+  federal-award footprint → Model C `defendant_size` (mult_defendant_size on
+  P(intervene), neutral when absent) + the procurement graph. Free, no key.
 - **openFDA** (warning letters, 483 inspections, debarment list; real API) —
-  lab/pharma/device integrity signal. Free.
-- **ProPublica Nonprofit Explorer API** (free, no key) — 990s incl. nonprofit
-  hospital exec comp + Schedule R related orgs → available NOW for the B8
-  owner/related-party enrichment without parsing raw EDGAR.
+  lab/pharma/device integrity signal. Free. CONTRACT (the warning-letter / 483
+  signals we want aren't all in the API — needs the dashboard FOIA path).
+- **ProPublica Nonprofit Explorer API** — BUILT
+  (`src/feeds/propublica_nonprofits.py`): 990s incl. nonprofit hospital exec
+  comp + Schedule R related orgs → B8 owner/related-party enrichment by name
+  key, no EDGAR parsing. Free, no key.
 - **CMS DE-SynPUF** (synthetic Medicare claims, public) — a realistic synthetic
   claims set to harden the pipeline and dev the supervised graduations WITHOUT
   touching PHI (beyond our tiny fixture). Free.

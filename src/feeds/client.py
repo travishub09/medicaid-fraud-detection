@@ -63,6 +63,40 @@ def default_fetch_json(url: str, params: dict | None = None,
     raise RuntimeError(f"feed fetch failed after {retries + 1} attempts: {last_err}")
 
 
+def default_post_json(url: str, payload: dict | None = None,
+                      headers: dict | None = None,
+                      timeout: int = DEFAULT_TIMEOUT,
+                      retries: int = DEFAULT_RETRIES) -> dict:
+    """POST a JSON body → parsed JSON, same retry/backoff as the GET transport.
+
+    For APIs that take filter bodies (USAspending). Feed functions accept this
+    as an injectable ``fetch_json`` so tests pass canned responses.
+    """
+    import requests   # imported here so the package works without it installed
+
+    hdrs = {"User-Agent": USER_AGENT, "Accept": "application/json",
+            "Content-Type": "application/json"}
+    if headers:
+        hdrs.update(headers)
+
+    delay = DEFAULT_BACKOFF
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.post(url, json=payload, headers=hdrs, timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504):
+                last_err = RuntimeError(f"HTTP {resp.status_code} from {url}")
+            else:
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as e:          # noqa: BLE001 — retried, then re-raised
+            last_err = e
+        if attempt < retries:
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError(f"feed post failed after {retries + 1} attempts: {last_err}")
+
+
 def cache_raw(source: str, name: str, payload: dict,
               root: Path | None = None) -> Path:
     """Write one raw response under feeds/raw/<source>/<utc-date>/<name>.json."""

@@ -129,7 +129,8 @@ python -m pytest tests/ -v
   (`sourcing`). Model B scoring chain logic-complete (`model_b`); Open Payments adapter +
   kickback co-occurrence (`ingest_cms`); validation harness (`model_a/validation`);
   CI + Makefile. Lookup-tool v1 preview, append-only label store, MEDICAID_DATA_ROOT env
-  override, core-normalizer tests. API feed layer (DOJ/CourtListener/SAM/NPPES + freshness).
+  override, core-normalizer tests. API feed layer (DOJ/CourtListener/SAM/NPPES +
+  freshness + ProPublica-990s + USAspending-awards→Model-C defendant size).
   Peer engine (`analytics/peers`), dossier-quality sprint (scoped damages, confidence
   bands, growth shock), public-disclosure screen (`model_c/public_disclosure`),
   government-interest overlay (`model_a/government_interest` — refresh the curated
@@ -149,7 +150,7 @@ python -m pytest tests/ -v
   (`entity_graph/neo4j_export`, `--neo4j-bulk`); June-2026 sweep adapters +
   schemes (`ingest_cms/opioid` → pill_mill, `nppes_deactivation` →
   invalid_identity, `hrsa_340b` → contract_pharmacy; see docs/platform/15).
-  Full suite: `pytest tests/` (185 tests).
+  Full suite: `pytest tests/` (190 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).

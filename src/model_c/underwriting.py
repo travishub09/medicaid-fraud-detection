@@ -44,6 +44,9 @@ def predict_intervention(case_features: pd.DataFrame,
     evidence_mult = _lerp(f["evidence_strength"], *a.evidence_range)
     cred_mult = _lerp(f["relator_credibility"], *a.credibility_range)
     culp_mult = 1.0 - a.culpability_penalty * f["relator_culpability"].clip(0, 1)
+    # defendant size (USAspending footprint): neutral (1.0) when size is 0/absent
+    size = f["defendant_size"] if "defendant_size" in f.columns else 0.0
+    size_mult = _lerp(size, *a.defendant_size_range)
 
     if "jurisdiction_multiplier_override" in f.columns:
         juris_mult = f["jurisdiction_multiplier_override"].where(
@@ -57,7 +60,7 @@ def predict_intervention(case_features: pd.DataFrame,
                          a.public_disclosure_penalty, 1.0)
 
     raw = (a.base_intervention_rate * scheme_mult * corrob_mult * evidence_mult
-           * cred_mult * culp_mult * juris_mult * disc_mult)
+           * cred_mult * culp_mult * size_mult * juris_mult * disc_mult)
     p_int = pd.Series(raw, index=f.index).clip(a.intervention_floor, a.intervention_cap)
 
     # first-to-file not cleared: someone may already own the claim → near-zero
@@ -80,6 +83,7 @@ def predict_intervention(case_features: pd.DataFrame,
         "mult_evidence": np.round(evidence_mult, 3),
         "mult_relator_credibility": np.round(cred_mult, 3),
         "mult_culpability": np.round(culp_mult, 3),
+        "mult_defendant_size": np.round(size_mult, 3),
         "mult_jurisdiction": np.round(juris_mult, 3),
         "mult_public_disclosure": np.round(disc_mult, 3),
     }, index=f.index)

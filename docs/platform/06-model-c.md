@@ -88,7 +88,9 @@ well-calibrated model can still build a bad book if it never catches a whale.
     witness exists.
   - `underwriting.py` — `predict_intervention` (base rate × named bounded
     multipliers → P(intervene) + the outcome-class split; first-to-file-not-
-    cleared floors it, public-disclosure penalizes it), `recovery_distribution`
+    cleared floors it, public-disclosure penalizes it, and the USAspending
+    federal-funding footprint feeds a `defendant_size` multiplier — neutral when
+    absent), `recovery_distribution`
     (damages proxy → realized settlement P10/P50/P90, low data-confidence widens
     the band but never shifts the median), and `underwrite` (expected relator
     gross → **fund / pass / fund-with-terms** with capital and a take % priced to

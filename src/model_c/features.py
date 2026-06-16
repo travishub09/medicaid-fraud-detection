@@ -80,6 +80,15 @@ def build_case_features(model_a_signal: pd.DataFrame,
     out["damages_single"] = exposure.where(exposure.notna(), payments).fillna(0.0).clip(lower=0)
     out["exposure_scope"] = _col(m, "exposure_scope", "all_payments").fillna("all_payments")
 
+    # defendant size (0–1) — a bigger going-concern defendant raises intervention
+    # odds (manifesto). Derived from the USAspending federal-funding footprint
+    # (sweep 2.9) when present; 0.0 (neutral) otherwise, so absence never moves
+    # the score. log-scaled, saturating at $50M of federal awards.
+    import numpy as _np
+    fed = pd.to_numeric(_col(m, "federal_funding_total", 0.0),
+                        errors="coerce").fillna(0.0).clip(lower=0)
+    out["defendant_size"] = (_np.log1p(fed) / _np.log1p(50_000_000.0)).clip(0, 1)
+
     out["jurisdiction"] = _col(m, "jurisdiction", "").fillna("").astype(str)
     conf = _col(m, "confidence", "").fillna("").astype(str).str.lower()
     out["data_confidence"] = conf.map(_CONFIDENCE_NUMERIC).fillna(0.6)

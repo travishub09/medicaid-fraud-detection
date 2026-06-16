@@ -65,6 +65,19 @@ def test_intervention_rises_with_corroboration_and_names_drivers():
     assert (p["p_intervene"] <= A.intervention_cap).all()
 
 
+def test_defendant_size_from_federal_funding_raises_intervention():
+    # USAspending federal-funding footprint (sweep 2.9) → defendant_size →
+    # a bigger defendant is likelier to draw intervention. Neutral at zero.
+    base = _signal([{"org_node_id": "org:small", "adjusted_prob": 0.6}])
+    big = _signal([{"org_node_id": "org:big", "adjusted_prob": 0.6}])
+    big["federal_funding_total"] = 40_000_000.0
+    p_small = predict_intervention(build_case_features(base))
+    p_big = predict_intervention(build_case_features(big))
+    assert p_big.loc[0, "mult_defendant_size"] > 1.0
+    assert p_small.loc[0, "mult_defendant_size"] == 1.0          # no funding → neutral
+    assert p_big.loc[0, "p_intervene"] > p_small.loc[0, "p_intervene"]
+
+
 def test_first_to_file_not_cleared_floors_intervention():
     sig = _signal([{"org_node_id": "org:a", "adjusted_prob": 0.95}])
     intake = pd.DataFrame([{"org_node_id": "org:a", "first_to_file_cleared": 0}])
