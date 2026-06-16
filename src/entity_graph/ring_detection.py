@@ -133,8 +133,11 @@ def referral_rings(referral_edges: pd.DataFrame | None = None,
             g.add_edge(str(r.src_id), str(r.dst_id), volume=vol)
 
     rows = []
-    for cycle in nx.simple_cycles(g):
-        if not (2 <= len(cycle) <= max_cycle):
+    # length_bound caps the SEARCH (networkx ≥3.1), so we never enumerate the
+    # exponential set of long cycles just to discard them — the referral graph
+    # can be large and dense (the betweenness/co-location blow-up lesson).
+    for cycle in nx.simple_cycles(g, length_bound=max_cycle):
+        if len(cycle) < 2:
             continue
         vols = [g[cycle[i]][cycle[(i + 1) % len(cycle)]]["volume"]
                 for i in range(len(cycle))]

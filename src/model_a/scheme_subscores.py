@@ -54,14 +54,21 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
         # snapshots accumulate (src/entity_graph/ownership_churn.py)
         "ownership_turnover": 0.3,
     },
-    # future (Part B): upcoding/impossible-day
+    # Part B: upcoding (both features produced by ingest_cms/partb.py)
     "upcoding": {"em_high_level_share": 0.7, "em_level_mean": 0.3},
+    # impossible-day: DORMANT BY DATA — bene_per_day_p95 and time_minutes_per_day
+    # need per-day service counts / procedure-time minutes that the by-provider-
+    # and-service PUF does not carry (they need the line-level/BETOS or a timed
+    # source). Skip-missing keeps the scheme silent (never mis-fires) until that
+    # data lands; do not interpret its absence as "no impossible-day risk".
     "impossible_day": {"bene_per_day_p95": 0.6, "time_minutes_per_day": 0.4},
     # future (Part D / Open Payments / DMEPOS)
     "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3},
     "drug_outlier": {"controlled_substance_share": 0.4, "high_cost_drug_share": 0.4,
                      # NADAC markup/spread anomaly (B4); absent until NDC claims load
                      "drug_spread_anomaly": 0.3},
+    # dme_ordering_md_concentration needs supplier×ordering-MD pairs (not in the
+    # by-referring-provider PUF) — dormant by data; the other two are produced.
     "dme_ring": {"dme_high_cost_item_share": 0.4, "dme_ordering_md_concentration": 0.4,
                  # orders from referrers not eligible to order DME (sweep 2.6)
                  "ineligible_referral_share": 0.4},

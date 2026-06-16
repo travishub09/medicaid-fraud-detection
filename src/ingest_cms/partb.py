@@ -58,6 +58,11 @@ def compute_partb_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
 
     is_em = df["hcpcs"].isin(EM_OFFICE_CODES)
     is_high = df["hcpcs"].isin(EM_HIGH_CODES)
+    # the E/M level is the trailing digit of the office code (9921[1-5] → 1..5);
+    # services-weighted mean level is the upcoding feature the registry expects.
+    df["em_level"] = df["hcpcs"].where(is_em).str.slice(-1)
+    df["em_level"] = pd.to_numeric(df["em_level"], errors="coerce")
+    df["em_level_x_srv"] = df["em_level"] * df["services"]
 
     g = df.groupby("npi")
     out = pd.DataFrame({
@@ -66,9 +71,12 @@ def compute_partb_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
         "total_allowed": g["allowed_dollars"].sum(),
         "em_services": df[is_em].groupby("npi")["services"].sum(),
         "em_high_services": df[is_high].groupby("npi")["services"].sum(),
+        "em_level_x_srv": df[is_em].groupby("npi")["em_level_x_srv"].sum(),
     }).fillna(0.0)
 
     out["em_high_level_share"] = (out["em_high_services"] / out["em_services"]).where(
+        out["em_services"] > 0)
+    out["em_level_mean"] = (out["em_level_x_srv"] / out["em_services"]).where(
         out["em_services"] > 0)
     out["services_per_bene"] = (out["total_services"] / out["total_benes"]).where(
         out["total_benes"] > 0)
@@ -80,6 +88,7 @@ def compute_partb_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     out["code_concentration_hhi"] = (share ** 2).groupby(df["npi"]).sum().where(
         out["total_allowed"] > 0)
 
-    keep = ["em_high_level_share", "services_per_bene", "allowed_per_bene",
-            "code_concentration_hhi", "total_services", "total_benes", "total_allowed"]
+    keep = ["em_high_level_share", "em_level_mean", "services_per_bene",
+            "allowed_per_bene", "code_concentration_hhi",
+            "total_services", "total_benes", "total_allowed"]
     return out[keep].reset_index(), quarantined
