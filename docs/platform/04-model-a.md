@@ -132,7 +132,7 @@ Model A detects **structural, entrenched** risk (where), not this week's scheme 
 | Market Saturation adapter → `saturation_fraud` scheme | **Built** | `src/ingest_cms/saturation.py` (state-grain attach until ZIP→county) |
 | PBJ staffing + Care Compare facility signals (worthless services, hospice ineligibility; facility peers = size band × state) | **Built** | `src/ingest_cms/facility.py` (awaiting the real files + PECOS CCN↔NPI crosswalk) |
 | Enforcement case DB + derived sector priors | **Built** (fetcher stub) | `src/enforcement/` |
-| PU supervised graduation + quantile exposure | Scaffold | `src/model_a/supervised.py` |
+| PU supervised graduation + quantile exposure | **Built** (harness; needs real labels to be meaningful) | `src/model_a/supervised.py` (`train_pu_classifier` Elkan–Noto + isotonic; `train_exposure_quantiles` P10/P50/P90; reused by Model C) |
 | Temporal-holdout precision@k harness (generalized) | Scaffold | `src/model_a/validation.py` |
 
 **v1 notes:** the composite runs on today's company-grain concept percentiles +

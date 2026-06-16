@@ -107,6 +107,14 @@ properly.
   recency-weighted org catalyst score; `apply_catalyst_to_propensity` is the
   org-level hook that multiplies B2 propensity once people data exists — no
   person-level signal added, guardrails unchanged.
-- **Blocked on (activation):** people-data licensing + FCRA review, and the
-  probabilistic person↔employer resolver + temporal `employed_by` edges
-  (`src/entity_graph/person_resolver.py`) — the only missing piece.
+- **Person↔employer resolver BUILT** (`src/entity_graph/person_resolver.py`):
+  `resolve_people_to_orgs` scores workforce employer strings against canonical
+  orgs (exact name-key → token-Jaccard×sequence-ratio, state-blocked) into
+  auto_accept / review / auto_reject bands with confidence + provenance;
+  `build_employed_by_edges` makes temporal Person→Org edges; `tenure_overlaps`
+  gives the point-in-time check the knowledge gate needs. `person_id` is an
+  opaque token — these edges feed the AUDIENCE builder, never a contact list.
+- **Activation gate REMAINS (operational, not code):** running the resolver on
+  real people-data needs the people-data license + FCRA/privacy review first;
+  the "likely whistleblower at employer X" inference is sensitive from creation,
+  minimized and never exported (`assert_no_identifiers` enforces this downstream).

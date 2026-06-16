@@ -230,19 +230,16 @@ specifies, each with named features and witness personas:
   libraries: patient-recruitment ad spend as a DME/telehealth/ABA signal)
 - **FOIA strategy** (state Medicaid program-integrity reports, audit lists)
 
-### D3. The funnel / marketing / intake software layer (manifesto §§12, 14–16, 20)
-Deliberately unbuilt until Phase-0 counsel and a partner firm exist:
-7-stage funnel metrics (visitor→MQL→CQL→EQL→filed), ListenLayer event
-taxonomy + data-layer fields (`fraud_typology`, `persona_segment`,
-`trust_stage`, `target_cluster_id`), composite behavioral lead score
-(org-anomaly 25 / persona 25 / behavior 25 / intake 15 / recency 10), offline
-conversion optimization to CQL, landing-page families per typology × persona,
-SEO content hub (conversion hubs, distress/protection clusters, persona +
-scheme pillars), 7-touch nurture sequences, self-assessment + reward
-estimator + evidence-checklist lead magnets, confidential structured intake
-(first-to-file / public-disclosure / original-source capture, privilege from
-first contact), triage scoring, counsel case-packet generator, and
-campaign-brief generation from dossiers ("data-to-audience transformation").
+### D3. The funnel / marketing / intake software layer — CORE BUILT (`src/funnel/`)
+The measurable machinery is BUILT (launch stays gated on Phase-0 counsel + a
+partner firm): the ListenLayer event taxonomy + data-layer fields with
+ad-platform PHI/sensitive suppression (`funnel/events.py`), the composite
+behavioral lead score (org-anomaly 25 / persona 25 / behavior 25 / intake 15 /
+recency 10, named drivers, NO fraud boolean — `funnel/lead_score.py`), and
+confidential intake triage on the four FCA gates with PHI→secure routing
+(`funnel/intake.py`). **Still content/ops, not code:** landing-page families,
+the SEO hub, nurture sequences, lead magnets, the counsel case-packet generator,
+and the actual public launch — all gated on counsel and a partner firm.
 
 ### D4. Model C — cold-start underwriting BUILT; trained model remaining
 BUILT (rules-based, label-free): P(intervene) with jurisdiction intervention

@@ -103,7 +103,10 @@ well-calibrated model can still build a bad book if it never catches a whale.
   - Orchestrator: `python -m src.model_c --fixture` (builds graph + Model A
     first) or `--erv <erv_ranked.parquet> [--intake] [--case-db]`; writes
     `case_underwriting.parquet`, per-case memos, and `MODEL_C_REPORT.md`.
-- **Graduates to** a calibrated GBM (outcome class) + quantile recovery model the
-  moment the structured DOJ/OIG/PACER outcome database accumulates; the portfolio
-  Monte Carlo and the decision/terms layer run unchanged on the trained
-  distributions. Mind the selection-bias trap (§above) when that data arrives.
+- **Graduation harness BUILT** (`src/model_a/supervised.py`, reused here): the
+  Elkan–Noto PU classifier (calibrated P(intervene)) + the quantile recovery
+  regressors (P10/P50/P90) are implemented and tested on synthetic labels — the
+  cold-start priors retire into them the moment the structured DOJ/OIG/PACER
+  outcome database accumulates; the portfolio Monte Carlo and the decision/terms
+  layer run unchanged on the trained distributions. Mind the selection-bias trap
+  (§above) when that data arrives.

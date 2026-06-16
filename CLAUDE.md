@@ -36,7 +36,10 @@ src/entity_graph/   canonical entity graph (nodes/edges/features/rings) — BUIL
 src/model/          supervised LightGBM lead scorer (Travis's build — PU training,
                     screening, exports; context in src/model/README.md)
 src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
-src/model_b/        whistleblower id/propensity — logic-complete, gated on people data
+src/model_b/        whistleblower id/propensity — chain complete; person↔employer
+                    resolver BUILT (running on real people gated on FCRA review)
+src/funnel/         acquisition-funnel instrumentation: ListenLayer event taxonomy,
+                    composite lead score, intake triage (launch gated on counsel)
 src/model_c/        case underwriting — cold-start rules BUILT (priors/features/
                     underwriting/portfolio + public-disclosure screen)
 src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase-0)
@@ -161,8 +164,13 @@ python -m pytest tests/ -v
   (`src/nlp/`). New schemes: cost_report_fraud; drug_spread_anomaly +
   billing_after_death folded into existing schemes. Legal/operational gates on
   Model B activation, supervised graduation, the funnel/lookup launch, and the
-  OpenSanctions license REMAIN (code built, guardrails intact).
-  Full suite: `pytest tests/` (207 tests).
+  OpenSanctions license REMAIN (code built, guardrails intact). Supervised
+  graduation harness BUILT (`model_a/supervised.py`: PU classifier +
+  isotonic + quantile recovery; Model C reuses it), funnel layer BUILT
+  (`src/funnel/`: events/lead_score/intake with no-PHI + no-fraud-boolean
+  guardrails), person↔employer resolver BUILT (`entity_graph/person_resolver.py`:
+  scored linkage + employed_by edges + tenure overlap; opaque person_id only).
+  Full suite: `pytest tests/` (217 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license).
