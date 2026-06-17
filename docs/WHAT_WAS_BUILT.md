@@ -125,7 +125,7 @@ instructions** (exact website, file, filename, how to verify) live in the
 | **LEIE** (exclusion list) | oig.hhs.gov/exclusions | Free | Who is banned — the strongest red flag + our accuracy yardstick |
 | **PECOS** (enrollment) | data.cms.gov | Free | Which billing numbers are one enterprise |
 | **CMS All-Owners** | data.cms.gov | Free | Who owns each facility — the network map |
-| **Medicaid Spending** | your Medicaid data arrangement | Arranged | Who billed what — the dollars everything is ranked by |
+| **Medicaid Spending** | HHS Open Data "Medicaid Provider Spending by HCPCS" (public; ~3.5 GB) | Free | Who billed what — the dollars everything is ranked by. (Published aggregate; exact 7-column schema. A private extract works too.) |
 
 → Then your technical helper runs `make pipeline` → `make graph` → `make model-a`
 and you have your **first real ranked dossier list**.

@@ -51,11 +51,38 @@ These power the Medicaid detection core. If you already have them, skip to Block
   `ROLE TEXT - OWNER`, `PERCENTAGE OWNERSHIP`.
 
 ### 0.5 Medicaid spending → `Spending.csv`
-This is the proprietary/arranged extract the detection core was built on
-(billing NPI × servicing NPI × HCPCS × month with patients/lines/paid). It comes
-from your data arrangement, not a public click-path. Required columns:
+The billing-NPI × servicing-NPI × HCPCS × month extract (with patients/lines/
+paid) the detection core was built on. Required columns (exact):
 `BILLING_PROVIDER_NPI_NUM, SERVICING_PROVIDER_NPI_NUM, HCPCS_CODE,
 CLAIM_FROM_MONTH, TOTAL_PATIENTS, TOTAL_CLAIM_LINES, TOTAL_PAID`.
+
+**Public source (Feb 2026): HHS Open Data — "Medicaid Provider Spending by
+HCPCS."** This is a published, cell-suppressed aggregate *derived* from T-MSIS
+(2018–2024; FFS + managed care + CHIP), with the **exact seven columns above** —
+it drops in with no transformation.
+1. https://opendata.hhs.gov/datasets/medicaid-provider-spending/ → Download ZIP
+   (~3.5 GB). (Mirror: Hugging Face `HHS-Official/medicaid-provider-spending`.)
+2. Unzip → rename the CSV to `Spending.csv`, place at `preclean/Spending.csv`.
+- **Legal note:** this is a PUBLISHED public file (no DUA) — the lawful
+  substitute the data policy anticipates, NOT the gated raw T-MSIS RIF/TAF
+  (which remains barred for litigation-targeting). Confirm the open-data terms
+  and get a quick counsel read given the sensitive purpose, then proceed.
+- **Suppression:** rows under 12 claim lines AND 12 beneficiaries are dropped,
+  so very low-volume provider/procedure/months are absent. Fine for outlier
+  targeting — the high-dollar universe is fully present.
+- **If you instead get a private/arranged extract**, just match the same seven
+  columns and the same steps apply.
+
+### 0.6 Revoked Medicare providers → `revocations/revoked_providers.csv`
+HHS Open Data — "Revoked Medicare Providers and Suppliers" (PECOS, ~250 KB):
+revoked enrollments still under an active re-enrollment bar.
+1. https://opendata.hhs.gov/datasets/medicare-revoked-providers-and-suppliers/ →
+   Download ZIP → place the CSV at `preclean/revocations/revoked_providers.csv`.
+- **Verify:** header has `NPI`, `REVOCATION_EFCTV_DT`, `REENROLLMENT_BAR_EXPRTN_DT`.
+- **Powers:** an integrity/exclusion source alongside LEIE/SAM — normalized to
+  the exclusions schema by `src/enforcement/medicare_revocations.py`
+  (`normalize_revocations`), adding revoked-provider nodes + a billing-after-
+  revocation signal.
 
 **Snapshot rule (start now, costs nothing):** when you refresh the owners
 files each quarter, do NOT overwrite — keep dated copies
