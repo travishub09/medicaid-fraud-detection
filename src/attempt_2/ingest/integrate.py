@@ -509,6 +509,36 @@ def build_exclusions(leie_pq: str, qa: QA, quarantine: list) -> pd.DataFrame:
     return out
 
 
+def merge_exclusion_sources(exclusions: pd.DataFrame,
+                            revocations_path: str | None = None,
+                            qa=None) -> pd.DataFrame:
+    """Union additional exclusion sources into the LEIE table before the graph.
+
+    Today: the HHS "Revoked Medicare Providers and Suppliers" CSV (normalized to
+    the exclusions schema by ``enforcement.medicare_revocations``). Same shape as
+    LEIE, so it concatenates directly; de-duplicated on the identity + action so a
+    provider appearing in both isn't double-counted. The graph reads the unioned
+    ``exclusions.parquet``, so dropping the file in is all that's needed.
+    """
+    cols = list(exclusions.columns)
+    frames = [exclusions]
+    if revocations_path and Path(revocations_path).is_file():
+        from src.enforcement.medicare_revocations import normalize_revocations
+        raw = pd.read_csv(revocations_path, dtype=str, keep_default_na=False)
+        rev = normalize_revocations(raw).reindex(columns=cols)
+        frames.append(rev)
+        if qa is not None:
+            qa.count("exclusions_medicare_revocations", len(rev))
+    if len(frames) == 1:
+        return exclusions
+    out = (pd.concat(frames, ignore_index=True)
+           .drop_duplicates(subset=["npi", "name_key", "excl_type", "excl_date"])
+           .reset_index(drop=True))
+    if qa is not None:
+        qa.count("exclusions_total", len(out))
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # 6. facility_owner_exclusion_flags — owner↔LEIE matches rolled up to facility
 # --------------------------------------------------------------------------- #
@@ -610,6 +640,10 @@ def main() -> None:
     p.add_argument("--nppes", default=str(PRECLEAN_DIR / "NPPES.csv"))
     p.add_argument("--pecos", default=str(PRECLEAN_DIR / "PECOS.csv"))
     p.add_argument("--leie", default=str(PRECLEAN_DIR / "Caught.csv"))
+    p.add_argument("--revocations",
+                   default=str(PRECLEAN_DIR / "revocations" / "revoked_providers.csv"),
+                   help="optional HHS Revoked Medicare Providers CSV; unioned into "
+                        "exclusions if present (0.6)")
     p.add_argument("--owners", nargs="*", default=owners_default)
     p.add_argument("--processed", default=str(PRECLEAN_DIR.parent / "processed"))
     p.add_argument("--parquet-dir", default=str(PRECLEAN_DIR.parent / "interim" / "raw_parquet"))
@@ -643,6 +677,7 @@ def main() -> None:
 
         owner_edges = build_owner_edges(owner_pqs, npi_xwalk, qa) if owner_pqs else pd.DataFrame()
         exclusions = build_exclusions(leie_pq, qa, quarantine)
+        exclusions = merge_exclusion_sources(exclusions, args.revocations, qa)
         owner_edges.to_parquet(processed / "owner_edges.parquet", index=False)
         exclusions.to_parquet(processed / "exclusions.parquet", index=False)
 

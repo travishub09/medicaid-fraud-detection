@@ -79,10 +79,11 @@ revoked enrollments still under an active re-enrollment bar.
 1. https://opendata.hhs.gov/datasets/medicare-revoked-providers-and-suppliers/ →
    Download ZIP → place the CSV at `preclean/revocations/revoked_providers.csv`.
 - **Verify:** header has `NPI`, `REVOCATION_EFCTV_DT`, `REENROLLMENT_BAR_EXPRTN_DT`.
-- **Powers:** an integrity/exclusion source alongside LEIE/SAM — normalized to
-  the exclusions schema by `src/enforcement/medicare_revocations.py`
-  (`normalize_revocations`), adding revoked-provider nodes + a billing-after-
-  revocation signal.
+- **Powers:** an integrity/exclusion source alongside LEIE. **Auto-ingested** —
+  just drop the file at `preclean/revocations/revoked_providers.csv` and
+  `integrate` unions it into `exclusions.parquet` automatically (normalized by
+  `src/enforcement/medicare_revocations.py`), so revoked-provider nodes flow into
+  the graph with no extra step. Nothing to run separately.
 
 **Snapshot rule (start now, costs nothing):** when you refresh the owners
 files each quarter, do NOT overwrite — keep dated copies
