@@ -83,6 +83,20 @@ def test_county_population_fips_and_drops_state_totals():
     assert not (pop.index.str.slice(2) == "000").any()        # no state totals
 
 
+def test_county_population_autodetects_latest_popestimate_year():
+    # the real CO-EST2025-ALLDATA file uses POPESTIMATE2025 (not an explicit
+    # candidate) — the adapter picks the latest POPESTIMATE<year>, future-proof
+    raw = pd.DataFrame([
+        {"STATE": "1", "COUNTY": "1", "STNAME": "Alabama", "CTYNAME": "Autauga",
+         "POPESTIMATE2024": "59000", "POPESTIMATE2025": "60000"},
+        {"STATE": "48", "COUNTY": "201", "STNAME": "Texas", "CTYNAME": "Harris",
+         "POPESTIMATE2024": "4700000", "POPESTIMATE2025": "4800000"},
+    ])
+    pop = county_population(raw).set_index("fips")
+    assert pop.loc["01001", "population"] == 60000          # 2025, not 2024
+    assert pop.loc["48201", "population"] == 4800000
+
+
 def test_zip_to_county_keeps_dominant():
     raw = pd.DataFrame([
         {"ZIP": "78701", "COUNTY": "48453", "RES_RATIO": "0.95"},

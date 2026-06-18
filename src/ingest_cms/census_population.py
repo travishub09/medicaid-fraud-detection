@@ -53,6 +53,16 @@ def county_population(raw: pd.DataFrame) -> pd.DataFrame:
     else:
         raise ValueError(f"county population file missing FIPS columns; "
                          f"saw {list(raw.columns)[:12]}")
+    # population: the explicit candidates cover named columns; otherwise pick the
+    # latest POPESTIMATE<year> in the file (future-proof across Census vintages —
+    # the column is POPESTIMATE2025 this year, 2026 next, etc.).
+    if "population" not in df.columns:
+        import re as _re
+        pe = [c for c in raw.columns
+              if _re.fullmatch(r"POPESTIMATE\d{4}", str(c).strip(), _re.I)]
+        if pe:
+            latest = max(pe, key=lambda c: int(_re.search(r"\d{4}", c).group()))
+            df["population"] = raw[latest].values
     df["population"] = pd.to_numeric(df.get("population"), errors="coerce")
     for c in ("county_name", "state_name"):
         df[c] = (df[c] if c in df.columns else "").fillna("").astype(str).str.strip()
