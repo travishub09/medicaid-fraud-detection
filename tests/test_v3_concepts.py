@@ -173,3 +173,25 @@ def test_peer_fallback_taxonomy_only_and_too_small():
     assert not out.loc["org0", "not_scored"]
     assert out.loc["tiny0", "not_scored"]
     assert out.loc["tiny0", "not_scored_reason"] == "peer_group_too_small(<30)"
+
+
+# ---- verify_layer1.classify_month: robust to NaN-float month fields ----
+
+def test_classify_month_handles_nan_waiver_and_rein():
+    """REGRESSION: waiver/rein months can arrive as NaN floats (a column of
+    all-None collapses to float64), not None. classify_month must compare only
+    real 'YYYY-MM' strings and never raise on str>=float."""
+    from src.attempt_2.leads.verify_layer1 import classify_month
+    # excl in 2020-01, no reinstatement/waiver but stored as NaN floats
+    recs = [{"excl_month": "2020-01", "rein_month": float("nan"),
+             "waiver_month": float("nan")}]
+    assert classify_month("2021-06", recs) == "clean_after"   # billed after, no raise
+    assert classify_month("2019-06", recs) == "before"
+    # a real waiver month is still honored
+    recs_w = [{"excl_month": "2020-01", "rein_month": float("nan"),
+               "waiver_month": "2020-06"}]
+    assert classify_month("2020-09", recs_w) == "waivered"
+    # an excl month that is NaN contributes nothing (record skipped)
+    assert classify_month("2021-06", [{"excl_month": float("nan"),
+                                       "rein_month": float("nan"),
+                                       "waiver_month": float("nan")}]) == "before"

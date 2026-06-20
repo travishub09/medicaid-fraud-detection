@@ -65,7 +65,7 @@ def classify_month(month: str, recs: list[dict]) -> str:
     statuses = set()
     for r in recs:
         em = r["excl_month"]
-        if em is None:
+        if not isinstance(em, str):        # None or a NaN float → no usable excl month
             continue
         if month < em:
             statuses.add("before")
@@ -73,9 +73,11 @@ def classify_month(month: str, recs: list[dict]) -> str:
             statuses.add("same_month")            # day-level unknown ⇒ ambiguous
         else:                                      # strictly after the exclusion month
             rm, wm = r["rein_month"], r["waiver_month"]
-            if rm is not None and month >= rm:
+            # isinstance guards: these fields can arrive as NaN floats (a column
+            # of all-None collapses to float64), not None — compare only real months
+            if isinstance(rm, str) and month >= rm:
                 statuses.add("reinstated")
-            elif wm is not None and month >= wm:
+            elif isinstance(wm, str) and month >= wm:
                 statuses.add("waivered")
             else:
                 statuses.add("clean_after")
@@ -139,7 +141,8 @@ def main() -> None:
     rec["excl_month"] = rec["EXCLDATE"].map(_ymd_month)
     rec["rein_month"] = rec["REINDATE"].map(_ymd_month)
     wvd = rec["WAIVERDATE"].map(_ymd_month)
-    rec["waiver_month"] = [wd if wd is not None else (em if ws else None)
+    rec["waiver_month"] = [wd if isinstance(wd, str)
+                           else (em if (ws and isinstance(em, str)) else None)
                            for wd, ws, em in zip(wvd, rec["WVRSTATE"] != "", rec["excl_month"])]
     rec["leie_name"] = rec.apply(
         lambda r: (r["LASTNAME"] + ", " + r["FIRSTNAME"]).strip(", ")
