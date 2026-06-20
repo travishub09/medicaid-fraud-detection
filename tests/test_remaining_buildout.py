@@ -67,6 +67,28 @@ def test_hcris_metrics_and_anomaly():
     assert anom.loc["450000", "hcris_cost_anomaly"] >= 0.9
 
 
+def test_hcris_public_costreport_columns_and_absent_related_party():
+    # the public data.cms.gov "Cost Report" files use Title-Case names and have
+    # NO related-party column — must not crash, and must still score on overhead
+    rng = __import__("numpy").random.default_rng(2)
+    n = 40
+    raw = pd.DataFrame({
+        "Provider CCN": [f"67{i:04d}" for i in range(n)],
+        "Total Costs": rng.uniform(1e6, 2e6, n),
+        "Total Charges": rng.uniform(2e6, 4e6, n),
+        "Overhead Non-Salary Costs": rng.uniform(1e5, 2e5, n),  # → admin_costs
+        "State Code": "TX",
+        # deliberately NO related-party column (the regression that crashed)
+    })
+    raw.loc[0, "Overhead Non-Salary Costs"] = raw.loc[0, "Total Costs"] * 0.5  # outlier
+    metrics, q = compute_hcris_metrics(raw)
+    assert q == 0
+    assert metrics["cost_to_charge_ratio"].notna().all()       # Total Charges mapped
+    assert metrics["admin_cost_share"].notna().all()           # Overhead mapped
+    anom = hcris_anomaly(metrics, min_peer=5).set_index("ccn")
+    assert anom.loc["670000", "hcris_cost_anomaly"] >= 0.9      # overhead outlier flagged
+
+
 # ----------------------------------------------------- DocGraph + rings ---
 
 def test_referral_edges_and_ring_detection():

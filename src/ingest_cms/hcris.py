@@ -27,14 +27,21 @@ import pandas as pd
 from src.attempt_2.clean_data import _resolve_columns
 from .facility import _canon_ccn, facility_peer_percentiles
 
+# Candidates cover both a hand-flattened HCRIS extract (UPPER_SNAKE) and the
+# public data.cms.gov "Cost Report" datasets (Title Case, e.g. "Provider CCN",
+# "Overhead Non-Salary Costs"). The public files have no related-party column, so
+# that lever is simply absent and the anomaly falls back to the overhead share +
+# cost-to-charge ratio (honest scope — related-party detail lives in the raw
+# HCRIS worksheets, not the published flattened files).
 HCRIS_COLS = {
     "ccn": ["PRVDR_NUM", "prvdr_num", "CCN", "ccn", "Provider CCN"],
     "total_costs": ["TOTAL_COSTS", "total_costs", "Total Costs"],
     "total_charges": ["TOTAL_CHARGES", "total_charges", "Total Charges"],
-    "admin_costs": ["ADMIN_COSTS", "admin_costs", "G&A Costs", "GA_COSTS"],
+    "admin_costs": ["ADMIN_COSTS", "admin_costs", "G&A Costs", "GA_COSTS",
+                    "Overhead Non-Salary Costs"],
     "related_party_costs": ["RELATED_PARTY_COSTS", "related_party_costs",
                             "Related Org Costs"],
-    "state": ["STATE", "state", "PRVDR_STATE"],
+    "state": ["STATE", "state", "PRVDR_STATE", "State Code"],
 }
 
 
@@ -49,8 +56,12 @@ def compute_hcris_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     quarantined = int(ccn.isna().sum())
     df = df.assign(ccn=ccn)[ccn.notna()].copy()
     for c in ("total_costs", "total_charges", "admin_costs", "related_party_costs"):
-        df[c] = pd.to_numeric(df.get(c), errors="coerce").fillna(0.0)
-    df["state"] = (df["state"] if "state" in df.columns else "").fillna("").astype(str).str.upper()
+        # a cost column may be absent (e.g. the public flattened files carry no
+        # related-party column) — default to 0, never crash on df.get()->None
+        col = df[c] if c in df.columns else pd.Series(0.0, index=df.index)
+        df[c] = pd.to_numeric(col, errors="coerce").fillna(0.0)
+    df["state"] = (df["state"] if "state" in df.columns else
+                   pd.Series("", index=df.index)).fillna("").astype(str).str.upper()
 
     g = df.groupby("ccn", as_index=False).agg(
         total_costs=("total_costs", "sum"), total_charges=("total_charges", "sum"),
