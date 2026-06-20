@@ -60,6 +60,13 @@ from .nadac import compute_nadac_reference, drug_spread_anomaly
 from .hcris import compute_hcris_metrics, hcris_anomaly, load_hcris
 from .docgraph import build_referral_edges
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
+# data-expansion sprint stubs (docs/platform/16) — built contracts, dormant
+from .hospital_puf import compute_hospital_drg_metrics, hospital_upcoding_anomaly
+from .geographic_variation import compute_geo_baseline, attach_geo_expectation
+from .nucc_taxonomy import (load_taxonomy_hierarchy, load_specialty_crosswalk,
+                            canonical_peer_group)
+from .sdud import compute_sdud_reference
+from .chow import normalize_chow_events
 
 __all__ = [
     "compute_partb_metrics",
@@ -94,4 +101,14 @@ __all__ = [
     "build_referral_edges",
     "to_peer_percentiles",
     "rollup_to_org",
+    # data-expansion sprint (docs/platform/16)
+    "compute_hospital_drg_metrics",
+    "hospital_upcoding_anomaly",
+    "compute_geo_baseline",
+    "attach_geo_expectation",
+    "load_taxonomy_hierarchy",
+    "load_specialty_crosswalk",
+    "canonical_peer_group",
+    "compute_sdud_reference",
+    "normalize_chow_events",
 ]

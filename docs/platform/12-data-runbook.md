@@ -244,6 +244,25 @@ For an idempotent online load instead, `pip install neo4j` and call
 `export_to_neo4j(graph_dir, session=...)`. No PHI in the graph (IDs/structure
 only), but host it on the same secured machine.
 
+### 1.9 Data-expansion sprint (full click-by-click in docs/platform/16)
+Six new free sources with adapter stubs already in the repo. Download, name, and
+drop them in `preclean/`; the build steps (and how each flows into the models)
+are in [16-data-expansion.md](16-data-expansion.md). Build order: NUCC first.
+
+| Source | Folder / file | Powers |
+|---|---|---|
+| Inpatient/Outpatient Hospital PUFs | `hospital_puf/inpatient_YYYY.csv`, `outpatient_YYYY.csv` | facility `upcoding` (`ingest_cms/hospital_puf.py`) |
+| Medicare Geographic Variation | `geo_variation/geo_variation.csv` | regional cost denominator (`geographic_variation.py`) |
+| NUCC taxonomy + CMS crosswalk | `nucc/nucc_taxonomy.csv`, `nucc/specialty_crosswalk.csv` | fixes peer grouping everywhere (`nucc_taxonomy.py`) |
+| Medicaid State Drug Utilization (SDUD) | `sdud/sdud_YYYY.csv` | sharper drug signals (`sdud.py`) |
+| CMS Change-of-Ownership (CHOW) | `chow/chow_<type>.csv` | `ownership_integrity` / A7 churn (`chow.py`) |
+| OIG Corporate Integrity Agreements | `cia/cia_list.csv` | Model A risk prior + Model C labels (`enforcement/cia.py`) |
+
+**Flag to Brad (licensed):** OpenSanctions commercial license is the biggest
+gated win — the adapter is already built and it delivers ~45 state Medicaid
+exclusion lists. Violation Tracker (~$250–450/yr) supplies Model C case labels.
+See doc 16 Part 3 for the full licensed + barred lists.
+
 ---
 
 ## Block 2 — Free people-side signals (no license needed)

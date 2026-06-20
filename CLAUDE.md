@@ -46,7 +46,9 @@ src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
 src/ingest_cms/     Part B/D/DMEPOS/OpenPayments/Saturation/Facility/opioid/340B/
                     NPPES-deactivation/POS/order-referring/census/NADAC/HCRIS/
-                    DocGraph adapters + NPPES API (built)
+                    DocGraph adapters + NPPES API (built); data-expansion-sprint
+                    stubs hospital_puf/geographic_variation/nucc_taxonomy/sdud/
+                    chow (docs/platform/16 — contracts written, dormant)
 src/feeds/          API-feed plumbing + DOJ/CourtListener/SAM/NPPES/ProPublica/
                     USAspending/openFDA clients (cached, injectable transport)
 src/analytics/      peer engine + confidence + growth + plausibility (built)
@@ -173,7 +175,11 @@ python -m pytest tests/ -v
   Full suite: `pytest tests/` (231 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
-  missing piece to activate the B chain; gated on people-data license).
+  missing piece to activate the B chain; gated on people-data license). The
+  **data-expansion sprint** (`docs/platform/16`) is the queued build: stubs for
+  hospital PUFs, Geographic Variation, NUCC crosswalk, SDUD, CHOW, and OIG CIA
+  are in place with contracts — build NUCC first (it fixes peer grouping for
+  every scheme); OpenSanctions commercial license is the one Brad decision.
 - **Gated on data/licensing:** person↔employer resolution (people-data vendors, FCRA
   review), Model C labels (DOJ/PACER case DB), `refers_to`/`pays` edges.
 - See `docs/platform/ROADMAP.md` for the full phase plan and
