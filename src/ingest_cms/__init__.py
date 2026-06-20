@@ -57,7 +57,7 @@ from .pos import compute_pos_capacity, capacity_billing_mismatch
 from .order_referring import eligible_referrers, ineligible_referral_share
 from .census_population import county_population, zip_to_county
 from .nadac import compute_nadac_reference, drug_spread_anomaly
-from .hcris import compute_hcris_metrics, hcris_anomaly
+from .hcris import compute_hcris_metrics, hcris_anomaly, load_hcris
 from .docgraph import build_referral_edges
 from .peer_percentiles import to_peer_percentiles, rollup_to_org
 
@@ -90,6 +90,7 @@ __all__ = [
     "drug_spread_anomaly",
     "compute_hcris_metrics",
     "hcris_anomaly",
+    "load_hcris",
     "build_referral_edges",
     "to_peer_percentiles",
     "rollup_to_org",

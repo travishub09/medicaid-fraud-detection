@@ -188,9 +188,22 @@ All free; each lights up a scheme automatically once loaded.
      (`ingest_cms/order_referring.py`; needs DME claims with a referring NPI).
 6. **NADAC drug pricing** → `nadac/nadac.csv` (data.medicaid.gov, weekly):
    `drug_spread_anomaly` → drug_outlier (needs NDC-level claims; `nadac.py`).
-7. **HCRIS cost reports** → `hcris/hcris_flat.csv` (cms.gov; the team flattens the
-   worksheet extract to per-CCN cost fields): the `cost_report_fraud` scheme
-   (`hcris.py`).
+7. **HCRIS cost reports** → `hcris/` (data.cms.gov "Cost Report" datasets, free —
+   download the **Provider-level CSV** for each type, latest fiscal year): the
+   `cost_report_fraud` scheme (`hcris.py`). Three provider types are wired in;
+   CCNs are unique across types, so drop all three in `hcris/` and the adapter
+   reads them together:
+   - SNF → `CostReportsnf_Final_23.csv`  (Skilled Nursing Facility Cost Report)
+   - Hospital → `CostReport_2023_Final.csv`  (Hospital Provider Cost Report)
+   - HHA → `CostReporthha_Final_23_update.csv`  (Home Health Agency Cost Report)
+   - **Verify:** each header has `Provider CCN` + `State Code`; SNF/Hospital carry
+     `Total Costs`/`Total Charges`/`Overhead Non-Salary Costs`; HHA carries
+     `Total Cost` (singular) + `Total Episodes-Total Charges` (no overhead line).
+   - **Powers:** per-CCN `cost_to_charge_ratio`, `admin_cost_share`,
+     `related_party_cost_share` → one-sided peer-percentile → `hcris_cost_anomaly`.
+     SNF/Hospital score on all three levers; HHA scores on cost-to-charge only
+     (its flat file exposes no overhead/related-party detail — honest scope; the
+     full related-party lever lives in the raw HCRIS worksheets, not these files).
 8. **DocGraph shared-patient** → `docgraph/shared_patient.csv` (archived
    CMS/DocGraph): `refers_to` edges + closed-loop ring detection
    (`docgraph.py` + `ring_detection.referral_rings`). Vintages are old → treat as

@@ -14,7 +14,7 @@ import pytest
 
 from src.ingest_cms import (
     compute_nadac_reference, drug_spread_anomaly,
-    compute_hcris_metrics, hcris_anomaly, build_referral_edges)
+    compute_hcris_metrics, hcris_anomaly, load_hcris, build_referral_edges)
 from src.entity_graph.ring_detection import referral_rings
 from src.enforcement.state_licensing import normalize_state_licensing
 from src.enforcement.death_master import (
@@ -87,6 +87,47 @@ def test_hcris_public_costreport_columns_and_absent_related_party():
     assert metrics["admin_cost_share"].notna().all()           # Overhead mapped
     anom = hcris_anomaly(metrics, min_peer=5).set_index("ccn")
     assert anom.loc["670000", "hcris_cost_anomaly"] >= 0.9      # overhead outlier flagged
+
+
+def test_hcris_hha_singular_costs_and_episode_charges():
+    # the published HHA cost report uses "Total Cost" (singular), no overhead /
+    # related-party line, and "Total Episodes-Total Charges" as the charges field.
+    # It must map cleanly and still score off the cost-to-charge lever.
+    rng = __import__("numpy").random.default_rng(3)
+    n = 40
+    raw = pd.DataFrame({
+        "Provider CCN": [f"45{i:04d}" for i in range(n)],
+        "Total Cost": rng.uniform(1e6, 2e6, n),                    # SINGULAR
+        "Total Episodes-Total Charges": rng.uniform(2e6, 4e6, n),  # HHA charges
+        "State Code": "TX",
+        # NO overhead, NO related-party column (the HHA flat file has neither)
+    })
+    raw.loc[0, "Total Cost"] = raw.loc[0, "Total Episodes-Total Charges"] * 0.98  # cost≈charges
+    metrics, q = compute_hcris_metrics(raw)
+    assert q == 0
+    assert metrics["cost_to_charge_ratio"].notna().all()           # episode charges mapped
+    anom = hcris_anomaly(metrics, min_peer=5).set_index("ccn")
+    assert anom["hcris_cost_anomaly"].notna().all()                # scores w/o overhead
+    assert anom.loc["450000", "hcris_cost_anomaly"] >= 0.9         # cost-to-charge outlier
+
+
+def test_hcris_load_multi_file_concats_per_type(tmp_path):
+    # SNF and HHA files use different cost-column spellings; load_hcris resolves
+    # each separately and concatenates per-CCN metrics (CCNs unique across types).
+    snf = pd.DataFrame({"Provider CCN": ["450001", "450002"],
+                        "Total Costs": [1e6, 2e6], "Total Charges": [2e6, 4e6],
+                        "Overhead Non-Salary Costs": [1e5, 2e5], "State Code": "TX"})
+    hha = pd.DataFrame({"Provider CCN": ["457001", "457002"],
+                        "Total Cost": [5e5, 6e5],
+                        "Total Episodes-Total Charges": [1e6, 1.2e6],
+                        "State Code": "TX"})
+    snf.to_csv(tmp_path / "snf.csv", index=False)
+    hha.to_csv(tmp_path / "hha.csv", index=False)
+    metrics, q = load_hcris(tmp_path)                       # directory form
+    assert q == 0 and len(metrics) == 4                     # all four CCNs survive
+    assert set(metrics["ccn"]) == {"450001", "450002", "457001", "457002"}
+    # SNF rows got their charges; HHA rows got episode charges — both non-null
+    assert metrics["cost_to_charge_ratio"].notna().all()
 
 
 # ----------------------------------------------------- DocGraph + rings ---
