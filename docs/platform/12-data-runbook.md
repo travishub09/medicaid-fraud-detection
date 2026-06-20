@@ -177,8 +177,15 @@ All free; each lights up a scheme automatically once loaded.
    - **Verify:** header has an entity-name column + `Contract Pharmacy Name`.
    - **Powers:** the `contract_pharmacy` scheme (`ingest_cms/hrsa_340b.py`).
 4. **Provider of Services (POS)** → `pos/pos_facility.csv`
-   - data.cms.gov → "Provider of Services" (facility / clinical-lab files).
-   - **Verify:** header has `PRVDR_NUM` (CCN) + a bed-count column.
+   - data.cms.gov → "Provider of Services File - **Internet Quality Improvement
+     and Evaluation System** (iQIES)" — the **facility** file. **Do NOT** download
+     the "Clinical Laboratories" POS file: it has no bed counts and is the wrong
+     file for this signal.
+   - **Verify:** header has `PRVDR_NUM` (CCN) + at least one bed-count column.
+     iQIES splits beds by provider type (`mdcr_snf_bed_cnt`, `crtfd_bed_cnt`,
+     `hospc_bed_cnt`, `icfiid_bed_cnt`, …) with no single "total beds" field —
+     the adapter takes the row-wise max across every `*_bed_cnt` column, so any
+     one populated is enough.
    - **Powers:** `capacity_mismatch` → `worthless_services` (`ingest_cms/pos.py`;
      needs a per-CCN billed-volume table too).
 5. **Order & Referring** → `order_referring/order_referring.csv`
@@ -210,6 +217,15 @@ All free; each lights up a scheme automatically once loaded.
    historical corroboration.
 9. **Census county population + ZIP→county** → `census/` (census.gov / HUD):
    the local-denominator half of A5 (`census_population.py`).
+   - County population: census.gov → "County Population Totals" → the
+     **CO-EST…-ALLDATA** CSV (e.g. `coest2025alldata.csv`) → `preclean/census/`
+     (keep the original name).
+   - **Verify:** header has `STATE`, `COUNTY`, `STNAME`, `CTYNAME`, and a
+     `POPESTIMATE<year>` column. The vintage year does **not** matter — the
+     adapter auto-detects the latest `POPESTIMATE<year>` present (2025, 2026, …),
+     so newer files keep working with no code change.
+   - ZIP→county: HUD USPS ZIP↔county crosswalk CSV (`RES_RATIO` column) →
+     `preclean/census/` as well.
 10. **SSA Death Master File** → `dmf/dmf.csv` (public/NTIS): DOB-corroborated
     deceased-provider billing → `invalid_identity` (`enforcement/death_master.py`).
 11. **State licensing boards** → `state_licensing/<ST>.csv` (per-state): adverse
