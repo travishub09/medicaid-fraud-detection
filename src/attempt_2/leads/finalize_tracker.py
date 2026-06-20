@@ -114,7 +114,7 @@ def main() -> None:
     npimap = next(p for p in [out_dir / "npi_to_company_map.parquet",
                               *data.rglob("npi_to_company_map.parquet")] if p.exists())
     pf = data / "features" / "provider_features.parquet"
-    pdim = next((p for p in [data / "integrated" / "provider_dim.parquet",
+    pdim = next((p for p in [data / "processed" / "provider_dim.parquet",
                              *data.rglob("provider_dim.parquet")] if p.exists()), None)
     log(f"tracker={tracker}\nnpimap={npimap}\nprovider_dim={pdim}")
 

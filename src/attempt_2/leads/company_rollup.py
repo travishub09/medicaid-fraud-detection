@@ -82,7 +82,8 @@ def norm_company(s: str) -> str:
 
 
 def _find(name: str, data: Path) -> Path | None:
-    for root in [data / "integrated", data / "features", data / "detection", data]:
+    for root in [data / "features", data / "processed", data / "detection",
+                 data / "integrated", data]:
         if (root / name).exists():
             return root / name
     hits = sorted(data.rglob(name))

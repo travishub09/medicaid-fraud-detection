@@ -27,7 +27,7 @@ Read-only on spending_fact and the other integration outputs (never modified);
 writes only to the attempt_2 output dir. Idempotent. Assertions raise and stop.
 
 Run:
-    python -m src.attempt_2.features --in-dir ~/Desktop/data/integrated
+    python -m src.attempt_2.features --in-dir ~/Desktop/data/processed
 """
 
 import argparse
@@ -171,15 +171,17 @@ def peer_sql(table: str, group_expr: str, suffix: str) -> str:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--in-dir", default=str(PRECLEAN_DIR.parent / "integrated"),
+    p.add_argument("--in-dir", default=str(PRECLEAN_DIR.parent / "processed"),
                    help="Dir with integrate.py outputs (spending_fact etc.; read-only)")
     p.add_argument("--out-dir", default=None,
-                   help="Output dir (default <in-dir>/attempt_2)")
+                   help="Output dir (default <data root>/features, where the "
+                        "detection stages look)")
     p.add_argument("--db", default=None, help="DuckDB working file (default <out-dir>/_features.duckdb)")
     args = p.parse_args()
 
     in_dir = Path(args.in_dir)
-    out_dir = Path(args.out_dir) if args.out_dir else in_dir / "attempt_2"
+    out_dir = (Path(args.out_dir) if args.out_dir
+               else PRECLEAN_DIR.parent / "features")
     out_dir.mkdir(parents=True, exist_ok=True)
     db = args.db or str(out_dir / "_features.duckdb")
     C = PLAUSIBILITY_CEILING

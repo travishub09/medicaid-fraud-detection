@@ -56,7 +56,7 @@ def main() -> None:
     # provider_name (covers individuals + orgs) lives in provider_dim
     data = PRECLEAN_DIR.parent
     pdim = next((d / "provider_dim.parquet" for d in
-                 [data / "integrated", data, data / "features"]
+                 [data / "processed", data / "features", data, data / "integrated"]
                  if (d / "provider_dim.parquet").exists()), None)
     print(f"Leads source : {v3}")
     print(f"Layer-1 cases: {cc if cc else '(none — using v3 Layer-1 fields)'}")

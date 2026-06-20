@@ -22,7 +22,7 @@ Three-way split — quarantine, never delete; every row lands in exactly one buc
 Read-only on raw + spending_fact; idempotent; assertions raise and stop the run.
 
 Run:
-    python -m src.attempt_2.audit_corruption --processed ~/Desktop/data/integrated
+    python -m src.attempt_2.audit_corruption --processed ~/Desktop/data/processed
 """
 
 import argparse
@@ -70,7 +70,7 @@ def md_table(df, cols=None) -> str:
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--processed", default=str(PRECLEAN_DIR.parent / "integrated"),
+    p.add_argument("--processed", default=str(PRECLEAN_DIR.parent / "processed"),
                    help="Dir with spending_fact.parquet + where reports/outputs go")
     p.add_argument("--raw-spending",
                    default=str(PRECLEAN_DIR.parent / "interim" / "raw_parquet" / "Spending.parquet"),

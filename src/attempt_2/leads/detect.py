@@ -84,7 +84,9 @@ def robust_z_within(df: pd.DataFrame, col: str, grp: str, scorable: pd.Series) -
 def main() -> None:
     argparse.ArgumentParser(description=__doc__).parse_args()
     data = PRECLEAN_DIR.parent                         # ~/Desktop/data
-    search = [data / "features", data, data / "integrated"]
+    # features outputs land in features/; integrate outputs (exclusions,
+    # facility_owner_exclusion_flags) live in processed/ — search both.
+    search = [data / "features", data / "processed", data, data / "integrated"]
     pf_path = resolve("provider_features.parquet", search)
     excl_path = resolve("exclusions.parquet", search)
     base_path = resolve("spending_provider_base.parquet", search)

@@ -22,7 +22,7 @@ The single NPI canonicaliser from the integration code is imported and reused
 for the per-identifier Luhn flag (rule: do not reimplement).
 
 Run (defaults to where integrate.py wrote its outputs + QA_REPORT.md):
-    python -m src.attempt_2.diagnose_coverage --processed ~/Desktop/data/integrated
+    python -m src.attempt_2.diagnose_coverage --processed ~/Desktop/data/processed
 """
 
 import argparse
@@ -47,7 +47,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     # Same dir integrate.py wrote spending_fact.parquet + QA_REPORT.md into.
-    p.add_argument("--processed", default=str(PRECLEAN_DIR.parent / "integrated"),
+    p.add_argument("--processed", default=str(PRECLEAN_DIR.parent / "processed"),
                    help="Directory holding integrate.py's outputs (read-only inputs)")
     p.add_argument("--report-name", default="COVERAGE_DIAGNOSTIC.md")
     args = p.parse_args()

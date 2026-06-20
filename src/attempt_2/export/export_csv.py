@@ -75,7 +75,7 @@ def main() -> None:
         raise FileNotFoundError(f"{src} not found — run src.attempt_2.detect first")
     # provider_name (covers individuals + orgs) lives in provider_dim
     pf = next((d / "provider_dim.parquet" for d in
-               [data / "integrated", data, data / "features"]
+               [data / "processed", data / "features", data, data / "integrated"]
                if (d / "provider_dim.parquet").exists()), None)
     if pf is None:
         raise FileNotFoundError("provider_dim.parquet not found for the name join")
