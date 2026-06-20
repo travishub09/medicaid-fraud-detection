@@ -119,7 +119,7 @@ Accuracy is meaningless at this base rate and is deliberately not reported.
   ambiguous (high-anomaly / unscored) population are extrapolation.
 - Ground truth is caught fraud (LEIE) — recall against uncaught fraud is unknowable.
 - Scores are leads for human review, never determinations.
-""")
+""", encoding="utf-8")
 
 
 def main() -> None:
@@ -169,8 +169,8 @@ def main() -> None:
          # these exact levels or LightGBM's category codes won't line up
          "categories": {c: X_tr[c].cat.categories.tolist()
                         for c in config.CATEGORICAL_FEATURES if c in X_tr.columns}},
-        indent=2))
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
+        indent=2), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
     prec, rec, _ = precision_recall_curve(y_va, val_score)
     pd.DataFrame({"precision": prec, "recall": rec}).to_csv(
         out_dir / "pr_curve.csv", index=False)

@@ -332,7 +332,7 @@ def write_report(cases: pd.DataFrame, out_dir: Path, n_leie: int) -> None:
              "joins asserted non-fan-out.\n"
              "- same-month billing preserved as AMBIGUOUS (never silently 'after').\n"
              "- No input files modified.\n")
-    (out_dir / "LAYER1_VERIFICATION_REPORT.md").write_text("".join(r))
+    (out_dir / "LAYER1_VERIFICATION_REPORT.md").write_text("".join(r), encoding="utf-8")
 
 
 if __name__ == "__main__":

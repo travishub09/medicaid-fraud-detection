@@ -195,7 +195,7 @@ def test_run_writes_table_memos_and_report(tmp_path):
     assert (tmp_path / "mc" / "MODEL_C_REPORT.md").exists()
     memos = list((tmp_path / "mc" / "memos").glob("*.md"))
     assert memos, "a funded case must produce a memo"
-    memo = memos[0].read_text()
+    memo = memos[0].read_text(encoding="utf-8")
     assert "Underwriting estimate" in memo and "P(intervene)" in memo
 
 

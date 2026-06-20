@@ -186,7 +186,7 @@ def main():
     clean = df[keep_mask]
     # FILE 2 — same feature columns, AFTER secondary cleaning
     clean[out_cols].to_csv(OUT_CLEAN, index=False)
-    with open(OUT_EXCL, "w", newline="") as f:
+    with open(OUT_EXCL, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["company_name", "states", "reason", "matched"])
         w.writeheader(); w.writerows(excl_rows)
 

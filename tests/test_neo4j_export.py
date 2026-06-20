@@ -68,14 +68,14 @@ def test_rel_type_is_sanitized(graph_dir):
 def test_bulk_import_csv_headers_and_script(graph_dir, tmp_path):
     out = tmp_path / "neo4j_bulk"
     manifest = write_bulk_import(graph_dir, out)
-    org_csv = (out / "nodes" / "org.csv").read_text().splitlines()
+    org_csv = (out / "nodes" / "org.csv").read_text(encoding="utf-8").splitlines()
     assert org_csv[0].startswith("id:ID") and org_csv[0].endswith(":LABEL")
-    owned = (out / "rels" / "owned_by_edges.csv").read_text().splitlines()
+    owned = (out / "rels" / "owned_by_edges.csv").read_text(encoding="utf-8").splitlines()
     assert owned[0].startswith(":START_ID") and owned[0].endswith(":END_ID,:TYPE")
-    script = (out / "import.sh").read_text()
+    script = (out / "import.sh").read_text(encoding="utf-8")
     assert "neo4j-admin database import full" in script
     assert "--nodes=nodes/org.csv" in script
     assert manifest["nodes/Org"] > 0
     # canned analyst queries shipped for the visualization layer
-    q = (out / "analyst_queries.cypher").read_text()
+    q = (out / "analyst_queries.cypher").read_text(encoding="utf-8")
     assert all(name in q for name in ANALYST_QUERIES)

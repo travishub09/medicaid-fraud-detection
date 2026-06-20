@@ -300,7 +300,7 @@ def write_report(comp, leads, thr, base_sum, comp_sum, n0, out_dir):
              "constituent NPIs + per-NPI net_paid preserved (npi_list + npi_to_company_map.parquet).\n"
              "- linkage: PAC > shared-owner > exact normalized name (multi-state name = low conf); "
              "identifiers as strings; no inputs modified.\n")
-    (out_dir / "COMPANY_ROLLUP_REPORT.md").write_text("".join(r))
+    (out_dir / "COMPANY_ROLLUP_REPORT.md").write_text("".join(r), encoding="utf-8")
 
 
 if __name__ == "__main__":

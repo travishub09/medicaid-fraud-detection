@@ -331,7 +331,7 @@ def write_report(leads: pd.DataFrame, df: pd.DataFrame, out_dir: Path) -> None:
              "- LEIE merge asserted non-fan-out; tiers kept separate; raw dollars not a primary "
              "anomaly driver; degenerate/small-group providers flagged not_scored.\n"
              "- No input files modified.\n")
-    (out_dir / "DETECTION_REPORT.md").write_text("".join(r))
+    (out_dir / "DETECTION_REPORT.md").write_text("".join(r), encoding="utf-8")
 
 
 if __name__ == "__main__":

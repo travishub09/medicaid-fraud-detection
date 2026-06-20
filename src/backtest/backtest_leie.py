@@ -267,7 +267,7 @@ def main():
             "fraud, not a recall guarantee."),
         "metrics": metrics,
     }
-    with open(OUT_JSON, "w") as f:
+    with open(OUT_JSON, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
     # ---- final assertions ----

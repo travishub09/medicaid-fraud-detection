@@ -313,7 +313,7 @@ def write_report(rep: list[str], df: pd.DataFrame, out_dir: Path) -> None:
                "percentile-rank primary (degeneracy-safe, no clip); raw dollars context-only; "
                "Layer-1/Layer-3 reused unchanged; re-merge asserted non-fan-out.\n"
                "- Earlier outputs NOT modified (v2 written as new files).\n")
-    (out_dir / "LAYER2_REFINEMENT_REPORT.md").write_text("".join(rep))
+    (out_dir / "LAYER2_REFINEMENT_REPORT.md").write_text("".join(rep), encoding="utf-8")
 
 
 if __name__ == "__main__":

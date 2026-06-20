@@ -150,7 +150,7 @@ def _write_report(outputs: dict[str, pd.DataFrame], out_dir: Path) -> None:
         lines.append(f"- max related-party density: {int(feats['related_party_density'].max()):,}\n")
         lines.append(f"- max co-location cluster size: {int(feats['co_location_cluster_size'].max()):,}\n")
         lines.append(f"- orgs with shell_score >= 0.5: {int((feats['shell_score'] >= 0.5).sum()):,}\n")
-    (out_dir / "GRAPH_REPORT.md").write_text("".join(lines))
+    (out_dir / "GRAPH_REPORT.md").write_text("".join(lines), encoding="utf-8")
 
 
 def main() -> None:

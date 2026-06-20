@@ -65,7 +65,7 @@ def run(erv_ranked: pd.DataFrame, out_dir: Path,
     funded = decided[decided["recommendation"] != "pass"]
     for rank, (_, row) in enumerate(funded.head(top_k_memos).iterrows(), 1):
         safe = str(row["org_node_id"]).replace(":", "_").replace("/", "_")
-        (memo_dir / f"{rank:03d}_{safe}.md").write_text(render_memo(row))
+        (memo_dir / f"{rank:03d}_{safe}.md").write_text(render_memo(row), encoding="utf-8")
 
     _write_report(decided, book, target_moic, out_dir)
     counts = decided["recommendation"].value_counts().to_dict()
@@ -134,7 +134,7 @@ def _write_report(decided: pd.DataFrame, book: dict, target_moic: float,
         L.append(f"| {(r.get('org_name') or r['org_node_id'])[:32]} | {r['scheme']} "
                  f"| {r['p_intervene']:.0%} | ${r['expected_recovery']:,.0f} "
                  f"| ${r['expected_relator_gross']:,.0f} | {r['recommendation']} |\n")
-    (out_dir / "MODEL_C_REPORT.md").write_text("".join(L))
+    (out_dir / "MODEL_C_REPORT.md").write_text("".join(L), encoding="utf-8")
 
 
 def main() -> None:

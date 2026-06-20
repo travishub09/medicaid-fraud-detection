@@ -172,6 +172,6 @@ def test_pipeline_renders_plausibility_driver(tmp_path):
                       tmp_path / "ma", top_k_dossiers=len(org_nodes))
     assert "clinical_implausibility" in res.columns
     hit = [p for p in (tmp_path / "ma" / "dossiers").glob("*.md")
-           if "T1019" in p.read_text()]
+           if "T1019" in p.read_text(encoding="utf-8")]
     assert hit, "the implausibility driver must appear on the flagged org's dossier"
-    assert "Clinical-implausibility driver:" in hit[0].read_text()
+    assert "Clinical-implausibility driver:" in hit[0].read_text(encoding="utf-8")

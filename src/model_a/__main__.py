@@ -125,7 +125,7 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     for _, row in out.head(top_k_dossiers).iterrows():
         safe = str(row["org_node_id"]).replace(":", "_").replace("/", "_")
         (dossier_dir / f"{row['erv_rank']:03d}_{safe}.md").write_text(
-            render_dossier(row, subscore_cols, coverage))
+            render_dossier(row, subscore_cols, coverage), encoding="utf-8")
 
     _write_report(out, coverage, out_dir)
     log(f"Done — scored {n0} orgs; wrote {min(top_k_dossiers, n0)} dossiers to {out_dir}")
@@ -148,7 +148,7 @@ def _write_report(out: pd.DataFrame, coverage: dict, out_dir: Path) -> None:
     lines.append(f"\n## Distribution\n- orgs scored: {len(out):,}\n"
                  f"- adjusted_prob ≥ 0.5: {int((out['adjusted_prob'] >= 0.5).sum()):,}\n"
                  f"- ERV > 0: {int((out['erv'] > 0).sum()):,}\n")
-    (out_dir / "MODEL_A_REPORT.md").write_text("".join(lines))
+    (out_dir / "MODEL_A_REPORT.md").write_text("".join(lines), encoding="utf-8")
 
 
 def main() -> None:

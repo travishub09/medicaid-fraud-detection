@@ -166,7 +166,7 @@ def test_pipeline_carries_confidence_and_scope(tmp_path):
     assert {"confidence", "confidence_reasons",
             "exposure_scope", "payments_at_issue"} <= set(res.columns)
     assert res.iloc[0]["org_node_id"].startswith("org:")        # ranking intact
-    top = sorted((tmp_path / "ma" / "dossiers").glob("*.md"))[0].read_text()
+    top = sorted((tmp_path / "ma" / "dossiers").glob("*.md"))[0].read_text(encoding="utf-8")
     assert "Confidence:" in top
     assert "scope: all payments" in top or "code family" in top
 

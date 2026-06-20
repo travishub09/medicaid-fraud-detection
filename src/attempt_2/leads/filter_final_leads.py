@@ -107,10 +107,10 @@ def main():
         kept.append(r)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(OUT_FINAL, "w", newline="") as f:
+    with open(OUT_FINAL, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader(); w.writerows(kept)
-    with open(OUT_EXCL, "w", newline="") as f:
+    with open(OUT_EXCL, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=["company_name", "states", "reason", "matched"])
         w.writeheader(); w.writerows(excl)
 

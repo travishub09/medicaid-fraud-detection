@@ -513,7 +513,7 @@ def main() -> None:
                "- every linkage join asserted non-fan-out (row count unchanged) ✓\n"
                "- spending_fact.parquet: unchanged (read-only).\n")
 
-    (out_dir / "FEATURES_REPORT.md").write_text("".join(rep))
+    (out_dir / "FEATURES_REPORT.md").write_text("".join(rep), encoding="utf-8")
     con.close()
     log(f"Done. Outputs in {out_dir}")
     log(f"  provider_features: {total_rows:,} rows (one per billing NPI)")

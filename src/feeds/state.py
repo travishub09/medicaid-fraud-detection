@@ -21,13 +21,13 @@ def load_state(path: Path | None = None) -> dict:
     p = path or STATE_PATH
     if not p.exists():
         return {}
-    return json.loads(p.read_text())
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def save_state(state: dict, path: Path | None = None) -> None:
     p = path or STATE_PATH
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(state, indent=2))
+    p.write_text(json.dumps(state, indent=2), encoding="utf-8")
 
 
 def get_cursor(feed: str, path: Path | None = None) -> str | None:

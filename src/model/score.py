@@ -41,7 +41,7 @@ PROVIDER_CONTEXT_COLS = ["npi", "org_legal_name", "entity_type", "practice_state
 
 def load_model(artifacts_dir: Path):
     booster = lgb.Booster(model_file=str(artifacts_dir / "lgbm_leie.txt"))
-    spec = json.loads((artifacts_dir / "feature_list.json").read_text())
+    spec = json.loads((artifacts_dir / "feature_list.json").read_text(encoding="utf-8"))
     return booster, spec
 
 
@@ -146,7 +146,7 @@ universe recall@K is not a defect — held-out validation (MODEL_REPORT.md) is
 the honest performance measure.
 
 Scores are leads for human review, never determinations of fraud.
-""")
+""", encoding="utf-8")
 
 
 def main() -> None:

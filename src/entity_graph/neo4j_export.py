@@ -188,7 +188,7 @@ def write_bulk_import(graph_dir: Path, out_dir: Path) -> dict:
             continue
         prop_cols = [c for c in df.columns if c not in (id_col, "node_type")]
         fpath = out / "nodes" / f"{label.lower()}.csv"
-        with open(fpath, "w", newline="") as fh:
+        with open(fpath, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(["id:ID"] + prop_cols + [":LABEL"])
             for r in df.itertuples(index=False):
@@ -206,7 +206,7 @@ def write_bulk_import(graph_dir: Path, out_dir: Path) -> dict:
         prop_cols = [c for c in df.columns
                      if c not in ("src_id", "dst_id", type_col)]
         fpath = out / "rels" / f"{rel.split('/')[-1]}.csv"
-        with open(fpath, "w", newline="") as fh:
+        with open(fpath, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow([":START_ID"] + prop_cols + [":END_ID", ":TYPE"])
             for r in df.itertuples(index=False):
@@ -218,14 +218,20 @@ def write_bulk_import(graph_dir: Path, out_dir: Path) -> dict:
         manifest[f"rels/{rel.split('/')[-1]}"] = len(df)
         rel_files.append(fpath)
 
-    nodes_arg = " ".join(f"--nodes={f.relative_to(out)}" for f in node_files)
-    rels_arg = " ".join(f"--relationships={f.relative_to(out)}" for f in rel_files)
+    # import.sh runs on the (Linux) Neo4j host, so force POSIX forward-slash
+    # paths regardless of the OS that generated the bundle (Windows would
+    # otherwise bake in backslashes that the bash script can't use).
+    nodes_arg = " ".join(f"--nodes={f.relative_to(out).as_posix()}"
+                         for f in node_files)
+    rels_arg = " ".join(f"--relationships={f.relative_to(out).as_posix()}"
+                        for f in rel_files)
     (out / "import.sh").write_text(
         "#!/usr/bin/env bash\n"
         "# Run from this directory against a STOPPED Neo4j database.\n"
         "set -euo pipefail\n"
         f"neo4j-admin database import full {nodes_arg} {rels_arg} "
-        "--overwrite-destination neo4j\n")
+        "--overwrite-destination neo4j\n", encoding="utf-8")
     (out / "analyst_queries.cypher").write_text(
-        "\n\n".join(f"// {name}\n{q};" for name, q in ANALYST_QUERIES.items()))
+        "\n\n".join(f"// {name}\n{q};" for name, q in ANALYST_QUERIES.items()),
+        encoding="utf-8")
     return manifest

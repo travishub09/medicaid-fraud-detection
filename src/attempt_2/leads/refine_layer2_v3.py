@@ -342,7 +342,7 @@ def write_report(rep: list[str], df: pd.DataFrame, out_dir: Path) -> None:
                "Composite over independent concepts; entity-aware peers; full-taxonomy fallback "
                "baseline; raw dollars context-only; Layer-1/Layer-3 unchanged; re-merge non-fan-out.\n"
                "- Earlier outputs NOT modified (v3 written as new files).\n")
-    (out_dir / "LAYER2_V3_REPORT.md").write_text("".join(rep))
+    (out_dir / "LAYER2_V3_REPORT.md").write_text("".join(rep), encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -623,7 +623,7 @@ def write_qa_report(qa: QA, quarantine_n: int, report_path: Path) -> None:
         if key in qa.sections:
             lines.append(f"\n## {title}\n{qa.sections[key]}")
 
-    report_path.write_text("".join(lines))
+    report_path.write_text("".join(lines), encoding="utf-8")
     log(f"Wrote {report_path}")
 
 

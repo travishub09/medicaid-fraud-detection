@@ -246,7 +246,7 @@ def main() -> None:
     out.append(f"- spending_fact.parquet: **unchanged** (no rows dropped; buckets written as new files).\n")
 
     report = proc / args.report_name
-    report.write_text("".join(out))
+    report.write_text("".join(out), encoding="utf-8")
     con.close()
     log(f"Wrote {report}")
     log(f"  corruption: {n_corrupt:,} rows / ${p_corrupt:,.0f}")

@@ -246,4 +246,4 @@ def test_state_cursor_roundtrip(tmp_path):
     assert get_cursor("x", p) is None
     set_cursor("x", "2026-06-12", p)
     assert get_cursor("x", p) == "2026-06-12"
-    assert json.loads(p.read_text())["x"]["cursor"] == "2026-06-12"
+    assert json.loads(p.read_text(encoding="utf-8"))["x"]["cursor"] == "2026-06-12"

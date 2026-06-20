@@ -122,7 +122,7 @@ def test_pipeline_carries_disclosure_and_gov_interest(tmp_path):
             "sector_prior_base"} <= set(res.columns)
     assert res["public_disclosure_flag"].notna().all()
     assert res.iloc[0]["org_node_id"].startswith("org:")        # ranking intact
-    top = sorted((tmp_path / "ma" / "dossiers").glob("*.md"))[0].read_text()
+    top = sorted((tmp_path / "ma" / "dossiers").glob("*.md"))[0].read_text(encoding="utf-8")
     assert "Public-disclosure screen" in top and "FLAGGED" in top
 
 

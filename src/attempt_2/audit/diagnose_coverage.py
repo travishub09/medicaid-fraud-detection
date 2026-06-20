@@ -233,7 +233,7 @@ def main() -> None:
                    "(see §6); recommending the split in this report only._\n")
 
     report = proc / args.report_name
-    report.write_text("".join(out))
+    report.write_text("".join(out), encoding="utf-8")
     con.close()
     print(f"Wrote {report}")
     print(f"  matched: {matched_rows:,} rows / {d(matched_paid)}")

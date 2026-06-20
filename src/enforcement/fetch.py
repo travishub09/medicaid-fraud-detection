@@ -194,7 +194,7 @@ def run_doj_feed(since: str | None = None, backfill_years: int | None = None,
     lines += [f"- {k}: {v}\n" for k, v in summary.items()]
     lines += ["\n## Derived sector priors (replace placeholders when loaded)\n"]
     lines += [f"- {k}: {v}\n" for k, v in sorted(priors.items())]
-    report.write_text("".join(lines))
+    report.write_text("".join(lines), encoding="utf-8")
     return summary
 
 

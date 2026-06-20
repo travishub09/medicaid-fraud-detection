@@ -101,7 +101,7 @@ def test_outputs_written_with_dossiers(scored):
     assert (out_dir / "MODEL_A_REPORT.md").exists()
     dossiers = sorted((out_dir / "dossiers").glob("*.md"))
     assert len(dossiers) == 3
-    top = dossiers[0].read_text()
+    top = dossiers[0].read_text(encoding="utf-8")
     assert "Alternative explanations" in top              # defamation safety
     assert "investigative hypothesis" in top              # the disclaimer
     assert "Scheme hypothesis" in top

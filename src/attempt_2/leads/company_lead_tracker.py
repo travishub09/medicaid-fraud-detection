@@ -319,7 +319,7 @@ def write_report(df, leads, direct_under, thr, base_total, out_dir):
              "- company anomaly REUSES features.rate_features + refine_layer2_v3.score_concepts "
              "(imported, not reimplemented); dollar conservation asserted; one row per company; "
              "Layer-1/Layer-3 reused from the rollup (not recomputed); identifiers as strings.\n")
-    (out_dir / "COMPANY_TRACKER_REPORT.md").write_text("".join(r))
+    (out_dir / "COMPANY_TRACKER_REPORT.md").write_text("".join(r), encoding="utf-8")
 
 
 if __name__ == "__main__":

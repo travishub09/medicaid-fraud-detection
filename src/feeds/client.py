@@ -104,5 +104,5 @@ def cache_raw(source: str, name: str, payload: dict,
     out_dir = (root or RAW_ROOT) / source / day
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{name}.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False))
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return path
