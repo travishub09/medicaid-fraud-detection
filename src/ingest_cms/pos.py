@@ -48,8 +48,18 @@ def compute_pos_capacity(raw: pd.DataFrame) -> pd.DataFrame:
                          f"saw {list(raw.columns)[:12]}")
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
     df["ccn"] = _canon_ccn(df["ccn"])
+    # iQIES splits beds across provider-type / special-care columns (mdcr_snf_bed_cnt,
+    # mdcr_mdcd_snf_bed_cnt, hospc_bed_cnt, crtfd_bed_cnt, icfiid_bed_cnt, …) with no
+    # single "total beds" field — use the row-wise max across every *_bed_cnt column
+    # as the capacity proxy (picks the facility's governing bed figure by type).
+    import re as _re
+    bed_cols = [c for c in raw.columns if _re.search(r"bed_cnt$", str(c), _re.I)]
+    if bed_cols:
+        df["bed_count"] = raw[bed_cols].apply(
+            pd.to_numeric, errors="coerce").max(axis=1)
+    else:
+        df["bed_count"] = pd.to_numeric(df.get("bed_count"), errors="coerce")
     df = df[df["ccn"].notna()].copy()
-    df["bed_count"] = pd.to_numeric(df.get("bed_count"), errors="coerce")
     for c in ("facility_type", "state"):
         df[c] = (df[c] if c in df.columns else "").fillna("").astype(str).str.strip().str.upper()
     g = df.groupby("ccn", as_index=False).agg(

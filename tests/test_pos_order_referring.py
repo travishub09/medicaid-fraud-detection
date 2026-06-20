@@ -35,6 +35,21 @@ def test_pos_capacity_parsing_and_ccn():
     assert cap.loc["675001", "state"] == "TX"
 
 
+def test_pos_iqies_bed_columns_by_provider_type():
+    # iQIES splits beds by type: SNF beds in mdcr_snf_bed_cnt (crtfd_bed_cnt is
+    # ICF/IID-only and blank for SNFs). The adapter takes the max across *_bed_cnt.
+    raw = pd.DataFrame([
+        {"prvdr_num": "675001", "gnrl_fac_type_cd": "NH", "state_cd": "TX",
+         "crtfd_bed_cnt": "", "mdcr_snf_bed_cnt": "120",
+         "mdcr_mdcd_snf_bed_cnt": "100", "hospc_bed_cnt": "10"},
+        {"prvdr_num": "675002", "gnrl_fac_type_cd": "ICFIID", "state_cd": "TX",
+         "crtfd_bed_cnt": "40", "icfiid_bed_cnt": "40", "mdcr_snf_bed_cnt": ""},
+    ])
+    cap = compute_pos_capacity(raw).set_index("ccn")
+    assert cap.loc["675001", "bed_count"] == 120     # SNF beds captured, not blank
+    assert cap.loc["675002", "bed_count"] == 40       # ICF/IID via crtfd_bed_cnt
+
+
 def test_capacity_mismatch_flags_impossible_volume():
     rng = np.random.default_rng(3)
     n = 40
