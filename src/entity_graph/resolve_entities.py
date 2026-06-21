@@ -122,28 +122,60 @@ def resolve_organizations(provider_dim: pd.DataFrame,
         s = s[s.fillna("") != ""]
         return s.mode().iloc[0] if len(s) else ""
 
-    org = df.groupby("company_id", sort=False).agg(
-        n_constituent_npis=("npi", "size"),
-        member_npis=("npi", lambda s: "; ".join(sorted(s.astype(str)))),
-        org_legal_name=("org_legal_name", _dominant),
-        addr_key=("addr_key", _dominant) if "addr_key" in df.columns else ("npi", "size"),
-        addr_state=("addr_state", _dominant) if "addr_state" in df.columns else ("npi", "size"),
-        aliases=("org_legal_name", lambda s: "; ".join(sorted({x for x in s if x}))[:300]),
-        primary_taxonomy=("taxonomy_code", _dominant) if "taxonomy_code" in df.columns else ("npi", "size"),
-        merge_basis=("_basis", "first"),
-        n_states=("addr_state", lambda s: s[s.fillna("") != ""].nunique()) if "addr_state" in df.columns else ("npi", "size"),
-    ).reset_index()
+    have_addr_key = "addr_key" in df.columns
+    have_addr_state = "addr_state" in df.columns
+    have_tax = "taxonomy_code" in df.columns
+
+    # The vast majority of NPIs resolve to their OWN single-NPI org. Running the
+    # per-group mode()/lambda machinery over millions of singleton groups is
+    # pathologically slow (each group triggers Python-level work), so split:
+    # build singletons with vectorized ops and run the heavy aggregation only on
+    # the (comparatively few) genuinely merged multi-NPI companies.
+    grp_size = df.groupby("company_id", sort=False)["npi"].transform("size")
+    singles = df[grp_size == 1]
+    multi = df[grp_size > 1]
+
+    def _col_or_blank(frame: pd.DataFrame, col: str) -> pd.Series:
+        return (frame[col].fillna("").astype(str) if col in frame.columns
+                else pd.Series("", index=frame.index))
+
+    s_name = _col_or_blank(singles, "org_legal_name")
+    s_state = _col_or_blank(singles, "addr_state")
+    singles_org = pd.DataFrame({
+        "company_id": singles["company_id"].to_numpy(),
+        "n_constituent_npis": 1,
+        "member_npis": singles["npi"].astype(str).to_numpy(),
+        "org_legal_name": s_name.to_numpy(),
+        "addr_key": _col_or_blank(singles, "addr_key").to_numpy(),
+        "addr_state": s_state.to_numpy(),
+        "aliases": s_name.str.slice(0, 300).to_numpy(),
+        "primary_taxonomy": _col_or_blank(singles, "taxonomy_code").to_numpy(),
+        "merge_basis": singles["_basis"].to_numpy(),
+        "n_states": (s_state.to_numpy() != "").astype(int),
+    })
+
+    if len(multi):
+        org_multi = multi.groupby("company_id", sort=False).agg(
+            n_constituent_npis=("npi", "size"),
+            member_npis=("npi", lambda s: "; ".join(sorted(s.astype(str)))),
+            org_legal_name=("org_legal_name", _dominant),
+            addr_key=("addr_key", _dominant) if have_addr_key else ("npi", "size"),
+            addr_state=("addr_state", _dominant) if have_addr_state else ("npi", "size"),
+            aliases=("org_legal_name", lambda s: "; ".join(sorted({x for x in s if x}))[:300]),
+            primary_taxonomy=("taxonomy_code", _dominant) if have_tax else ("npi", "size"),
+            merge_basis=("_basis", "first"),
+            n_states=("addr_state", lambda s: s[s.fillna("") != ""].nunique()) if have_addr_state else ("npi", "size"),
+        ).reset_index()
+        org = pd.concat([singles_org, org_multi], ignore_index=True)
+    else:
+        org = singles_org
 
     # confidence band: hard keys high; single-NPI is its own band; name merges
     # medium when single-state, low when they span states (route to review).
-    def _conf(row) -> str:
-        if row.merge_basis in ("pac_id", "shared_owner"):
-            return "high"
-        if row.merge_basis == "single":
-            return "single"
-        return "medium" if row.n_states <= 1 else "low"
-
-    org["merge_confidence"] = org.apply(_conf, axis=1)
+    mb = org["merge_basis"]
+    org["merge_confidence"] = np.select(
+        [mb.isin(("pac_id", "shared_owner")), mb == "single", org["n_states"] <= 1],
+        ["high", "single", "medium"], default="low")
     org["org_node_id"] = "org:" + org["company_id"]
     org["node_type"] = "organization"
     org["org_name"] = org["org_legal_name"].where(org["org_legal_name"] != "", org["company_id"])
