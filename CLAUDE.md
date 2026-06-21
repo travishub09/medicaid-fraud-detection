@@ -71,6 +71,9 @@ python -m src.attempt_2.ingest.integrate            # stages run in README order
 python -m src.entity_graph --input ~/Desktop/data/processed --out ~/Desktop/data/graph
 python -m src.entity_graph --fixture --out /tmp/graph_out    # synthetic, no real data
 
+# Pipeline status — "where did I leave off?" (read-only; honors MEDICAID_DATA_ROOT)
+python -m src.pipeline_status
+
 # Tests (work without any real data)
 python -m pytest tests/ -v
 ```
@@ -172,7 +175,7 @@ python -m pytest tests/ -v
   (`src/funnel/`: events/lead_score/intake with no-PHI + no-fraud-boolean
   guardrails), person↔employer resolver BUILT (`entity_graph/person_resolver.py`:
   scored linkage + employed_by edges + tenure overlap; opaque person_id only).
-  Full suite: `pytest tests/` (232 tests).
+  Full suite: `pytest tests/` (235 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

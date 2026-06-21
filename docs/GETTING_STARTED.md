@@ -92,6 +92,11 @@ Real data does NOT live in this repo (it's large and legally sensitive; the
 exact website, what to download, what to name it, where to put it, and how to
 check it worked.
 
+**Lost track of where you are?** Run `python3 -m src.pipeline_status` at any
+time — it prints a checklist of every stage (done vs missing, with row counts
+and timestamps) and the exact next command to run. Read-only and instant, so
+it's the first thing to run when resuming after a break.
+
 **Then run the stages in order** (each one prints `[assert PASS]` checks and
 writes a human-readable report next to its outputs):
 
