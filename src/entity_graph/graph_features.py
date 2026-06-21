@@ -54,23 +54,48 @@ def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                 exclusion_nodes: pd.DataFrame, member_edges: pd.DataFrame,
                 owned_by_edges: pd.DataFrame, excluded_in_edges: pd.DataFrame,
                 co_located_edges: pd.DataFrame) -> nx.Graph:
-    """Assemble the unified undirected graph over orgs, providers, owners, exclusions."""
+    """Assemble the undirected graph used for community/betweenness/exclusion-distance.
+
+    SCALE GUARD: member edges to SINGLE-NPI orgs are isolated 2-node components
+    that add nothing to any graph feature (an isolated node has betweenness 0, no
+    community, and no path to an exclusion) but blow the graph up to ~2x the NPI
+    count — millions of nodes, GBs of RAM, and pure-Python NetworkX crawls. So we
+    keep member edges only for genuinely multi-NPI orgs; owner / exclusion /
+    co-location edges are kept in full (they're what create the interesting
+    structure). Nodes are added implicitly by their edges — isolated orgs are
+    simply absent from G and receive the default feature values downstream
+    (``.get(nid, default)``), identical to what a 2-node component would yield.
+    """
+    multi_orgs: set[str] = set()
+    if (org_nodes is not None and len(org_nodes)
+            and "n_constituent_npis" in org_nodes.columns):
+        big = pd.to_numeric(org_nodes["n_constituent_npis"],
+                            errors="coerce").fillna(1) >= 2
+        multi_orgs = set(org_nodes.loc[big, "org_node_id"].astype(str))
+
+    # nodes that touch the structural layer (owners / exclusions / co-location) —
+    # a member edge whose provider or org reaches any of these must be kept (e.g.
+    # a single-NPI org whose own provider is an excluded party).
+    structural: set[str] = set()
+    for edges in (owned_by_edges, excluded_in_edges, co_located_edges):
+        if edges is not None and len(edges):
+            structural.update(edges["src_id"].astype(str))
+            structural.update(edges["dst_id"].astype(str))
+
     G = nx.Graph()
-    for tbl, ntype, id_col in [(org_nodes, "organization", "org_node_id"),
-                               (owner_nodes, "owner", "node_id"),
-                               (exclusion_nodes, "exclusion", "node_id")]:
-        if tbl is not None and len(tbl) and id_col in tbl.columns:
-            for nid in tbl[id_col]:
-                G.add_node(str(nid), node_type=ntype)
-    for edges in [member_edges, owned_by_edges, excluded_in_edges, co_located_edges]:
+
+    if member_edges is not None and len(member_edges):
+        s = member_edges["src_id"].astype(str)
+        d = member_edges["dst_id"].astype(str)
+        keep = (d.isin(multi_orgs) | s.isin(multi_orgs)
+                | s.isin(structural) | d.isin(structural))
+        for r in member_edges[keep].itertuples():
+            G.add_edge(str(r.src_id), str(r.dst_id), edge_type=r.edge_type)
+
+    for edges in (owned_by_edges, excluded_in_edges, co_located_edges):
         if edges is None or not len(edges):
             continue
         for r in edges.itertuples():
-            # member_of points provider→org; providers are added implicitly here.
-            if not G.has_node(str(r.src_id)):
-                G.add_node(str(r.src_id), node_type="provider")
-            if not G.has_node(str(r.dst_id)):
-                G.add_node(str(r.dst_id), node_type="other")
             G.add_edge(str(r.src_id), str(r.dst_id), edge_type=r.edge_type)
     return G
 
