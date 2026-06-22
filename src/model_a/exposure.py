@@ -22,6 +22,25 @@ from __future__ import annotations
 import pandas as pd
 
 
+def load_spending_aggregated(path: str) -> pd.DataFrame:
+    """Stream spending_fact via DuckDB to the (billing_npi, service_month,
+    hcpcs_code) grain with summed total_paid.
+
+    The published spending_fact carries ~18 columns (servicing NPI + provider-dim
+    enrichment); loading all 238M rows into pandas OOMs a laptop. Every Model A
+    exposure consumer (annual/scoped payments, growth, plausibility) needs only
+    these four fields and re-aggregates by year/month/hcpcs anyway, so summing at
+    this grain is exact and reads a fraction of the bytes. DuckDB does the GROUP BY
+    streaming (spills to disk if needed) rather than materializing the full table.
+    """
+    import duckdb
+    return duckdb.connect().execute(
+        "SELECT billing_npi, service_month, hcpcs_code, "
+        "SUM(total_paid) AS total_paid "
+        f"FROM read_parquet('{path}') "
+        "GROUP BY billing_npi, service_month, hcpcs_code").df()
+
+
 def annual_payments_per_org(spending: pd.DataFrame,
                             npi_to_org: pd.DataFrame
                             ) -> tuple[pd.DataFrame, dict]:

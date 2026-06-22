@@ -203,10 +203,15 @@ def main() -> None:
         scoped = None
         if args.spending:
             from .exposure import (annual_payments_per_org, attach_payments,
-                                   scoped_payments_per_org)
+                                   scoped_payments_per_org, load_spending_aggregated)
             from src.analytics.growth import growth_features, growth_percentiles
             npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
-            spending = pd.read_parquet(args.spending)
+            # stream-aggregate via DuckDB to the 4 needed columns at the
+            # (billing_npi, service_month, hcpcs) grain — loading the full
+            # enriched spending_fact (238M × ~18 cols) into pandas OOMs.
+            log("    aggregating spending (DuckDB, streaming) …")
+            spending = load_spending_aggregated(args.spending)
+            log(f"    spending rolled to {len(spending):,} (npi×month×hcpcs) rows")
             payments, recon = annual_payments_per_org(spending, npi_to_org)
             log(f"    exposure: ${recon['total_matched']:,.0f} matched "
                 f"({recon['pct_dollars_matched']:.1%}); "

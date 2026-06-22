@@ -39,3 +39,26 @@ def test_npi_absent_from_crosswalk_is_dropped():
     out = build_company_features(leads, xw)
     assert list(out["org_node_id"]) == ["org:A"]
     assert out["payments"].iloc[0] == 10.0
+
+
+def test_load_spending_aggregated_sums_to_grain(tmp_path):
+    """DuckDB stream-aggregation collapses servicing NPI + drops heavy columns,
+    summing total_paid to the (billing_npi, service_month, hcpcs) grain."""
+    from src.model_a.exposure import load_spending_aggregated
+    raw = pd.DataFrame({
+        "billing_npi": ["1", "1", "1", "2"],
+        "servicing_npi": ["a", "b", "a", "c"],          # collapsed away
+        "service_month": ["2023-01", "2023-01", "2023-02", "2023-01"],
+        "hcpcs_code": ["X", "X", "X", "Y"],
+        "total_paid": [10.0, 5.0, 7.0, 3.0],
+        "org_legal_name": ["N", "N", "N", "M"],         # heavy col, not read
+    })
+    p = tmp_path / "spending_fact.parquet"
+    raw.to_parquet(p, index=False)
+    out = load_spending_aggregated(str(p)).set_index(
+        ["billing_npi", "service_month", "hcpcs_code"])
+    assert set(out.columns) == {"total_paid"}
+    assert out.loc[("1", "2023-01", "X"), "total_paid"] == 15.0   # summed servicing
+    assert out.loc[("1", "2023-02", "X"), "total_paid"] == 7.0
+    assert out.loc[("2", "2023-01", "Y"), "total_paid"] == 3.0
+    assert len(out) == 3
