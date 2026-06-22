@@ -148,3 +148,33 @@ def test_scheme_tie_break_is_deterministic():
     r2 = expected_recoverable_value(subs.copy(), pd.Series([100.0]),
                                     pd.Series([1.0]), pd.Series([0.0]))
     assert r1["scheme_hypothesis"].iloc[0] == r2["scheme_hypothesis"].iloc[0] == "b"
+
+
+# ---- graph-feature scale guards (community + betweenness fall back safely) ----
+
+def test_community_and_betweenness_scale_fallbacks(monkeypatch):
+    """Above the node caps, community detection uses connected components (not
+    the O(V^2) greedy modularity that OOMs) and betweenness is skipped — both
+    safe at scale and unused by scoring."""
+    import networkx as nx
+    from src.entity_graph import graph_features as gf
+    # three disjoint triangles → three connected components
+    G = nx.Graph()
+    for t in range(3):
+        a, b, c = f"{t}a", f"{t}b", f"{t}c"
+        G.add_edge(a, b); G.add_edge(b, c); G.add_edge(c, a)
+    monkeypatch.setattr(gf, "COMMUNITY_MAX_NODES", 5)        # 9 nodes > 5
+    monkeypatch.setattr(gf, "BETWEENNESS_EXACT_MAX_NODES", 2)
+    monkeypatch.setattr(gf, "BETWEENNESS_SAMPLE_MAX_NODES", 5)
+    part = gf._community_partition(G)
+    assert len(set(part.values())) == 3                      # one per component
+    assert gf._betweenness(G) == {}                          # skipped above cap
+
+    # if greedy_modularity were ever called it would raise here — prove it isn't
+    monkeypatch.setattr(nx.community, "greedy_modularity_communities",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("greedy used")))
+    monkeypatch.setattr(gf, "COMMUNITY_MAX_NODES", 1_000)    # small graph path
+    monkeypatch.setattr(nx.community, "louvain_communities",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no louvain")))
+    part2 = gf._community_partition(G)                       # louvain fails → components, NOT greedy
+    assert len(set(part2.values())) == 3

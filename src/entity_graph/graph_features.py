@@ -24,21 +24,31 @@ import networkx as nx
 import pandas as pd
 
 
-def _community_partition(G: nx.Graph) -> dict:
-    """Louvain where available, greedy-modularity otherwise. Returns node→community id."""
-    try:
-        communities = nx.community.louvain_communities(G, seed=0)
-    except Exception:
-        communities = nx.community.greedy_modularity_communities(G)
-    return {n: cid for cid, comm in enumerate(communities) for n in comm}
-
-
-# Exact betweenness is O(V·E) and never finishes on the real 617k-provider
-# graph (measured: ~19s at just 1,500 nodes on a chain). Above the threshold we
-# use the standard k-sample approximation (k BFS passes, seeded for
-# reproducibility) — ranking quality, which is all the feature needs.
+# Community detection and betweenness are global graph algorithms that are
+# memory-/time-heavy in pure-Python NetworkX (greedy modularity is O(V^2) memory
+# and OOMs; even louvain and sampled betweenness strain at millions of nodes).
+# NEITHER feature is consumed by scoring or ring detection — they are
+# informational — so above these node counts we fall back to the scalable
+# connected-component partition and skip betweenness. Real connected fraud
+# clusters sit far below these caps, so tractable graphs are unaffected.
+COMMUNITY_MAX_NODES = 250_000
 BETWEENNESS_EXACT_MAX_NODES = 2_000
+BETWEENNESS_SAMPLE_MAX_NODES = 250_000
 BETWEENNESS_SAMPLE_K = 256
+
+
+def _community_partition(G: nx.Graph) -> dict:
+    """node→community id. Louvain on tractable graphs; connected components above
+    COMMUNITY_MAX_NODES (greedy-modularity is O(V^2) memory and OOMs at scale,
+    and even louvain is too heavy on a multi-million-node graph)."""
+    if G.number_of_nodes() > COMMUNITY_MAX_NODES:
+        comms = nx.connected_components(G)
+    else:
+        try:
+            comms = nx.community.louvain_communities(G, seed=0)
+        except Exception:
+            comms = nx.connected_components(G)   # never greedy_modularity (OOMs)
+    return {n: cid for cid, comm in enumerate(comms) for n in comm}
 
 
 def _betweenness(G: nx.Graph) -> dict:
@@ -47,7 +57,9 @@ def _betweenness(G: nx.Graph) -> dict:
         return {}
     if n <= BETWEENNESS_EXACT_MAX_NODES:
         return nx.betweenness_centrality(G)
-    return nx.betweenness_centrality(G, k=min(BETWEENNESS_SAMPLE_K, n), seed=0)
+    if n <= BETWEENNESS_SAMPLE_MAX_NODES:
+        return nx.betweenness_centrality(G, k=min(BETWEENNESS_SAMPLE_K, n), seed=0)
+    return {}    # too large for pure-Python betweenness; defaults to 0 (unused in scoring)
 
 
 def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
