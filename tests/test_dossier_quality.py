@@ -187,3 +187,21 @@ def test_dossier_renders_scoped_exposure_line():
     assert "Payments at issue" in txt and "$800,000" in txt and "$1,000,000" in txt
     assert "Confidence: MEDIUM" in txt
     assert "entity merge is name-based" in txt
+
+
+def test_confidence_band_vectorized_rules():
+    """confidence_band (vectorized) caps to the most severe matching rule and
+    lists every reason, in rule order."""
+    from src.analytics.confidence import confidence_band
+    df = pd.DataFrame({
+        "merge_confidence": ["high", "medium", "low", "high"],
+        "peer_n": [50, 50, 50, 5],          # row3 → low (under 30)
+        "years_observed": [3, 1, 3, 3],     # row1 → medium (<2 yrs)
+    })
+    out = confidence_band(df)
+    assert list(out["confidence"]) == ["high", "medium", "low", "low"]
+    assert out["confidence_reasons"].iloc[0] == "all checks passed"
+    assert "name-based" in out["confidence_reasons"].iloc[1]
+    assert "under 2 years" in out["confidence_reasons"].iloc[1]
+    assert "low-confidence" in out["confidence_reasons"].iloc[2]
+    assert "fewer than 30 peers" in out["confidence_reasons"].iloc[3]

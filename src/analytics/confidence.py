@@ -20,6 +20,7 @@ Downgrade rules (each carries its reason string):
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 HIGH, MEDIUM, LOW = "high", "medium", "low"
@@ -34,15 +35,18 @@ def confidence_band(df: pd.DataFrame) -> pd.DataFrame:
     subscore_* columns.
     """
     n = len(df)
-    band = pd.Series(HIGH, index=df.index)
-    reasons = pd.Series([[] for _ in range(n)], index=df.index)
+    # vectorized severity rank (lower _ORDER = more severe) + positional reason
+    # lists. Earlier this used pandas label indexing (band[i]/reasons[i]) inside a
+    # Python loop — fine for a few orgs, but O(n) slow Series lookups that hang for
+    # hours at 9M orgs. numpy min + plain-list appends keep it seconds.
+    rank = np.full(n, _ORDER[HIGH], dtype="int16")
+    reason_lists: list[list[str]] = [[] for _ in range(n)]
 
     def cap(mask: pd.Series, level: str, why: str) -> None:
-        mask = mask.fillna(False)
-        for i in df.index[mask]:
-            if _ORDER[level] < _ORDER[band[i]]:
-                band[i] = level
-            reasons[i].append(why)
+        m = np.asarray(mask.fillna(False), dtype=bool)
+        rank[m] = np.minimum(rank[m], _ORDER[level])
+        for j in np.flatnonzero(m):
+            reason_lists[j].append(why)
 
     if "merge_confidence" in df.columns:
         mc = df["merge_confidence"].astype(str)
@@ -76,8 +80,9 @@ def confidence_band(df: pd.DataFrame) -> pd.DataFrame:
         cap(dq == "medium", MEDIUM,
             "state Medicaid reporting is a medium T-MSIS DQ Atlas concern")
 
+    _LABEL = {v: k for k, v in _ORDER.items()}
     return pd.DataFrame({
-        "confidence": band,
-        "confidence_reasons": reasons.map(
-            lambda r: "; ".join(r) if r else "all checks passed"),
+        "confidence": [_LABEL[r] for r in rank],
+        "confidence_reasons": ["; ".join(r) if r else "all checks passed"
+                               for r in reason_lists],
     }, index=df.index)
