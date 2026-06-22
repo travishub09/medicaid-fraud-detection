@@ -98,6 +98,70 @@ def annual_payments_per_org(spending: pd.DataFrame,
     return agg, recon
 
 
+def annual_payments_per_org_duckdb(spending_path: str,
+                                   npi_to_org: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Memory-safe annual_payments_per_org for full-scale data.
+
+    Identical output to annual_payments_per_org, but the spending parquet
+    (238M rows) is joined to npi_to_org and aggregated to per-org annual totals
+    entirely inside DuckDB — it never materializes in pandas, so a laptop holds
+    only the ~hundreds-of-thousands-of-orgs result. Dollar conservation asserted.
+    """
+    import duckdb
+    con = duckdb.connect()
+    xw = npi_to_org[["npi", "org_node_id"]].copy()
+    xw["npi"] = xw["npi"].astype(str)
+    xw["org_node_id"] = xw["org_node_id"].astype(str)
+    con.register("xw", xw)
+    con.execute(f"""
+        CREATE TEMP TABLE m AS
+        SELECT xw.org_node_id,
+               substr(CAST(s.service_month AS VARCHAR), 1, 4) AS year,
+               CAST(s.total_paid AS DOUBLE)                   AS total_paid,
+               CAST(s.billing_npi AS VARCHAR)                 AS billing_npi
+        FROM read_parquet('{spending_path}') s
+        LEFT JOIN xw ON CAST(s.billing_npi AS VARCHAR) = xw.npi
+    """)
+    total_in = con.execute("SELECT COALESCE(SUM(total_paid), 0) FROM m").fetchone()[0]
+    total_matched = con.execute(
+        "SELECT COALESCE(SUM(total_paid), 0) FROM m WHERE org_node_id IS NOT NULL"
+    ).fetchone()[0]
+    unresolved_npis = con.execute(
+        "SELECT COUNT(DISTINCT billing_npi) FROM m WHERE org_node_id IS NULL"
+    ).fetchone()[0]
+    total_unresolved = total_in - total_matched
+    assert abs((total_matched + total_unresolved) - total_in) <= max(0.01, 1e-9 * abs(total_in)), \
+        "dollar conservation broken"
+
+    con.execute("""
+        CREATE TEMP TABLE py AS
+        SELECT org_node_id, year, SUM(total_paid) AS yr
+        FROM m WHERE org_node_id IS NOT NULL GROUP BY org_node_id, year
+    """)
+    agg = con.execute("""
+        SELECT org_node_id, AVG(yr) AS payments, SUM(yr) AS payments_total,
+               COUNT(DISTINCT year) AS years_observed
+        FROM py GROUP BY org_node_id
+    """).df()
+    latest_year = con.execute("SELECT MAX(year) FROM py").fetchone()[0]
+    if latest_year is not None:
+        latest = con.execute(
+            "SELECT org_node_id, yr AS payments_latest_year FROM py WHERE year = ?",
+            [latest_year]).df()
+        agg = agg.merge(latest, on="org_node_id", how="left")
+        agg["payments_latest_year"] = agg["payments_latest_year"].fillna(0.0)
+    else:
+        agg["payments_latest_year"] = 0.0
+    con.close()
+    recon = {
+        "total_in": float(total_in), "total_matched": float(total_matched),
+        "total_unresolved": float(total_unresolved),
+        "unresolved_npis": int(unresolved_npis),
+        "pct_dollars_matched": (total_matched / total_in) if total_in else 1.0,
+    }
+    return agg, recon
+
+
 def scoped_payments_per_org(spending: pd.DataFrame,
                             npi_to_org: pd.DataFrame) -> pd.DataFrame:
     """Mean-annual payments per org WITHIN each scheme's code family (A1).

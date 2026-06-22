@@ -202,41 +202,23 @@ def main() -> None:
         owners = pd.read_parquet(g / "rings" / "common_owner_clusters.parquet")
         scoped = None
         if args.spending:
-            from .exposure import (annual_payments_per_org, attach_payments,
-                                   scoped_payments_per_org, load_spending_aggregated)
-            from src.analytics.growth import growth_features, growth_percentiles
+            from .exposure import annual_payments_per_org_duckdb, attach_payments
             npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
-            # stream-aggregate via DuckDB to the 4 needed columns at the
-            # (billing_npi, service_month, hcpcs) grain — loading the full
-            # enriched spending_fact (238M × ~18 cols) into pandas OOMs.
-            log("    aggregating spending (DuckDB, streaming) …")
-            spending = load_spending_aggregated(args.spending)
-            log(f"    spending rolled to {len(spending):,} (npi×month×hcpcs) rows")
-            payments, recon = annual_payments_per_org(spending, npi_to_org)
+            # per-org exposure computed entirely in DuckDB — the spending_fact
+            # table (238M rows) never enters pandas (it OOMs a laptop even after
+            # column projection). This is the ERV exposure input.
+            log("    computing per-org exposure (DuckDB, streaming) …")
+            payments, recon = annual_payments_per_org_duckdb(args.spending, npi_to_org)
             log(f"    exposure: ${recon['total_matched']:,.0f} matched "
                 f"({recon['pct_dollars_matched']:.1%}); "
                 f"{recon['unresolved_npis']} unresolved billing NPIs")
             feats = attach_payments(feats, payments)
-            scoped = scoped_payments_per_org(spending, npi_to_org)
-            growth = growth_percentiles(growth_features(spending, npi_to_org))
-            pre = len(feats)
-            feats = feats.merge(growth, on="org_node_id", how="left")
-            assert len(feats) == pre, "growth join fan-out"
-            log(f"    growth features attached for {growth['org_node_id'].nunique()} orgs")
-
-            if args.provider_dim:
-                from src.analytics.plausibility import (
-                    org_clinical_plausibility, plausibility_percentiles)
-                provider_dim = pd.read_parquet(args.provider_dim)
-                plaus = plausibility_percentiles(org_clinical_plausibility(
-                    spending, provider_dim, npi_to_org))
-                pre = len(feats)
-                feats = feats.merge(plaus, on="org_node_id", how="left")
-                assert len(feats) == pre, "plausibility join fan-out"
-                flagged = int((plaus.get("clinical_implausibility", pd.Series(
-                    dtype=float)) > 0.9).sum())
-                log(f"    clinical plausibility attached for "
-                    f"{plaus['org_node_id'].nunique()} orgs ({flagged} in top decile)")
+            # scoped-damage / growth / clinical-plausibility enrichments still read
+            # spending row-level (pandas) and are deferred at full scale pending a
+            # DuckDB rewrite; core ERV = concept scores × graph features × sector
+            # prior × real exposure runs without them.
+            log("    note: scoped/growth/plausibility enrichments deferred at scale "
+                "(DuckDB rewrite pending) — core ERV unaffected.")
 
     disclosure, settled_ids = None, None
     if args.case_db or args.dockets:

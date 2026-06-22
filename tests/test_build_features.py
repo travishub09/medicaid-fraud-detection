@@ -62,3 +62,31 @@ def test_load_spending_aggregated_sums_to_grain(tmp_path):
     assert out.loc[("1", "2023-02", "X"), "total_paid"] == 7.0
     assert out.loc[("2", "2023-01", "Y"), "total_paid"] == 3.0
     assert len(out) == 3
+
+
+def test_duckdb_exposure_matches_pandas(tmp_path):
+    """annual_payments_per_org_duckdb returns the same per-org mean-annual
+    payments and reconciliation as the pandas reference, without loading
+    spending into pandas."""
+    from src.model_a.exposure import (annual_payments_per_org,
+                                      annual_payments_per_org_duckdb)
+    spend = pd.DataFrame({
+        "billing_npi":  ["1", "1", "1", "2", "9"],     # npi 9 unresolved
+        "service_month": ["2022-03", "2022-07", "2023-02", "2023-05", "2023-01"],
+        "hcpcs_code":   ["A", "A", "B", "C", "D"],
+        "total_paid":   [100.0, 200.0, 400.0, 50.0, 999.0],
+    })
+    p = tmp_path / "spending_fact.parquet"
+    spend.to_parquet(p, index=False)
+    xw = pd.DataFrame({"npi": ["1", "2"], "org_node_id": ["org:A", "org:B"]})
+
+    a_pd, r_pd = annual_payments_per_org(spend.copy(), xw)
+    a_db, r_db = annual_payments_per_org_duckdb(str(p), xw)
+    a_pd = a_pd.set_index("org_node_id"); a_db = a_db.set_index("org_node_id")
+    # org:A mean annual = (2022: 300 + 2023: 400) / 2 = 350 ; org:B = 50
+    assert abs(a_db.loc["org:A", "payments"] - 350.0) < 1e-6
+    assert abs(a_db.loc["org:B", "payments"] - 50.0) < 1e-6
+    assert abs(a_pd.loc["org:A", "payments"] - a_db.loc["org:A", "payments"]) < 1e-6
+    assert r_db["unresolved_npis"] == 1
+    assert abs(r_db["total_unresolved"] - 999.0) < 1e-6
+    assert abs(r_pd["total_matched"] - r_db["total_matched"]) < 1e-6
