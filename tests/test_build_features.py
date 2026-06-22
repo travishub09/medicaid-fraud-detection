@@ -8,25 +8,36 @@ import pandas as pd
 from src.model_a.build_features import build_company_features
 
 
-def test_rollup_takes_max_concept_and_sums_payments():
+def test_rollup_paid_weighted_mean_and_sums_payments():
     leads = pd.DataFrame({
         "npi": ["1", "2", "3"],
         "concentration":      [0.90, 0.20, 0.50],
         "payment_intensity":  [0.10, 0.95, 0.30],
         "service_intensity":  [0.40, 0.40, 0.40],
-        "specialty_mismatch": [np.nan, 0.70, 0.10],   # NaN member ignored by max
+        "specialty_mismatch": [np.nan, 0.70, 0.10],   # NaN member: no weight/value
         "temporal":           [0.20, 0.30, 0.60],
         "net_paid":           [100.0, 200.0, 50.0],
     })
     xw = pd.DataFrame({"npi": ["1", "2", "3"],
                        "org_node_id": ["org:A", "org:A", "org:B"]})
     out = build_company_features(leads, xw).set_index("org_node_id")
-    assert out.loc["org:A", "concentration"] == 0.90        # max over members
-    assert out.loc["org:A", "payment_intensity"] == 0.95
-    assert out.loc["org:A", "specialty_mismatch"] == 0.70   # NaN skipped
-    assert out.loc["org:A", "payments"] == 300.0            # summed net_paid
+    # org:A = paid-weighted mean over members 1 (w100) & 2 (w200):
+    assert abs(out.loc["org:A", "concentration"] - (0.9*100 + 0.2*200)/300) < 1e-9
+    assert abs(out.loc["org:A", "payment_intensity"] - (0.1*100 + 0.95*200)/300) < 1e-9
+    assert abs(out.loc["org:A", "specialty_mismatch"] - 0.70) < 1e-9   # only NPI2 weighted
+    assert out.loc["org:A", "payments"] == 300.0                       # summed net_paid
     assert out.loc["org:B", "payments"] == 50.0
-    assert out.index.is_unique                               # one row per org
+    assert out.index.is_unique                                          # one row per org
+    # a large aggregator no longer pins at 1.0: a single fluke member can't dominate
+    big = pd.DataFrame({"npi": [str(i) for i in range(100)],
+                        "concentration": [0.99] + [0.10]*99,
+                        "payment_intensity": [0.5]*100, "service_intensity": [0.5]*100,
+                        "specialty_mismatch": [0.5]*100, "temporal": [0.5]*100,
+                        "net_paid": [10.0]*100})
+    bxw = pd.DataFrame({"npi": [str(i) for i in range(100)],
+                        "org_node_id": ["org:big"]*100})
+    bout = build_company_features(big, bxw).set_index("org_node_id")
+    assert bout.loc["org:big", "concentration"] < 0.2     # was 0.99 under max-rollup
 
 
 def test_npi_absent_from_crosswalk_is_dropped():

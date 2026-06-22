@@ -24,6 +24,7 @@ import argparse
 import os
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 CONCEPT_COLS = ["concentration", "payment_intensity", "service_intensity",
@@ -33,24 +34,39 @@ CONCEPT_COLS = ["concentration", "payment_intensity", "service_intensity",
 def build_company_features(leads_v3: pd.DataFrame,
                            npi_to_org: pd.DataFrame) -> pd.DataFrame:
     """Per-NPI v3 concepts + npi_to_org crosswalk → one row per org_node_id with
-    the five concept percentiles (max over scored members) and ``payments``
-    (summed net_paid). No fan-out: grouped to one row per org."""
+    the five concept percentiles (PAID-WEIGHTED MEAN over scored members) and
+    ``payments`` (summed net_paid). No fan-out: grouped to one row per org.
+
+    Why paid-weighted mean, not max: max over members guarantees ~1.0 on every
+    concept for any large multi-NPI org (a state agency with thousands of NPIs
+    will, by chance, contain a top-percentile member on each concept), which
+    pinned program infrastructure at adjusted_prob 1.0. The dollar-weighted mean
+    reflects where the org's money actually concentrates — a real single-code
+    mill (its high-paid NPI dominates the weight) still scores high, but a giant
+    aggregator no longer saturates on a fluke member.
+    """
     leads = leads_v3.copy()
     leads["npi"] = leads["npi"].astype(str)
     xw = npi_to_org[["npi", "org_node_id"]].copy()
     xw["npi"] = xw["npi"].astype(str)
 
     m = leads.merge(xw, on="npi", how="inner")
+    m["net_paid"] = pd.to_numeric(m.get("net_paid"), errors="coerce").fillna(0.0).clip(lower=0.0)
     for c in CONCEPT_COLS:
-        m[c] = pd.to_numeric(m[c], errors="coerce") if c in m.columns else pd.NA
-    m["net_paid"] = pd.to_numeric(m.get("net_paid"), errors="coerce").fillna(0.0)
+        m[c] = pd.to_numeric(m[c], errors="coerce") if c in m.columns else np.nan
 
-    agg = {c: "max" for c in CONCEPT_COLS}          # max skips NaN (not-scored)
-    agg["net_paid"] = "sum"
-    g = m.groupby("org_node_id", as_index=False).agg(agg)
-    g = g.rename(columns={"net_paid": "payments"})
-    assert g["org_node_id"].is_unique, "company_features fan-out"
-    return g
+    out = m.groupby("org_node_id", as_index=False).agg(payments=("net_paid", "sum"))
+    for c in CONCEPT_COLS:
+        # per-concept dollar weight: members with a NaN concept (not scored on it)
+        # contribute neither weight nor value, so the mean is over scored members.
+        w = m["net_paid"].where(m[c].notna(), 0.0)
+        wc = (m[c] * w).fillna(0.0)
+        s = pd.DataFrame({"org_node_id": m["org_node_id"], "_wc": wc, "_w": w}) \
+            .groupby("org_node_id", as_index=False).agg(_wc=("_wc", "sum"), _w=("_w", "sum"))
+        s[c] = (s["_wc"] / s["_w"]).where(s["_w"] > 0)   # NaN where no scored, weighted member
+        out = out.merge(s[["org_node_id", c]], on="org_node_id", how="left")
+    assert out["org_node_id"].is_unique, "company_features fan-out"
+    return out
 
 
 def _data_root(cli: str | None) -> Path:

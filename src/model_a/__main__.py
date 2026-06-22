@@ -80,6 +80,22 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         df = df[candidates].copy()
     log(f"    scoring {len(df):,} candidate orgs of {n0:,} "
         f"(signal-less orgs score ERV≈0 and are omitted from the ranking)")
+
+    # Drop program infrastructure (state/county agencies, fiscal intermediaries,
+    # NEMT brokers, national reference labs, MMIS vendors) — the biggest billers
+    # but not qui tam targets. Written to excluded_payers.parquet for audit.
+    from .payer_filter import flag_non_target_payers
+    name_col = "org_name" if "org_name" in df.columns else "org_legal_name"
+    payer_reason = flag_non_target_payers(df.get(name_col, pd.Series("", index=df.index)))
+    excluded_mask = (payer_reason != "").to_numpy()
+    if excluded_mask.any():
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (df.loc[excluded_mask, ["org_node_id", name_col]]
+           .assign(reason=payer_reason[excluded_mask].to_numpy())
+           .to_parquet(out_dir / "excluded_payers.parquet", index=False))
+        log(f"    excluded {int(excluded_mask.sum()):,} program-infrastructure orgs "
+            f"(government / fiscal intermediary / national payer) → excluded_payers.parquet")
+        df = df[~excluded_mask].copy()
     n0 = len(df)                       # ranking/dossier counts are over candidates
 
     df = df.set_index("org_node_id", drop=False)
