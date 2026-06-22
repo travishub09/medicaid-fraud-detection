@@ -5,10 +5,14 @@ Joins company-grain anomaly concepts with the entity-graph features and ring
 membership, computes scheme subscores → noisy-OR → sector prior × graph boost →
 exposure → ERV, and writes the ranked table plus top-k target dossiers.
 
-Run against real outputs (graph dir from src.entity_graph; features parquet with
-one row per org carrying the v3 concept percentiles + payments):
+Run against real outputs. The --features parquet (one row per org carrying the
+v3 concept percentiles + payments) is produced by `python -m src.model_a.build_features`,
+which rolls the per-NPI fraud_leads_v3 concepts up to org grain via the graph
+crosswalk:
+    python -m src.model_a.build_features
     python -m src.model_a --graph-dir ~/Desktop/data/graph \
-        --features ~/Desktop/data/detection/company_features.parquet \
+        --features ~/Desktop/data/features/company_features.parquet \
+        --spending ~/Desktop/data/processed/spending_fact.parquet \
         --out ~/Desktop/data/model_a
 
 Run on the synthetic fixture (no real data; what tests use):

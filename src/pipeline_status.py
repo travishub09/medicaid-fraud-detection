@@ -42,8 +42,12 @@ STAGES = [
      "python -m src.attempt_2.leads.company_rollup", True),
     ("entity_graph", "entity graph", "graph/GRAPH_REPORT.md",
      "python -m src.entity_graph --input {root}/processed --out {root}/graph", False),
+    ("company_features", "company features (NPI→org rollup)",
+     "features/company_features.parquet",
+     "python -m src.model_a.build_features", False),
     ("model_a", "Model A (dossiers)", "model_a/MODEL_A_REPORT.md",
      "python -m src.model_a --graph-dir {root}/graph "
+     "--features {root}/features/company_features.parquet "
      "--spending {root}/processed/spending_fact.parquet --out {root}/model_a", False),
 ]
 

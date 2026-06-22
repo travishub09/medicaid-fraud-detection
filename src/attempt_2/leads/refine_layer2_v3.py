@@ -109,6 +109,11 @@ def score_concepts(df: pd.DataFrame) -> pd.DataFrame:
             concept_pct[concept] = np.where(np.all(np.isnan(stack), axis=1), np.nan,
                                             np.nanmax(stack, axis=1))
     ctx_pct = pct[CONTEXT_FEAT]
+    # persist the per-concept percentiles (0–1) as columns — these are the
+    # org-rollup inputs Model A consumes (build_features), and they make the
+    # concept that drove a lead inspectable, not just embedded in the text.
+    for _c in CONCEPTS:
+        df[_c] = concept_pct[_c]
     cmat = np.column_stack([concept_pct[c] for c in CONCEPTS])
     scn = sc.to_numpy()
     exceed = cmat >= P99
@@ -233,6 +238,8 @@ def main() -> None:
                 "provider_on_leie", "billed_after_exclusion", "excluded_after_billing", "rule_reasons",
                 "anomaly_lead_v3", "anomaly_score_v3", "n_concept_signals",
                 "anomaly_contributing_concepts", "iforest_score_secondary",
+                "concentration", "payment_intensity", "service_intensity",
+                "specialty_mismatch", "temporal",
                 "peer_basis", "not_scored", "not_scored_reason",
                 "layer3_probable_owner", "facility_excluded_owner_n_probable", "excluded_owner_role"]
     leads = df[out_cols].sort_values(
