@@ -56,6 +56,32 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     require("graph_feature_join_no_fanout", len(df) == n0, f"{len(df)} vs {n0}")
     df = df.merge(company_features, on="org_node_id", how="left")
     require("company_feature_join_no_fanout", len(df) == n0, f"{len(df)} vs {n0}")
+
+    # Candidate gate: only orgs with a billing-anomaly concept OR a graph/ownership
+    # signal can score above baseline — with no signal the scheme noisy-OR ≈ 0, so
+    # ERV ≈ 0 and the org is bottom-rank by construction (never a dossier). At full
+    # scale ~94% of the 9M orgs are signal-less solo practitioners; scoring them all
+    # holds an enormous frame (16GB OOM/swap) for zero ranking effect. Restrict to
+    # candidates — identical top dossiers, a fraction of the memory.
+    _concepts = [c for c in ["concentration", "payment_intensity", "service_intensity",
+                             "specialty_mismatch", "temporal"] if c in df.columns]
+
+    def _num(col):
+        return (pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+                if col in df.columns else pd.Series(0.0, index=df.index))
+
+    billing_sig = (df[_concepts].notna().any(axis=1)
+                   if _concepts else pd.Series(False, index=df.index))
+    graph_sig = ((_num("within_2_hops_of_exclusion") > 0) | (_num("shell_score") > 0)
+                 | (_num("related_party_density") > 0)
+                 | (_num("co_location_cluster_size") >= 2) | (_num("betweenness") > 0))
+    candidates = (billing_sig | graph_sig).to_numpy()
+    if candidates.any():
+        df = df[candidates].copy()
+    log(f"    scoring {len(df):,} candidate orgs of {n0:,} "
+        f"(signal-less orgs score ERV≈0 and are omitted from the ranking)")
+    n0 = len(df)                       # ranking/dossier counts are over candidates
+
     df = df.set_index("org_node_id", drop=False)
     # T-MSIS DQ Atlas state-quality → the confidence band down-weights signals
     # from states CMS flags as poor Medicaid reporters (doc 15 §2.8).
