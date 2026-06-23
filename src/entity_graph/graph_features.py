@@ -112,23 +112,33 @@ def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
     return G
 
 
-def _distance_to_exclusions(G: nx.Graph, exclusion_ids: set[str]) -> dict:
-    """Multi-source BFS: shortest hop count from every node to any exclusion node."""
+def _distance_to_exclusions(G: nx.Graph, exclusion_ids: set[str]) -> tuple[dict, dict]:
+    """Multi-source BFS from every exclusion node.
+
+    Returns ``(dist, nearest)`` where ``dist[node]`` is the shortest hop count
+    to any exclusion node and ``nearest[node]`` is the id of the exclusion node
+    that hop count traces back to — so a dossier can name *which* excluded party
+    sits near the org, not just that one does.
+    """
     if not exclusion_ids:
-        return {}
-    seen = {x: 0 for x in exclusion_ids if G.has_node(x)}
+        return {}, {}
+    present = [x for x in exclusion_ids if G.has_node(x)]
+    seen = {x: 0 for x in present}
+    nearest = {x: x for x in present}        # an exclusion node's nearest is itself
     frontier = list(seen)
     d = 0
     while frontier:
         d += 1
         nxt = []
         for u in frontier:
+            src = nearest[u]
             for v in G.neighbors(u):
                 if v not in seen:
                     seen[v] = d
+                    nearest[v] = src
                     nxt.append(v)
         frontier = nxt
-    return seen
+    return seen, nearest
 
 
 def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
@@ -140,7 +150,18 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                     owned_by_edges, excluded_in_edges, co_located_edges)
 
     excl_ids = set(exclusion_nodes["node_id"].astype(str)) if exclusion_nodes is not None and len(exclusion_nodes) else set()
-    dist = _distance_to_exclusions(G, excl_ids)
+    dist, nearest = _distance_to_exclusions(G, excl_ids)
+
+    # identity of each exclusion node, so the org's nearest excluded party can be
+    # named (entity / type / date) in the dossier rather than left anonymous.
+    excl_identity: dict[str, dict] = {}
+    if exclusion_nodes is not None and len(exclusion_nodes):
+        for r in exclusion_nodes.itertuples():
+            excl_identity[str(r.node_id)] = {
+                "name": str(getattr(r, "entity_name", "") or ""),
+                "type": str(getattr(r, "excl_type", "") or ""),
+                "date": str(getattr(r, "excl_date", "") or ""),
+            }
     community = _community_partition(G) if G.number_of_edges() else {}
     betweenness = _betweenness(G)
 
@@ -180,10 +201,15 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
         ex_dist = dist.get(nid)
         prox = 0.0 if ex_dist is None else max(0.0, (3 - ex_dist) / 3.0)
         shell = round(min(1.0, 0.4 * (cluster >= 3) + 0.3 * thin + 0.2 * name_only + 0.3 * prox), 3)
+        # name the nearest excluded party (within a sane radius) for the dossier.
+        ident = excl_identity.get(nearest.get(nid, ""), {}) if ex_dist is not None and ex_dist <= 3 else {}
         rows.append({
             "org_node_id": nid,
             "excluded_party_distance": ex_dist if ex_dist is not None else -1,
             "within_2_hops_of_exclusion": int(ex_dist is not None and ex_dist <= 2),
+            "nearest_exclusion_name": ident.get("name", ""),
+            "nearest_exclusion_type": ident.get("type", ""),
+            "nearest_exclusion_date": ident.get("date", ""),
             "related_party_density": related,
             "co_location_cluster_size": cluster,
             "shell_score": shell,

@@ -105,3 +105,40 @@ def test_outputs_written_with_dossiers(scored):
     assert "Alternative explanations" in top              # defamation safety
     assert "investigative hypothesis" in top              # the disclaimer
     assert "Scheme hypothesis" in top
+
+
+def test_hcpcs_descriptions_describe():
+    from src.model_a.hcpcs_descriptions import describe
+    assert describe("T1019") == "T1019 (personal care services, per 15 min)"
+    assert describe("t1019") == "T1019 (personal care services, per 15 min)"
+    assert describe("ZZ999") == "ZZ999"                   # unknown → bare code, no invention
+    assert describe(None) == ""
+
+
+def test_dossier_narrative_deepeners():
+    """Evidence-grounded narrative renders code descriptions, peer median, and
+    the named excluded party (the three dossier deepeners)."""
+    from src.model_a.dossier import render_dossier
+    row = pd.Series({
+        "org_node_id": "org:1", "org_name": "EXAMPLE HOME CARE LLC",
+        "scheme_hypothesis": "single_service_mill", "primary_taxonomy": "251E00000X",
+        "concentration": 0.99, "payment_intensity": 0.97,
+        "within_2_hops_of_exclusion": 1, "excluded_party_distance": 2,
+        "nearest_exclusion_name": "JOHN DOE", "nearest_exclusion_type": "1128(a)(1)",
+        "nearest_exclusion_date": "2019-04-01",
+        "payments": 5_000_000, "erv": 1_000_000,
+    })
+    evidence = {
+        "provenance": "test source",
+        "total_paid": 5_000_000.0, "n_patients": 100, "n_codes": 2,
+        "n_months": 24, "first_month": "2022-01", "last_month": "2023-12",
+        "paid_per_patient": 50_000.0,
+        "peer_paid_per_patient": 10_000.0, "peer_taxonomy_label": "taxonomy 251E00000X",
+        "peer_n": 200,
+        "top_codes": [("T1019", 4_000_000.0, 0.8), ("T1020", 1_000_000.0, 0.2)],
+        "ramp": None,
+    }
+    md = render_dossier(row, [], {}, evidence=evidence)
+    assert "personal care services, per 15 min" in md          # HCPCS description (feature 2)
+    assert "peer median" in md and "5.0×" in md                # peer comparison (feature 1)
+    assert "JOHN DOE" in md and "2019-04-01" in md             # named excluded party (feature 3)

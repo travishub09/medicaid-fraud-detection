@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .hcpcs_descriptions import describe as _describe_code
+
 # --- plain-English translations ------------------------------------------------
 
 # scheme → (short label, plain-English description of the pattern / fraud theory)
@@ -108,8 +110,15 @@ def _graph_signals(row) -> list[str]:
     s = []
     if _num(row, "within_2_hops_of_exclusion") and _num(row, "within_2_hops_of_exclusion") >= 1:
         d = row.get("excluded_party_distance")
+        who = str(row.get("nearest_exclusion_name") or "").strip()
+        detail = ""
+        if who:
+            xtype = str(row.get("nearest_exclusion_type") or "").strip()
+            xdate = str(row.get("nearest_exclusion_date") or "").strip()
+            tail = ", ".join(p for p in (xtype, xdate) if p and p.lower() != "nan")
+            detail = f" — **{who}**" + (f" ({tail})" if tail else "")
         s.append(f"sits within {d} ownership/address hop(s) of a party excluded "
-                 f"from federal health programs")
+                 f"from federal health programs{detail}")
     if _num(row, "shell_score") and _num(row, "shell_score") >= 0.5:
         s.append("has a thin, name-only structure at a clustered address "
                  "(shell-like)")
@@ -136,14 +145,24 @@ def _billing_story(name: str, ev: dict) -> str:
         head += f" and {ev['n_patients']:,} beneficiaries"
     if ev.get("paid_per_patient"):
         head += f" — about **{_money(ev['paid_per_patient'])} per beneficiary**"
+    if ev.get("peer_paid_per_patient") and ev.get("paid_per_patient"):
+        peer = ev["peer_paid_per_patient"]
+        tax = ev.get("peer_taxonomy_label") or "its peer group"
+        ratio = ev["paid_per_patient"] / peer if peer else None
+        cmp_txt = (f"That is about **{ratio:.1f}×** the peer median of "
+                   f"{_money(peer)} per beneficiary for {tax}"
+                   if ratio and ratio >= 1.05 else
+                   f"roughly in line with the peer median of {_money(peer)} "
+                   f"per beneficiary for {tax}")
+        head += f". {cmp_txt}"
     parts = [head + "."]
     if ev.get("top_codes"):
         code, cpaid, share = ev["top_codes"][0]
-        s = (f"Its single largest line is procedure code **{code}** at "
+        s = (f"Its single largest line is procedure code **{_describe_code(code)}** at "
              f"{_money(cpaid)} — **{share*100:.0f}%** of everything it billed")
         if len(ev["top_codes"]) >= 3:
             top3 = sum(sh for _, _, sh in ev["top_codes"][:3]) * 100
-            nxt = ", ".join(c for c, _, _ in ev["top_codes"][1:3])
+            nxt = ", ".join(_describe_code(c) for c, _, _ in ev["top_codes"][1:3])
             s += f"; with the next two ({nxt}) the top three reach {top3:.0f}%"
         parts.append(s + ".")
     r = ev.get("ramp")

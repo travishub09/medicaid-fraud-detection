@@ -98,7 +98,7 @@ def excluded_party_proximity(org_nodes, owner_nodes, exclusion_nodes, member_edg
         return pd.DataFrame(columns=cols)
     G = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
                     owned_by_edges, excluded_in_edges, co_located_edges)
-    dist = _distance_to_exclusions(G, set(exclusion_nodes["node_id"].astype(str)))
+    dist, _ = _distance_to_exclusions(G, set(exclusion_nodes["node_id"].astype(str)))
     name_by_id = dict(zip(org_nodes["org_node_id"].astype(str),
                           org_nodes.get("org_name", org_nodes["org_node_id"]).astype(str))) \
         if org_nodes is not None and len(org_nodes) else {}

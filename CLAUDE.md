@@ -175,7 +175,7 @@ python -m pytest tests/ -v
   (`src/funnel/`: events/lead_score/intake with no-PHI + no-fraud-boolean
   guardrails), person↔employer resolver BUILT (`entity_graph/person_resolver.py`:
   scored linkage + employed_by edges + tenure overlap; opaque person_id only).
-  Full suite: `pytest tests/` (249 tests).
+  Full suite: `pytest tests/` (251 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -51,7 +51,8 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         disclosure: pd.DataFrame | None = None,
         settled_org_ids: list[str] | None = None,
         priors: dict | None = None, pu_model=None,
-        spending_path: str | None = None) -> pd.DataFrame:
+        spending_path: str | None = None,
+        provider_dim_path: str | None = None) -> pd.DataFrame:
     """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/.
 
     ``priors`` (enforcement-weighted sector multipliers) and ``pu_model`` (a
@@ -208,7 +209,8 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         if rows_map:
             try:
                 from .dossier_evidence import gather_evidence
-                evidence_by_org = gather_evidence(spending_path, pd.DataFrame(rows_map))
+                evidence_by_org = gather_evidence(spending_path, pd.DataFrame(rows_map),
+                                                  provider_dim_path=provider_dim_path)
                 log(f"    dossier evidence assembled for {len(evidence_by_org)} of "
                     f"{len(head)} top orgs")
             except Exception as e:
@@ -349,7 +351,8 @@ def main() -> None:
     run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k,
         scoped_payments=scoped if args.spending else None,
         disclosure=disclosure, settled_org_ids=settled_ids,
-        priors=priors, pu_model=pu_model, spending_path=args.spending)
+        priors=priors, pu_model=pu_model, spending_path=args.spending,
+        provider_dim_path=args.provider_dim)
 
 
 if __name__ == "__main__":
