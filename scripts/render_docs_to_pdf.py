@@ -1,7 +1,24 @@
 """Clean markdown -> PDF renderer using fpdf2 primitives (full layout control)."""
-import re, sys
+import os, re, sys
 from fpdf import FPDF
-D = "/usr/share/fonts/truetype/dejavu/"
+
+# Cross-platform Unicode-capable fonts: (regular_sans, bold_sans, regular_mono,
+# bold_mono). DejaVu on Linux, Arial/Consolas on Windows, Helvetica/Menlo on macOS.
+_FONT_SETS = [
+    ("/usr/share/fonts/truetype/dejavu/",
+     ("DejaVuSans.ttf", "DejaVuSans-Bold.ttf", "DejaVuSansMono.ttf", "DejaVuSansMono-Bold.ttf")),
+    ("C:/Windows/Fonts/", ("arial.ttf", "arialbd.ttf", "consola.ttf", "consolab.ttf")),
+    ("/Library/Fonts/", ("Arial.ttf", "Arial Bold.ttf", "Menlo.ttc", "Menlo.ttc")),
+    ("/System/Library/Fonts/", ("Helvetica.ttc", "Helvetica.ttc", "Menlo.ttc", "Menlo.ttc")),
+]
+def _fonts():
+    for d, files in _FONT_SETS:
+        if os.path.isdir(d) and os.path.exists(os.path.join(d, files[0])):
+            return [os.path.join(d, f) for f in files]
+    raise SystemExit(
+        "No usable TTF fonts found. On minimal Linux: apt-get install fonts-dejavu; "
+        "Windows/macOS ship Arial/Helvetica by default.")
+
 MAROON = (140, 30, 30)
 GRAY = (110, 110, 110)
 CODEBG = (244, 244, 244)
@@ -18,9 +35,10 @@ class PDF(FPDF):
 def new_pdf(footer):
     p = PDF(format="Letter"); p.footer_label = footer
     p.set_margins(20, 18, 18); p.set_auto_page_break(True, 16)
-    p.add_font("S", "", D+"DejaVuSans.ttf"); p.add_font("S", "B", D+"DejaVuSans-Bold.ttf")
-    p.add_font("S", "I", D+"DejaVuSans.ttf"); p.add_font("S", "BI", D+"DejaVuSans-Bold.ttf")
-    p.add_font("M", "", D+"DejaVuSansMono.ttf"); p.add_font("M", "B", D+"DejaVuSansMono-Bold.ttf")
+    sans, sans_b, mono, mono_b = _fonts()
+    p.add_font("S", "", sans); p.add_font("S", "B", sans_b)
+    p.add_font("S", "I", sans); p.add_font("S", "BI", sans_b)
+    p.add_font("M", "", mono); p.add_font("M", "B", mono_b)
     p.add_page(); return p
 
 TOKEN = re.compile(r"(\*\*.+?\*\*|\*[^*]+?\*|`[^`]+?`|\[[^\]]+?\]\([^)]+?\))")
