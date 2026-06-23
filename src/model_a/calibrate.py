@@ -93,7 +93,9 @@ def _data_root(cli: str | None) -> Path:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--case-db", required=True, help="case DB CSV/parquet (CASE_COLUMNS)")
+    ap.add_argument("--case-db", default=None,
+                    help="case DB CSV/parquet (CASE_COLUMNS). Default: the DOJ "
+                         "fetcher's output <root>/feeds/enforcement/doj_cases.csv")
     ap.add_argument("--graph-dir", default=None, help="entity-graph output dir")
     ap.add_argument("--features", default=None, help="company_features.parquet")
     ap.add_argument("--data-root", default=None)
@@ -105,8 +107,14 @@ def main() -> None:
     out = Path(args.out) if args.out else root / "model_a"
     out.mkdir(parents=True, exist_ok=True)
 
-    case_db = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
-               else pd.read_parquet(args.case_db))
+    case_db_path = (Path(args.case_db) if args.case_db
+                    else root / "feeds" / "enforcement" / "doj_cases.csv")
+    if not case_db_path.exists():
+        raise SystemExit(
+            f"No case DB at {case_db_path}. Build one first (needs network):\n"
+            f"  python -m src.enforcement.fetch --backfill-years 10")
+    case_db = (pd.read_csv(case_db_path, dtype=str) if str(case_db_path).endswith(".csv")
+               else pd.read_parquet(case_db_path))
     org_nodes = pd.read_parquet(g / "nodes" / "org_nodes.parquet")
     gf = pd.read_parquet(g / "org_graph_features.parquet")
     company_features = pd.read_parquet(feats_p)

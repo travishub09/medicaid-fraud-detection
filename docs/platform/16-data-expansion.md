@@ -169,20 +169,27 @@ multipliers in `sector_priors.py` move toward enforcement-weighted base rates.
 
 ### Calibration — graduate Model A from heuristic to enforcement-trained
 
-Once you have a case DB (DOJ/OIG settlements, CASE_COLUMNS), one command turns it
-into Model A calibration and breaks the `adjusted_prob ≈ 1.0` ceiling of the
-label-free v1:
+Three turnkey commands break the `adjusted_prob ≈ 1.0` ceiling of the label-free
+v1 (the first needs outbound network for the DOJ API):
 
 ```bash
-python -m src.model_a.calibrate --case-db <cases.csv> \
-    --graph-dir $ROOT/graph --features $ROOT/features/company_features.parquet
-# writes model_a/sector_priors.json (+ model_a/pu_model.pkl if ≥5 defendants matched)
+# 1. build the case DB from DOJ False-Claims-Act press releases (10-yr backfill)
+python -m src.enforcement.fetch --backfill-years 10
+#    → $ROOT/feeds/enforcement/doj_cases.csv  (append-only; re-run to refresh)
 
+# 2. calibrate (auto-finds the case DB above; --case-db to override)
+python -m src.model_a.calibrate
+#    → model_a/sector_priors.json (+ model_a/pu_model.pkl if ≥5 defendants matched)
+
+# 3. re-rank Model A with the calibrated probability
 python -m src.model_a --graph-dir $ROOT/graph \
     --features $ROOT/features/company_features.parquet \
     --spending $ROOT/processed/spending_fact.parquet --out $ROOT/model_a \
     --priors model_a/sector_priors.json --pu-model model_a/pu_model.pkl
 ```
+
+`python -m src.pipeline_status` lists the case-DB and calibration steps (optional)
+so you can see what's built.
 
 `calibrate` (1) derives enforcement-weighted sector multipliers
 (`enforcement/derive_priors`), and (2) matches the case defendants to org nodes

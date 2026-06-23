@@ -49,6 +49,12 @@ STAGES = [
      "python -m src.model_a --graph-dir {root}/graph "
      "--features {root}/features/company_features.parquet "
      "--spending {root}/processed/spending_fact.parquet --out {root}/model_a", False),
+    ("doj_case_db", "DOJ case DB (calibration labels)",
+     "feeds/enforcement/doj_cases.csv",
+     "python -m src.enforcement.fetch --backfill-years 10   # needs network", True),
+    ("calibration", "Model A calibration (priors + PU model)",
+     "model_a/sector_priors.json",
+     "python -m src.model_a.calibrate", True),
 ]
 
 
