@@ -65,10 +65,8 @@ def write_rich(p, text, x0, size=10.5, lh=5.2):
     p.ln(lh)
     p.set_text_color(0,0,0)
 
-def render(md_path, pdf_path, footer):
-    md = open(md_path, encoding="utf-8").read()
+def render_into(p, md):
     md = md.replace("✅","[ok]").replace("❌","[x]").replace("⚠️","!").replace("⚠","!")
-    p = new_pdf(footer)
     lines = md.split("\n")
     i = 0
     while i < len(lines):
@@ -134,7 +132,28 @@ def render(md_path, pdf_path, footer):
             para.append(lines[i]); i += 1
         write_rich(p, " ".join(s.strip() for s in para), p.l_margin, size=10.5)
 
-    p.output(pdf_path); print("wrote", pdf_path.split("/")[-1], p.page_no(), "pages")
+
+def render(md_path, pdf_path, footer):
+    p = new_pdf(footer)
+    render_into(p, open(md_path, encoding="utf-8").read())
+    p.output(pdf_path)
+    print("wrote", str(pdf_path).split("/")[-1], p.page_no(), "pages")
+
+
+def render_dir(dir_path, pdf_path, footer):
+    """Combine every *.md in a folder (sorted) into one PDF — e.g. the dossiers."""
+    import glob, os
+    mds = sorted(glob.glob(os.path.join(dir_path, "*.md")))
+    if not mds:
+        raise SystemExit(f"no .md files found in {dir_path}")
+    p = new_pdf(footer)
+    for k, md in enumerate(mds):
+        if k:
+            p.add_page()
+        render_into(p, open(md, encoding="utf-8").read())
+    p.output(pdf_path)
+    print("wrote", str(pdf_path).split(os.sep)[-1], p.page_no(), "pages from",
+          len(mds), "files")
 
 def render_table(p, header, body):
     usable = p.w - p.l_margin - p.r_margin
@@ -169,14 +188,31 @@ def render_table(p, header, body):
     for r in body: row(r)
 
 if __name__ == "__main__":
-    DOCS = [
-        ("docs/CONSULTING_DELIVERABLE.md", "/tmp/Platform_Capabilities_Briefing.pdf",
-         "Healthcare Fraud Whistleblower Origination Platform — Confidential"),
-        ("docs/SETUP_GUIDE.md", "/tmp/Setup_Guide_Step_by_Step.pdf", "Setup Guide — Confidential"),
-        ("docs/platform/12-data-runbook.md", "/tmp/Data_Runbook_Where_To_Download.pdf", "Data Runbook — Confidential"),
-        ("docs/READING_THE_OUTPUTS.md", "/tmp/Reading_The_Outputs.pdf", "Reading the Outputs — Confidential"),
-        ("docs/TROUBLESHOOTING.md", "/tmp/Troubleshooting.pdf", "Troubleshooting — Confidential"),
-        ("docs/WHAT_WAS_BUILT.md", "/tmp/What_Was_Built.pdf", "What Was Built — Confidential"),
-    ]
-    for md, pdf, foot in DOCS:
-        render(md, pdf, foot)
+    import argparse
+    ap = argparse.ArgumentParser(description="markdown → clean PDF")
+    ap.add_argument("--md", help="render a single markdown file")
+    ap.add_argument("--dir", help="combine every *.md in a folder into one PDF "
+                                  "(e.g. the model_a/dossiers folder)")
+    ap.add_argument("--out", help="output PDF path")
+    ap.add_argument("--footer", default="Confidential — investigative hypotheses for counsel review")
+    args = ap.parse_args()
+
+    if args.md:
+        render(args.md, args.out or args.md.rsplit(".", 1)[0] + ".pdf", args.footer)
+    elif args.dir:
+        import os
+        render_dir(args.dir, args.out or os.path.join(args.dir, "dossiers.pdf"), args.footer)
+    else:
+        DOCS = [
+            ("docs/CONSULTING_STATUS.md", "/tmp/Status_And_Findings.pdf",
+             "Status & First Findings — Confidential"),
+            ("docs/CONSULTING_DELIVERABLE.md", "/tmp/Platform_Capabilities_Briefing.pdf",
+             "Healthcare Fraud Whistleblower Origination Platform — Confidential"),
+            ("docs/SETUP_GUIDE.md", "/tmp/Setup_Guide_Step_by_Step.pdf", "Setup Guide — Confidential"),
+            ("docs/platform/12-data-runbook.md", "/tmp/Data_Runbook_Where_To_Download.pdf", "Data Runbook — Confidential"),
+            ("docs/READING_THE_OUTPUTS.md", "/tmp/Reading_The_Outputs.pdf", "Reading the Outputs — Confidential"),
+            ("docs/TROUBLESHOOTING.md", "/tmp/Troubleshooting.pdf", "Troubleshooting — Confidential"),
+            ("docs/WHAT_WAS_BUILT.md", "/tmp/What_Was_Built.pdf", "What Was Built — Confidential"),
+        ]
+        for md, pdf, foot in DOCS:
+            render(md, pdf, foot)
