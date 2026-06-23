@@ -122,22 +122,64 @@ def _graph_signals(row) -> list[str]:
     return s
 
 
+def _money(v) -> str:
+    return f"${float(v):,.0f}"
+
+
+def _billing_story(name: str, ev: dict) -> str:
+    """A paragraph built from this org's actual billing numbers."""
+    paid = ev["total_paid"]
+    head = (f"Between {ev['first_month']} and {ev['last_month']}, **{name}** was "
+            f"paid **{_money(paid)}** by Medicaid across {ev['n_codes']} distinct "
+            f"procedure code(s)")
+    if ev.get("n_patients"):
+        head += f" and {ev['n_patients']:,} beneficiaries"
+    if ev.get("paid_per_patient"):
+        head += f" — about **{_money(ev['paid_per_patient'])} per beneficiary**"
+    parts = [head + "."]
+    if ev.get("top_codes"):
+        code, cpaid, share = ev["top_codes"][0]
+        s = (f"Its single largest line is procedure code **{code}** at "
+             f"{_money(cpaid)} — **{share*100:.0f}%** of everything it billed")
+        if len(ev["top_codes"]) >= 3:
+            top3 = sum(sh for _, _, sh in ev["top_codes"][:3]) * 100
+            nxt = ", ".join(c for c, _, _ in ev["top_codes"][1:3])
+            s += f"; with the next two ({nxt}) the top three reach {top3:.0f}%"
+        parts.append(s + ".")
+    r = ev.get("ramp")
+    if r:
+        parts.append(
+            f"Monthly billing ran from {_money(r['first_month_paid'])} at the start "
+            f"to {_money(r['last_month_paid'])} most recently, peaking at "
+            f"{_money(r['peak_paid'])} in {r['peak_month']}.")
+    return " ".join(parts)
+
+
 def render_dossier(row: pd.Series, subscore_cols: list[str],
-                   coverage: dict[str, list[str]]) -> str:
+                   coverage: dict[str, list[str]], evidence: dict | None = None) -> str:
     name = row.get("org_name") or row.get("org_node_id")
     scheme = str(row.get("scheme_hypothesis") or "").strip()
     sector = str(row.get("primary_taxonomy") or "").strip()
+    label, desc = SCHEME_NARRATIVES.get(scheme, (f"a {scheme or 'billing'} pattern", ""))
     lines = [f"# Target dossier — {name}\n", DISCLAIMER]
 
-    # ---- the narrative: what the model thinks it found -----------------------
-    lines.append("\n## What the model flagged\n")
-    label, desc = SCHEME_NARRATIVES.get(scheme, (f"a {scheme or 'billing'} pattern", ""))
-    exposure_txt = _dollars(row.get("payments"))
-    lines.append(
-        f"Among ~9 million organizations, this one surfaced because its billing "
-        f"and structure most resemble **{label}** — {desc or scheme}. It bills "
-        f"roughly {exposure_txt} of Medicaid a year, which is what makes the "
-        f"pattern worth a look rather than noise.\n")
+    # ---- a story built from this org's actual data ---------------------------
+    lines.append("\n## What the data shows\n")
+    if evidence:
+        lines.append(_billing_story(name, evidence) + "\n")
+        lines.append(f"\n*Every figure above is drawn from the "
+                     f"{evidence['provenance']}; the structural facts below come "
+                     f"from NPPES, the CMS ownership files, and the OIG exclusion "
+                     f"list.*\n")
+        lines.append(f"\n**The model's read:** against its specialty-and-geography "
+                     f"peers, this most resembles **{label}** — {desc or scheme}.\n")
+    else:
+        exposure_txt = _dollars(row.get("payments"))
+        lines.append(
+            f"Among ~9 million organizations, this one surfaced because its billing "
+            f"and structure most resemble **{label}** — {desc or scheme}. It bills "
+            f"roughly {exposure_txt} of Medicaid a year, which is what makes the "
+            f"pattern worth a look rather than noise.\n")
 
     signals = _firing_signals(row)
     graph = _graph_signals(row)

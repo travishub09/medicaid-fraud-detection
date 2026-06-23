@@ -50,7 +50,8 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         scoped_payments: pd.DataFrame | None = None,
         disclosure: pd.DataFrame | None = None,
         settled_org_ids: list[str] | None = None,
-        priors: dict | None = None, pu_model=None) -> pd.DataFrame:
+        priors: dict | None = None, pu_model=None,
+        spending_path: str | None = None) -> pd.DataFrame:
     """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/.
 
     ``priors`` (enforcement-weighted sector multipliers) and ``pu_model`` (a
@@ -195,10 +196,30 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     # leaves the old top-k behind and they accumulate) — each run writes its top-k only
     for old in dossier_dir.glob("*.md"):
         old.unlink()
-    for _, row in out.head(top_k_dossiers).iterrows():
+
+    # gather per-org billing evidence for the top-K (one filtered scan) so each
+    # dossier tells a story from this org's actual numbers, with provenance.
+    evidence_by_org: dict = {}
+    head = out.head(top_k_dossiers)
+    if spending_path and len(head):
+        rows_map = [{"npi": npi.strip(), "org_node_id": str(r["org_node_id"])}
+                    for _, r in head.iterrows()
+                    for npi in str(r.get("member_npis", "")).split(";") if npi.strip()]
+        if rows_map:
+            try:
+                from .dossier_evidence import gather_evidence
+                evidence_by_org = gather_evidence(spending_path, pd.DataFrame(rows_map))
+                log(f"    dossier evidence assembled for {len(evidence_by_org)} of "
+                    f"{len(head)} top orgs")
+            except Exception as e:
+                log(f"    (dossier evidence skipped: {e})")
+
+    for _, row in head.iterrows():
         safe = str(row["org_node_id"]).replace(":", "_").replace("/", "_")
         (dossier_dir / f"{row['erv_rank']:03d}_{safe}.md").write_text(
-            render_dossier(row, subscore_cols, coverage), encoding="utf-8")
+            render_dossier(row, subscore_cols, coverage,
+                           evidence=evidence_by_org.get(str(row["org_node_id"]))),
+            encoding="utf-8")
 
     _write_report(out, coverage, out_dir)
     log(f"Done — scored {n0} orgs; wrote {min(top_k_dossiers, n0)} dossiers to {out_dir}")
@@ -328,7 +349,7 @@ def main() -> None:
     run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k,
         scoped_payments=scoped if args.spending else None,
         disclosure=disclosure, settled_org_ids=settled_ids,
-        priors=priors, pu_model=pu_model)
+        priors=priors, pu_model=pu_model, spending_path=args.spending)
 
 
 if __name__ == "__main__":
