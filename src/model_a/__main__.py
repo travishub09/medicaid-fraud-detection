@@ -191,6 +191,10 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     subscore_cols = [c for c in out.columns if c.startswith("subscore_")]
     dossier_dir = out_dir / "dossiers"
     dossier_dir.mkdir(exist_ok=True)
+    # clear stale dossiers from prior runs (filenames embed the org, so a new run
+    # leaves the old top-k behind and they accumulate) — each run writes its top-k only
+    for old in dossier_dir.glob("*.md"):
+        old.unlink()
     for _, row in out.head(top_k_dossiers).iterrows():
         safe = str(row["org_node_id"]).replace(":", "_").replace("/", "_")
         (dossier_dir / f"{row['erv_rank']:03d}_{safe}.md").write_text(
