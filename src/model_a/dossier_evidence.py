@@ -170,6 +170,7 @@ def _attach_peer_medians(out: dict[str, dict], m: pd.DataFrame,
             continue
         mm = tax_to_med.get(tax)
         if mm and mm[1] >= 5:        # only frame against a non-trivial peer set
+            from .taxonomy_labels import describe_taxonomy
             ev["peer_paid_per_patient"] = mm[0]
-            ev["peer_taxonomy_label"] = f"taxonomy {tax}"
+            ev["peer_taxonomy_label"] = describe_taxonomy(tax)
             ev["peer_n"] = mm[1]

@@ -115,6 +115,13 @@ def test_hcpcs_descriptions_describe():
     assert describe(None) == ""
 
 
+def test_taxonomy_labels_describe():
+    from src.model_a.taxonomy_labels import describe_taxonomy
+    assert describe_taxonomy("251E00000X") == "Home Health Agency (251E00000X)"
+    assert describe_taxonomy("999Z99999X") == "taxonomy 999Z99999X"   # unknown → bare code
+    assert describe_taxonomy(None) == "its peer group"
+
+
 def test_dossier_narrative_deepeners():
     """Evidence-grounded narrative renders code descriptions, peer median, and
     the named excluded party (the three dossier deepeners)."""
@@ -133,7 +140,8 @@ def test_dossier_narrative_deepeners():
         "total_paid": 5_000_000.0, "n_patients": 100, "n_codes": 2,
         "n_months": 24, "first_month": "2022-01", "last_month": "2023-12",
         "paid_per_patient": 50_000.0,
-        "peer_paid_per_patient": 10_000.0, "peer_taxonomy_label": "taxonomy 251E00000X",
+        "peer_paid_per_patient": 10_000.0,
+        "peer_taxonomy_label": "Home Health Agency (251E00000X)",
         "peer_n": 200,
         "top_codes": [("T1019", 4_000_000.0, 0.8), ("T1020", 1_000_000.0, 0.2)],
         "ramp": None,
@@ -141,4 +149,5 @@ def test_dossier_narrative_deepeners():
     md = render_dossier(row, [], {}, evidence=evidence)
     assert "personal care services, per 15 min" in md          # HCPCS description (feature 2)
     assert "peer median" in md and "5.0×" in md                # peer comparison (feature 1)
+    assert "Home Health Agency" in md                          # friendly taxonomy label
     assert "JOHN DOE" in md and "2019-04-01" in md             # named excluded party (feature 3)
