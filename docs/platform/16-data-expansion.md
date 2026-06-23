@@ -167,6 +167,31 @@ multipliers in `sector_priors.py` move toward enforcement-weighted base rates.
 
 ---
 
+### Calibration — graduate Model A from heuristic to enforcement-trained
+
+Once you have a case DB (DOJ/OIG settlements, CASE_COLUMNS), one command turns it
+into Model A calibration and breaks the `adjusted_prob ≈ 1.0` ceiling of the
+label-free v1:
+
+```bash
+python -m src.model_a.calibrate --case-db <cases.csv> \
+    --graph-dir $ROOT/graph --features $ROOT/features/company_features.parquet
+# writes model_a/sector_priors.json (+ model_a/pu_model.pkl if ≥5 defendants matched)
+
+python -m src.model_a --graph-dir $ROOT/graph \
+    --features $ROOT/features/company_features.parquet \
+    --spending $ROOT/processed/spending_fact.parquet --out $ROOT/model_a \
+    --priors model_a/sector_priors.json --pu-model model_a/pu_model.pkl
+```
+
+`calibrate` (1) derives enforcement-weighted sector multipliers
+(`enforcement/derive_priors`), and (2) matches the case defendants to org nodes
+(`outcomes_from_case_db`) and trains a PU classifier on org features → a
+**calibrated P(fraud)** that replaces the saturated heuristic and re-ranks ERV.
+The more matched defendants, the sharper the calibration — this is exactly why
+the OIG enforcement feed / CIA list / DOJ backfill (sources above) are the
+priority. Without a case DB, Model A stays on the documented placeholder priors.
+
 ## Part 3 — Full catalog (everything the sweep found)
 
 ### Free / public — clear legal footing

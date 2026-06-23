@@ -49,8 +49,15 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
         top_k_dossiers: int = 10,
         scoped_payments: pd.DataFrame | None = None,
         disclosure: pd.DataFrame | None = None,
-        settled_org_ids: list[str] | None = None) -> pd.DataFrame:
-    """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/."""
+        settled_org_ids: list[str] | None = None,
+        priors: dict | None = None, pu_model=None) -> pd.DataFrame:
+    """Score every org; write erv_ranked.parquet, MODEL_A_REPORT.md, dossiers/.
+
+    ``priors`` (enforcement-weighted sector multipliers) and ``pu_model`` (a
+    calibrated PUModel) come from ``python -m src.model_a.calibrate``. With a
+    pu_model the calibrated P(fraud) replaces the saturated heuristic probability
+    and ERV is re-ranked; without them Model A stays on the heuristic.
+    """
     n0 = len(org_nodes)
     df = org_nodes.merge(org_graph_features, on="org_node_id", how="left")
     require("graph_feature_join_no_fanout", len(df) == n0, f"{len(df)} vs {n0}")
@@ -107,7 +114,7 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     subscores, coverage = compute_subscores(df)
     boost = graph_risk_boost(df["org_node_id"], shell_clusters, common_owner_clusters)
     taxonomies = df.get("primary_taxonomy", pd.Series("", index=df.index))
-    prior = sector_prior_series(taxonomies)
+    prior = sector_prior_series(taxonomies, priors=priors)
     # A6: the OIG Work Plan overlay multiplies INTO the sector prior; both
     # components stay visible (sector_prior_base + gov_interest_* drivers).
     gov = government_interest_overlay(taxonomies.map(sector_for_taxonomy))
@@ -149,6 +156,22 @@ def run(org_nodes: pd.DataFrame, org_graph_features: pd.DataFrame,
     out = pd.concat(pieces, axis=1)
     assert not out.columns.duplicated().any(), \
         f"duplicate output columns: {out.columns[out.columns.duplicated()].tolist()}"
+
+    # Calibration: replace the saturated heuristic probability with the PU model's
+    # calibrated P(fraud) and rescale ERV (= P × exposure). predict_proba reindexes
+    # to the model's feature columns, so missing ones default to 0.
+    if pu_model is not None:
+        if "related_party_density_norm" not in out.columns and "related_party_density" in out.columns:
+            out["related_party_density_norm"] = (
+                pd.to_numeric(out["related_party_density"], errors="coerce").clip(lower=0)
+                / 25.0).clip(upper=1.0)
+        pu_p = pu_model.predict_proba(out)
+        old_p = out["adjusted_prob"].clip(lower=1e-6).to_numpy()
+        out["adjusted_prob_heuristic"] = out["adjusted_prob"]
+        out["adjusted_prob"] = pu_p
+        out["erv"] = (out["erv"].to_numpy() * (pu_p / old_p)).round(2)
+        log("    calibrated probability applied (PU model) → ERV re-ranked")
+
     out = out.sort_values("erv", ascending=False)
     out["erv_rank"] = range(1, len(out) + 1)
     out = out.reset_index(drop=True)
@@ -219,6 +242,12 @@ def main() -> None:
     ap.add_argument("--dockets", default=None,
                     help="qui_tam_dockets.parquet from the docket monitor, "
                          "for the public-disclosure screen (A3)")
+    ap.add_argument("--priors", default=None,
+                    help="sector_priors.json from src.model_a.calibrate "
+                         "(enforcement-weighted sector multipliers)")
+    ap.add_argument("--pu-model", default=None,
+                    help="pu_model.pkl from src.model_a.calibrate "
+                         "(calibrated P(fraud) replaces the heuristic probability)")
     ap.add_argument("--fixture", action="store_true",
                     help="build everything from the synthetic fixture")
     args = ap.parse_args()
@@ -280,9 +309,22 @@ def main() -> None:
             settled = resolve_settled_orgs(org_nodes, case_db)
             settled_ids = settled["org_node_id"].tolist() or None
 
+    priors = None
+    if args.priors:
+        import json
+        priors = json.loads(Path(args.priors).read_text(encoding="utf-8"))
+        log(f"    enforcement-calibrated sector priors loaded ({len(priors)} sectors)")
+    pu_model = None
+    if args.pu_model:
+        import pickle
+        with open(args.pu_model, "rb") as fh:
+            pu_model = pickle.load(fh)
+        log("    calibrated PU model loaded")
+
     run(org_nodes, gf, feats, shells, owners, Path(args.out), args.top_k,
         scoped_payments=scoped if args.spending else None,
-        disclosure=disclosure, settled_org_ids=settled_ids)
+        disclosure=disclosure, settled_org_ids=settled_ids,
+        priors=priors, pu_model=pu_model)
 
 
 if __name__ == "__main__":

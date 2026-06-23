@@ -49,7 +49,7 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "ownership_integrity": {
         "within_2_hops_of_exclusion": 0.6,
         "shell_score": 0.5,
-        "related_party_density_norm": 0.3,
+        "related_party_density_norm": 0.15,
         # CHOW churn from diffed owner snapshots (A7); absent until two+ monthly
         # snapshots accumulate (src/entity_graph/ownership_churn.py)
         "ownership_turnover": 0.3,
@@ -102,8 +102,12 @@ def normalize_graph_features(features: pd.DataFrame) -> pd.DataFrame:
     """
     out = features.copy()
     if "related_party_density" in out.columns:
+        # /25 (was /10): a small shared-owner shell cluster is the concealment
+        # signal; a large legitimate integrated system shares an owner with
+        # hundreds of orgs and shouldn't max this on size alone. Weakly indicative
+        # (low scheme weight) — the real fix for size-correlated flags is calibration.
         out["related_party_density_norm"] = (
-            out["related_party_density"].clip(lower=0) / 10.0).clip(upper=1.0)
+            out["related_party_density"].clip(lower=0) / 25.0).clip(upper=1.0)
     return out
 
 

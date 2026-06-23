@@ -24,15 +24,18 @@ import pandas as pd
 
 # Government / public-body name markers (word-boundary, case-insensitive).
 _GOV = re.compile(
-    r"\b(DEPARTMENT|DEPT|COMMONWEALTH|STATE OF|COUNTY OF|CITY OF|BUREAU|"
-    r"DIVISION OF|OFFICE OF|BOARD OF|AGENCY|MUNICIPAL|TOWNSHIP|"
-    r"PUBLIC HEALTH|HEALTH DISTRICT)\b", re.I)
+    r"\b(DEPARTMENT|DEPT|COMMONWEALTH|STATE OF|COUNTY|PARISH|BOROUGH|CITY OF|"
+    r"BUREAU|DIVISION OF|OFFICE OF|BOARD OF|MUNICIPAL|TOWNSHIP|"
+    r"PUBLIC HEALTH|HEALTH DISTRICT|SCHOOL DISTRICT)\b", re.I)
 
 # Dominant national intermediaries / brokers / labs / MMIS contractors — entities
-# that aggregate or process billing for many providers or whole states.
+# that aggregate or process billing for many providers or whole states. Centers
+# for Independent Living (CILs) act as fiscal intermediaries for self-directed
+# care, so they belong here too.
 NAMED_NON_TARGETS = (
     "PUBLIC PARTNERSHIPS", "TEMPUS UNLIMITED", "CONSUMER DIRECT", "GT INDEPENDENCE",
     "ACES$", "PALCO", "MORNING SUN", "ANNKISSAM", "GTINDEPENDENCE",
+    "CENTER FOR INDEPENDENT LIVING", "INDEPENDENT LIVING CENTER", "RESOURCES FOR INDEPENDENT LIVING",
     "MODIVCARE", "LOGISTICARE", "VEYO", "MTM INC", "MEDICAL TRANSPORTATION MANAGEMENT",
     "LABORATORY CORPORATION OF AMERICA", "LABCORP", "QUEST DIAGNOSTICS",
     "GAINWELL", "CONDUENT", "DXC TECHNOLOGY", "MAXIMUS", "ACENTRA", "MOLINA",
