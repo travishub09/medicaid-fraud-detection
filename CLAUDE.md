@@ -183,7 +183,7 @@ python -m pytest tests/ -v
   org/CCN-grain features down to NPI, peer-normalizes adapter metrics, ships raw +
   `*__peerpct` + `subscore_*` + the `provider_on_leie` PU label, with a leakage
   manifest (hard vs. proximity-adjacent) and a data dictionary.
-  Full suite: `pytest tests/` (258 tests).
+  Full suite: `pytest tests/` (259 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

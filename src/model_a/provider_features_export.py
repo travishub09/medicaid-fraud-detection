@@ -279,6 +279,7 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
             p = finder()
             raw = _read_any(p) if p else None
             if raw is None or not len(raw):
+                log(f"    [{name}] skipped: no source file")
                 return
             res = fn(raw)
             df = res[0] if isinstance(res, tuple) else res
@@ -302,7 +303,162 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
     _try("open_payments",
          lambda: _first_existing(pc / "open_payments", "open_payments.csv", "*.csv"),
          lambda r: openpayments.compute_openpayments_metrics(r))
+
+    # Part D × Open Payments kickback co-occurrence (per-NPI) needs BOTH raws.
+    try:
+        op_p = _first_existing(pc / "open_payments", "open_payments.csv", "*.csv")
+        pd_p = _first_existing(pc / "partd", "partd.csv", "*.csv")
+        op_raw, pd_raw = (_read_any(op_p) if op_p else None), (_read_any(pd_p) if pd_p else None)
+        if op_raw is not None and pd_raw is not None:
+            kb = openpayments.kickback_co_occurrence(op_raw, pd_raw)
+            if kb is not None and len(kb) and "npi" in kb.columns:
+                frames["kickback"] = kb
+                log(f"    [kickback] {len(kb):,} prescribers (op_payment_utilization_corr)")
+    except Exception as e:
+        log(f"    [kickback] skipped: {e}")
     return frames
+
+
+def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.DataFrame,
+                            org_nodes: pd.DataFrame | None,
+                            ccn_to_npi: pd.DataFrame | None, log
+                            ) -> dict[str, pd.DataFrame]:
+    """Run the adapters that resolve at ORG or CCN grain and return org-keyed frames
+    (build_provider_matrix broadcasts them down to each member NPI).
+
+    Each block guards on ALL its inputs; a missing input logs a precise reason so the
+    export report shows exactly which scenarios are scored and which are data-blocked.
+    """
+    frames: dict[str, pd.DataFrame] = {}
+    pc, proc = preclean, processed
+    spending_p = _first_existing(proc, "spending_fact.parquet")
+
+    def _emit(name: str, fr, feature_cols: list[str]):
+        if fr is not None and len(fr) and "org_node_id" in fr.columns:
+            frames[name] = fr
+            log(f"    [{name}] {len(fr):,} orgs, cols: {', '.join(feature_cols)}")
+
+    # --- post-deactivation billing (spending + deactivated NPIs + npi_to_org) ---
+    try:
+        from src.ingest_cms import nppes_deactivation as nd
+        dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv", "*.csv")
+        if dp and spending_p:
+            deact, _ = nd.deactivated_npis(_read_any(dp))
+            spend = pd.read_parquet(spending_p, columns=["billing_npi", "service_month", "total_paid"])
+            _emit("nppes_deactivation",
+                  nd.billing_after_deactivation(spend, deact, npi_to_org),
+                  ["billing_after_deactivation"])
+        else:
+            log("    [nppes_deactivation] skipped: needs deactivation file + processed/spending_fact.parquet")
+    except Exception as e:
+        log(f"    [nppes_deactivation] skipped: {e}")
+
+    # --- NADAC drug-spread anomaly (NDC-level claims + NADAC ref + npi_to_org) ---
+    try:
+        from src.ingest_cms import nadac
+        nref_p = _first_existing(pc / "nadac", "nadac.csv", "*.csv")
+        ndc_p = _first_existing(proc, "ndc_claims.parquet")
+        if nref_p and ndc_p:
+            ref = nadac.compute_nadac_reference(_read_any(nref_p))
+            _emit("nadac", nadac.drug_spread_anomaly(pd.read_parquet(ndc_p), ref, npi_to_org),
+                  ["drug_spread_anomaly"])
+        else:
+            log("    [nadac] skipped: needs NADAC reference + processed/ndc_claims.parquet (NDC-level claims)")
+    except Exception as e:
+        log(f"    [nadac] skipped: {e}")
+
+    # --- ineligible-referral share (referred claims + eligibility + npi_to_org) ---
+    try:
+        from src.ingest_cms import order_referring as orr
+        elig_p = _first_existing(pc / "order_referring", "order_referring.csv", "*.csv")
+        ref_p = _first_existing(proc, "referred_claims.parquet")
+        if elig_p and ref_p:
+            elig, _ = orr.eligible_referrers(_read_any(elig_p))
+            _emit("order_referring",
+                  orr.ineligible_referral_share(pd.read_parquet(ref_p), elig, npi_to_org),
+                  ["ineligible_referral_share"])
+        else:
+            log("    [order_referring] skipped: needs eligibility file + processed/referred_claims.parquet (referring_npi pairs)")
+    except Exception as e:
+        log(f"    [order_referring] skipped: {e}")
+
+    # --- 340B contract-pharmacy concentration (OPAIS entities + org_nodes) ---
+    try:
+        from src.ingest_cms import hrsa_340b
+        ent_p = _first_existing(pc / "hrsa_340b", "opais.csv", "*.csv")
+        if ent_p and org_nodes is not None:
+            ents = hrsa_340b.covered_entities(_read_any(ent_p))
+            base = org_nodes[["org_node_id"]].copy()
+            out = hrsa_340b.attach_340b(base, org_nodes, ents)
+            _emit("hrsa_340b", out[["org_node_id", "contract_pharmacy_concentration"]],
+                  ["contract_pharmacy_concentration"])
+        else:
+            log("    [hrsa_340b] skipped: needs OPAIS file + org_nodes")
+    except Exception as e:
+        log(f"    [hrsa_340b] skipped: {e}")
+
+    # --- market saturation (county file → metrics + org_nodes) ---
+    try:
+        from src.ingest_cms import saturation as sat
+        sat_p = _first_existing(pc / "saturation", "saturation.csv", "*.csv")
+        if sat_p and org_nodes is not None:
+            county = sat.compute_saturation_metrics(_read_any(sat_p))
+            base = org_nodes[["org_node_id"]].copy()
+            out = sat.attach_market_saturation(base, org_nodes, county)
+            _emit("saturation", out[["org_node_id", "market_saturation_index"]],
+                  ["market_saturation_index"])
+        else:
+            log("    [saturation] skipped: needs county saturation file + org_nodes")
+    except Exception as e:
+        log(f"    [saturation] skipped: {e}")
+
+    # --- facility (PBJ/hospice/deficiency) + HCRIS + POS: CCN-grain → org via ccn_to_npi ---
+    if ccn_to_npi is None:
+        log("    [facility/hcris/pos] skipped: no CCN→NPI crosswalk "
+            "(processed/ccn_to_npi.parquet) — the one missing link for the "
+            "facility / cost-report / capacity schemes")
+    else:
+        _run_ccn_grain(pc, npi_to_org, ccn_to_npi, _emit, log)
+    return frames
+
+
+def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
+    """Facility / HCRIS / POS adapters: CCN-grain features rolled to org via the
+    PECOS CCN↔NPI crosswalk, then (by the caller) broadcast to NPI."""
+    from src.ingest_cms import facility as fac, hcris as hc, pos
+    # facility: build whichever CCN metrics are available, percentile, roll to org
+    try:
+        ccn_feats = []
+        pbj_p = _first_existing(pc / "facility", "pbj.csv", "*.csv")
+        if pbj_p:
+            m, _ = fac.compute_pbj_metrics(_read_any(pbj_p))
+            ccn_feats.append(fac.facility_peer_percentiles(m, ["pbj_understaffing"]))
+        hos_p = _first_existing(pc / "facility", "hospice.csv")
+        if hos_p:
+            m, _ = fac.compute_hospice_metrics(_read_any(hos_p))
+            ccn_feats.append(fac.facility_peer_percentiles(m, ["hospice_live_discharge_rate"]))
+        defp = _first_existing(pc / "facility", "deficiencies.csv")
+        if defp:
+            m, _ = fac.compute_deficiency_counts(_read_any(defp))
+            ccn_feats.append(fac.facility_peer_percentiles(m, ["deficiency_count"]))
+        if ccn_feats:
+            merged = ccn_feats[0]
+            for extra in ccn_feats[1:]:
+                merged = merged.merge(extra, on="ccn", how="outer")
+            org = fac.rollup_ccn_to_org(merged, ccn_to_npi, npi_to_org)
+            _emit("facility", org, [c for c in org.columns if c != "org_node_id"])
+    except Exception as e:
+        log(f"    [facility] skipped: {e}")
+    # HCRIS cost-report anomaly
+    try:
+        hp = _first_existing(pc / "hcris", "hcris.csv", "*.csv")
+        if hp:
+            m, _ = hc.compute_hcris_metrics(_read_any(hp))
+            anom = hc.hcris_anomaly(m)[["ccn", "hcris_cost_anomaly"]]
+            org = fac.rollup_ccn_to_org(anom, ccn_to_npi, npi_to_org)
+            _emit("hcris", org, ["hcris_cost_anomaly"])
+    except Exception as e:
+        log(f"    [hcris] skipped: {e}")
 
 
 def main() -> None:
@@ -315,6 +471,11 @@ def main() -> None:
                     help="fraud_leads_v3.parquet (per-NPI concepts + label)")
     ap.add_argument("--preclean", default=None,
                     help="raw source root (per-NPI adapters run against subdirs here)")
+    ap.add_argument("--processed", default=None,
+                    help="processed root (spending_fact / ndc_claims / referred_claims)")
+    ap.add_argument("--ccn-to-npi", default=None,
+                    help="PECOS CCN↔NPI crosswalk parquet (csv/parquet) — unlocks the "
+                         "facility / HCRIS / POS (CCN-grain) schemes")
     ap.add_argument("--out", default=None, help="output dir")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
@@ -341,12 +502,20 @@ def main() -> None:
         g = Path(args.graph_dir)
         npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
         gf = pd.read_parquet(g / "org_graph_features.parquet")
+        org_nodes = (pd.read_parquet(g / "nodes" / "org_nodes.parquet")
+                     if (g / "nodes" / "org_nodes.parquet").exists() else None)
         leads = pd.read_parquet(args.leads)
         if "npi" not in leads.columns:
             ap.error(f"{args.leads} is not per-NPI (no 'npi' column)")
         preclean = Path(args.preclean) if args.preclean else root / "preclean"
+        processed = Path(args.processed) if args.processed else root / "processed"
+        ccn_xw = Path(args.ccn_to_npi) if args.ccn_to_npi else processed / "ccn_to_npi.parquet"
+        ccn_to_npi = _read_any(ccn_xw)
+        print("  running per-NPI adapters …")
         adapter_frames = _run_npi_adapters(preclean, print)
-        org_grain = {}                      # org-grain adapters wired on Trey's box
+        print("  running org/CCN-grain adapters …")
+        org_grain = _run_org_grain_adapters(preclean, processed, npi_to_org,
+                                            org_nodes, ccn_to_npi, print)
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(

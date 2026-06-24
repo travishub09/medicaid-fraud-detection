@@ -85,6 +85,30 @@ def test_label_and_leakage_quarantine(tmp_path):
     assert "within_2_hops_of_exclusion" in manifest["leakage_adjacent"]
 
 
+def test_org_grain_source_broadcasts_to_npi(tmp_path):
+    """An org-keyed adapter output (e.g. 340B contract-pharmacy concentration) is
+    broadcast down to every member NPI and lights up its scheme subscore."""
+    inputs = build_synthetic_inputs()
+    outputs = run_graph(inputs, tmp_path / "graph")
+    leads = build_provider_leads(inputs["provider_dim"])
+    npi_to_org = outputs["npi_to_org"]
+    org_ids = npi_to_org["org_node_id"].astype(str).unique().tolist()
+    # one org gets a high contract-pharmacy concentration, the rest low → spread
+    org_frame = pd.DataFrame({
+        "org_node_id": org_ids,
+        "contract_pharmacy_concentration": [0.95] + [0.1] * (len(org_ids) - 1),
+    })
+    matrix, manifest = build_provider_matrix(
+        leads, npi_to_org, org_graph_features=outputs["org_graph_features"],
+        org_grain_frames={"hrsa_340b": org_frame}, min_peer=5)
+    assert "contract_pharmacy_concentration" in matrix.columns      # broadcast raw
+    assert "subscore_contract_pharmacy" in matrix.columns           # scheme lit up
+    assert "hrsa_340b" in manifest["sources_used"]
+    # the high-concentration org's member NPIs carry the broadcast value
+    hi = matrix[matrix["org_node_id"].astype(str) == org_ids[0]]
+    assert (pd.to_numeric(hi["contract_pharmacy_concentration"]) == 0.95).all()
+
+
 def test_peer_percentile_companion_columns(tmp_path):
     matrix, manifest, _ = _build(tmp_path)
     assert "em_high_level_share" in matrix.columns                 # raw
