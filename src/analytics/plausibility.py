@@ -43,6 +43,29 @@ MIN_TAXONOMY_PROVIDERS = 5     # below this a taxonomy can't anchor a prevalence
 MAX_DRIVERS = 3                # named implausible codes per org on the dossier
 
 
+def org_clinical_plausibility_from_parquet(spending_path: str,
+                                           provider_dim: pd.DataFrame,
+                                           npi_to_org: pd.DataFrame,
+                                           **kwargs) -> pd.DataFrame:
+    """Scale-safe clinical plausibility: DuckDB collapses the spending fact to the
+    (billing_npi, hcpcs) grain it needs (dropping the month dimension that bloats
+    the row count) BEFORE pandas touches it, then the tested per-org logic runs on
+    the small rollup. Sums and distinct-provider counts are preserved, so the
+    output equals ``org_clinical_plausibility`` on the raw fact."""
+    import duckdb
+    con = duckdb.connect()
+    p = str(spending_path).replace("'", "''")
+    agg = con.execute(f"""
+        SELECT CAST(billing_npi AS VARCHAR) AS billing_npi,
+               UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) AS hcpcs_code,
+               SUM(CAST(total_paid AS DOUBLE)) AS total_paid
+        FROM read_parquet('{p}')
+        GROUP BY 1, 2
+    """).df()
+    con.close()
+    return org_clinical_plausibility(agg, provider_dim, npi_to_org, **kwargs)
+
+
 def _prep_spending(spending: pd.DataFrame) -> pd.DataFrame:
     s = spending.copy()
     s["billing_npi"] = s["billing_npi"].astype(str)

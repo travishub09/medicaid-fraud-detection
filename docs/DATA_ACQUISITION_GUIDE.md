@@ -163,6 +163,25 @@ and the adapter is built, but this third input is not auto-wired into the export
 
 ---
 
+### C6. NUCC taxonomy + CMS specialty crosswalk → better peer grouping (all schemes)
+*Not a scheme feature — it fixes the peer cohort every percentile is ranked in.*
+- **Get:** NUCC code set — https://www.nucc.org/index.php/code-sets-mainmenu-41/provider-taxonomy-mainmenu-40 → `preclean/nucc/nucc_taxonomy.csv` (needs `Code`, `Grouping`, `Classification`, `Specialization`). Optional CMS crosswalk → `preclean/nucc/specialty_crosswalk.csv`.
+- **Run:** nothing extra — `make provider-features` auto-detects it and rolls thin/mis-coded taxonomies up to their classification cohort.
+
+### C7. Widen the label set → battle the LEIE ceiling
+The graph merges any `processed/exclusions_*.parquet` into the exclusion nodes, and
+the export unions them into `provider_on_exclusion` (with `exclusion_label_sources`).
+- **CMS revoked providers:** data.cms.gov → search "Revoked Medicare Providers". Then:
+  ```bash
+  python -m src.enforcement.medicare_revocations --in <revocations.csv> \
+      --out processed/exclusions_medicare_revocations.parquet
+  ```
+- **SAM exclusions:** `python -m src.enforcement.sam_api --out processed/`
+  (writes `exclusions_sam.parquet`; needs a free SAM API key).
+- **OpenSanctions:** see C2. After dropping any of these, re-run `make graph` then `make provider-features`.
+
+---
+
 ## D. Operational cadence (no download — just a monthly job)
 
 ### D1. Owner snapshots → `ownership_turnover` (change-of-ownership churn)

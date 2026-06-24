@@ -80,8 +80,16 @@ def growth_features(spending: pd.DataFrame,
     # module exists to refuse.
     monthly_long = s.groupby(["org_node_id", "month"])["total_paid"].sum()
     first_seen = s.groupby(["org_node_id", "hcpcs"])["month"].min()
+    return _growth_from_aggregates(monthly_long, first_seen)
 
+
+def _growth_from_aggregates(monthly_long: pd.Series,
+                            first_seen: pd.Series) -> pd.DataFrame:
+    """Shared compute: per-org level-shift + new-code-burst from the two
+    aggregates (org×month paid; org×hcpcs first-month). Used by both the pandas
+    and the DuckDB-streamed entry points so the change-point logic lives once."""
     orgs, shifts, bursts = [], [], []
+    seen_orgs = set(first_seen.index.get_level_values(0)) if len(first_seen) else set()
     for org, series in monthly_long.groupby(level=0):
         series = series.droplevel(0)
         span = pd.period_range(series.index.min(), series.index.max(), freq="M")
@@ -89,7 +97,7 @@ def growth_features(spending: pd.DataFrame,
         orgs.append(org)
         shifts.append(_level_shift(full))
 
-        codes = first_seen.loc[org]
+        codes = first_seen.loc[org] if org in seen_orgs else pd.Series([], dtype=str)
         if len(codes) == 0 or len(span) < MIN_MONTHS:
             bursts.append(np.nan)
             continue
@@ -99,6 +107,40 @@ def growth_features(spending: pd.DataFrame,
     return pd.DataFrame({"org_node_id": orgs,
                          "growth_level_shift": shifts,
                          "new_code_burst": bursts})
+
+
+def growth_features_from_parquet(spending_path: str, npi_to_org: pd.DataFrame
+                                 ) -> pd.DataFrame:
+    """Scale-safe growth: the two aggregates are computed in DuckDB straight from
+    the spending parquet (the 238M-row fact never enters pandas), then the shared
+    change-point compute runs on the small per-org/per-code result. Same output
+    as ``growth_features``."""
+    import duckdb
+    xw = npi_to_org[["npi", "org_node_id"]].astype(str)
+    con = duckdb.connect()
+    con.register("xw", xw)
+    p = str(spending_path).replace("'", "''")
+    con.execute(f"""
+        CREATE TEMP TABLE agg AS
+        SELECT xw.org_node_id AS org,
+               substr(CAST(s.service_month AS VARCHAR), 1, 7) AS month,
+               UPPER(TRIM(CAST(s.hcpcs_code AS VARCHAR))) AS hcpcs,
+               CAST(s.total_paid AS DOUBLE) AS paid
+        FROM read_parquet('{p}') s
+        JOIN xw ON CAST(s.billing_npi AS VARCHAR) = xw.npi
+    """)
+    monthly = con.execute(
+        "SELECT org, month, SUM(paid) paid FROM agg GROUP BY 1, 2").df()
+    first = con.execute(
+        "SELECT org, hcpcs, MIN(month) m FROM agg WHERE hcpcs <> '' GROUP BY 1, 2").df()
+    con.close()
+    if not len(monthly):
+        return pd.DataFrame(columns=["org_node_id", "growth_level_shift", "new_code_burst"])
+    monthly_long = monthly.set_index(["org", "month"])["paid"]
+    monthly_long.index = monthly_long.index.set_names(["org_node_id", "month"])
+    first_seen = first.set_index(["org", "hcpcs"])["m"]
+    first_seen.index = first_seen.index.set_names(["org_node_id", "hcpcs"])
+    return _growth_from_aggregates(monthly_long, first_seen)
 
 
 def growth_percentiles(growth: pd.DataFrame) -> pd.DataFrame:

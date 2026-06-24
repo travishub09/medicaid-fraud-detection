@@ -76,8 +76,10 @@ def main() -> None:
     args = ap.parse_args()
     df = fetch_sam_exclusions()
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out / "sam_exclusions.parquet", index=False)
-    print(f"sam exclusions: {len(df):,} rows -> {out}")
+    # named exclusions_*.parquet so a graph build merges it into exclusion nodes
+    # (point --out at the processed dir to widen the graph + the PU label).
+    df.to_parquet(out / "exclusions_sam.parquet", index=False)
+    print(f"sam exclusions: {len(df):,} rows -> {out / 'exclusions_sam.parquet'}")
 
 
 if __name__ == "__main__":

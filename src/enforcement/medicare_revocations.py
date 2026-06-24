@@ -82,3 +82,24 @@ def normalize_revocations(raw: pd.DataFrame,
     # keep rows that have at least an NPI or a name to match on
     out = out[(out["npi"] != "") | (out["name_key"] != "")]
     return out.reset_index(drop=True)[EXCLUSION_COLS]
+
+
+def main() -> None:
+    """CSV of CMS revoked providers → processed/exclusions_medicare_revocations.parquet
+    (the graph merges any processed/exclusions_*.parquet into exclusion nodes,
+    widening within_2_hops_of_exclusion AND the PU positive label)."""
+    import argparse
+    from pathlib import Path
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--in", dest="inp", required=True, help="CMS revocations csv")
+    ap.add_argument("--out", required=True, help="output exclusions parquet")
+    args = ap.parse_args()
+    df = normalize_revocations(pd.read_csv(args.inp, dtype=str))
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(args.out, index=False)
+    print(f"medicare revocations: {len(df):,} rows "
+          f"({int((df['npi'] != '').sum()):,} NPI-matched) -> {args.out}")
+
+
+if __name__ == "__main__":
+    main()

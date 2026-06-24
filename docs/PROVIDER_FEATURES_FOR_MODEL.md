@@ -174,13 +174,16 @@ not just unusual billing.
 
 ## 6. The label, PU learning, and the leakage discipline
 
-**Label (`provider_on_leie`):** the provider appears on the OIG List of Excluded
-Individuals/Entities (and, once you load it, OpenSanctions — same column, widened).
-This is a **positive-unlabeled** target: a `1` is a confirmed bad actor, but a `0`
-is *not* a confirmed-clean provider — it's merely uncaught. Train accordingly (PU
-learning / treat unlabeled as unlabeled), exactly as your existing harness does.
-Filter to fraud-relevant statutes if you want a cleaner positive set; the platform
-already filters LEIE to the fraud statutes elsewhere.
+**Label (`provider_on_exclusion`, falling back to `provider_on_leie`):** the
+provider appears on an exclusion/debarment list. When supplementary sources are
+loaded, the manifest's `label` is the **widened** `provider_on_exclusion` — a union
+of LEIE + CMS revocations + SAM + OpenSanctions — with `exclusion_label_sources`
+recording which list(s) matched, so you can weight or stratify by source.
+`provider_on_leie` remains for back-compat. This is a **positive-unlabeled**
+target: a `1` is a confirmed bad actor, but a `0` is *not* confirmed-clean — it's
+merely uncaught. Train accordingly (PU learning / treat unlabeled as unlabeled).
+Filter to fraud-relevant statutes for a cleaner positive set; the platform already
+filters LEIE to the fraud statutes elsewhere.
 
 **Leakage is made explicit so the backtest stays honest.** The manifest separates:
 
@@ -235,19 +238,34 @@ group-aware splits (don't let two NPIs of the same org straddle train/test).
 
 ---
 
-## 9. Honest limitations
+## 9. Honest limitations — and how each is now mitigated
+
+Each of the four is real, but the platform now actively battles it:
 
 - **Label ceiling.** LEIE captures *caught* fraud and skews toward certain schemes;
-  precision@k and lift are the honest metrics, not accuracy/recall against an
-  incomplete ground truth. OpenSanctions + state lists widen the positive set.
+  precision@k and lift remain the honest metrics, not accuracy/recall against an
+  incomplete ground truth. **Mitigation (built):** the label is now a *widened*
+  multi-source positive — `provider_on_exclusion` unions LEIE + CMS revocations +
+  SAM + OpenSanctions (each merged via `processed/exclusions_*.parquet`), with an
+  `exclusion_label_sources` provenance column so you can weight or stratify by
+  source. `provider_on_leie` is retained for back-compat. Evaluate lift *within*
+  scheme families so a model can't hide by learning only LEIE-flavored fraud.
 - **Peer grouping depends on taxonomy quality.** The percentiles are only as good
-  as the NPPES taxonomy; the NUCC crosswalk (data-expansion sprint) improves this.
-- **Org→NPI broadcast** gives every NPI in an org the same ownership value — correct
-  for "this provider operates inside a suspect structure," but it is an org-level
-  attribute, not an NPI-level one. The `org_node_id` column lets you model that
-  explicitly (e.g., group features) if you want.
-- **Scale of `--with-analytics`.** The growth/plausibility enrichments run in
-  pandas; use a filtered/by-state spending file until the DuckDB rewrite lands.
+  as the NPPES taxonomy. **Mitigation (built):** the NUCC crosswalk
+  (`ingest_cms/nucc_taxonomy.py`) rolls the noisy ~870-code taxonomy up to a
+  clinically coherent **classification** cohort and adds it as a fallback rung on
+  the peer ladder, so a thin/mis-coded taxonomy cell now ranks against its
+  specialty group instead of going national or unscored.
+- **Org→NPI broadcast** gives every NPI in an org the same ownership value.
+  **Mitigation (built):** `org_member_count` lets the model discount a broadcast
+  signal in a 5,000-NPI system vs. a 2-NPI shell, and `has_excluded_owner` (from
+  the NPI's own owner-role) sharpens the smeared graph proximity into an NPI-level
+  signal. Both are exposed alongside `org_node_id` for group-aware modeling.
+  (These owner-role signals are `leakage_adjacent` — validate out-of-time.)
+- **Scale of `--with-analytics`.** **Mitigation (built):** growth and clinical
+  plausibility now stream straight from the spending parquet via DuckDB
+  (`*_from_parquet`); the 238M-row fact never enters pandas, so the enrichments
+  scale to the full universe rather than a by-state slice.
 
 ---
 

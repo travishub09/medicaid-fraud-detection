@@ -89,14 +89,20 @@ LEAKAGE_HARD = ["billed_after_exclusion", "excluded_after_billing",
                 "provider_on_leie"]
 
 # Exclusion-PROXIMITY features: predictive (rings get caught together) but
-# correlated with the label — use only under a strict out-of-time split.
+# correlated with the label — use only under a strict out-of-time split. Includes
+# the NPI-grain owner-role signals (sharper than the smeared graph proximity).
 LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "shell_score",
                     "related_party_density", "related_party_density_norm",
-                    "subscore_ownership_integrity"]
+                    "subscore_ownership_integrity", "has_excluded_owner",
+                    "facility_has_excluded_owner_high",
+                    "facility_has_excluded_owner_probable"]
 
 # Provider stats worth carrying as plain features (whatever the base leads has).
+# org_member_count lets the model discount a broadcast org signal in a giant
+# health system vs. a 2-NPI shell.
 PROVIDER_STATS = ["gross_paid", "net_paid", "service_volume", "total_claim_lines",
-                  "n_distinct_hcpcs", "tenure_months", "n_active_months"]
+                  "n_distinct_hcpcs", "tenure_months", "n_active_months",
+                  "org_member_count"]
 
 IDENTIFIER_COLS = ["npi", "org_node_id", "entity_type", "primary_taxonomy",
                    "practice_state", "org_legal_name"]
@@ -122,7 +128,8 @@ def _one_sided_peer_pct(df: pd.DataFrame, cols: list[str],
     convention: high = more than peers = the only suspicious direction). Reuses the
     peer ladder in analytics.peers. Returns columns named exactly ``cols`` (NaN where
     a provider has no adequate peer group — never force-ranked)."""
-    from src.analytics.peers import assign_peer_groups, one_sided_percentiles
+    from src.analytics.peers import (assign_peer_groups, one_sided_percentiles,
+                                      DEFAULT_LADDER)
     present = [c for c in cols if c in df.columns]
     if not present:
         return pd.DataFrame(index=df.index)
@@ -132,7 +139,12 @@ def _one_sided_peer_pct(df: pd.DataFrame, cols: list[str],
     work["state"] = work.get("practice_state", pd.Series("", index=work.index))
     if "entity_type" not in work.columns:
         work["entity_type"] = ""
-    assigned = assign_peer_groups(work, min_peer=min_peer)
+    # NUCC fix: when a raw-taxonomy cell is too thin, fall back to the clinically
+    # coherent classification cohort (peer_group_key) instead of going national.
+    ladder = DEFAULT_LADDER
+    if "peer_group_key" in work.columns and work["peer_group_key"].astype(str).str.len().gt(0).any():
+        ladder = DEFAULT_LADDER + (("peer_group_key",),)
+    assigned = assign_peer_groups(work, ladder=ladder, min_peer=min_peer)
     pct = one_sided_percentiles(assigned, present)
     return pct[[c for c in present if c in pct.columns]]
 
@@ -141,6 +153,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           org_graph_features: pd.DataFrame | None = None,
                           adapter_npi_frames: dict[str, pd.DataFrame] | None = None,
                           org_grain_frames: dict[str, pd.DataFrame] | None = None,
+                          nucc_peer_groups: pd.DataFrame | None = None,
+                          widened_label: pd.DataFrame | None = None,
                           min_peer: int = 30,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
@@ -167,7 +181,26 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     m = m.merge(xw.drop_duplicates("npi"), on="npi", how="left")
     assert len(m) == n0, "npi_to_org join fanned out"
 
+    # #4: org size — every member NPI carries its org's member count, so the model
+    # can discount a broadcast ownership signal in a 5,000-NPI system vs. a 2-NPI shell.
+    org_sizes = xw.drop_duplicates("npi").groupby("org_node_id")["npi"].size()
+    m["org_member_count"] = m["org_node_id"].map(org_sizes).fillna(1).astype(int)
+    # #4: NPI-grain owner-role signal (sharper than the smeared graph proximity)
+    if "excluded_owner_role" in m.columns:
+        m["has_excluded_owner"] = (m["excluded_owner_role"].fillna("").astype(str)
+                                   .str.len().gt(0).astype(int))
+
     sources_used: dict[str, list[str]] = {}
+
+    if widened_label is not None and len(widened_label) and "npi" in widened_label.columns:
+        wl = widened_label.copy()
+        wl["npi"] = wl["npi"].astype(str)
+        cols = [c for c in ["npi", "provider_on_exclusion", "exclusion_label_sources"]
+                if c in wl.columns]
+        m = m.merge(wl[cols].drop_duplicates("npi"), on="npi", how="left")
+        assert len(m) == n0, "widened-label join fanned out"
+        if "provider_on_exclusion" in m.columns:
+            m["provider_on_exclusion"] = m["provider_on_exclusion"].fillna(0).astype(int)
 
     if org_graph_features is not None and len(org_graph_features):
         gf = _broadcast_org_to_npi(npi_to_org, org_graph_features, GRAPH_FEATURES)
@@ -200,6 +233,16 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             assert len(m) == n0, f"org-grain source '{name}' broadcast fanned out"
             sources_used[name] = [c for c in b.columns if c != "npi"]
 
+    # --- NUCC canonical peer groups (coherent cohort key for the percentile ladder) ---
+    if nucc_peer_groups is not None and len(nucc_peer_groups) and "npi" in nucc_peer_groups.columns:
+        ng = nucc_peer_groups.copy()
+        ng["npi"] = ng["npi"].astype(str)
+        keep = [c for c in ["npi", "peer_group_key", "nucc_grouping", "nucc_classification"]
+                if c in ng.columns]
+        m = m.merge(ng[keep].drop_duplicates("npi"), on="npi", how="left")
+        assert len(m) == n0, "nucc peer-group join fanned out"
+        sources_used["nucc_taxonomy"] = [c for c in keep if c != "npi"]
+
     # --- peer-normalize the raw adapter metrics (one-sided taxonomy percentile) ---
     adapter_present = [c for c in ADAPTER_FEATURE_COLS if c in m.columns]
     peerpct = _one_sided_peer_pct(m, adapter_present, min_peer=min_peer)
@@ -228,11 +271,19 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     subscore_cols = [c for c in out.columns if c.startswith("subscore_")]
     peerpct_cols = [c for c in out.columns if c.endswith("__peerpct")]
 
+    # Prefer the widened multi-source label when present (LEIE + revocations + SAM +
+    # OpenSanctions), keeping provider_on_leie available for back-compat.
+    label = "provider_on_exclusion" if "provider_on_exclusion" in out.columns else \
+            (LABEL_COL if LABEL_COL in out.columns else None)
+    leakage_hard = [c for c in (LEAKAGE_HARD + ["provider_on_exclusion"]) if c in out.columns]
+    raw_feature_cols = [c for c in raw_feature_cols if c not in leakage_hard]
+
     manifest = {
         "grain": "npi",
         "n_providers": int(n0),
-        "label": LABEL_COL if LABEL_COL in out.columns else None,
-        "leakage_hard": [c for c in LEAKAGE_HARD if c in out.columns],
+        "label": label,
+        "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
+        "leakage_hard": leakage_hard,
         "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns],
         "identifier_cols": [c for c in IDENTIFIER_COLS if c in out.columns],
         "raw_feature_cols": raw_feature_cols,
@@ -255,6 +306,68 @@ def _read_any(path: Path) -> pd.DataFrame | None:
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
     return pd.read_csv(path, dtype=str)
+
+
+def _load_nucc_peer_groups(preclean: Path, processed: Path, log):
+    """Build the canonical NUCC peer-group table if the taxonomy file is present."""
+    tax_p = (preclean / "nucc" / "nucc_taxonomy.csv")
+    pdim_p = _first_existing(processed, "provider_dim.parquet")
+    if not tax_p.exists() or not pdim_p:
+        log("    [nucc] skipped: needs preclean/nucc/nucc_taxonomy.csv + provider_dim "
+            "(percentiles fall back to raw NPPES taxonomy)")
+        return None
+    try:
+        from src.ingest_cms import nucc_taxonomy as nt
+        hier = nt.load_taxonomy_hierarchy(_read_any(tax_p))
+        xw_p = preclean / "nucc" / "specialty_crosswalk.csv"
+        xw = nt.load_specialty_crosswalk(_read_any(xw_p)) if xw_p.exists() else None
+        pg = nt.canonical_peer_group(pd.read_parquet(pdim_p), hier, xw)
+        log(f"    [nucc] {pg['peer_group_key'].nunique():,} canonical peer groups "
+            f"for {len(pg):,} NPIs (coherent cohort fallback enabled)")
+        return pg
+    except Exception as e:
+        log(f"    [nucc] skipped: {e}")
+        return None
+
+
+_LEIE_STATUTE_PREFIXES = ("1128",)
+
+
+def _label_source(excl_type: str) -> str:
+    t = str(excl_type or "").lower()
+    if t.startswith("opensanctions"):
+        return "opensanctions"
+    if t.startswith("medicare_revocation"):
+        return "medicare_revocation"
+    if t.startswith("sam"):
+        return "sam"
+    return "leie"
+
+
+def _widened_label_from_graph(graph_dir: Path, log):
+    """Per-NPI multi-source exclusion label from the graph's exclusion nodes
+    (LEIE + merged revocations/SAM/OpenSanctions). Only NPI-matched exclusions
+    count — name-only rows can't be safely attributed to a provider here.
+    Returns npi, provider_on_exclusion, exclusion_label_sources."""
+    ep = graph_dir / "nodes" / "exclusion_nodes.parquet"
+    if not ep.exists():
+        return None
+    ex = pd.read_parquet(ep)
+    if "npi" not in ex.columns:
+        return None
+    ex = ex.copy()
+    ex["npi"] = ex["npi"].astype(str)
+    ex = ex[ex["npi"].str.len() >= 10]                  # NPI-matched only
+    if not len(ex):
+        return None
+    ex["src"] = ex.get("excl_type", "").map(_label_source)
+    g = ex.groupby("npi")["src"].agg(lambda s: ";".join(sorted(set(s))))
+    out = pd.DataFrame({"npi": g.index, "provider_on_exclusion": 1,
+                        "exclusion_label_sources": g.values})
+    srcs = sorted({s for v in g.values for s in v.split(";")})
+    log(f"    [label] widened positives from {len(out):,} NPI-matched exclusions "
+        f"across: {', '.join(srcs)}")
+    return out.reset_index(drop=True)
 
 
 def _read_spending_cols(path: Path, cols: list[str]) -> pd.DataFrame:
@@ -388,30 +501,27 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     spending_p = _first_existing(proc, "spending_fact.parquet")
 
     # --- analytics enrichments (growth-shock + clinical plausibility) -----------
-    # These run in pandas; the full-universe spending_fact OOMs a laptop, so they
-    # are opt-in (--with-analytics) and meant for a filtered/by-state spending file,
-    # matching the scale caveat in src/model_a/__main__. They feed rapid_ramp and
-    # specialty_mismatch via pass-through (already one-sided percentiles).
+    # DuckDB-streamed straight from the spending parquet (the 238M-row fact never
+    # enters pandas), so they scale to the full universe. They feed rapid_ramp and
+    # specialty_mismatch via pass-through (already one-sided percentiles). Opt-in
+    # because they add a couple of streaming passes over the fact.
     if with_analytics and spending_p:
         try:
             from src.analytics import growth
-            spend = _read_spending_cols(spending_p,
-                ["billing_npi", "service_month", "total_paid", "hcpcs_code"])
-            gp = growth.growth_percentiles(growth.growth_features(spend, npi_to_org))
-            _emit_local = lambda n, fr, cols: frames.update({n: fr}) or log(
-                f"    [{n}] {len(fr):,} orgs, cols: {', '.join(cols)}")
-            _emit_local("growth", gp, ["growth_level_shift", "new_code_burst"])
+            gp = growth.growth_percentiles(
+                growth.growth_features_from_parquet(str(spending_p), npi_to_org))
+            if len(gp):
+                frames["growth"] = gp
+                log(f"    [growth] {len(gp):,} orgs, cols: growth_level_shift, new_code_burst")
         except Exception as e:
             log(f"    [growth] skipped: {e}")
         try:
             from src.analytics import plausibility
             pdim_p = _first_existing(proc, "provider_dim.parquet")
             if pdim_p:
-                spend = _read_spending_cols(spending_p,
-                    ["billing_npi", "service_month", "total_paid", "hcpcs_code"])
-                pdim = pd.read_parquet(pdim_p, columns=None)
                 pp = plausibility.plausibility_percentiles(
-                    plausibility.org_clinical_plausibility(spend, pdim, npi_to_org))
+                    plausibility.org_clinical_plausibility_from_parquet(
+                        str(spending_p), pd.read_parquet(pdim_p), npi_to_org))
                 if len(pp) and "clinical_implausibility" in pp.columns:
                     frames["plausibility"] = pp[["org_node_id", "clinical_implausibility"]]
                     log(f"    [plausibility] {len(pp):,} orgs, cols: clinical_implausibility")
@@ -420,8 +530,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         except Exception as e:
             log(f"    [plausibility] skipped: {e}")
     elif not with_analytics:
-        log("    [growth/plausibility] skipped: pass --with-analytics (in-memory; "
-            "use a filtered spending file — full universe needs the DuckDB rewrite)")
+        log("    [growth/plausibility] skipped: pass --with-analytics "
+            "(DuckDB-streamed; scales to the full spending fact)")
 
     def _emit(name: str, fr, feature_cols: list[str]):
         if fr is not None and len(fr) and "org_node_id" in fr.columns:
@@ -631,6 +741,7 @@ def main() -> None:
         gf = outputs["org_graph_features"]
         adapter_frames = build_npi_adapter_frames(leads["npi"].tolist())
         org_grain = {}
+        nucc_pg, widened = None, None
     else:
         if not args.graph_dir or not args.leads:
             ap.error("--graph-dir and --leads are required (or use --fixture)")
@@ -656,11 +767,14 @@ def main() -> None:
                                             org_nodes, ccn_to_npi, print,
                                             with_analytics=args.with_analytics,
                                             snapshots_dir=snapshots_dir)
+        nucc_pg = _load_nucc_peer_groups(preclean, processed, print)
+        widened = _widened_label_from_graph(g, print)
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(
         leads, npi_to_org, org_graph_features=gf,
-        adapter_npi_frames=adapter_frames, org_grain_frames=org_grain)
+        adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
+        nucc_peer_groups=nucc_pg, widened_label=widened)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     matrix.to_parquet(out_dir / "provider_features_for_model.parquet", index=False)

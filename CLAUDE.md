@@ -198,7 +198,14 @@ python -m pytest tests/ -v
   Ownership-churn is now operational: `entity_graph/ownership_snapshot.py`
   (`make owner-snapshot` monthly) archives dated owner-edge snapshots; the export
   diffs them into `ownership_turnover` once two accumulate (no data to procure).
-  Full suite: `pytest tests/` (273 tests).
+  The four §9 model limitations are now mitigated in code: NUCC peer grouping
+  (`ingest_cms/nucc_taxonomy.py` implemented → coherent classification cohort
+  fallback on the percentile ladder), a widened multi-source PU label
+  (`provider_on_exclusion` = LEIE + CMS revocations + SAM + OpenSanctions, with
+  `exclusion_label_sources` provenance), DuckDB-streamed growth/plausibility
+  (`*_from_parquet` — full-universe `--with-analytics`, no pandas OOM), and
+  NPI-grain ownership refinements (`org_member_count` + `has_excluded_owner`).
+  Full suite: `pytest tests/` (280 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
