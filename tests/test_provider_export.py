@@ -109,6 +109,31 @@ def test_org_grain_source_broadcasts_to_npi(tmp_path):
     assert (pd.to_numeric(hi["contract_pharmacy_concentration"]) == 0.95).all()
 
 
+def test_analytics_enrichments_feed_subscores_as_passthrough(tmp_path):
+    """Growth-shock / plausibility percentiles (from src/analytics) feed rapid_ramp
+    and specialty_mismatch directly — already percentiles, so NOT re-peer-normalized
+    (no __peerpct companion) and listed as trainable raw features."""
+    inputs = build_synthetic_inputs()
+    outputs = run_graph(inputs, tmp_path / "graph")
+    leads = build_provider_leads(inputs["provider_dim"])
+    npi_to_org = outputs["npi_to_org"]
+    org_ids = npi_to_org["org_node_id"].astype(str).unique().tolist()
+    analytics = pd.DataFrame({
+        "org_node_id": org_ids,
+        "growth_level_shift": [0.97] + [0.2] * (len(org_ids) - 1),
+        "new_code_burst": [0.9] + [0.1] * (len(org_ids) - 1),
+        "clinical_implausibility": [0.95] + [0.15] * (len(org_ids) - 1),
+    })
+    matrix, manifest = build_provider_matrix(
+        leads, npi_to_org, org_graph_features=outputs["org_graph_features"],
+        org_grain_frames={"growth": analytics}, min_peer=5)
+    assert "growth_level_shift" in matrix.columns
+    assert "growth_level_shift__peerpct" not in matrix.columns      # pass-through, not normalized
+    assert "growth_level_shift" in manifest["raw_feature_cols"]
+    assert "growth_level_shift" in manifest["scheme_coverage"]["rapid_ramp"]
+    assert "clinical_implausibility" in manifest["scheme_coverage"]["specialty_mismatch"]
+
+
 def test_peer_percentile_companion_columns(tmp_path):
     matrix, manifest, _ = _build(tmp_path)
     assert "em_high_level_share" in matrix.columns                 # raw

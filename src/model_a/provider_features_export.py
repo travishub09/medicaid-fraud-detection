@@ -65,6 +65,12 @@ GRAPH_FEATURES = ["within_2_hops_of_exclusion", "shell_score",
                   "related_party_density", "related_party_density_norm",
                   "co_location_cluster_size", "betweenness", "ownership_turnover"]
 
+# Analytics enrichments (src/analytics): growth-shock + clinical plausibility. They
+# arrive already as one-sided percentiles (the registry inputs), so they pass through
+# to the subscores exactly like the v3 concepts — never re-peer-normalized.
+ANALYTICS_FEATURES = ["clinical_implausibility", "local_volume_implausibility",
+                      "growth_level_shift", "new_code_burst"]
+
 # Every feature column the scheme registry references that is NOT a v3 concept or a
 # graph feature — i.e. comes from a CMS source adapter. These are peer-normalized to
 # one-sided taxonomy percentiles before they feed a subscore.
@@ -202,7 +208,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
 
     # --- subscore inputs: concepts + graph pass through; adapters use peer pct ---
     subin = pd.DataFrame(index=m.index)
-    for c in V3_CONCEPTS + GRAPH_FEATURES:
+    for c in V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES:
         if c in m.columns:
             subin[c] = pd.to_numeric(m[c], errors="coerce")
     for c in adapter_present:
@@ -216,7 +222,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     assert len(out) == n0, "matrix row count changed during assembly"
 
     raw_feature_cols = sorted(
-        [c for c in V3_CONCEPTS + GRAPH_FEATURES + adapter_present + PROVIDER_STATS
+        [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
+                     + adapter_present + PROVIDER_STATS)
          if c in out.columns and c not in LEAKAGE_HARD])
     subscore_cols = [c for c in out.columns if c.startswith("subscore_")]
     peerpct_cols = [c for c in out.columns if c.endswith("__peerpct")]
@@ -248,6 +255,30 @@ def _read_any(path: Path) -> pd.DataFrame | None:
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
     return pd.read_csv(path, dtype=str)
+
+
+def _read_spending_cols(path: Path, cols: list[str]) -> pd.DataFrame:
+    """Read only the spending columns that exist (some files lack hcpcs_code)."""
+    try:
+        return pd.read_parquet(path, columns=cols)
+    except Exception:
+        df = pd.read_parquet(path)
+        return df[[c for c in cols if c in df.columns]]
+
+
+def _warn_if_graph_stale(graph_dir: Path, leads_path: Path, log) -> None:
+    """The ownership signal is computed per-org in the graph and inherited by NPI;
+    a graph older than the leads it will be joined to is stale. Warn loudly (this is
+    a sequencing condition, not corruption — the Makefile target rebuilds in order)."""
+    try:
+        gp = graph_dir / "npi_to_org.parquet"
+        if gp.exists() and Path(leads_path).exists() and \
+                gp.stat().st_mtime < Path(leads_path).stat().st_mtime:
+            log("    [WARN] entity graph is OLDER than the leads file — the "
+                "ownership_integrity signal may be stale. Rebuild the graph first "
+                "(`make provider-features` enforces the order).")
+    except Exception:
+        pass
 
 
 def _first_existing(base: Path, *names: str) -> Path | None:
@@ -321,7 +352,8 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
 
 def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.DataFrame,
                             org_nodes: pd.DataFrame | None,
-                            ccn_to_npi: pd.DataFrame | None, log
+                            ccn_to_npi: pd.DataFrame | None, log,
+                            with_analytics: bool = False
                             ) -> dict[str, pd.DataFrame]:
     """Run the adapters that resolve at ORG or CCN grain and return org-keyed frames
     (build_provider_matrix broadcasts them down to each member NPI).
@@ -332,6 +364,42 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     frames: dict[str, pd.DataFrame] = {}
     pc, proc = preclean, processed
     spending_p = _first_existing(proc, "spending_fact.parquet")
+
+    # --- analytics enrichments (growth-shock + clinical plausibility) -----------
+    # These run in pandas; the full-universe spending_fact OOMs a laptop, so they
+    # are opt-in (--with-analytics) and meant for a filtered/by-state spending file,
+    # matching the scale caveat in src/model_a/__main__. They feed rapid_ramp and
+    # specialty_mismatch via pass-through (already one-sided percentiles).
+    if with_analytics and spending_p:
+        try:
+            from src.analytics import growth
+            spend = _read_spending_cols(spending_p,
+                ["billing_npi", "service_month", "total_paid", "hcpcs_code"])
+            gp = growth.growth_percentiles(growth.growth_features(spend, npi_to_org))
+            _emit_local = lambda n, fr, cols: frames.update({n: fr}) or log(
+                f"    [{n}] {len(fr):,} orgs, cols: {', '.join(cols)}")
+            _emit_local("growth", gp, ["growth_level_shift", "new_code_burst"])
+        except Exception as e:
+            log(f"    [growth] skipped: {e}")
+        try:
+            from src.analytics import plausibility
+            pdim_p = _first_existing(proc, "provider_dim.parquet")
+            if pdim_p:
+                spend = _read_spending_cols(spending_p,
+                    ["billing_npi", "service_month", "total_paid", "hcpcs_code"])
+                pdim = pd.read_parquet(pdim_p, columns=None)
+                pp = plausibility.plausibility_percentiles(
+                    plausibility.org_clinical_plausibility(spend, pdim, npi_to_org))
+                if len(pp) and "clinical_implausibility" in pp.columns:
+                    frames["plausibility"] = pp[["org_node_id", "clinical_implausibility"]]
+                    log(f"    [plausibility] {len(pp):,} orgs, cols: clinical_implausibility")
+            else:
+                log("    [plausibility] skipped: needs processed/provider_dim.parquet")
+        except Exception as e:
+            log(f"    [plausibility] skipped: {e}")
+    elif not with_analytics:
+        log("    [growth/plausibility] skipped: pass --with-analytics (in-memory; "
+            "use a filtered spending file — full universe needs the DuckDB rewrite)")
 
     def _emit(name: str, fr, feature_cols: list[str]):
         if fr is not None and len(fr) and "org_node_id" in fr.columns:
@@ -477,6 +545,9 @@ def main() -> None:
                     help="PECOS CCN↔NPI crosswalk parquet (csv/parquet) — unlocks the "
                          "facility / HCRIS / POS (CCN-grain) schemes")
     ap.add_argument("--out", default=None, help="output dir")
+    ap.add_argument("--with-analytics", action="store_true",
+                    help="also run growth-shock + clinical-plausibility enrichments "
+                         "(in-memory pandas; use a filtered spending file)")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
     args = ap.parse_args()
@@ -504,6 +575,7 @@ def main() -> None:
         gf = pd.read_parquet(g / "org_graph_features.parquet")
         org_nodes = (pd.read_parquet(g / "nodes" / "org_nodes.parquet")
                      if (g / "nodes" / "org_nodes.parquet").exists() else None)
+        _warn_if_graph_stale(g, Path(args.leads), print)
         leads = pd.read_parquet(args.leads)
         if "npi" not in leads.columns:
             ap.error(f"{args.leads} is not per-NPI (no 'npi' column)")
@@ -515,7 +587,8 @@ def main() -> None:
         adapter_frames = _run_npi_adapters(preclean, print)
         print("  running org/CCN-grain adapters …")
         org_grain = _run_org_grain_adapters(preclean, processed, npi_to_org,
-                                            org_nodes, ccn_to_npi, print)
+                                            org_nodes, ccn_to_npi, print,
+                                            with_analytics=args.with_analytics)
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(

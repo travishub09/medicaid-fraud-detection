@@ -5,7 +5,7 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features ccn-crosswalk pipeline warn ci-local
 
 help:
 	@echo "Targets:"
@@ -15,6 +15,8 @@ help:
 	@echo "  pipeline   run the 13-stage detection pipeline on real data (DATA_ROOT=$(DATA_ROOT))"
 	@echo "  graph      build the entity graph from real processed data"
 	@echo "  model-a    score orgs + render dossiers from real graph/features/spending"
+	@echo "  provider-features  rebuild graph, then export the per-NPI training matrix for Travis"
+	@echo "  ccn-crosswalk      build processed/ccn_to_npi.parquet (PECOS_FILE=path)"
 	@echo "  warn       WARN surge monitor (set WARN_CSV=path)"
 	@echo "  ci-local   what CI runs: tests + fixture end-to-end + doc-link check"
 
@@ -53,6 +55,22 @@ model-a:
 		--spending $(DATA_ROOT)/processed/spending_fact.parquet \
 		--provider-dim $(DATA_ROOT)/processed/provider_dim.parquet \
 		--out $(DATA_ROOT)/model_a
+
+# Per-NPI feature export for Travis's supervised model. Depends on `graph` so the
+# entity graph is ALWAYS rebuilt first — the fix for the stale-ownership sequencing
+# trap (the ownership_integrity signal is computed per-org and inherited by NPI).
+provider-features: graph
+	$(PY) -m src.model_a.provider_features_export \
+		--graph-dir $(DATA_ROOT)/graph \
+		--leads $(DATA_ROOT)/detection/fraud_leads_v3.parquet \
+		--preclean $(DATA_ROOT)/preclean \
+		--processed $(DATA_ROOT)/processed \
+		--out $(DATA_ROOT)/model_a/provider_features $(PF_FLAGS)
+
+# One-time PECOS CCN↔NPI crosswalk (unlocks facility/HCRIS/POS schemes).
+ccn-crosswalk:
+	$(PY) -m src.ingest_cms.ccn_npi_crosswalk --in $(PECOS_FILE) \
+		--out $(DATA_ROOT)/processed/ccn_to_npi.parquet
 
 model-c:
 	$(PY) -m src.model_c --erv $(DATA_ROOT)/model_a/erv_ranked.parquet \

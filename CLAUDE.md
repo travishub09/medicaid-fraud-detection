@@ -48,9 +48,11 @@ src/lookup_tool/    billing-risk lookup v1 preview (public launch gated on Phase
 src/sourcing/       WARN surge monitor + CourtListener docket monitor (built)
 src/ingest_cms/     Part B/D/DMEPOS/OpenPayments/Saturation/Facility/opioid/340B/
                     NPPES-deactivation/POS/order-referring/census/NADAC/HCRIS/
-                    DocGraph adapters + NPPES API (built); data-expansion-sprint
-                    stubs hospital_puf/geographic_variation/nucc_taxonomy/sdud/
-                    chow (docs/platform/16 — contracts written, dormant)
+                    DocGraph adapters + NPPES API (built); ccn_npi_crosswalk
+                    (PECOS CCN↔NPI → unlocks facility/HCRIS/POS schemes) +
+                    claim_slices (ndc_claims/referred_claims builders) (built);
+                    data-expansion-sprint stubs hospital_puf/geographic_variation/
+                    nucc_taxonomy/sdud/chow (docs/platform/16 — contracts written, dormant)
 src/feeds/          API-feed plumbing + DOJ/CourtListener/SAM/NPPES/ProPublica/
                     USAspending/openFDA clients (cached, injectable transport)
 src/analytics/      peer engine + confidence + growth + plausibility (built)
@@ -183,7 +185,11 @@ python -m pytest tests/ -v
   org/CCN-grain features down to NPI, peer-normalizes adapter metrics, ships raw +
   `*__peerpct` + `subscore_*` + the `provider_on_leie` PU label, with a leakage
   manifest (hard vs. proximity-adjacent) and a data dictionary.
-  Full suite: `pytest tests/` (259 tests).
+  The provider export now orchestrates ALL sources (per-NPI adapters + org/CCN-grain
+  broadcast + optional `--with-analytics` growth/plausibility), with a CCN→NPI
+  crosswalk builder, NDC/referral claim-slice builders, a stale-graph guard, and a
+  `make provider-features` target that rebuilds the graph first.
+  Full suite: `pytest tests/` (265 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
