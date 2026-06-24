@@ -266,6 +266,27 @@ def _read_spending_cols(path: Path, cols: list[str]) -> pd.DataFrame:
         return df[[c for c in cols if c in df.columns]]
 
 
+def _spending_for_npis(spending_path: Path, npis) -> pd.DataFrame:
+    """Stream only the spending rows for a small set of NPIs (DuckDB) — used by the
+    deceased / deactivated-NPI checks so they never pull the 238M-row fact into
+    pandas. Returns billing_npi, service_month, total_paid."""
+    cols = ["billing_npi", "service_month", "total_paid"]
+    ids = sorted({str(n) for n in npis if str(n) and str(n).lower() != "nan"})
+    if not ids:
+        return pd.DataFrame(columns=cols)
+    import duckdb
+    vals = ", ".join("'" + i.replace("'", "") + "'" for i in ids)
+    con = duckdb.connect()
+    df = con.execute(
+        f"SELECT CAST(billing_npi AS VARCHAR) billing_npi, "
+        f"CAST(service_month AS VARCHAR) service_month, "
+        f"CAST(total_paid AS DOUBLE) total_paid "
+        f"FROM read_parquet('{str(spending_path).replace(chr(39), '')}') "
+        f"WHERE CAST(billing_npi AS VARCHAR) IN ({vals})").df()
+    con.close()
+    return df
+
+
 def _warn_if_graph_stale(graph_dir: Path, leads_path: Path, log) -> None:
     """The ownership signal is computed per-org in the graph and inherited by NPI;
     a graph older than the leads it will be joined to is stale. Warn loudly (this is
@@ -412,7 +433,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv", "*.csv")
         if dp and spending_p:
             deact, _ = nd.deactivated_npis(_read_any(dp))
-            spend = pd.read_parquet(spending_p, columns=["billing_npi", "service_month", "total_paid"])
+            spend = _spending_for_npis(spending_p, deact["npi"].tolist())
             _emit("nppes_deactivation",
                   nd.billing_after_deactivation(spend, deact, npi_to_org),
                   ["billing_after_deactivation"])
@@ -420,6 +441,29 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             log("    [nppes_deactivation] skipped: needs deactivation file + processed/spending_fact.parquet")
     except Exception as e:
         log(f"    [nppes_deactivation] skipped: {e}")
+
+    # --- billing after death (SSA Death Master File, DOB-corroborated) ----------
+    # Only HIGH-confidence (name + DOB) matches feed the score; name-only matches
+    # are review flags, never drivers (defamation guardrail in death_master.py).
+    try:
+        from src.enforcement import death_master as dm
+        dmf_p = _first_existing(pc / "dmf", "dmf.csv", "*.csv")
+        pdim_p = _first_existing(proc, "provider_dim.parquet")
+        if dmf_p and pdim_p and spending_p:
+            dmf = dm.parse_dmf(_read_any(dmf_p))
+            matches = dm.match_deceased_providers(pd.read_parquet(pdim_p), dmf)
+            hi = matches[matches["match_confidence"] == "high"]
+            spend = _spending_for_npis(spending_p, hi["npi"].tolist())
+            _emit("death_master",
+                  dm.billing_after_death(spend, matches, npi_to_org),
+                  ["billing_after_death"])
+            log(f"    [death_master] {len(hi):,} high-confidence deceased-NPI matches "
+                f"(of {len(matches):,}; name-only matches held for review, not scored)")
+        else:
+            log("    [death_master] skipped: needs SSA DMF file (preclean/dmf/) + "
+                "provider_dim + spending")
+    except Exception as e:
+        log(f"    [death_master] skipped: {e}")
 
     # --- NADAC drug-spread anomaly (NDC-level claims + NADAC ref + npi_to_org) ---
     try:

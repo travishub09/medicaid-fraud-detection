@@ -20,6 +20,10 @@ doesn't require the license, running it on the bulk data does.
 
 from __future__ import annotations
 
+import argparse
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from src.entity_graph.resolve_entities import norm_org_name
@@ -71,3 +75,49 @@ def normalize_opensanctions(entities) -> pd.DataFrame:
         return pd.DataFrame(columns=EXCLUSION_COLS)
     df["currently_active"] = df["reinstate_date"].isna().astype(int)
     return df[df["name_key"] != ""].reset_index(drop=True)[EXCLUSION_COLS]
+
+
+def _records_from_simple(df: pd.DataFrame) -> list[dict]:
+    """The flat ``targets.simple.csv`` (no FtM ``properties`` nesting) → entity
+    dicts shaped for ``normalize_opensanctions``."""
+    recs = []
+    for r in df.to_dict("records"):
+        recs.append({
+            "schema": r.get("schema") or "LegalEntity",
+            "properties": {"name": r.get("name") or r.get("caption") or "",
+                           "startDate": r.get("first_seen") or r.get("listing_date") or ""},
+            "datasets": [str(r.get("dataset") or r.get("datasets") or "")],
+            "topics": str(r.get("topics") or "").split(";"),
+        })
+    return recs
+
+
+def load_opensanctions_file(path: str | Path):
+    """Read either the FtM line-delimited JSON (``*.json``/``*.jsonl``/
+    ``entities.ftm.json``) or the flat ``targets.simple.csv`` bulk export."""
+    p = Path(path)
+    if p.suffix.lower() in (".json", ".jsonl") or p.name.endswith(".ftm.json"):
+        with open(p, encoding="utf-8") as fh:
+            return [json.loads(ln) for ln in fh if ln.strip()]
+    return _records_from_simple(pd.read_csv(p, dtype=str))
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--in", dest="inp", required=True,
+                    help="OpenSanctions bulk export (debarment targets.simple.csv "
+                         "or entities.ftm.json)")
+    ap.add_argument("--out", required=True,
+                    help="output exclusions_opensanctions.parquet (drop in processed/ "
+                         "next to exclusions.parquet — the graph merges it)")
+    args = ap.parse_args()
+    out = normalize_opensanctions(load_opensanctions_file(args.inp))
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(args.out, index=False)
+    print(f"Wrote {args.out} — {len(out):,} exclusion rows "
+          f"({out['npi'].astype(bool).sum():,} carry an NPI; the rest match by name_key)")
+
+
+if __name__ == "__main__":
+    main()

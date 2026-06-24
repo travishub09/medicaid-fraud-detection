@@ -189,7 +189,13 @@ python -m pytest tests/ -v
   broadcast + optional `--with-analytics` growth/plausibility), with a CCN→NPI
   crosswalk builder, NDC/referral claim-slice builders, a stale-graph guard, and a
   `make provider-features` target that rebuilds the graph first.
-  Full suite: `pytest tests/` (265 tests).
+  SSA Death Master File (`enforcement/death_master.py`, DOB-corroborated →
+  billing_after_death) and OpenSanctions (`enforcement/opensanctions.py` CLI →
+  `processed/exclusions_*.parquet`, merged into graph exclusion nodes by a
+  generalized loader) are wired into the export; deceased/deactivated-NPI checks
+  are DuckDB-filtered so they never pull the full spending fact into pandas.
+  Procurement instructions for all unlock sources live in docs/platform/12.
+  Full suite: `pytest tests/` (269 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

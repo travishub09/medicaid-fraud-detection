@@ -318,6 +318,64 @@ files, CMS LDS/RIF, Komodo/IQVIA/Optum-style commercial claims. See
 
 ---
 
+## Procurement: the data-unlock sources (where to get them, where to put them)
+
+These feed the per-NPI feature export (`src/model_a/provider_features_export.py`).
+Each is optional/skip-missing; drop the file in the path shown and the next run
+lights up its scheme(s).
+
+### SSA Death Master File → `invalid_identity` (billing_after_death)
+
+- **Source:** the limited-access DMF is sold by NTIS (https://dmf.ntis.gov, paid
+  subscription); the historical **public** DMF (pre-2011, free) is mirrored at
+  archive.org and genealogy hosts — enough to stand the pipeline up, but stale.
+- **What we need:** last name, first name, date of birth, date of death (column
+  names auto-resolved). DOB is essential — only DOB-corroborated matches score;
+  name-only matches are held for human review (defamation guardrail).
+- **Put it at:** `preclean/dmf/dmf.csv`. The export runs `death_master.py`
+  automatically (DuckDB-filtered to matched NPIs, so it's cheap at scale).
+
+### OpenSanctions → wider exclusion set (state lists + SAM + LEIE in one feed)
+
+- **Download (free bulk, non-commercial):** the pre-combined **debarment**
+  collection — `https://data.opensanctions.org/datasets/latest/debarment/targets.simple.csv`
+  (flat CSV) or `entities.ftm.json` (richer). Covers federal LEIE + SAM + ~45
+  state Medicaid/health exclusion lists.
+- **License gate:** free for evaluation/non-commercial; **commercial use needs an
+  OpenSanctions license** (a Brad decision — see `enforcement/opensanctions.py`).
+- **Build it:** `make opensanctions OPENSANCTIONS_FILE=preclean/opensanctions/targets.simple.csv`
+  → writes `processed/exclusions_opensanctions.parquet`. The next `make graph`
+  merges every `processed/exclusions_*.parquet` into the exclusion nodes, widening
+  `within_2_hops_of_exclusion` and the PU positive set.
+
+### CCN→NPI crosswalk → facility / hospice / cost-report schemes
+
+- **Source:** the PECOS **"Public Provider Enrollment"** institutional file
+  (data.cms.gov, free) or the Provider-of-Services (POS) file — anything carrying
+  both a CCN/provider-number and an NPI.
+- **Build it:** `make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv`
+  → `processed/ccn_to_npi.parquet`. Unlocks `worthless_services`,
+  `hospice_ineligibility`, `cost_report_fraud` (HCRIS).
+
+### Derived claim slices → drug-spread + ineligible-referral
+
+- Need a **richer claims extract than the by-HCPCS spending file** (NDC-level drug
+  claims; claims carrying the referring NPI).
+- **Build them:**
+  `python -m src.ingest_cms.claim_slices --kind ndc --in <rx_claims> --out processed/ndc_claims.parquet`
+  and `--kind referral --in <claims_with_referrer> --out processed/referred_claims.parquet`.
+  Each rejects a too-thin file naming the missing column.
+
+### Still dormant-by-data (no file carries the field yet)
+
+- **impossible_day** — claim/line-level data with service dates.
+- **dme_ring** ordering-MD concentration — DMEPOS line-level with both supplier
+  and ordering NPI.
+- **ownership_turnover** — ≥2 PECOS ownership snapshots over time (start archiving
+  the ownership file monthly).
+
+---
+
 ## The refresh calendar
 
 | Cadence | What |

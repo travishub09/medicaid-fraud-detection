@@ -5,7 +5,7 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a provider-features ccn-crosswalk pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features ccn-crosswalk opensanctions pipeline warn ci-local
 
 help:
 	@echo "Targets:"
@@ -17,6 +17,7 @@ help:
 	@echo "  model-a    score orgs + render dossiers from real graph/features/spending"
 	@echo "  provider-features  rebuild graph, then export the per-NPI training matrix for Travis"
 	@echo "  ccn-crosswalk      build processed/ccn_to_npi.parquet (PECOS_FILE=path)"
+	@echo "  opensanctions      normalize OpenSanctions bulk -> processed/exclusions_opensanctions.parquet (OPENSANCTIONS_FILE=path)"
 	@echo "  warn       WARN surge monitor (set WARN_CSV=path)"
 	@echo "  ci-local   what CI runs: tests + fixture end-to-end + doc-link check"
 
@@ -71,6 +72,12 @@ provider-features: graph
 ccn-crosswalk:
 	$(PY) -m src.ingest_cms.ccn_npi_crosswalk --in $(PECOS_FILE) \
 		--out $(DATA_ROOT)/processed/ccn_to_npi.parquet
+
+# OpenSanctions bulk (LEIE + ~45 state exclusion lists + SAM) -> exclusion nodes.
+# The graph merges any processed/exclusions_*.parquet on the next build.
+opensanctions:
+	$(PY) -m src.enforcement.opensanctions --in $(OPENSANCTIONS_FILE) \
+		--out $(DATA_ROOT)/processed/exclusions_opensanctions.parquet
 
 model-c:
 	$(PY) -m src.model_c --erv $(DATA_ROOT)/model_a/erv_ranked.parquet \

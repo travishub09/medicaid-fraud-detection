@@ -56,6 +56,17 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
         else:
             tables[name] = None
             log(f"    (optional input absent) {name}")
+    # Supplementary exclusion sources (OpenSanctions, SAM, state licensing) drop
+    # ``exclusions_<source>.parquet`` next to the LEIE ``exclusions.parquet``; all
+    # are concatenated so every excluded-party feed becomes graph exclusion nodes
+    # uniformly (widening within_2_hops_of_exclusion and the PU positive set).
+    extra = sorted(input_dir.glob("exclusions_*.parquet"))
+    if extra:
+        frames = ([tables["exclusions"]] if tables.get("exclusions") is not None else [])
+        for p in extra:
+            frames.append(pd.read_parquet(p))
+            log(f"    + merged exclusion source {p.name}")
+        tables["exclusions"] = pd.concat(frames, ignore_index=True)
     return tables
 
 
