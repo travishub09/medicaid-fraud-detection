@@ -196,6 +196,78 @@ def build_spending() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def build_provider_leads(provider_dim: pd.DataFrame) -> pd.DataFrame:
+    """Per-NPI v3 leads shaped like fraud_leads_v3.parquet, for the provider
+    feature export. Carries the five concept percentiles, identifiers, provider
+    stats, the PU label (provider_on_leie), and an exclusion-derived LEAKAGE
+    column (billed_after_exclusion).
+
+    Planted: the mill NPI (1003000415) is extreme on every concept; the excluded
+    individual (1003000209) carries provider_on_leie=1 and billed_after_exclusion=1;
+    the clean control (1003000407) is benign. Concepts vary across NPIs so the
+    one-sided peer percentile has spread."""
+    mid = dict(concentration=0.55, payment_intensity=0.50, service_intensity=0.48,
+               specialty_mismatch=0.30, temporal=0.42)
+    rows = []
+    for i, r in enumerate(provider_dim.itertuples()):
+        npi = r.npi
+        f = dict(mid)
+        on_leie, billed_after = 0, 0
+        gross = 2_000_000.0 + i * 50_000
+        if npi == "1003000415":                         # the mill
+            f = dict(concentration=0.99, payment_intensity=0.97, service_intensity=0.92,
+                     specialty_mismatch=0.85, temporal=0.70)
+            gross = 25_000_000.0
+        elif npi == "1003000407":                       # clean control
+            f = dict(concentration=0.10, payment_intensity=0.12, service_intensity=0.15,
+                     specialty_mismatch=0.05, temporal=0.10)
+            gross = 1_000_000.0
+        elif npi == "1003000209":                       # directly excluded individual
+            on_leie, billed_after = 1, 1
+        rows.append({
+            "npi": npi,
+            "entity_type": r.entity_type,
+            "primary_taxonomy": r.taxonomy_code,
+            "practice_state": r.addr_state,
+            "org_legal_name": r.org_legal_name,
+            "gross_paid": gross, "net_paid": gross * 0.95,
+            "service_volume": 1000 + i * 100, "total_claim_lines": 2000 + i * 150,
+            "n_distinct_hcpcs": 3 + (i % 5),
+            "provider_on_leie": on_leie, "billed_after_exclusion": billed_after,
+            **f,
+        })
+    return pd.DataFrame(rows)
+
+
+def build_npi_adapter_frames(npis: list[str]) -> dict[str, pd.DataFrame]:
+    """Synthetic per-NPI adapter OUTPUT frames (shaped like the ingest_cms adapters'
+    returns), for the provider export. Values vary by NPI so peer percentiles aren't
+    degenerate; the mill (1003000415) is high, the clean control (1003000407) low."""
+    def _scale(npi: str, base: float) -> float:
+        if npi == "1003000415":
+            return min(base + 0.35, 0.99)
+        if npi == "1003000407":
+            return max(base - 0.30, 0.01)
+        return base
+
+    partb_rows, opioid_rows = [], []
+    for j, npi in enumerate(npis):
+        wobble = (j % 7) * 0.03
+        partb_rows.append({
+            "npi": npi,
+            "em_high_level_share": _scale(npi, 0.40 + wobble),
+            "em_level_mean": 3.0 + (j % 5) * 0.4,        # unbounded → exercises peerpct
+            "services_per_bene": 5.0 + j,
+        })
+        opioid_rows.append({
+            "npi": npi,
+            "opioid_claim_share": _scale(npi, 0.35 + wobble),
+            "opioid_long_acting_share": _scale(npi, 0.25 + wobble),
+            "opioid_claims": 100 + j * 10, "total_claims": 500 + j * 20,
+        })
+    return {"partb": pd.DataFrame(partb_rows), "opioid": pd.DataFrame(opioid_rows)}
+
+
 def build_warn_notices() -> pd.DataFrame:
     """Synthetic WARN notices shaped like a state workforce-agency posting.
 

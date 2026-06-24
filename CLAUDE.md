@@ -35,7 +35,9 @@ src/backtest/       LEIE temporal validation (2.0× top-decile lift) — the pro
 src/entity_graph/   canonical entity graph (nodes/edges/features/rings) — BUILT, tested
 src/model/          supervised LightGBM lead scorer (Travis's build — PU training,
                     screening, exports; context in src/model/README.md)
-src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core)
+src/model_a/        org fraud-risk → ERV (scaffold; will absorb leads/ core);
+                    provider_features_export.py = per-NPI feature factory feeding
+                    Travis's supervised model (scheme subscores + raw stats + label)
 src/model_b/        whistleblower id/propensity — chain complete; person↔employer
                     resolver BUILT (running on real people gated on FCRA review)
 src/funnel/         acquisition-funnel instrumentation: ListenLayer event taxonomy,
@@ -175,7 +177,13 @@ python -m pytest tests/ -v
   (`src/funnel/`: events/lead_score/intake with no-PHI + no-fraud-boolean
   guardrails), person↔employer resolver BUILT (`entity_graph/person_resolver.py`:
   scored linkage + employed_by edges + tenure overlap; opaque person_id only).
-  Full suite: `pytest tests/` (252 tests).
+  Provider feature export (`model_a/provider_features_export.py`): re-points the
+  scheme-subscore engine from org-grain ERV ranking to a per-NPI training matrix
+  for Travis's supervised model — full universe (no candidate gate), broadcasts
+  org/CCN-grain features down to NPI, peer-normalizes adapter metrics, ships raw +
+  `*__peerpct` + `subscore_*` + the `provider_on_leie` PU label, with a leakage
+  manifest (hard vs. proximity-adjacent) and a data dictionary.
+  Full suite: `pytest tests/` (258 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
