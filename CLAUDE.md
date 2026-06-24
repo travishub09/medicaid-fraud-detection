@@ -195,7 +195,10 @@ python -m pytest tests/ -v
   generalized loader) are wired into the export; deceased/deactivated-NPI checks
   are DuckDB-filtered so they never pull the full spending fact into pandas.
   Procurement instructions for all unlock sources live in docs/platform/12.
-  Full suite: `pytest tests/` (269 tests).
+  Ownership-churn is now operational: `entity_graph/ownership_snapshot.py`
+  (`make owner-snapshot` monthly) archives dated owner-edge snapshots; the export
+  diffs them into `ownership_turnover` once two accumulate (no data to procure).
+  Full suite: `pytest tests/` (273 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

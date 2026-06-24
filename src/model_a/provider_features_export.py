@@ -374,7 +374,8 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
 def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.DataFrame,
                             org_nodes: pd.DataFrame | None,
                             ccn_to_npi: pd.DataFrame | None, log,
-                            with_analytics: bool = False
+                            with_analytics: bool = False,
+                            snapshots_dir: Path | None = None
                             ) -> dict[str, pd.DataFrame]:
     """Run the adapters that resolve at ORG or CCN grain and return org-keyed frames
     (build_provider_matrix broadcasts them down to each member NPI).
@@ -524,6 +525,22 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     except Exception as e:
         log(f"    [saturation] skipped: {e}")
 
+    # --- ownership churn (CHOW): diff accumulated owner snapshots → turnover ----
+    try:
+        from src.entity_graph.ownership_snapshot import (compute_ownership_turnover,
+                                                         load_snapshots)
+        if snapshots_dir and len(load_snapshots(snapshots_dir)) >= 2:
+            turn = compute_ownership_turnover(snapshots_dir)
+            if len(turn):
+                _emit("ownership_churn", turn[["org_node_id", "ownership_turnover"]],
+                      ["ownership_turnover"])
+        else:
+            n = len(load_snapshots(snapshots_dir)) if snapshots_dir else 0
+            log(f"    [ownership_churn] skipped: {n} owner snapshot(s) — needs ≥2 "
+                "(archive monthly with src.entity_graph.ownership_snapshot)")
+    except Exception as e:
+        log(f"    [ownership_churn] skipped: {e}")
+
     # --- facility (PBJ/hospice/deficiency) + HCRIS + POS: CCN-grain → org via ccn_to_npi ---
     if ccn_to_npi is None:
         log("    [facility/hcris/pos] skipped: no CCN→NPI crosswalk "
@@ -592,6 +609,9 @@ def main() -> None:
     ap.add_argument("--with-analytics", action="store_true",
                     help="also run growth-shock + clinical-plausibility enrichments "
                          "(in-memory pandas; use a filtered spending file)")
+    ap.add_argument("--owner-snapshots", default=None,
+                    help="owner-snapshot archive dir (ownership_turnover; default "
+                         "<data-root>/owner_snapshots)")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
     args = ap.parse_args()
@@ -630,9 +650,12 @@ def main() -> None:
         print("  running per-NPI adapters …")
         adapter_frames = _run_npi_adapters(preclean, print)
         print("  running org/CCN-grain adapters …")
+        snapshots_dir = (Path(args.owner_snapshots) if args.owner_snapshots
+                         else root / "owner_snapshots")
         org_grain = _run_org_grain_adapters(preclean, processed, npi_to_org,
                                             org_nodes, ccn_to_npi, print,
-                                            with_analytics=args.with_analytics)
+                                            with_analytics=args.with_analytics,
+                                            snapshots_dir=snapshots_dir)
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(

@@ -5,7 +5,7 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a provider-features ccn-crosswalk opensanctions pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
 
 help:
 	@echo "Targets:"
@@ -18,6 +18,7 @@ help:
 	@echo "  provider-features  rebuild graph, then export the per-NPI training matrix for Travis"
 	@echo "  ccn-crosswalk      build processed/ccn_to_npi.parquet (PECOS_FILE=path)"
 	@echo "  opensanctions      normalize OpenSanctions bulk -> processed/exclusions_opensanctions.parquet (OPENSANCTIONS_FILE=path)"
+	@echo "  owner-snapshot     archive this month's owner edges (run monthly; unlocks ownership_turnover at 2+)"
 	@echo "  warn       WARN surge monitor (set WARN_CSV=path)"
 	@echo "  ci-local   what CI runs: tests + fixture end-to-end + doc-link check"
 
@@ -78,6 +79,13 @@ ccn-crosswalk:
 opensanctions:
 	$(PY) -m src.enforcement.opensanctions --in $(OPENSANCTIONS_FILE) \
 		--out $(DATA_ROOT)/processed/exclusions_opensanctions.parquet
+
+# Archive this month's owner edges. Run monthly (after `make graph`); once two
+# snapshots accumulate, ownership_turnover lights up in the provider export.
+owner-snapshot:
+	$(PY) -m src.entity_graph.ownership_snapshot \
+		--owned-by $(DATA_ROOT)/graph/edges/owned_by_edges.parquet \
+		--snapshots-dir $(DATA_ROOT)/owner_snapshots
 
 model-c:
 	$(PY) -m src.model_c --erv $(DATA_ROOT)/model_a/erv_ranked.parquet \

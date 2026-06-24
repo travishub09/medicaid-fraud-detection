@@ -371,8 +371,10 @@ lights up its scheme(s).
 - **impossible_day** — claim/line-level data with service dates.
 - **dme_ring** ordering-MD concentration — DMEPOS line-level with both supplier
   and ordering NPI.
-- **ownership_turnover** — ≥2 PECOS ownership snapshots over time (start archiving
-  the ownership file monthly).
+- **ownership_turnover** — now operational: run `make owner-snapshot` monthly
+  (after `make graph`) to archive `owned_by_edges` under a date stamp. The export
+  diffs accumulated snapshots automatically; the feature lights up once **two**
+  snapshots exist. (No new data to procure — just the monthly cadence.)
 
 ---
 
@@ -380,7 +382,7 @@ lights up its scheme(s).
 
 | Cadence | What |
 |---|---|
-| Monthly | LEIE, SAM, WARN states, DOJ releases |
+| Monthly | LEIE, SAM, WARN states, DOJ releases; `make owner-snapshot` (CHOW churn) |
 | Quarterly | PECOS, ownership files, NPPES (or monthly) |
 | Annually (new vintage) | Part B, Part D, DMEPOS, Market Saturation |
 | Quarterly | PBJ staffing, Care Compare hospice/deficiencies, OIG Work Plan table (`model_a/government_interest.py`) |
