@@ -218,8 +218,12 @@ python -m pytest tests/ -v
   training; `--case-db`). Pillar 1 (point-in-time store) BUILT: `model_a/feature_store.py`
   (`snapshot_features` valid-time stamp, `asof_join` reconstruct features strictly
   before a label date, `temporal_split` out-of-time masks; export `--snapshot`,
-  `make feature-snapshot`).
-  Full suite: `pytest tests/` (294 tests).
+  `make feature-snapshot`). Output reframe BUILT: `model_a/clean_anchors.py`
+  manufactures high-confidence negatives (`confirmed_clean`: institutional/FQHC or
+  long-tenure + benign billing + no fraud proximity) and `model_a/case_control.py`
+  matches each positive to comparable clean controls (taxonomy×state×size ladder)
+  → `provider_features_matched.parquet` via export `--case-control`.
+  Full suite: `pytest tests/` (298 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -259,6 +259,15 @@ train_mask, test_mask = temporal_split(labels, cutoff_year=2021)
 be answered without leaking future data, so they're flagged, never silently filled.
 This becomes more powerful as snapshot history accumulates.
 
+**Known non-offenders + matched case-control (`--case-control`).** Every row carries
+`confirmed_clean` (1 = a manufactured high-confidence negative: institutional/FQHC or
+long-tenured, billing benignly, with no fraud proximity) in the `label_metadata`
+block. With `--case-control` the export also writes `provider_features_matched.parquet`
+— each positive paired with comparable clean controls (same specialty/geography/size,
+`match_tier` records how specific the match was, `match_id` ties a case to its
+controls). Train on that matched set to learn *what differs* between fraud actors and
+non-offenders holding the confounders fixed, instead of fighting a 0.2% base rate.
+
 ---
 
 ## 9. Honest limitations — and how each is now mitigated

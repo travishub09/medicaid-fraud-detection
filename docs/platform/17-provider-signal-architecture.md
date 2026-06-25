@@ -71,11 +71,12 @@ probabilistic, time-boxed labels:
   a mailbox store → suspicious," "UPIC-audited and cleared → clean." A generative
   label model fuses them into **probabilistic labels with confidence**, expanding
   labeled data 10–100× beyond LEIE and giving the tree soft labels to weight.
-- **Manufactured high-confidence negatives.** We *can* construct known
-  non-offenders: VA / academic medical centers / FQHCs (institutionally audited,
-  ~zero base rate), providers continuously enrolled 15+ years with clean billing,
-  RAC/CERT-cleared providers. These are **negative anchors** so the contrast is
-  real, not "unlabeled."
+- **Manufactured high-confidence negatives. (BUILT — `clean_anchors.py`.)** We
+  construct known non-offenders: VA / academic / FQHC-RHC (institutionally audited,
+  ~zero base rate) or long-tenured providers, **and** benign on every anomaly
+  concept, **and** with no exclusion/case/graph-proximity signal → `confirmed_clean`
+  with a `clean_basis`. Conservative: ambiguous providers stay unlabeled, never
+  forced negative.
 - **Distant supervision from text.** NER (the GLiNER wrapper) over DOJ press
   releases, news, and dockets → defendant names → NPIs → more positives.
 
@@ -148,12 +149,14 @@ providers (tokens = billing codes). Two payoffs:
 ## The output reframe — case-control matching
 
 "Compare fraud actors to known non-offenders" is, literally, a **matched
-case-control study**. Don't hand the tree a 0.2%-positive imbalanced soup — hand it
-**propensity-matched pairs**: each confirmed fraud actor paired with clean
-providers of the same specialty, geography, and size, so the model learns *what
-differs holding confounders fixed*, the way epidemiology isolates a risk factor.
-Sharper attributes, interpretable "fraud vs. matched-clean" comparisons for
-counsel.
+case-control study**. **(BUILT — `case_control.py`.)** Instead of a 0.2%-positive
+imbalanced soup, the export (`--case-control`) writes `provider_features_matched.parquet`:
+each fraud actor paired with clean controls of the same specialty, geography, and
+size (a taxonomy×state×size strata ladder that relaxes until enough controls exist,
+recording the `match_tier`), drawn from the `confirmed_clean` anchors. The model
+learns *what differs holding confounders fixed*, the way epidemiology isolates a
+risk factor — sharper attributes and interpretable "fraud vs. matched-clean"
+comparisons for counsel.
 
 ---
 
@@ -186,10 +189,11 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
    validation honest and labels rich. **(BUILT — scheme-typed/time-boxed DOJ labels
    in `case_labels.py` + the point-in-time store in `feature_store.py`. Remaining:
    back-fill per-source valid-times as snapshot history accumulates.)**
-3. **Weak-supervision label model + manufactured negatives** — explodes the labeled
-   set; gives a real contrast.
-4. **Case-control matching at export time** — small, reshapes training data into
-   exactly what was asked for.
+3. **Weak-supervision label model + manufactured negatives** — **manufactured
+   negatives BUILT (`clean_anchors.py`)**; the Snorkel-style weak-supervision label
+   model is the remaining half.
+4. **Case-control matching at export time** — **BUILT (`case_control.py`,
+   `--case-control`).**
 5. **Expected-billing residual twin**, then the **foundation-model embedding**
    (moonshot).
 

@@ -287,6 +287,13 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     out = out.loc[:, ~out.columns.duplicated()]
     assert len(out) == n0, "matrix row count changed during assembly"
 
+    # Manufacture high-confidence NEGATIVES (known non-offenders) so a model can
+    # contrast fraud actors against a real clean cohort, not just the unlabeled mass.
+    from .clean_anchors import manufacture_negatives
+    neg = manufacture_negatives(out)
+    out["confirmed_clean"] = neg["confirmed_clean"].to_numpy()
+    out["clean_basis"] = neg["clean_basis"].to_numpy()
+
     raw_feature_cols = sorted(
         [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
                      + adapter_present + PROVIDER_STATS)
@@ -313,7 +320,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # for scheme-stratified and out-of-time validation.
     label_metadata = [c for c in ["exclusion_label_sources", "fraud_scheme",
                                   "conduct_start", "conduct_end", "case_ids",
-                                  "provider_on_leie"] if c in out.columns]
+                                  "provider_on_leie", "confirmed_clean",
+                                  "clean_basis"] if c in out.columns]
     raw_feature_cols = [c for c in raw_feature_cols
                         if c not in leakage_hard and c not in label_metadata]
 
@@ -766,6 +774,9 @@ def main() -> None:
     ap.add_argument("--case-db", default=None,
                     help="DOJ/qui tam case DB (csv/parquet) → scheme-typed, "
                          "time-boxed positives folded into the label")
+    ap.add_argument("--case-control", action="store_true",
+                    help="also write a matched case-control training set "
+                         "(each positive vs. comparable clean controls)")
     ap.add_argument("--snapshot", action="store_true",
                     help="archive a valid-time snapshot of the matrix to the "
                          "point-in-time feature store (Pillar 1)")
@@ -862,6 +873,24 @@ def main() -> None:
     if manifest["label"]:
         pos = int(pd.to_numeric(matrix[manifest["label"]], errors="coerce").fillna(0).sum())
         print(f"  PU positives ({manifest['label']}): {pos:,}")
+    if "confirmed_clean" in matrix.columns:
+        print(f"  confirmed-clean negatives: "
+              f"{int(matrix['confirmed_clean'].sum()):,}")
+
+    # Matched case-control set: each positive vs. comparable clean controls — the
+    # contrast that lets the model learn what DIFFERS holding confounders fixed.
+    if args.case_control and manifest["label"]:
+        from .case_control import match_cohorts
+        matched = match_cohorts(matrix, label_col=manifest["label"])
+        if len(matched):
+            matched.to_parquet(out_dir / "provider_features_matched.parquet", index=False)
+            n_case = int((matched["cohort"] == "case").sum())
+            n_ctrl = int((matched["cohort"] == "control").sum())
+            kind = matched["control_kind"].iloc[0]
+            print(f"  matched case-control: {n_case:,} cases + {n_ctrl:,} controls "
+                  f"({kind}) → provider_features_matched.parquet")
+        else:
+            print("  case-control: no positives to match (skipped)")
 
     # Point-in-time: archive a valid-time-stamped snapshot so the bitemporal store
     # accumulates history for as-of (out-of-time) training (Pillar 1).
