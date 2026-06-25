@@ -5,7 +5,7 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a provider-features ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features feature-snapshot ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
 
 help:
 	@echo "Targets:"
@@ -16,6 +16,7 @@ help:
 	@echo "  graph      build the entity graph from real processed data"
 	@echo "  model-a    score orgs + render dossiers from real graph/features/spending"
 	@echo "  provider-features  rebuild graph, then export the per-NPI training matrix for Travis"
+	@echo "  feature-snapshot   archive a valid-time snapshot of the matrix (run on a cadence; point-in-time store)"
 	@echo "  ccn-crosswalk      build processed/ccn_to_npi.parquet (PECOS_FILE=path)"
 	@echo "  opensanctions      normalize OpenSanctions bulk -> processed/exclusions_opensanctions.parquet (OPENSANCTIONS_FILE=path)"
 	@echo "  owner-snapshot     archive this month's owner edges (run monthly; unlocks ownership_turnover at 2+)"
@@ -68,6 +69,13 @@ provider-features: graph
 		--preclean $(DATA_ROOT)/preclean \
 		--processed $(DATA_ROOT)/processed \
 		--out $(DATA_ROOT)/model_a/provider_features $(PF_FLAGS)
+
+# Archive a valid-time snapshot of the per-NPI matrix so point-in-time history
+# accumulates for as-of (out-of-time) training. Run on a cadence (e.g. monthly).
+feature-snapshot:
+	$(PY) -m src.model_a.feature_store \
+		--matrix $(DATA_ROOT)/model_a/provider_features/provider_features_for_model.parquet \
+		--store-dir $(DATA_ROOT)/feature_snapshots --asof $(ASOF)
 
 # One-time PECOS CCN↔NPI crosswalk (unlocks facility/HCRIS/POS schemes).
 ccn-crosswalk:

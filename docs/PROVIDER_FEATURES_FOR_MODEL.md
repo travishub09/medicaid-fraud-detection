@@ -243,6 +243,22 @@ y = df[m["label"]].fillna(0).astype(int)  # PU positive label
 Keep `npi` (and `org_node_id`) aside as keys for joining predictions back and for
 group-aware splits (don't let two NPIs of the same org straddle train/test).
 
+**Point-in-time / out-of-time training (`feature_store.py`).** To avoid scoring a
+known fraud actor on data that postdates the fraud, snapshot the matrix on a cadence
+(`make feature-snapshot ASOF=YYYY-MM-DD`) and, for each positive, reconstruct its
+features as of just before its `conduct_start`:
+
+```python
+from src.model_a.feature_store import asof_join, temporal_split
+events = labels.rename(columns={"conduct_start": "asof_date"})[["npi", "asof_date"]]
+pit_features, unresolved = asof_join(events, store_dir)   # latest snapshot < label date
+train_mask, test_mask = temporal_split(labels, cutoff_year=2021)
+```
+
+`unresolved` lists positives with no snapshot before their conduct date — they can't
+be answered without leaking future data, so they're flagged, never silently filled.
+This becomes more powerful as snapshot history accumulates.
+
 ---
 
 ## 9. Honest limitations — and how each is now mitigated

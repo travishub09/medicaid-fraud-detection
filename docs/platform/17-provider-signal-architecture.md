@@ -43,9 +43,13 @@ Every attribute and every label carries a **valid-time**, so we can reconstruct
   *before* they were caught. That is the only number worth defending to counsel.
 - The `leakage_hard` / `leakage_adjacent` distinction dissolves — a feature that
   postdates the label date simply isn't visible at training time.
-- Mechanically: timestamp every source and snapshot monthly. We already do this for
-  owner edges (`ownership_snapshot.py`); generalize it to *every* source into a
-  point-in-time store.
+- Mechanically: timestamp every source and snapshot monthly. **(BUILT —
+  `model_a/feature_store.py`.)** The export stamps each matrix with a valid-time
+  (`--snapshot --asof`), `asof_join` reconstructs a provider's features from the
+  latest snapshot *strictly before* a label date (and reports events with no prior
+  snapshot rather than leaking future data), and `temporal_split` produces the
+  out-of-time train/test masks from the conduct year. History accumulates from the
+  first snapshot forward; the remaining work is back-filling per-source valid-times.
 
 ---
 
@@ -179,8 +183,9 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
    built, embeddings are N columns billing data can't produce, and it fixes the
    broadcast problem. **(Built — `entity_graph/graph_embeddings.py`.)**
 2. **Bitemporal snapshotting + outcome-derived, scheme-typed labels** — makes
-   validation honest and labels rich. **(Scheme-typed/time-boxed DOJ labels BUILT
-   — `case_labels.py`; the full bitemporal feature store is the remaining half.)**
+   validation honest and labels rich. **(BUILT — scheme-typed/time-boxed DOJ labels
+   in `case_labels.py` + the point-in-time store in `feature_store.py`. Remaining:
+   back-fill per-source valid-times as snapshot history accumulates.)**
 3. **Weak-supervision label model + manufactured negatives** — explodes the labeled
    set; gives a real contrast.
 4. **Case-control matching at export time** — small, reshapes training data into

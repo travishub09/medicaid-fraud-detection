@@ -766,6 +766,13 @@ def main() -> None:
     ap.add_argument("--case-db", default=None,
                     help="DOJ/qui tam case DB (csv/parquet) → scheme-typed, "
                          "time-boxed positives folded into the label")
+    ap.add_argument("--snapshot", action="store_true",
+                    help="archive a valid-time snapshot of the matrix to the "
+                         "point-in-time feature store (Pillar 1)")
+    ap.add_argument("--asof", default=None,
+                    help="valid-time stamp for --snapshot (YYYY-MM-DD; default today)")
+    ap.add_argument("--snapshot-dir", default=None,
+                    help="feature-snapshot store dir (default <data-root>/feature_snapshots)")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
     args = ap.parse_args()
@@ -855,6 +862,17 @@ def main() -> None:
     if manifest["label"]:
         pos = int(pd.to_numeric(matrix[manifest["label"]], errors="coerce").fillna(0).sum())
         print(f"  PU positives ({manifest['label']}): {pos:,}")
+
+    # Point-in-time: archive a valid-time-stamped snapshot so the bitemporal store
+    # accumulates history for as-of (out-of-time) training (Pillar 1).
+    if args.snapshot:
+        import datetime as _dt
+        from .feature_store import snapshot_features, load_snapshot_index
+        asof = args.asof or _dt.date.today().strftime("%Y-%m-%d")
+        store = Path(args.snapshot_dir) if args.snapshot_dir else root / "feature_snapshots"
+        snapshot_features(matrix, asof, store)
+        print(f"  snapshotted as-of {asof} → {store} "
+              f"({len(load_snapshot_index(store))} point-in-time snapshot(s))")
 
 
 _DICT_NOTES = {

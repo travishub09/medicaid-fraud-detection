@@ -215,8 +215,11 @@ python -m pytest tests/ -v
   into scheme-typed, time-boxed positives (resolve case→org→NPI, extract the conduct
   window), folded into the widened label as source `doj_case` with `fraud_scheme` /
   `conduct_start` / `conduct_end` label metadata (scheme-stratified + out-of-time
-  training; `--case-db`).
-  Full suite: `pytest tests/` (289 tests).
+  training; `--case-db`). Pillar 1 (point-in-time store) BUILT: `model_a/feature_store.py`
+  (`snapshot_features` valid-time stamp, `asof_join` reconstruct features strictly
+  before a label date, `temporal_split` out-of-time masks; export `--snapshot`,
+  `make feature-snapshot`).
+  Full suite: `pytest tests/` (294 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
