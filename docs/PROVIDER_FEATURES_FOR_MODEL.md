@@ -75,6 +75,7 @@ Recoverable Value for human dossier review. Your model trains on **providers
 | Graph embeddings | `graph_emb_0..15`, `graph_fraud_proximity` | DeepWalk-style node vectors + PageRank fraud field (per-NPI position; `embedding_cols` in manifest; leakage-adjacent) |
 | Graph motifs | `graph_kcore`, `graph_triangles`, `graph_clustering`, `graph_degree` | structural position (clean features) |
 | Expected-billing | `billing_residual`, `expected_net_paid` | "digital twin" residual — unexplained billing after conditioning on size/specialty/breadth (clean; doesn't punish the legitimately large) |
+| Consistency | `consistency_flags`, `incons_solo_scale`, `incons_instant_scale`, `incons_breadth`, `incons_lone_org_scale` | cross-source incoherence (registration record vs. billing) — high-precision, hard to fake (clean features) |
 | Adapter raw features | `em_high_level_share`, `opioid_claim_share`, `hcris_cost_anomaly`, … | each CMS source's raw metric |
 | **Peer percentiles** | `<feature>__peerpct` | one-sided taxonomy-peer percentile of each adapter metric |
 | **Scheme subscores** | `subscore_<scheme>` | the 0–1 fraud-scheme scores (§4–5) |

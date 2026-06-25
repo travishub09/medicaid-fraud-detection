@@ -302,6 +302,14 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     out["billing_residual"] = eb["billing_residual"].to_numpy()
     out["expected_net_paid"] = eb["expected_net_paid"].to_numpy()
 
+    # Pillar 4: cross-source consistency — incoherence between the NPPES/PECOS
+    # registration record and the billing behavior (hard to fake on both sides).
+    from .consistency import consistency_checks
+    cons = consistency_checks(out)
+    for c in ["incons_solo_scale", "incons_instant_scale", "incons_breadth",
+              "incons_lone_org_scale", "consistency_flags"]:
+        out[c] = cons[c].to_numpy()
+
     raw_feature_cols = sorted(
         [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
                      + adapter_present + PROVIDER_STATS)
@@ -317,7 +325,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     embedding_cols = [c for c in out.columns if c.startswith(EMB_PREFIX)]
     struct_present = [c for c in STRUCT_COLS if c in out.columns]
     graph_adjacent = embedding_cols + ([PROXIMITY_COL] if PROXIMITY_COL in out.columns else [])
-    pillar4 = [c for c in ["billing_residual", "expected_net_paid"] if c in out.columns]
+    pillar4 = [c for c in ["billing_residual", "expected_net_paid",
+                           "incons_solo_scale", "incons_instant_scale",
+                           "incons_breadth", "incons_lone_org_scale",
+                           "consistency_flags"] if c in out.columns]
     raw_feature_cols = sorted(set(raw_feature_cols) | set(struct_present) | set(pillar4))
 
     # Prefer the widened multi-source label when present (LEIE + revocations + SAM +

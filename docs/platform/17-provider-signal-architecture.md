@@ -120,11 +120,13 @@ Four families, all fed raw + engineered to the tree:
    high-volume referral center whose dollars track its volume scores low; a small
    provider billing 30× what its volume justifies scores high. *Next: add patient-mix
    and geography covariates.*
-2. **Cross-source consistency checks.** Fraud surfaces as *incoherence across
-   independent systems*: NPPES says solo but bills like a group; PECOS deactivated
-   but still billing; address doesn't geocode to a clinic; hours billed exceed
-   physical capacity; phones/TINs shared across "independent" entities. **Hard to
-   fake** — they require coherence across systems the fraudster doesn't control.
+2. **Cross-source consistency checks. (BUILT — `consistency.py`.)** Fraud surfaces
+   as *incoherence across independent systems*: an individual billing at
+   institutional scale, a no-tenure provider already at full scale, a solo billing
+   implausibly broad codes, a one-NPI "organization" at institutional scale →
+   `consistency_flags`. **Hard to fake** — they require forging the NPPES/PECOS
+   record AND the billing in sync. *Next: address-geocode reality and shared-phone/
+   TIN checks as those sources land.*
 3. **Behavioral-sequence signatures.** Treat the monthly claim stream as a sequence
    and extract the *lifecycle* — "ramp → harvest → dissolve," code-mix drift,
    change-point density. Shape, not just level.
