@@ -47,9 +47,10 @@ For each: download the file, drop it at the path, re-run the export. No builder 
 - **Needs:** prescriber NPI, brand/generic name, claim count, total cost (+ opioid flag if present).
 
 ### B3. DMEPOS → `dme_ring`
-- **Get:** https://data.cms.gov/provider-summary-by-type-of-service/medicare-durable-medical-equipment-devices-supplies — referring-provider file.
-- **Save:** `preclean/dmepos/dmepos.csv`.
-- **Needs:** referring NPI, HCPCS, services, average allowed.
+- **Get:** https://data.cms.gov/provider-summary-by-type-of-service/medicare-durable-medical-equipment-devices-supplies — pick the **"by Referring Provider and Service"** dataset (NOT plain "by Referring Provider", which is pre-aggregated with no HCPCS detail, and NOT the "by Supplier" files, which key on the supplier rather than the ordering physician). Grain: referring NPI × HCPCS.
+- **Save:** `preclean/dmepos/dmepos.csv` (latest annual CSV; drop multiple years if desired).
+- **Verify columns:** `Rfrg_NPI`, `HCPCS_Cd`, `Tot_Suplr_Srvcs`, `Avg_Suplr_Mdcr_Alowd_Amt` (auto-resolved). The per-HCPCS detail is what powers high-cost-item share + code concentration.
+- **Note:** the dormant `dme_ordering_md_concentration` piece needs supplier↔referrer *pair* data no public DMEPOS file carries — it stays dormant.
 
 ### B4. CMS Opioid Prescriber file → `pill_mill`
 - **Get:** data.cms.gov → search "**Medicare Part D Opioid Prescriber Summary File**".
