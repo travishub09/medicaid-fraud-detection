@@ -271,6 +271,16 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     subscore_cols = [c for c in out.columns if c.startswith("subscore_")]
     peerpct_cols = [c for c in out.columns if c.endswith("__peerpct")]
 
+    # Graph node embeddings (Pillar 3): structural motifs are clean features; the
+    # learned embeddings and the fraud-proximity field encode the exclusion
+    # neighborhood, so they're leakage-adjacent (validate out-of-time, or rebuild
+    # embeddings on the exclusion-free graph if you want them clean).
+    from src.entity_graph.graph_embeddings import EMB_PREFIX, STRUCT_COLS, PROXIMITY_COL
+    embedding_cols = [c for c in out.columns if c.startswith(EMB_PREFIX)]
+    struct_present = [c for c in STRUCT_COLS if c in out.columns]
+    graph_adjacent = embedding_cols + ([PROXIMITY_COL] if PROXIMITY_COL in out.columns else [])
+    raw_feature_cols = sorted(set(raw_feature_cols) | set(struct_present))
+
     # Prefer the widened multi-source label when present (LEIE + revocations + SAM +
     # OpenSanctions), keeping provider_on_leie available for back-compat.
     label = "provider_on_exclusion" if "provider_on_exclusion" in out.columns else \
@@ -284,11 +294,12 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "label": label,
         "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
         "leakage_hard": leakage_hard,
-        "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns],
+        "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns] + graph_adjacent,
         "identifier_cols": [c for c in IDENTIFIER_COLS if c in out.columns],
         "raw_feature_cols": raw_feature_cols,
         "peerpct_cols": peerpct_cols,
         "subscore_cols": subscore_cols,
+        "embedding_cols": embedding_cols,
         "scheme_coverage": coverage,
         "sources_used": sources_used,
     }
@@ -740,6 +751,10 @@ def main() -> None:
         npi_to_org = outputs["npi_to_org"]
         gf = outputs["org_graph_features"]
         adapter_frames = build_npi_adapter_frames(leads["npi"].tolist())
+        from src.entity_graph.graph_embeddings import to_provider_grain
+        pe = to_provider_grain(outputs.get("node_embeddings"), npi_to_org)
+        if len(pe):
+            adapter_frames["graph_embeddings"] = pe
         org_grain = {}
         nucc_pg, widened = None, None
     else:
@@ -760,6 +775,17 @@ def main() -> None:
         ccn_to_npi = _read_any(ccn_xw)
         print("  running per-NPI adapters …")
         adapter_frames = _run_npi_adapters(preclean, print)
+        ne_p = g / "node_embeddings.parquet"
+        if ne_p.exists():
+            from src.entity_graph.graph_embeddings import to_provider_grain
+            pe = to_provider_grain(pd.read_parquet(ne_p), npi_to_org)
+            if len(pe):
+                adapter_frames["graph_embeddings"] = pe
+                print(f"    [graph_embeddings] {len(pe):,} providers, "
+                      f"{pe.shape[1] - 1} graph columns (embeddings + proximity + motifs)")
+        else:
+            print("    [graph_embeddings] skipped: rebuild the graph to emit "
+                  "node_embeddings.parquet")
         print("  running org/CCN-grain adapters …")
         snapshots_dir = (Path(args.owner_snapshots) if args.owner_snapshots
                          else root / "owner_snapshots")

@@ -205,7 +205,13 @@ python -m pytest tests/ -v
   `exclusion_label_sources` provenance), DuckDB-streamed growth/plausibility
   (`*_from_parquet` — full-universe `--with-analytics`, no pandas OOM), and
   NPI-grain ownership refinements (`org_member_count` + `has_excluded_owner`).
-  Full suite: `pytest tests/` (280 tests).
+  Pillar 3 of the ground-up redesign (docs/platform/17-provider-signal-architecture.md)
+  is BUILT: `entity_graph/graph_embeddings.py` emits per-node DeepWalk-style
+  embeddings + a personalized-PageRank fraud-proximity field + structural motifs
+  (k-core/triangles/clustering), written as `graph/node_embeddings.parquet` and
+  mapped to NPI grain in the export (`graph_emb_*` + `graph_fraud_proximity` =
+  leakage-adjacent; motifs = clean) — the structural fix for org→NPI broadcast.
+  Full suite: `pytest tests/` (285 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

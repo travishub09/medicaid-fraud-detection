@@ -111,6 +111,17 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path) -> dict[str, pd.DataFram
     require("features_one_per_org", len(org_features) == len(org_nodes),
             f"{len(org_features)} vs {len(org_nodes)}")
 
+    log("Computing graph node embeddings …")
+    from .graph_features import build_graph
+    from .graph_embeddings import compute_node_embeddings
+    G_emb = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
+                        owned_by_edges, excluded_in_edges, co_located_edges)
+    excl_ids = (set(exclusion_nodes["node_id"].astype(str))
+                if exclusion_nodes is not None and len(exclusion_nodes) else set())
+    node_embeddings = compute_node_embeddings(G_emb, excl_ids)
+    log(f"    embedded {len(node_embeddings):,} graph nodes "
+        f"(DeepWalk-style + fraud-proximity + structural motifs)")
+
     log("Running ring detection …")
     shells = shared_address_shell_clusters(org_nodes)
     common_owners = common_owner_clusters(owned_by_edges, owner_nodes, excluded_in_edges)
@@ -130,6 +141,7 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path) -> dict[str, pd.DataFram
         "edges/co_located_edges": co_located_edges,
         "npi_to_org": npi_to_org,
         "org_graph_features": org_features,
+        "node_embeddings": node_embeddings,
         "rings/shared_address_shells": shells,
         "rings/common_owner_clusters": common_owners,
         "rings/excluded_party_proximity": proximity,

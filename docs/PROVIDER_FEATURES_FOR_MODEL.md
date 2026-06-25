@@ -72,6 +72,8 @@ Recoverable Value for human dossier review. Your model trains on **providers
 | Raw provider stats | `gross_paid`, `net_paid`, `service_volume`, `total_claim_lines`, `n_distinct_hcpcs`, … | lifetime billing aggregates from the spending fact |
 | v3 anomaly concepts | `concentration`, `payment_intensity`, `service_intensity`, `specialty_mismatch`, `temporal` | the five peer-relative anomaly percentiles (already 0–1) |
 | Graph / ownership | `within_2_hops_of_exclusion`, `shell_score`, `related_party_density(_norm)`, `ownership_turnover`, … | entity-graph signals, broadcast org→NPI |
+| Graph embeddings | `graph_emb_0..15`, `graph_fraud_proximity` | DeepWalk-style node vectors + PageRank fraud field (per-NPI position; `embedding_cols` in manifest; leakage-adjacent) |
+| Graph motifs | `graph_kcore`, `graph_triangles`, `graph_clustering`, `graph_degree` | structural position (clean features) |
 | Adapter raw features | `em_high_level_share`, `opioid_claim_share`, `hcris_cost_anomaly`, … | each CMS source's raw metric |
 | **Peer percentiles** | `<feature>__peerpct` | one-sided taxonomy-peer percentile of each adapter metric |
 | **Scheme subscores** | `subscore_<scheme>` | the 0–1 fraud-scheme scores (§4–5) |
@@ -260,8 +262,11 @@ Each of the four is real, but the platform now actively battles it:
   **Mitigation (built):** `org_member_count` lets the model discount a broadcast
   signal in a 5,000-NPI system vs. a 2-NPI shell, and `has_excluded_owner` (from
   the NPI's own owner-role) sharpens the smeared graph proximity into an NPI-level
-  signal. Both are exposed alongside `org_node_id` for group-aware modeling.
-  (These owner-role signals are `leakage_adjacent` — validate out-of-time.)
+  signal. Most importantly, the **graph embeddings** (`graph_emb_*`) give a provider
+  that sits in the graph its *own* position vector rather than a smeared org value —
+  the structural fix for broadcast. (Owner-role + embedding signals are
+  `leakage_adjacent` — validate out-of-time. See `docs/platform/17` for the full
+  representation-learning roadmap.)
 - **Scale of `--with-analytics`.** **Mitigation (built):** growth and clinical
   plausibility now stream straight from the spending parquet via DuckDB
   (`*_from_parquet`); the 238M-row fact never enters pandas, so the enrichments
