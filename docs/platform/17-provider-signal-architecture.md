@@ -54,11 +54,13 @@ Every attribute and every label carries a **valid-time**, so we can reconstruct
 Replace the single exclusion flag with a **label engine** that produces rich,
 probabilistic, time-boxed labels:
 
-- **Scheme-typed, time-boxed positives from DOJ / qui tam outcomes.** A settlement
-  isn't "this NPI is bad" — it's "this NPI committed *upcoding* from *2016–2019*
-  for *$4.2M*." Resolve case → NPI → scheme → window. Now the model learns
-  scheme-specific signatures and you can validate per-scheme. (`case_db` and
-  `label_store` exist; the leap is making labels typed and temporal.)
+- **Scheme-typed, time-boxed positives from DOJ / qui tam outcomes. (BUILT —
+  `model_a/case_labels.py`.)** A settlement isn't "this NPI is bad" — it's "this NPI
+  committed *upcoding* from *2016–2019* for *$4.2M*." The case DB is resolved case →
+  org → member NPIs, scheme is carried, and a **conduct window** is extracted from
+  the case text; the export folds these into the widened label as source `doj_case`
+  and exposes `fraud_scheme` / `conduct_start` / `conduct_end` as label metadata, so
+  you can validate per-scheme and train out-of-time today.
 - **Weak supervision (Snorkel-style).** Instead of one hard label, write dozens of
   noisy *labeling functions* — "billed after death → fraud," "FQHC continuously
   enrolled 15yr → clean," "named in a DOJ indictment → fraud," "address geocodes to
@@ -177,7 +179,8 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
    built, embeddings are N columns billing data can't produce, and it fixes the
    broadcast problem. **(Built — `entity_graph/graph_embeddings.py`.)**
 2. **Bitemporal snapshotting + outcome-derived, scheme-typed labels** — makes
-   validation honest and labels rich. (Snapshot mechanism + case DB exist.)
+   validation honest and labels rich. **(Scheme-typed/time-boxed DOJ labels BUILT
+   — `case_labels.py`; the full bitemporal feature store is the remaining half.)**
 3. **Weak-supervision label model + manufactured negatives** — explodes the labeled
    set; gives a real contrast.
 4. **Case-control matching at export time** — small, reshapes training data into

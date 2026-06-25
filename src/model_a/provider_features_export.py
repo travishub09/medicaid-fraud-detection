@@ -155,6 +155,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           org_grain_frames: dict[str, pd.DataFrame] | None = None,
                           nucc_peer_groups: pd.DataFrame | None = None,
                           widened_label: pd.DataFrame | None = None,
+                          case_labels: pd.DataFrame | None = None,
                           min_peer: int = 30,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
@@ -201,6 +202,28 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         assert len(m) == n0, "widened-label join fanned out"
         if "provider_on_exclusion" in m.columns:
             m["provider_on_exclusion"] = m["provider_on_exclusion"].fillna(0).astype(int)
+
+    # DOJ/qui tam outcomes: the strongest positives (prosecuted fraud), folded into
+    # the same label union, plus scheme-type + conduct-window metadata that enable
+    # scheme-stratified and OUT-OF-TIME training (train on features < conduct_start).
+    if case_labels is not None and len(case_labels) and "npi" in case_labels.columns:
+        cl = case_labels.copy()
+        cl["npi"] = cl["npi"].astype(str)
+        meta = [c for c in ["npi", "fraud_scheme", "conduct_start", "conduct_end",
+                            "case_ids"] if c in cl.columns]
+        m = m.merge(cl[meta].drop_duplicates("npi"), on="npi", how="left")
+        assert len(m) == n0, "case-label join fanned out"
+        hit = m["npi"].isin(set(cl["npi"]))
+        if "provider_on_exclusion" not in m.columns:
+            m["provider_on_exclusion"] = 0
+        m["provider_on_exclusion"] = (m["provider_on_exclusion"].fillna(0).astype(int)
+                                      | hit.astype(int))
+        if "exclusion_label_sources" not in m.columns:
+            m["exclusion_label_sources"] = ""
+        m.loc[hit, "exclusion_label_sources"] = (
+            m.loc[hit, "exclusion_label_sources"].fillna("").astype(str)
+             .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["doj_case"])))))
+        sources_used["doj_case"] = ["fraud_scheme", "conduct_start", "conduct_end"]
 
     if org_graph_features is not None and len(org_graph_features):
         gf = _broadcast_org_to_npi(npi_to_org, org_graph_features, GRAPH_FEATURES)
@@ -286,13 +309,20 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     label = "provider_on_exclusion" if "provider_on_exclusion" in out.columns else \
             (LABEL_COL if LABEL_COL in out.columns else None)
     leakage_hard = [c for c in (LEAKAGE_HARD + ["provider_on_exclusion"]) if c in out.columns]
-    raw_feature_cols = [c for c in raw_feature_cols if c not in leakage_hard]
+    # label metadata (target-derived, never features): scheme type + conduct window
+    # for scheme-stratified and out-of-time validation.
+    label_metadata = [c for c in ["exclusion_label_sources", "fraud_scheme",
+                                  "conduct_start", "conduct_end", "case_ids",
+                                  "provider_on_leie"] if c in out.columns]
+    raw_feature_cols = [c for c in raw_feature_cols
+                        if c not in leakage_hard and c not in label_metadata]
 
     manifest = {
         "grain": "npi",
         "n_providers": int(n0),
         "label": label,
         "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
+        "label_metadata": label_metadata,
         "leakage_hard": leakage_hard,
         "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns] + graph_adjacent,
         "identifier_cols": [c for c in IDENTIFIER_COLS if c in out.columns],
@@ -733,6 +763,9 @@ def main() -> None:
     ap.add_argument("--owner-snapshots", default=None,
                     help="owner-snapshot archive dir (ownership_turnover; default "
                          "<data-root>/owner_snapshots)")
+    ap.add_argument("--case-db", default=None,
+                    help="DOJ/qui tam case DB (csv/parquet) → scheme-typed, "
+                         "time-boxed positives folded into the label")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
     args = ap.parse_args()
@@ -756,7 +789,7 @@ def main() -> None:
         if len(pe):
             adapter_frames["graph_embeddings"] = pe
         org_grain = {}
-        nucc_pg, widened = None, None
+        nucc_pg, widened, case_lbls = None, None, None
     else:
         if not args.graph_dir or not args.leads:
             ap.error("--graph-dir and --leads are required (or use --fixture)")
@@ -795,12 +828,20 @@ def main() -> None:
                                             snapshots_dir=snapshots_dir)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, print)
         widened = _widened_label_from_graph(g, print)
+        case_lbls = None
+        if args.case_db and org_nodes is not None:
+            from .case_labels import build_case_labels
+            cdb = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
+                   else pd.read_parquet(args.case_db))
+            case_lbls = build_case_labels(cdb, org_nodes, npi_to_org)
+            print(f"    [doj_case] {len(case_lbls):,} NPIs labeled from DOJ cases "
+                  f"(scheme-typed + conduct windows)")
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(
         leads, npi_to_org, org_graph_features=gf,
         adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
-        nucc_peer_groups=nucc_pg, widened_label=widened)
+        nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     matrix.to_parquet(out_dir / "provider_features_for_model.parquet", index=False)

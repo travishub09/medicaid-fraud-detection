@@ -177,15 +177,20 @@ not just unusual billing.
 ## 6. The label, PU learning, and the leakage discipline
 
 **Label (`provider_on_exclusion`, falling back to `provider_on_leie`):** the
-provider appears on an exclusion/debarment list. When supplementary sources are
-loaded, the manifest's `label` is the **widened** `provider_on_exclusion` — a union
-of LEIE + CMS revocations + SAM + OpenSanctions — with `exclusion_label_sources`
-recording which list(s) matched, so you can weight or stratify by source.
-`provider_on_leie` remains for back-compat. This is a **positive-unlabeled**
-target: a `1` is a confirmed bad actor, but a `0` is *not* confirmed-clean — it's
-merely uncaught. Train accordingly (PU learning / treat unlabeled as unlabeled).
-Filter to fraud-relevant statutes for a cleaner positive set; the platform already
-filters LEIE to the fraud statutes elsewhere.
+provider appears on an exclusion/debarment list OR was a defendant in a resolved
+DOJ/qui tam case. The manifest's `label` is the **widened** `provider_on_exclusion`
+— a union of LEIE + CMS revocations + SAM + OpenSanctions + **DOJ outcomes** — with
+`exclusion_label_sources` recording which source(s) matched. This is a
+**positive-unlabeled** target: a `1` is a confirmed bad actor, but a `0` is *not*
+confirmed-clean — it's merely uncaught. Train accordingly (PU learning).
+
+**Scheme-typed, time-boxed positives (the big one).** DOJ-case positives carry
+`fraud_scheme` and a conduct window (`conduct_start` / `conduct_end`) in the
+`label_metadata` block. Two things this unlocks: **scheme-stratified evaluation**
+(measure lift within each scheme so the model can't hide by only learning
+LEIE-flavored fraud) and **out-of-time training** (train on features dated *before*
+`conduct_start` — the leakage fix you can use today). Everything in `label_metadata`
+is target-derived and is kept out of the feature set.
 
 **Leakage is made explicit so the backtest stays honest.** The manifest separates:
 

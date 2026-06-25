@@ -211,7 +211,12 @@ python -m pytest tests/ -v
   (k-core/triangles/clustering), written as `graph/node_embeddings.parquet` and
   mapped to NPI grain in the export (`graph_emb_*` + `graph_fraud_proximity` =
   leakage-adjacent; motifs = clean) — the structural fix for org→NPI broadcast.
-  Full suite: `pytest tests/` (285 tests).
+  Pillar 2 (label engine) started: `model_a/case_labels.py` turns the DOJ case DB
+  into scheme-typed, time-boxed positives (resolve case→org→NPI, extract the conduct
+  window), folded into the widened label as source `doj_case` with `fraud_scheme` /
+  `conduct_start` / `conduct_end` label metadata (scheme-stratified + out-of-time
+  training; `--case-db`).
+  Full suite: `pytest tests/` (289 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

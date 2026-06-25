@@ -180,6 +180,10 @@ the export unions them into `provider_on_exclusion` (with `exclusion_label_sourc
   (writes `exclusions_sam.parquet`; needs a free SAM API key).
 - **OpenSanctions:** see C2. After dropping any of these, re-run `make graph` then `make provider-features`.
 
+### C8. DOJ / qui tam case DB → scheme-typed, time-boxed positives (the strongest label)
+- **Get:** DOJ press releases (https://www.justice.gov/news, filter "False Claims Act") + OIG enforcement (https://oig.hhs.gov/fraud/enforcement/). The `enforcement/fetch.py` + `case_db.py` pipeline parses these into the case schema; a hand-curated CSV (defendant, date, scheme, amount, summary) also works.
+- **Build:** `python -m src.model_a.case_labels --case-db <cases.csv> --graph-dir <graph> --out processed/case_labels.parquet`, then run the export with `--case-db <cases.csv>`. Resolved defendants become `provider_on_exclusion` positives tagged `doj_case`, with `fraud_scheme` + `conduct_start`/`conduct_end` for scheme-stratified and out-of-time training.
+
 ---
 
 ## D. Operational cadence (no download — just a monthly job)
