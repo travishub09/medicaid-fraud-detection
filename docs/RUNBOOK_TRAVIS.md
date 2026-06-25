@@ -200,7 +200,31 @@ p = cal.predict(model_scores)
 print(calibration_metrics(p[test_mask], s[test_mask]))   # Brier + ECE
 ```
 
-**Step 8 — Optional: pre-train on the soft label.** `weak_label_score` is a dense
+For a model that's calibrated overall but skewed within a specialty, use
+`fit_grouped_calibrators(model_scores, s, df["fraud_scheme"])` and audit with
+`reliability_by_group`.
+
+**Step 8 — Size the lead list with a false-discovery rate.** Don't hand counsel a
+top-N without an error rate. From the calibrated probabilities, pick the largest list
+whose expected false-discovery rate stays under your tolerance, and report it:
+
+```python
+from src.model_a.fdr import fdr_threshold, expected_false_discoveries
+cut = fdr_threshold(p, target=0.2)                 # e.g. "top 430 leads, ~20% expected FDR"
+print(cut, expected_false_discoveries(p, cut["k"]))
+```
+
+**Step 9 — Attach confidence (optional).** `src/model_a/conformal.py` gives each lead
+a distribution-free confidence (conformal p-value vs. known positives) and a
+coverage-guaranteed band for the Model C recovery estimate — more defensible than a
+bare point score.
+
+**Step 10 — Validate the clean set is fair (optional).** Before trusting the matched
+case-control fit, run `case_control.covariate_balance(matched)` and
+`separability_auc(matched)`; an AUC near 0.5 on the covariates alone confirms the
+model wins on fraud signal, not on size/age confounders.
+
+**Step 11 — Optional: pre-train on the soft label.** `weak_label_score` is a dense
 probabilistic target; semi-supervised pre-training on it, then fine-tuning on the
 hard label, can lift performance when hard positives are scarce.
 
@@ -469,8 +493,37 @@ further, so none is just a shrug.
   with negligible billing can't be fairly scored. The export emits an `assessable`
   flag (manifest `assessability`) so they aren't force-ranked into a percentile they
   didn't earn — filter or down-weight them rather than reading their rank as signal.
+- **Billing-feature leakage — now point-in-time (resolved).** The exclusion graph was
+  already `--asof`-correct, but the BILLING features (stats, growth, plausibility,
+  residual, billing-LM) were computed over full history — leaking a positive's future
+  billing into a past label. `src/model_a/asof_billing.py` + the export's
+  `--asof-cutoff YYYY-MM-DD` filter the spending fact to service months *before* a
+  feature-freeze date, so every billing feature is computed only on pre-conduct data.
+  Train on an `--asof-cutoff` matrix + label only providers whose conduct began at/
+  after it for a fully leakage-correct out-of-time fit.
+- **No false-discovery control — now quantified.** Ranking ~1M providers surfaces
+  false positives by multiplicity. `src/model_a/fdr.py` attaches an expected
+  false-discovery rate to any surfaced set — Benjamini-Hochberg over empirical
+  p-values vs. the clean cohort, or a model-based FDR from calibrated probabilities
+  (`fdr_threshold` returns the largest lead list whose expected FDR stays under your
+  target). Report the number with the list.
+- **Point scores, no confidence — now conformal.** `src/model_a/conformal.py` gives
+  distribution-free confidence: a marginal conformal p-value that a provider is in the
+  offender class, and split-conformal / CQR bands for the Model C recovery estimate
+  (guaranteed coverage). Turns "score 0.8" into "offender-class at 90% confidence."
+- **Calibration is global — now per-subgroup.** A model can be calibrated overall yet
+  skewed within a scheme/specialty. `calibration.fit_grouped_calibrators` +
+  `reliability_by_group` calibrate and audit per `fraud_scheme` / peer group, with a
+  global fallback for thin groups.
+- **Negative-set selection bias — now diagnosed.** The manufactured `confirmed_clean`
+  anchors skew large/institutional, so a model could learn "small + new = fraud."
+  `case_control.covariate_balance` (standardized mean differences) + `separability_auc`
+  prove the matched clean set isn't a giveaway (AUC near 0.5 on covariates alone =
+  fair contrast); fix the match if a confounder is unbalanced.
 - **External grounding coverage.** Offline mailbox detection is pattern-based (misses
   unlisted CMRAs); live geocoding depends on network access and the Census match rate.
+  *Reducible:* fold in a USPS CMRA reference list + an address-cluster-degree feature
+  (how many unrelated NPIs share the suite).
 - **Scale of `--with-analytics` — now full-DuckDB (resolved).** Growth, clinical
   plausibility, and the billing-LM (code co-occurrence, provider embeddings, and
   taxonomy surprisal) now run entirely as DuckDB self-joins / GROUP BYs over the

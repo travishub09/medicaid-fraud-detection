@@ -650,17 +650,20 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                             org_nodes: pd.DataFrame | None,
                             ccn_to_npi: pd.DataFrame | None, log,
                             with_analytics: bool = False,
-                            snapshots_dir: Path | None = None
+                            snapshots_dir: Path | None = None,
+                            asof_spending: Path | None = None
                             ) -> dict[str, pd.DataFrame]:
     """Run the adapters that resolve at ORG or CCN grain and return org-keyed frames
     (build_provider_matrix broadcasts them down to each member NPI).
 
     Each block guards on ALL its inputs; a missing input logs a precise reason so the
     export report shows exactly which scenarios are scored and which are data-blocked.
+    ``asof_spending`` (when set) replaces the spending fact with a pre-cutoff filtered
+    copy, so the billing-derived enrichments are point-in-time correct.
     """
     frames: dict[str, pd.DataFrame] = {}
     pc, proc = preclean, processed
-    spending_p = _first_existing(proc, "spending_fact.parquet")
+    spending_p = asof_spending or _first_existing(proc, "spending_fact.parquet")
 
     # --- analytics enrichments (growth-shock + clinical plausibility) -----------
     # DuckDB-streamed straight from the spending parquet (the 238M-row fact never
@@ -898,6 +901,10 @@ def main() -> None:
                          "point-in-time feature store (Pillar 1)")
     ap.add_argument("--asof", default=None,
                     help="valid-time stamp for --snapshot (YYYY-MM-DD; default today)")
+    ap.add_argument("--asof-cutoff", default=None,
+                    help="feature-freeze date (YYYY-MM-DD): compute ALL billing "
+                         "features only on service months BEFORE it (point-in-time, "
+                         "leakage-correct out-of-time training matrix)")
     ap.add_argument("--snapshot-dir", default=None,
                     help="feature-snapshot store dir (default <data-root>/feature_snapshots)")
     ap.add_argument("--fixture", action="store_true",
@@ -957,13 +964,29 @@ def main() -> None:
         else:
             print("    [graph_embeddings] skipped: rebuild the graph to emit "
                   "node_embeddings.parquet")
+        # Point-in-time billing: filter the spending fact to BEFORE the cutoff once,
+        # then every billing builder runs unchanged on the leakage-correct file.
+        asof_spend_p = None
+        if args.asof_cutoff:
+            base_spend = _first_existing(processed, "spending_fact.parquet")
+            if base_spend:
+                from .asof_billing import write_asof_spending
+                asof_spend_p = root / "interim" / f"spending_asof_{args.asof_cutoff}.parquet"
+                kept, dropped = write_asof_spending(str(base_spend), args.asof_cutoff,
+                                                    str(asof_spend_p))
+                print(f"  [asof] feature-freeze {args.asof_cutoff}: billing features "
+                      f"see {kept:,} pre-cutoff rows ({dropped:,} dropped)")
+            else:
+                print("  [asof] skipped: no processed/spending_fact.parquet")
+
         print("  running org/CCN-grain adapters …")
         snapshots_dir = (Path(args.owner_snapshots) if args.owner_snapshots
                          else root / "owner_snapshots")
         org_grain = _run_org_grain_adapters(preclean, processed, npi_to_org,
                                             org_nodes, ccn_to_npi, print,
                                             with_analytics=args.with_analytics,
-                                            snapshots_dir=snapshots_dir)
+                                            snapshots_dir=snapshots_dir,
+                                            asof_spending=asof_spend_p)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, print)
         widened = _widened_label_from_graph(g, print)
         case_lbls = None
@@ -1001,7 +1024,7 @@ def main() -> None:
         except Exception as e:
             print(f"    [graph_velocity] skipped: {e}")
         if args.with_analytics and pdim_p:
-            spend_p = _first_existing(processed, "spending_fact.parquet")
+            spend_p = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
             if spend_p:
                 try:
                     adapter_frames["billing_lm"] = _billing_lm_from_parquet(

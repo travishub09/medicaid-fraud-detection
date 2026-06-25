@@ -98,6 +98,58 @@ def reliability_table(scores, labels, n_bins: int = 10) -> pd.DataFrame:
                                        "mean_predicted", "frac_positive"])
 
 
+@dataclass
+class GroupedCalibrator:
+    """Per-subgroup calibrators with a global fallback for thin groups."""
+    calibrators: dict          # group key → Calibrator
+    fallback: Calibrator
+    min_group: int
+
+    def predict(self, scores, groups) -> np.ndarray:
+        s = pd.to_numeric(pd.Series(np.asarray(scores, dtype=float).ravel()),
+                          errors="coerce").fillna(0.0).to_numpy()
+        g = pd.Series(groups).astype(str).to_numpy()
+        out = self.fallback.predict(s)
+        for key, cal in self.calibrators.items():
+            mask = g == key
+            if mask.any():
+                out[mask] = cal.predict(s[mask])
+        return np.clip(out, 0.0, 1.0)
+
+
+def fit_grouped_calibrators(scores, labels, groups, method: str = "isotonic",
+                            min_group: int = 200) -> GroupedCalibrator:
+    """Fit one calibrator per subgroup (e.g. per ``fraud_scheme`` or peer group), so a
+    model that's well-calibrated globally but skewed within a specialty is corrected
+    where it matters. Groups with < ``min_group`` rows (or a single label class) fall
+    back to the global calibrator."""
+    s = pd.to_numeric(pd.Series(scores), errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    y = pd.Series(labels).astype(int).to_numpy()
+    g = pd.Series(groups).astype(str).to_numpy()
+    fallback = fit_calibrator(s, y, method=method)
+    cals: dict = {}
+    for key in pd.unique(g):
+        mask = g == key
+        if mask.sum() >= min_group and len(np.unique(y[mask])) >= 2:
+            cals[key] = fit_calibrator(s[mask], y[mask], method=method)
+    return GroupedCalibrator(calibrators=cals, fallback=fallback, min_group=min_group)
+
+
+def reliability_by_group(scores, labels, groups, n_bins: int = 10) -> pd.DataFrame:
+    """Per-subgroup calibration summary (Brier + ECE + base rate per group) — surfaces
+    a specialty/scheme where the model is over- or under-confident even though the
+    global reliability looks fine."""
+    s = pd.to_numeric(pd.Series(scores), errors="coerce").fillna(0.0).to_numpy(dtype=float)
+    y = pd.Series(labels).astype(int).to_numpy()
+    g = pd.Series(groups).astype(str).to_numpy()
+    rows = []
+    for key in pd.unique(g):
+        mask = g == key
+        m = calibration_metrics(s[mask], y[mask], n_bins=n_bins)
+        rows.append({"group": key, "count": int(mask.sum()), **m})
+    return pd.DataFrame(rows).sort_values("count", ascending=False).reset_index(drop=True)
+
+
 def calibration_metrics(scores, labels, n_bins: int = 10) -> dict:
     """Summary calibration quality: Brier score (mean squared error of the
     probability) and Expected Calibration Error (count-weighted mean gap between

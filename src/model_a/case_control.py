@@ -104,3 +104,69 @@ def match_cohorts(matrix: pd.DataFrame, label_col: str = "provider_on_exclusion"
     feat = df.set_index(df["npi"].astype(str))[cols]
     joined = meta.join(feat, on="_src_npi").drop(columns=["_src_npi"])
     return joined.reset_index(drop=True)
+
+
+_DEFAULT_COVARS = ["net_paid", "service_volume", "n_distinct_hcpcs", "tenure_months",
+                   "org_member_count"]
+
+
+def _smd(case_vals: np.ndarray, ctrl_vals: np.ndarray) -> float:
+    """Standardized mean difference: (mean_case - mean_ctrl) / pooled SD. The
+    epidemiology balance metric — |SMD| < 0.1 is the usual "balanced" threshold."""
+    c, k = case_vals[~np.isnan(case_vals)], ctrl_vals[~np.isnan(ctrl_vals)]
+    if not len(c) or not len(k):
+        return float("nan")
+    var_c = c.var(ddof=1) if len(c) > 1 else 0.0
+    var_k = k.var(ddof=1) if len(k) > 1 else 0.0
+    pooled = np.sqrt((var_c + var_k) / 2.0)
+    if pooled == 0:
+        return 0.0 if c.mean() == k.mean() else float("inf")
+    return float((c.mean() - k.mean()) / pooled)
+
+
+def covariate_balance(matched: pd.DataFrame, covariates: list[str] | None = None
+                      ) -> pd.DataFrame:
+    """Standardized mean differences between cases and matched controls, per
+    covariate. A large |SMD| on a confounder (size, tenure) means the match did NOT
+    balance it — so the model could learn that confounder instead of fraud. Report it;
+    aim for |SMD| < 0.1."""
+    covars = [c for c in (covariates or _DEFAULT_COVARS) if c in matched.columns]
+    case = matched[matched["cohort"] == "case"]
+    ctrl = matched[matched["cohort"] == "control"]
+    rows = []
+    for c in covars:
+        cv = pd.to_numeric(case[c], errors="coerce").to_numpy(dtype=float)
+        kv = pd.to_numeric(ctrl[c], errors="coerce").to_numpy(dtype=float)
+        smd = _smd(cv, kv)
+        rows.append({"covariate": c, "case_mean": float(np.nanmean(cv)) if len(cv) else float("nan"),
+                     "control_mean": float(np.nanmean(kv)) if len(kv) else float("nan"),
+                     "smd": smd, "balanced": bool(abs(smd) < 0.1) if np.isfinite(smd) else False})
+    return pd.DataFrame(rows, columns=["covariate", "case_mean", "control_mean",
+                                       "smd", "balanced"])
+
+
+def separability_auc(matched: pd.DataFrame, covariates: list[str] | None = None,
+                     seed: int = 0) -> float:
+    """How easily a simple model tells cases from controls using ONLY the matching
+    covariates (size/tenure/breadth). AUC near 0.5 = the clean set is a fair contrast;
+    AUC near 1.0 = the negatives are a giveaway (the model can win on confounders
+    alone, not on fraud). A guardrail on the manufactured-negative design."""
+    covars = [c for c in (covariates or _DEFAULT_COVARS) if c in matched.columns]
+    sub = matched[matched["cohort"].isin(["case", "control"])]
+    if not covars or sub["cohort"].nunique() < 2:
+        return float("nan")
+    X = sub[covars].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy()
+    y = (sub["cohort"] == "case").astype(int).to_numpy()
+    if len(np.unique(y)) < 2:
+        return float("nan")
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+    from sklearn.model_selection import cross_val_predict
+    clf = LogisticRegression(max_iter=1000)
+    try:
+        proba = cross_val_predict(clf, X, y, cv=min(5, int(y.sum()), int((1 - y).sum())),
+                                  method="predict_proba")[:, 1]
+        return float(roc_auc_score(y, proba))
+    except Exception:
+        clf.fit(X, y)
+        return float(roc_auc_score(y, clf.predict_proba(X)[:, 1]))

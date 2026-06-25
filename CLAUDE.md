@@ -263,7 +263,17 @@ python -m pytest tests/ -v
   label with a `preclusion` source tag — sponsor-channel data, gated), and the export
   now emits `group_id` (manifest `group_cols`, for group-aware CV) + an `assessable`
   flag (manifest `assessability`, so thin-evidence providers aren't force-ranked).
-  Full suite: `pytest tests/` (329 tests).
+  Third limitation-mitigation batch BUILT: `model_a/asof_billing.py` (point-in-time
+  BILLING fact — `write_asof_spending`/`asof_provider_stats` + export `--asof-cutoff`
+  filter the spending fact to pre-freeze service months so every billing feature is
+  leakage-correct, closing the last temporal hole), `model_a/fdr.py` (false-discovery
+  control on the lead list — empirical p-values + Benjamini-Hochberg + a model-based
+  `fdr_threshold` from calibrated probabilities), `model_a/conformal.py` (distribution-
+  free confidence — conformal p-values for offender-class membership + split-conformal/
+  CQR recovery bands), per-subgroup calibration (`calibration.fit_grouped_calibrators`
+  + `reliability_by_group`), and matched-set covariate-balance diagnostics
+  (`case_control.covariate_balance` SMDs + `separability_auc`).
+  Full suite: `pytest tests/` (334 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

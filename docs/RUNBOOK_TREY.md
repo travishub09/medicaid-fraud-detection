@@ -187,6 +187,7 @@ What the optional flags do:
 - `--case-control` — also writes `provider_features_matched.parquet` (matched positives + clean controls).
 - `--geocode` — live Census geocoding of billing addresses (network).
 - `--snapshot --asof DATE` — archives a valid-time snapshot for point-in-time training.
+- `--asof-cutoff DATE` — a feature-freeze date: every billing feature is computed only on service months *before* it, so the matrix is leakage-correct for out-of-time training (pair it with labeling only providers whose conduct began at/after the date). Writes a filtered spending file to `interim/` first.
 
 Hand Travis `provider_features_for_model.parquet` + `feature_manifest.json` (and
 `provider_features_matched.parquet` if you ran `--case-control`).
