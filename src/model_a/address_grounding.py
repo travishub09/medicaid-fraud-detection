@@ -67,8 +67,10 @@ def address_flags(provider_dim: pd.DataFrame, addr_col: str = "addr_key",
     })
     if geocoder is not None:                  # optional live realness check
         try:
-            real = addr.map(lambda a: 1 if geocoder(a).get("is_clinic") else 0)
-            out["addr_geocoded_clinic"] = real.to_numpy()
+            matched = addr.map(lambda a: 1 if geocoder(a).get("matched") else 0)
+            out["addr_geocoded"] = matched.to_numpy()
+            # a billing provider whose address doesn't resolve to a real location
+            out["addr_no_match"] = ((matched == 0) & (addr.str.strip() != "")).astype(int).to_numpy()
         except Exception:
             pass
     return out.drop_duplicates("npi")[[c for c in out.columns]]

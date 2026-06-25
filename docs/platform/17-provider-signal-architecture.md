@@ -211,9 +211,17 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
 5. **All Pillar-4 families BUILT** (`expected_billing.py` residual twin,
    `consistency.py` cross-source checks, `address_grounding.py` external grounding),
    plus **temporal-graph velocity** (`graph_velocity.py`) and the **billing-LM
-   moonshot core** (`billing_lm.py`). Every §17 pillar/item now has a working core;
-   what remains is depth (a true sequence transformer, live geocoding, the full
-   bitemporal per-source valid-time back-fill).
+   moonshot core** (`billing_lm.py`).
+
+The depth upgrades are now BUILT too: an **order-aware sequence billing LM**
+(`billing_sequence_lm.py` — bigram transition model over the code-adoption sequence
+→ `sequence_surprisal`; a torch transformer is the optional swap behind the same
+interface), **live address geocoding** (`feeds/geocode.py` — Census geocoder,
+injectable transport → `addr_geocoded`/`addr_no_match`), and **source-level
+point-in-time reconstruction** (`temporal_sources.py` + `entity_graph --asof` — the
+exclusion graph is rebuilt from only what was known before a date, the leakage fix
+at the source). What now remains is pure scale/ops: a GPU-trained sequence
+transformer, USPS-CMRA/parcel enrichment, and accumulating real snapshot history.
 
 Net: stop shipping "anomaly percentiles," start shipping **three independent views
 of each provider — what they bill, who they're connected to, and whether their

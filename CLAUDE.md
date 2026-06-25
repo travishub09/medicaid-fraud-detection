@@ -239,8 +239,15 @@ python -m pytest tests/ -v
   (`model_a/address_grounding.py` — mailbox/PO-box + address-reuse flags), and the
   billing-LM moonshot (`model_a/billing_lm.py` — PPMI/SVD code embeddings +
   per-provider `billing_surprisal`; export `--with-analytics`). All seven §17
-  pillars/items now have working cores.
-  Full suite: `pytest tests/` (314 tests).
+  pillars/items now have working cores. Depth upgrades BUILT:
+  `model_a/billing_sequence_lm.py` (order-aware bigram billing LM over the
+  code-adoption sequence → `sequence_surprisal`; transformer is the torch-optional
+  swap behind the same interface), `feeds/geocode.py` (live Census geocoding,
+  injectable transport → `addr_geocoded`/`addr_no_match` via the address-grounding
+  hook; export `--geocode`), and `model_a/temporal_sources.py` (per-source
+  valid-time: `point_in_time_tables` + `python -m src.entity_graph --asof` builds a
+  leakage-correct point-in-time exclusion graph).
+  Full suite: `pytest tests/` (319 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

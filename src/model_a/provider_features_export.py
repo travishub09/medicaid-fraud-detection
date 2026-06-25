@@ -342,8 +342,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     from .billing_lm import EMB_PREFIX as _BILL_EMB
     billing_emb_cols = [c for c in out.columns if c.startswith(_BILL_EMB)]
     extra_clean = [c for c in ["addr_is_mailbox", "addr_provider_count", "addr_shared",
+                               "addr_geocoded", "addr_no_match",
                                "graph_emb_drift", "graph_degree_delta", "graph_kcore_delta",
-                               "billing_surprisal"] if c in out.columns] + billing_emb_cols
+                               "billing_surprisal", "sequence_surprisal"]
+                   if c in out.columns] + billing_emb_cols
     if "graph_fraud_proximity_delta" in out.columns:
         graph_adjacent = graph_adjacent + ["graph_fraud_proximity_delta"]
     raw_feature_cols = sorted(set(raw_feature_cols) | set(struct_present)
@@ -461,26 +463,31 @@ def _widened_label_from_graph(graph_dir: Path, log):
 
 def _billing_lm_from_parquet(spending_path: Path, provider_dim: pd.DataFrame, log):
     """Billing language model from the spending parquet: DuckDB collapses to
-    (npi, hcpcs, weight), then code embeddings + provider embedding + surprisal."""
+    (npi, hcpcs, month, weight), then bag-of-codes embeddings + surprisal AND the
+    order-aware sequence surprisal."""
     import duckdb
     from .billing_lm import build_code_embeddings, provider_embeddings, billing_surprisal
+    from .billing_sequence_lm import sequence_surprisal
     con = duckdb.connect()
     p = str(spending_path).replace("'", "''")
-    npi_code = con.execute(f"""
+    rows = con.execute(f"""
         SELECT CAST(billing_npi AS VARCHAR) AS npi,
                UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) AS hcpcs,
+               substr(CAST(service_month AS VARCHAR), 1, 7) AS service_month,
                SUM(CAST(total_paid AS DOUBLE)) AS weight
         FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL
-        GROUP BY 1, 2""").df()
+        GROUP BY 1, 2, 3""").df()
     con.close()
-    if not len(npi_code):
+    if not len(rows):
         return pd.DataFrame(columns=["npi"])
+    npi_code = rows.groupby(["npi", "hcpcs"], as_index=False)["weight"].sum()
+    tax = provider_dim[["npi", "taxonomy_code"]]
     codes, cvecs = build_code_embeddings(npi_code)
-    emb = provider_embeddings(npi_code, codes, cvecs)
-    sur = billing_surprisal(npi_code, provider_dim[["npi", "taxonomy_code"]])
-    out = emb.merge(sur, on="npi", how="outer")
+    out = provider_embeddings(npi_code, codes, cvecs)
+    out = out.merge(billing_surprisal(npi_code, tax), on="npi", how="outer")
+    out = out.merge(sequence_surprisal(rows, taxonomy=tax), on="npi", how="outer")
     log(f"    [billing_lm] {len(out):,} providers, {len(codes):,} codes embedded "
-        f"(+ billing_surprisal)")
+        f"(+ billing_surprisal + sequence_surprisal)")
     return out
 
 
@@ -839,6 +846,9 @@ def main() -> None:
     ap.add_argument("--case-db", default=None,
                     help="DOJ/qui tam case DB (csv/parquet) → scheme-typed, "
                          "time-boxed positives folded into the label")
+    ap.add_argument("--geocode", action="store_true",
+                    help="live-geocode billing addresses (Census, free) → "
+                         "addr_geocoded / addr_no_match (network; off by default)")
     ap.add_argument("--case-control", action="store_true",
                     help="also write a matched case-control training set "
                          "(each positive vs. comparable clean controls)")
@@ -928,7 +938,12 @@ def main() -> None:
         pdim_p = _first_existing(processed, "provider_dim.parquet")
         if pdim_p:
             from .address_grounding import address_flags
-            af = address_flags(pd.read_parquet(pdim_p))
+            geocoder = None
+            if args.geocode:
+                from src.feeds.geocode import census_geocoder
+                geocoder = census_geocoder()
+                print("    [address] live-geocoding via Census (network) …")
+            af = address_flags(pd.read_parquet(pdim_p), geocoder=geocoder)
             if len(af):
                 adapter_frames["address"] = af
                 print(f"    [address] {int(af['addr_is_mailbox'].sum()):,} mailbox/PO-box "

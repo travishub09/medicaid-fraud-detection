@@ -187,6 +187,10 @@ def main() -> None:
     ap.add_argument("--neo4j-bulk", default=None,
                     help="also write neo4j-admin bulk-import CSVs + import.sh "
                          "to this dir (offline Neo4j load; no server needed)")
+    ap.add_argument("--asof", default=None,
+                    help="build a POINT-IN-TIME graph: keep only exclusions/owner "
+                         "relationships known before this date (YYYY-MM-DD) so the "
+                         "embeddings/proximity/label are leakage-correct as-of then")
     args = ap.parse_args()
 
     if args.fixture:
@@ -196,6 +200,14 @@ def main() -> None:
         if not args.input:
             ap.error("either --input <dir> or --fixture is required")
         tables = _load(Path(args.input))
+    if args.asof:
+        from src.model_a.temporal_sources import point_in_time_tables
+        _ex = tables.get("exclusions")
+        n0 = len(_ex) if _ex is not None else 0
+        tables = point_in_time_tables(tables, args.asof)
+        _ex2 = tables.get("exclusions")
+        log(f"    point-in-time as-of {args.asof}: "
+            f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")
     run(tables, Path(args.out))
 
     if args.neo4j_bulk:

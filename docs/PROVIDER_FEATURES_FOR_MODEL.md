@@ -78,7 +78,8 @@ Recoverable Value for human dossier review. Your model trains on **providers
 | Consistency | `consistency_flags`, `incons_solo_scale`, `incons_instant_scale`, `incons_breadth`, `incons_lone_org_scale` | cross-source incoherence (registration record vs. billing) — high-precision, hard to fake (clean features) |
 | Address grounding | `addr_is_mailbox`, `addr_provider_count`, `addr_shared` | mailbox/PO-box detection + address reuse ("bills from a UPS-Store mailbox") — offline external grounding (clean) |
 | Graph velocity | `graph_emb_drift`, `graph_degree_delta`, `graph_kcore_delta` | how fast the graph position is changing between snapshots (clean; `graph_fraud_proximity_delta` = leakage-adjacent) |
-| Billing LM | `billing_emb_0..15`, `billing_surprisal` | self-supervised code embeddings + cross-entropy of the code mix vs. specialty (clean; `--with-analytics`) |
+| Billing LM | `billing_emb_0..15`, `billing_surprisal`, `sequence_surprisal` | self-supervised code embeddings + bag-of-codes surprisal + ORDER-aware sequence surprisal (clean; `--with-analytics`) |
+| Geocoded address | `addr_geocoded`, `addr_no_match` | live Census geocode result — billing address doesn't resolve to a real location (clean; `--geocode`) |
 | Adapter raw features | `em_high_level_share`, `opioid_claim_share`, `hcris_cost_anomaly`, … | each CMS source's raw metric |
 | **Peer percentiles** | `<feature>__peerpct` | one-sided taxonomy-peer percentile of each adapter metric |
 | **Scheme subscores** | `subscore_<scheme>` | the 0–1 fraud-scheme scores (§4–5) |
