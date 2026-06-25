@@ -114,7 +114,7 @@ df = pd.read_parquet("provider_features_for_model.parquet")
 | `raw_feature_cols` | clean, trainable raw + engineered features | train on |
 | `peerpct_cols` | one-sided taxonomy-peer percentile of each adapter metric | train on |
 | `subscore_cols` | the 0–1 scheme subscores | train on |
-| `embedding_cols` | graph + billing embedding columns | train on (graph_emb_* are leakage-adjacent — see §7) |
+| `embedding_cols` | graph + billing embedding columns | train on (graph_emb_* are now CLEAN — computed on an exclusion-free graph; see §7) |
 | `leakage_hard` | derived from the provider's OWN exclusion | **never train on** |
 | `leakage_adjacent` | exclusion-PROXIMITY signals | train, but validate out-of-time |
 | `label_metadata` | target-derived (scheme, conduct window, weak label, clean anchors) | targets / stratifiers, **not features** |
@@ -335,8 +335,8 @@ absolute value or the peer-relative rank).
 ### 5.7 Graph representation learning
 | Metric | Role | From | Why signal |
 |---|---|---|---|
-| `graph_emb_0..15` | node embedding (who you're connected to) | graph random walks → PPMI → SVD | a clean-billing provider in a fraud-dense neighborhood still lights up; *leakage-adjacent* |
-| `graph_fraud_proximity` | personalized-PageRank fraud field, seeded from exclusions | graph | continuous guilt-by-association; *leakage-adjacent* |
+| `graph_emb_0..15` | node embedding (who you're connected to) | random walks on an **exclusion-free** graph → PPMI → SVD | captures pure ownership/co-location structure, with exclusion nodes removed before the walks — so it's a **clean** feature, not leakage-adjacent |
+| `graph_fraud_proximity` | personalized-PageRank fraud field, seeded from exclusions | full graph | continuous guilt-by-association; the one deliberately exclusion-seeded graph signal — *leakage-adjacent* |
 | `graph_kcore`, `graph_triangles`, `graph_clustering`, `graph_degree` | structural motifs | graph | star hub / clique / pyramid apex shapes — **clean** |
 | `graph_emb_drift`, `graph_degree_delta`, `graph_kcore_delta` | how fast the position is changing (snapshot diff) | feature snapshots | fly-by-night at the graph level — **clean** (`graph_fraud_proximity_delta` is leakage-adjacent) |
 
@@ -385,8 +385,9 @@ absolute value or the peer-relative rank).
 - **`leakage_hard`** is circular (it encodes the answer). Quarantined out of
   `raw_feature_cols`; keep it out of `X`.
 - **`leakage_adjacent`** (exclusion-proximity: `within_2_hops_of_exclusion`,
-  `shell_score`, `graph_emb_*`, `graph_fraud_proximity`, `subscore_ownership_integrity`,
-  `has_excluded_owner`, `graph_fraud_proximity_delta`) is genuinely predictive but
+  `shell_score`, `graph_fraud_proximity`, `subscore_ownership_integrity`,
+  `has_excluded_owner`, `graph_fraud_proximity_delta` — note `graph_emb_*` are now
+  CLEAN, computed on an exclusion-free graph) is genuinely predictive but
   correlated with the label and time-sensitive. Train with it, but make the
   **out-of-time split the headline** — if it dominates a random-split model, re-check
   temporally (use an `--asof` graph build so proximity reflects only pre-conduct
@@ -409,13 +410,14 @@ further, so none is just a shrug.
   lift), more positive sources (state MFCU case reports, unsealed PACER qui tams, the
   CMS preclusion list), and detection-propensity reweighting. Never fully eliminable
   — disclose it.
-- **Graph embeddings are leakage-adjacent.** `graph_emb_*` / `graph_fraud_proximity`
-  encode the exclusion neighborhood, so a random split over-credits them. *Mitigated
-  by:* the out-of-time split + `--asof` point-in-time graph. *Reducible now:* compute
-  the embeddings on an **exclusion-free graph** (drop exclusion nodes before the
-  walks) so the embedding captures pure ownership/co-location structure and becomes a
-  *clean* feature, with the fraud-proximity field kept as the separate, explicitly
-  leakage-adjacent signal.
+- **Graph embeddings — now clean (resolved).** `graph_emb_*` and the structural
+  motifs are computed on an **exclusion-free graph** (exclusion nodes are dropped
+  before the random walks), so they encode pure ownership/co-location structure and
+  are classified as **clean** trainable features — a random split no longer
+  over-credits them. The single deliberately exclusion-seeded signal,
+  `graph_fraud_proximity` (personalized PageRank on the full graph), is the only
+  graph column kept `leakage_adjacent`; still validate it on the out-of-time split +
+  `--asof` point-in-time graph.
 - **Scores aren't probability-calibrated.** The subscores and `weak_label_score` rank
   well but aren't calibrated probabilities. For dollar-sizing (Model C) or a hard
   threshold, fit isotonic/Platt calibration on a held-out set first.
@@ -427,10 +429,12 @@ further, so none is just a shrug.
   billing-implied-specialty signals partially catch that.
 - **External grounding coverage.** Offline mailbox detection is pattern-based (misses
   unlisted CMRAs); live geocoding depends on network access and the Census match rate.
-- **Scale of `--with-analytics`.** Growth/plausibility/billing-LM still hold a
-  per-(npi, code) frame in pandas. *Mitigated by:* DuckDB streaming + by-state
-  filtering. *Reducible:* push the prevalence join + embedding pre-aggregation fully
-  into DuckDB (or chunk by taxonomy) to remove the RAM ceiling.
+- **Scale of `--with-analytics` — now full-DuckDB (resolved).** Growth, clinical
+  plausibility, and the billing-LM (code co-occurrence, provider embeddings, and
+  taxonomy surprisal) now run entirely as DuckDB self-joins / GROUP BYs over the
+  spending parquet — the provider×code matrix never materializes in pandas, so they
+  scale to the full universe with no RAM ceiling. Only the small (npi, hcpcs,
+  first-month) adoption frame for `sequence_surprisal` is pulled into pandas.
 - **Sequence model is an n-gram.** The bigram captures adoption-order today behind a
   stable `sequence_surprisal` interface. A neural transformer is a drop-in upgrade
   but needs a GPU + line-level claims (a compute/licensing decision); an interim step

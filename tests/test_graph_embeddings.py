@@ -72,11 +72,27 @@ def test_export_classifies_graph_columns(tmp_path):
     # structural motifs are clean trainable features
     assert "graph_kcore" in manifest["raw_feature_cols"]
     assert "graph_triangles" in manifest["raw_feature_cols"]
-    # learned embeddings + fraud field encode exclusion neighborhood → leakage-adjacent
-    assert f"{EMB_PREFIX}0" in manifest["leakage_adjacent"]
+    # the embeddings are now computed on the exclusion-free graph → CLEAN features
+    assert f"{EMB_PREFIX}0" in manifest["raw_feature_cols"]
+    assert f"{EMB_PREFIX}0" not in manifest["leakage_adjacent"]
+    # only the fraud-proximity field stays leakage-adjacent
     assert PROXIMITY_COL in manifest["leakage_adjacent"]
-    # and they are NOT in the clean feature list
-    assert f"{EMB_PREFIX}0" not in manifest["raw_feature_cols"]
+
+
+def test_embeddings_exclude_exclusion_nodes_but_proximity_does_not():
+    """The clean separation: a node whose ONLY link is to an excluded party gets a
+    zero embedding (exclusions are dropped before the walks) yet a positive
+    fraud-proximity (the field is exclusion-seeded on the full graph)."""
+    import networkx as nx
+    from src.entity_graph.graph_embeddings import EMB_PREFIX, PROXIMITY_COL
+    G = nx.Graph()
+    G.add_edge("org:a", "org:b"); G.add_edge("org:b", "org:c")   # a clean chain
+    G.add_edge("org:z", "exclusion:1")                            # z touches only an exclusion
+    ne = compute_node_embeddings(G, exclusion_ids={"exclusion:1"}, dim=8).set_index("node_id")
+    assert "exclusion:1" not in ne.index                          # exclusion node dropped
+    z = ne.loc["org:z"]
+    assert (z.filter(like=EMB_PREFIX).abs().sum()) == 0           # no clean structure → zero emb
+    assert z[PROXIMITY_COL] > 0                                   # but it IS near fraud
 
 
 def test_empty_graph_returns_empty_embeddings():

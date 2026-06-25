@@ -47,7 +47,7 @@ def _ppmi_svd(cooc, dim: int):
     if k < 1:
         return np.zeros((C.shape[0], dim))
     try:
-        U, S, _ = svds(P.asfptype(), k=k)
+        U, S, _ = svds(P.asfptype(), k=k, random_state=0)  # deterministic basis
     except Exception:
         return np.zeros((C.shape[0], dim))
     order = np.argsort(-S)
@@ -77,6 +77,100 @@ def build_code_embeddings(npi_code: pd.DataFrame, dim: int = 16, npi_col: str = 
     M.data[:] = 1.0                                   # presence (provider bills code)
     cooc = (M.T @ M)                                  # code×code: providers billing both
     return codes, _ppmi_svd(cooc, dim)
+
+
+def build_code_embeddings_duckdb(spending_path: str, dim: int = 16,
+                                 con=None) -> tuple[list, np.ndarray]:
+    """DuckDB-native code embeddings: the code co-occurrence (providers billing both
+    codes) is computed by a self-join in DuckDB — the provider×code matrix never
+    materializes in pandas — then PPMI/SVD runs on the small code×code matrix."""
+    import duckdb
+    import scipy.sparse as sp
+    own = con is None
+    con = con or duckdb.connect()
+    p = str(spending_path).replace("'", "''")
+    cooc = con.execute(f"""
+        WITH pres AS (
+            SELECT DISTINCT CAST(billing_npi AS VARCHAR) npi,
+                   UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs
+            FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL
+        )
+        SELECT a.hcpcs c1, b.hcpcs c2, COUNT(*) n
+        FROM pres a JOIN pres b ON a.npi = b.npi GROUP BY 1, 2
+    """).df()
+    if own:
+        con.close()
+    if not len(cooc):
+        return [], np.zeros((0, dim))
+    codes = sorted(set(cooc["c1"]) | set(cooc["c2"]))
+    idx = {c: i for i, c in enumerate(codes)}
+    r = cooc["c1"].map(idx).to_numpy(); c = cooc["c2"].map(idx).to_numpy()
+    C = sp.csr_matrix((cooc["n"].to_numpy(float), (r, c)), shape=(len(codes), len(codes)))
+    return codes, _ppmi_svd(C, dim)
+
+
+def provider_embeddings_duckdb(spending_path: str, codes: list, code_vecs: np.ndarray,
+                               con=None) -> pd.DataFrame:
+    """DuckDB-native provider embedding: the dollar-weighted mean of each provider's
+    code vectors is computed by a join + GROUP BY in DuckDB (no per-(npi,code) pandas
+    frame). Returns npi + billing_emb_*."""
+    import duckdb
+    dim = code_vecs.shape[1]
+    vecs = pd.DataFrame(code_vecs, columns=[f"e{i}" for i in range(dim)])
+    vecs.insert(0, "hcpcs", list(codes))
+    own = con is None
+    con = con or duckdb.connect()
+    con.register("vecs", vecs)
+    p = str(spending_path).replace("'", "''")
+    sums = ", ".join(f"SUM(w * e{i}) / SUM(w) AS {EMB_PREFIX}{i}" for i in range(dim))
+    out = con.execute(f"""
+        WITH w AS (
+            SELECT CAST(billing_npi AS VARCHAR) npi,
+                   UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs,
+                   SUM(CAST(total_paid AS DOUBLE)) + 1e-9 w
+            FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL GROUP BY 1, 2
+        )
+        SELECT w.npi, {sums}
+        FROM w JOIN vecs ON w.hcpcs = vecs.hcpcs GROUP BY w.npi
+    """).df()
+    if own:
+        con.close()
+    return out
+
+
+def billing_surprisal_duckdb(spending_path: str, provider_dim: pd.DataFrame,
+                             con=None) -> pd.DataFrame:
+    """DuckDB-native surprisal: cross-entropy of each provider's code mix vs its
+    taxonomy's code distribution, computed entirely in SQL (matches billing_surprisal)."""
+    import duckdb
+    pdim = provider_dim[["npi", "taxonomy_code"]].copy()
+    pdim["npi"] = pdim["npi"].astype(str)
+    pdim["taxonomy_code"] = pdim["taxonomy_code"].fillna("").astype(str)
+    own = con is None
+    con = con or duckdb.connect()
+    con.register("pdim", pdim)
+    p = str(spending_path).replace("'", "''")
+    out = con.execute(f"""
+        WITH base AS (
+            SELECT CAST(s.billing_npi AS VARCHAR) npi,
+                   UPPER(TRIM(CAST(s.hcpcs_code AS VARCHAR))) hcpcs,
+                   SUM(CAST(s.total_paid AS DOUBLE)) w, pdim.taxonomy_code tax
+            FROM read_parquet('{p}') s JOIN pdim ON CAST(s.billing_npi AS VARCHAR)=pdim.npi
+            WHERE s.hcpcs_code IS NOT NULL GROUP BY 1, 2, 4
+        ),
+        tax_code AS (SELECT tax, hcpcs, SUM(w) cw FROM base GROUP BY 1, 2),
+        tax_tot AS (SELECT tax, SUM(cw) tot, COUNT(*) k FROM tax_code GROUP BY 1),
+        prob AS (
+            SELECT tc.tax, tc.hcpcs, (tc.cw + 1.0)/(tt.tot + tt.k) p
+            FROM tax_code tc JOIN tax_tot tt ON tc.tax = tt.tax
+        )
+        SELECT base.npi, SUM(base.w * -ln(prob.p)) / SUM(base.w) AS billing_surprisal
+        FROM base JOIN prob ON base.tax = prob.tax AND base.hcpcs = prob.hcpcs
+        GROUP BY base.npi
+    """).df()
+    if own:
+        con.close()
+    return out
 
 
 def provider_embeddings(npi_code: pd.DataFrame, codes: list, code_vecs: np.ndarray,

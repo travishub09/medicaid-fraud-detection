@@ -89,3 +89,71 @@ def test_surprisal_higher_for_odd_code_mix():
     odd = sur.loc["weird", "billing_surprisal"]
     typical = sur.loc["reg0", "billing_surprisal"]
     assert odd > typical                                  # billing the rare code Z is "surprising"
+
+
+def _spending_parquet(tmp_path):
+    """A synthetic spending fact (billing_npi, hcpcs_code, total_paid, service_month)
+    mirroring _claims() so the DuckDB path can be compared to the pandas path."""
+    df = _claims().rename(columns={"hcpcs": "hcpcs_code", "weight": "total_paid"})
+    df["billing_npi"] = df["npi"]
+    df["service_month"] = "2024-01"
+    df = df[["billing_npi", "hcpcs_code", "total_paid", "service_month"]]
+    p = tmp_path / "spending.parquet"
+    df.to_parquet(p)
+    return p
+
+
+def test_billing_lm_duckdb_matches_pandas(tmp_path):
+    from src.model_a.billing_lm import (build_code_embeddings_duckdb,
+                                         provider_embeddings_duckdb,
+                                         billing_surprisal_duckdb)
+    p = _spending_parquet(tmp_path)
+    df = _claims()
+    pdim = df[["npi", "taxonomy_code"]].drop_duplicates()
+
+    # surprisal: DuckDB SQL cross-entropy must equal the pandas implementation
+    sur_pd = billing_surprisal(df.groupby(["npi", "hcpcs"], as_index=False)["weight"].sum()
+                               .merge(pdim, on="npi"), pdim).set_index("npi")
+    sur_db = billing_surprisal_duckdb(str(p), pdim).set_index("npi")
+    common = sur_pd.index.intersection(sur_db.index)
+    assert len(common) > 0
+    assert np.allclose(sur_pd.loc[common, "billing_surprisal"].to_numpy(),
+                       sur_db.loc[common, "billing_surprisal"].to_numpy(), atol=1e-9)
+
+    # embeddings: DuckDB co-occurrence + provider embedding cover every NPI, no NaNs
+    codes, vecs = build_code_embeddings_duckdb(str(p), dim=8)
+    assert len(codes) and vecs.shape == (len(codes), 8)
+    emb = provider_embeddings_duckdb(str(p), codes, vecs)
+    assert emb["npi"].is_unique
+    assert emb.filter(like=BILL_EMB).shape[1] == 8
+    assert not emb.filter(like=BILL_EMB).isna().any().any()
+
+
+def test_plausibility_duckdb_matches_pandas(tmp_path):
+    from src.analytics.plausibility import (org_clinical_plausibility,
+                                            org_clinical_plausibility_duckdb)
+    # build a fact where one taxonomy is large enough to assess and one code is rare
+    rows = []
+    for i in range(10):
+        for code in ["A", "B"]:
+            rows.append({"billing_npi": f"100000000{i}", "hcpcs_code": code,
+                         "total_paid": 100.0, "service_month": "2024-01"})
+    rows.append({"billing_npi": "1000000000", "hcpcs_code": "RARE",
+                 "total_paid": 500.0, "service_month": "2024-01"})
+    fact = pd.DataFrame(rows)
+    pdim = pd.DataFrame({"npi": [f"100000000{i}" for i in range(10)],
+                         "taxonomy_code": ["T"] * 10})
+    xw = pd.DataFrame({"npi": [f"100000000{i}" for i in range(10)],
+                       "org_node_id": [f"org:{i}" for i in range(10)]})
+    p = tmp_path / "fact.parquet"
+    fact.to_parquet(p)
+
+    agg = fact.groupby(["billing_npi", "hcpcs_code"], as_index=False)["total_paid"].sum()
+    pd_out = (org_clinical_plausibility(agg, pdim, xw, min_taxonomy_providers=5)
+              .set_index("org_node_id")["implausible_dollar_share"])
+    db_out = (org_clinical_plausibility_duckdb(str(p), pdim, xw, min_taxonomy_providers=5)
+              .set_index("org_node_id")["implausible_dollar_share"])
+    common = pd_out.index.intersection(db_out.index)
+    assert len(common) == len(pd_out)
+    assert np.allclose(pd_out.loc[common].fillna(-1).to_numpy(),
+                       db_out.loc[common].fillna(-1).to_numpy(), atol=1e-9)

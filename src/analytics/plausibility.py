@@ -43,6 +43,64 @@ MIN_TAXONOMY_PROVIDERS = 5     # below this a taxonomy can't anchor a prevalence
 MAX_DRIVERS = 3                # named implausible codes per org on the dossier
 
 
+def org_clinical_plausibility_duckdb(spending_path: str, provider_dim: pd.DataFrame,
+                                     npi_to_org: pd.DataFrame,
+                                     rare_threshold: float = RARE_THRESHOLD,
+                                     min_taxonomy_providers: int = MIN_TAXONOMY_PROVIDERS
+                                     ) -> pd.DataFrame:
+    """Fully DuckDB-native clinical plausibility: the code-prevalence matrix and the
+    per-org implausible-dollar share are computed entirely in SQL, so NO large
+    (npi, code) frame is ever held in pandas — only the small per-org result returns.
+    Numerically matches ``org_clinical_plausibility`` (minus the dossier driver string,
+    which the export doesn't use)."""
+    import duckdb
+    pdim = provider_dim[["npi", "taxonomy_code"]].copy()
+    pdim["npi"] = pdim["npi"].astype(str)
+    pdim["taxonomy_code"] = pdim["taxonomy_code"].fillna("").astype(str)
+    xw = npi_to_org[["npi", "org_node_id"]].astype(str)
+    con = duckdb.connect()
+    con.register("pdim", pdim)
+    con.register("xw", xw)
+    p = str(spending_path).replace("'", "''")
+    out = con.execute(f"""
+        WITH sp AS (
+            SELECT CAST(billing_npi AS VARCHAR) npi,
+                   UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs,
+                   SUM(CAST(total_paid AS DOUBLE)) paid
+            FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL GROUP BY 1, 2
+        ),
+        base AS (
+            SELECT sp.npi, sp.hcpcs, sp.paid, pdim.taxonomy_code AS tax
+            FROM sp JOIN pdim ON sp.npi = pdim.npi WHERE pdim.taxonomy_code <> ''
+        ),
+        tax_n AS (SELECT tax, COUNT(DISTINCT npi) n FROM base GROUP BY 1),
+        prev AS (
+            SELECT b.tax, b.hcpcs,
+                   COUNT(DISTINCT b.npi) * 1.0 / MAX(tn.n) AS prevalence,
+                   MAX(tn.n) >= {min_taxonomy_providers} AS assessable
+            FROM base b JOIN tax_n tn ON b.tax = tn.tax GROUP BY b.tax, b.hcpcs
+        ),
+        scored AS (
+            SELECT xw.org_node_id AS org, b.paid,
+                   COALESCE(p.assessable, FALSE) AS assessable,
+                   (COALESCE(p.assessable, FALSE) AND COALESCE(p.prevalence, 0) < {rare_threshold}) AS implausible
+            FROM base b JOIN xw ON b.npi = xw.npi
+                        LEFT JOIN prev p ON b.tax = p.tax AND b.hcpcs = p.hcpcs
+        )
+        SELECT org AS org_node_id,
+               SUM(paid) AS total_payments,
+               SUM(CASE WHEN assessable THEN paid ELSE 0 END) AS assessable_payments,
+               SUM(CASE WHEN implausible THEN paid ELSE 0 END) AS implausible_payments
+        FROM scored GROUP BY org
+    """).df()
+    con.close()
+    out["implausible_dollar_share"] = (out["implausible_payments"]
+                                       / out["assessable_payments"]).where(
+                                          out["assessable_payments"] > 0)
+    return out[["org_node_id", "total_payments", "assessable_payments",
+                "implausible_payments", "implausible_dollar_share"]]
+
+
 def org_clinical_plausibility_from_parquet(spending_path: str,
                                            provider_dim: pd.DataFrame,
                                            npi_to_org: pd.DataFrame,

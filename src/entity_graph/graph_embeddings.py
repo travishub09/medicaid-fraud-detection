@@ -90,7 +90,9 @@ def _random_walk_svd(G: nx.Graph, dim: int, walk_len: int, n_walks: int,
         return nodes, np.zeros((n, dim))
     from scipy.sparse.linalg import svds
     try:
-        U, S, _ = svds(P.asfptype(), k=k)
+        # pin ARPACK's start vector — without it, degenerate singular values (common
+        # on the smaller exclusion-free graph) make the basis non-deterministic.
+        U, S, _ = svds(P.asfptype(), k=k, random_state=seed)
     except Exception:
         return nodes, np.zeros((n, dim))
     order = np.argsort(-S)
@@ -125,23 +127,37 @@ def _fraud_proximity(G: nx.Graph, exclusion_ids) -> dict:
 def compute_node_embeddings(G: nx.Graph, exclusion_ids=frozenset(), dim: int = 16,
                             walk_len: int = 20, n_walks: int = 10, window: int = 5,
                             seed: int = 42) -> pd.DataFrame:
-    """One row per node: embeddings + fraud proximity + structural motifs."""
+    """One row per (non-exclusion) node: embeddings + fraud proximity + structural motifs.
+
+    The embeddings and structural motifs are computed on the EXCLUSION-FREE graph
+    (exclusion nodes removed before the walks), so they capture pure ownership /
+    co-location structure rather than exclusion proximity — i.e. they are CLEAN
+    features, not leakage-adjacent. The fraud-proximity field is the separate,
+    deliberately exclusion-seeded (leakage-adjacent) signal, computed on the full graph.
+    """
     cols = (["node_id"] + [f"{EMB_PREFIX}{i}" for i in range(dim)]
             + [PROXIMITY_COL] + STRUCT_COLS)
     if G is None or G.number_of_nodes() == 0:
         return pd.DataFrame(columns=cols)
 
-    # strip self-loops for triangle/clustering (and keep them out of walks)
-    if nx.number_of_selfloops(G):
-        G = G.copy()
-        G.remove_edges_from(list(nx.selfloop_edges(G)))
-
-    nodes, emb = _random_walk_svd(G, dim, walk_len, n_walks, window, seed)
+    # fraud-proximity from the FULL graph (exclusion-seeded — leakage-adjacent)
     prox = _fraud_proximity(G, exclusion_ids)
-    core = nx.core_number(G) if G.number_of_edges() else {}
-    clustering = nx.clustering(G) if G.number_of_edges() else {}
-    triangles = nx.triangles(G) if G.number_of_edges() else {}
-    degree = dict(G.degree())
+
+    # clean graph: drop exclusion nodes + self-loops; embeddings/motifs see only
+    # ownership/co-location structure. Non-exclusion nodes orphaned by the removal
+    # remain (zero embedding) so the output still covers them.
+    Gc = G.copy()
+    Gc.remove_nodes_from([x for x in exclusion_ids if Gc.has_node(x)])
+    if nx.number_of_selfloops(Gc):
+        Gc.remove_edges_from(list(nx.selfloop_edges(Gc)))
+    if Gc.number_of_nodes() == 0:
+        return pd.DataFrame(columns=cols)
+
+    nodes, emb = _random_walk_svd(Gc, dim, walk_len, n_walks, window, seed)
+    core = nx.core_number(Gc) if Gc.number_of_edges() else {}
+    clustering = nx.clustering(Gc) if Gc.number_of_edges() else {}
+    triangles = nx.triangles(Gc) if Gc.number_of_edges() else {}
+    degree = dict(Gc.degree())
 
     out = pd.DataFrame(emb, columns=[f"{EMB_PREFIX}{i}" for i in range(dim)])
     out.insert(0, "node_id", nodes)

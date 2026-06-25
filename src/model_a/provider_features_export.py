@@ -327,25 +327,26 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
 
     # Graph node embeddings (Pillar 3): structural motifs are clean features; the
     # learned embeddings and the fraud-proximity field encode the exclusion
-    # neighborhood, so they're leakage-adjacent (validate out-of-time, or rebuild
-    # embeddings on the exclusion-free graph if you want them clean).
+    # neighborhood. The node EMBEDDINGS are now computed on the exclusion-free graph
+    # (ownership/co-location structure only), so they are CLEAN; only the
+    # fraud-proximity field (and its delta) remains leakage-adjacent.
     from src.entity_graph.graph_embeddings import EMB_PREFIX, STRUCT_COLS, PROXIMITY_COL
     embedding_cols = [c for c in out.columns if c.startswith(EMB_PREFIX)]
     struct_present = [c for c in STRUCT_COLS if c in out.columns]
-    graph_adjacent = embedding_cols + ([PROXIMITY_COL] if PROXIMITY_COL in out.columns else [])
+    graph_adjacent = ([PROXIMITY_COL] if PROXIMITY_COL in out.columns else [])
     pillar4 = [c for c in ["billing_residual", "expected_net_paid",
                            "incons_solo_scale", "incons_instant_scale",
                            "incons_breadth", "incons_lone_org_scale",
                            "consistency_flags"] if c in out.columns]
-    # external grounding + temporal-graph velocity + billing-LM (clean features);
-    # the fraud-proximity DELTA is leakage-adjacent like the proximity field itself.
+    # external grounding + temporal-graph velocity + billing-LM + the exclusion-free
+    # graph embeddings (all clean); the fraud-proximity DELTA stays leakage-adjacent.
     from .billing_lm import EMB_PREFIX as _BILL_EMB
     billing_emb_cols = [c for c in out.columns if c.startswith(_BILL_EMB)]
     extra_clean = [c for c in ["addr_is_mailbox", "addr_provider_count", "addr_shared",
                                "addr_geocoded", "addr_no_match",
                                "graph_emb_drift", "graph_degree_delta", "graph_kcore_delta",
                                "billing_surprisal", "sequence_surprisal"]
-                   if c in out.columns] + billing_emb_cols
+                   if c in out.columns] + billing_emb_cols + embedding_cols
     if "graph_fraud_proximity_delta" in out.columns:
         graph_adjacent = graph_adjacent + ["graph_fraud_proximity_delta"]
     raw_feature_cols = sorted(set(raw_feature_cols) | set(struct_present)
@@ -462,30 +463,34 @@ def _widened_label_from_graph(graph_dir: Path, log):
 
 
 def _billing_lm_from_parquet(spending_path: Path, provider_dim: pd.DataFrame, log):
-    """Billing language model from the spending parquet: DuckDB collapses to
-    (npi, hcpcs, month, weight), then bag-of-codes embeddings + surprisal AND the
-    order-aware sequence surprisal."""
+    """Billing language model from the spending parquet, full-DuckDB: the code
+    co-occurrence, provider embeddings, and per-taxonomy surprisal are all computed
+    by DuckDB self-joins/GROUP BYs over the parquet (the provider x code matrix never
+    materializes in pandas), so this scales to the full universe. Only the small
+    (npi, hcpcs, first_month) adoption frame is pulled into pandas for the order-aware
+    sequence surprisal."""
     import duckdb
-    from .billing_lm import build_code_embeddings, provider_embeddings, billing_surprisal
+    from .billing_lm import (build_code_embeddings_duckdb, provider_embeddings_duckdb,
+                             billing_surprisal_duckdb)
     from .billing_sequence_lm import sequence_surprisal
     con = duckdb.connect()
     p = str(spending_path).replace("'", "''")
-    rows = con.execute(f"""
+    codes, cvecs = build_code_embeddings_duckdb(p, con=con)
+    if not len(codes):
+        con.close()
+        return pd.DataFrame(columns=["npi"])
+    tax = provider_dim[["npi", "taxonomy_code"]]
+    out = provider_embeddings_duckdb(p, codes, cvecs, con=con)
+    out = out.merge(billing_surprisal_duckdb(p, provider_dim, con=con),
+                    on="npi", how="outer")
+    seq_in = con.execute(f"""
         SELECT CAST(billing_npi AS VARCHAR) AS npi,
                UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) AS hcpcs,
-               substr(CAST(service_month AS VARCHAR), 1, 7) AS service_month,
-               SUM(CAST(total_paid AS DOUBLE)) AS weight
+               MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) AS service_month
         FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL
-        GROUP BY 1, 2, 3""").df()
+        GROUP BY 1, 2""").df()
     con.close()
-    if not len(rows):
-        return pd.DataFrame(columns=["npi"])
-    npi_code = rows.groupby(["npi", "hcpcs"], as_index=False)["weight"].sum()
-    tax = provider_dim[["npi", "taxonomy_code"]]
-    codes, cvecs = build_code_embeddings(npi_code)
-    out = provider_embeddings(npi_code, codes, cvecs)
-    out = out.merge(billing_surprisal(npi_code, tax), on="npi", how="outer")
-    out = out.merge(sequence_surprisal(rows, taxonomy=tax), on="npi", how="outer")
+    out = out.merge(sequence_surprisal(seq_in, taxonomy=tax), on="npi", how="outer")
     log(f"    [billing_lm] {len(out):,} providers, {len(codes):,} codes embedded "
         f"(+ billing_surprisal + sequence_surprisal)")
     return out
@@ -641,7 +646,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             pdim_p = _first_existing(proc, "provider_dim.parquet")
             if pdim_p:
                 pp = plausibility.plausibility_percentiles(
-                    plausibility.org_clinical_plausibility_from_parquet(
+                    plausibility.org_clinical_plausibility_duckdb(
                         str(spending_p), pd.read_parquet(pdim_p), npi_to_org))
                 if len(pp) and "clinical_implausibility" in pp.columns:
                     frames["plausibility"] = pp[["org_node_id", "clinical_implausibility"]]

@@ -202,15 +202,20 @@ python -m pytest tests/ -v
   (`ingest_cms/nucc_taxonomy.py` implemented → coherent classification cohort
   fallback on the percentile ladder), a widened multi-source PU label
   (`provider_on_exclusion` = LEIE + CMS revocations + SAM + OpenSanctions, with
-  `exclusion_label_sources` provenance), DuckDB-streamed growth/plausibility
-  (`*_from_parquet` — full-universe `--with-analytics`, no pandas OOM), and
-  NPI-grain ownership refinements (`org_member_count` + `has_excluded_owner`).
+  `exclusion_label_sources` provenance), fully DuckDB-native growth/plausibility/
+  billing-LM (`*_duckdb` self-joins/GROUP BYs over the spending parquet — the
+  provider×code matrix never enters pandas; full-universe `--with-analytics`, no RAM
+  ceiling), and NPI-grain ownership refinements (`org_member_count` +
+  `has_excluded_owner`).
   Pillar 3 of the ground-up redesign (docs/platform/17-provider-signal-architecture.md)
   is BUILT: `entity_graph/graph_embeddings.py` emits per-node DeepWalk-style
   embeddings + a personalized-PageRank fraud-proximity field + structural motifs
   (k-core/triangles/clustering), written as `graph/node_embeddings.parquet` and
-  mapped to NPI grain in the export (`graph_emb_*` + `graph_fraud_proximity` =
-  leakage-adjacent; motifs = clean) — the structural fix for org→NPI broadcast.
+  mapped to NPI grain in the export. The embeddings + motifs are computed on an
+  EXCLUSION-FREE graph (exclusion nodes dropped before the walks) so `graph_emb_*`
+  are CLEAN trainable features; only `graph_fraud_proximity` (exclusion-seeded
+  personalized PageRank on the full graph) stays leakage-adjacent — the structural
+  fix for org→NPI broadcast.
   Pillar 2 (label engine) started: `model_a/case_labels.py` turns the DOJ case DB
   into scheme-typed, time-boxed positives (resolve case→org→NPI, extract the conduct
   window), folded into the widened label as source `doj_case` with `fraud_scheme` /
