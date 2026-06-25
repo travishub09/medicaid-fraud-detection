@@ -35,12 +35,14 @@ can train and validate without leaking the future.
 
 ---
 
-## 2. What changed and improved since the first hand-off (walkthrough)
+## 2. What changed and improved since the version you saw (walkthrough)
 
-The first export you saw was essentially Trey's six rules-based scheme subscores on a
-candidate set. This version is a different artifact. Here's everything that changed,
-and why each helps your model — read this before the catalog so the new columns make
-sense.
+The export you last reviewed was around **v10** — essentially Trey's rules-based
+scheme subscores on a candidate set. The current export is **v32**, a substantially
+expanded artifact. Here's everything that changed between them, and why each helps
+your model — read this before the catalog so the new columns make sense. (If v10
+already included any of the items below on your end, treat that row as confirmation
+rather than news.)
 
 **Labels — from one flag to a rich, time-aware target.**
 - *Before:* a single `provider_on_leie` boolean (caught, untyped, untimed).
