@@ -42,9 +42,9 @@ For each: download the file, drop it at the path, re-run the export. No builder 
 - **Needs columns:** rendering NPI, HCPCS, services, beneficiaries, average allowed amount (names auto-resolved).
 
 ### B2. Medicare Part D → `drug_outlier` + (with Open Payments) `pharma_kickback`
-- **Get:** https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers — "**by Provider and Drug**", annual CSVs.
+- **Get:** https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers — the "**Medicare Part D Prescribers - by Provider and Drug**" dataset (drug-level; **Download** the annual CSV, not the API).
 - **Save:** `preclean/partd/partd.csv`.
-- **Needs:** prescriber NPI, brand/generic name, claim count, total cost (+ opioid flag if present).
+- **Verify columns:** `Prscrbr_NPI`, `Brnd_Name`, `Gnrc_Name`, `Tot_Clms`, `Tot_Drug_Cst`.
 
 ### B3. DMEPOS → `dme_ring`
 - **Get:** https://data.cms.gov/provider-summary-by-type-of-service/medicare-durable-medical-equipment-devices-supplies — pick the **"by Referring Provider and Service"** dataset (NOT plain "by Referring Provider", which is pre-aggregated with no HCPCS detail, and NOT the "by Supplier" files, which key on the supplier rather than the ordering physician). Grain: referring NPI × HCPCS.
@@ -53,9 +53,9 @@ For each: download the file, drop it at the path, re-run the export. No builder 
 - **Note:** the dormant `dme_ordering_md_concentration` piece needs supplier↔referrer *pair* data no public DMEPOS file carries — it stays dormant.
 
 ### B4. CMS Opioid Prescriber file → `pill_mill`
-- **Get:** data.cms.gov → search "**Medicare Part D Opioid Prescriber Summary File**".
+- **Get:** data.cms.gov → "**Medicare Part D Opioid Prescribing Rates - by Provider**" (the renamed "Opioid Prescriber Summary File"; pick **by Provider**, NPI grain — NOT "by Geography", and NOT the Part D "by Provider and Drug" file from B2, which has no long-acting-opioid split).
 - **Save:** `preclean/opioid/opioid.csv`.
-- **Needs:** prescriber NPI, total claims, opioid claims, long-acting opioid claims.
+- **Verify columns:** `Prscrbr_NPI`, `Tot_Clms`, `Opioid_Tot_Clms`, `Opioid_LA_Tot_Clms` (the long-acting split is what separates a chronic-pain practice from a diversion mill).
 
 ### B5. Open Payments → `pharma_kickback` (pairs with Part D)
 - **Get:** https://openpaymentsdata.cms.gov/datasets — General + Research payments, latest 3 years.
