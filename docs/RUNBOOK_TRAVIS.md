@@ -35,14 +35,15 @@ can train and validate without leaking the future.
 
 ---
 
-## 2. What changed and improved since the version you saw (walkthrough)
+## 2. The ground-up redesign — what we built and why (walkthrough)
 
-The export you last reviewed was around **v10** — essentially Trey's rules-based
-scheme subscores on a candidate set. The current export is **v32**, a substantially
-expanded artifact. Here's everything that changed between them, and why each helps
-your model — read this before the catalog so the new columns make sense. (If v10
-already included any of the items below on your end, treat that row as confirmation
-rather than news.)
+The export you last reviewed was essentially Trey's rules-based scheme subscores.
+Since then we ran a **ground-up redesign of the whole architecture and data
+strategy** — the goal being to produce provider attributes that let your model
+separate *known fraud actors from known non-offenders*, not "weird from normal."
+That redesign (documented in full in `docs/platform/17-provider-signal-architecture.md`)
+is everything below: read it before the catalog so the new columns make sense. Each
+item is *what we built → why it helps your model*.
 
 **Labels — from one flag to a rich, time-aware target.**
 - *Before:* a single `provider_on_leie` boolean (caught, untyped, untimed).
@@ -188,9 +189,11 @@ Computed as one-sided robust (median/MAD) percentiles within the taxonomy peer g
 | `temporal` | abnormal year-over-year billing change | spending trajectory | schemes ramp fast |
 
 ### 4.4 Scheme subscores (`subscore_*`, 0–1) — clean features
-Each is a domain-weighted, sigmoid-squashed blend of peer-relative inputs (the
-weights and inputs are in `PROVIDER_FEATURES_FOR_MODEL.md` §5). One column per scheme;
-your tree decides how to combine them (we don't pre-collapse them).
+Each is a domain-weighted, sigmoid-squashed blend of peer-relative inputs. **For the
+full per-scheme breakdown — what each detects, its input metrics + weights, the
+files that feed it, and the exact calc — see `SCHEME_CATALOG.md`** (the canonical
+reference). One column per scheme; your tree decides how to combine them (we don't
+pre-collapse them).
 `single_service_mill`, `payment_outlier`, `overutilization`, `specialty_mismatch`,
 `rapid_ramp` (billing today); `upcoding` (Part B), `drug_outlier` (Part D + NADAC),
 `pill_mill` (opioid), `pharma_kickback` (Open Payments × Part D), `dme_ring` (DMEPOS),

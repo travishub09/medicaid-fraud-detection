@@ -3,7 +3,8 @@
 This is the start-to-finish guide to produce the per-provider feature export that
 feeds Travis's model: what to install, where to get every data file (with URLs,
 filenames, and save paths), and the exact order to run things. Pair it with
-`RUNBOOK_TRAVIS.md` (what the outputs mean) and `DATA_ACQUISITION_GUIDE.md` (the
+`RUNBOOK_TRAVIS.md` (what the outputs mean), `SCHEME_CATALOG.md` (what each fraud
+scheme detects and which files feed it), and `DATA_ACQUISITION_GUIDE.md` (the
 canonical source list this section condenses).
 
 ---
