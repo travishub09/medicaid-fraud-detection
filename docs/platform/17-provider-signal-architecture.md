@@ -65,12 +65,14 @@ probabilistic, time-boxed labels:
   the case text; the export folds these into the widened label as source `doj_case`
   and exposes `fraud_scheme` / `conduct_start` / `conduct_end` as label metadata, so
   you can validate per-scheme and train out-of-time today.
-- **Weak supervision (Snorkel-style).** Instead of one hard label, write dozens of
-  noisy *labeling functions* — "billed after death → fraud," "FQHC continuously
-  enrolled 15yr → clean," "named in a DOJ indictment → fraud," "address geocodes to
-  a mailbox store → suspicious," "UPIC-audited and cleared → clean." A generative
-  label model fuses them into **probabilistic labels with confidence**, expanding
-  labeled data 10–100× beyond LEIE and giving the tree soft labels to weight.
+- **Weak supervision (Snorkel-style). (BUILT — `weak_supervision.py`.)** Instead of
+  one hard label, ~12 noisy *labeling functions* vote fraud/clean/abstain ("billed
+  after death → fraud," "near an exclusion → fraud," "confirmed-clean anchor →
+  clean," …). A label model learns each function's accuracy from the high-confidence
+  anchors (Laplace-smoothed, clipped → `w = log(acc/(1-acc))`) and fuses the votes
+  into `weak_label_score` = sigmoid(bias + Σ w·vote) for EVERY provider — a soft
+  target expanding the sparse hard labels, with per-LF accuracy/coverage reported
+  for audit. *Next: more labeling functions as new sources land.*
 - **Manufactured high-confidence negatives. (BUILT — `clean_anchors.py`.)** We
   construct known non-offenders: VA / academic / FQHC-RHC (institutionally audited,
   ~zero base rate) or long-tenured providers, **and** benign on every anomaly
@@ -194,9 +196,8 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
    validation honest and labels rich. **(BUILT — scheme-typed/time-boxed DOJ labels
    in `case_labels.py` + the point-in-time store in `feature_store.py`. Remaining:
    back-fill per-source valid-times as snapshot history accumulates.)**
-3. **Weak-supervision label model + manufactured negatives** — **manufactured
-   negatives BUILT (`clean_anchors.py`)**; the Snorkel-style weak-supervision label
-   model is the remaining half.
+3. **Weak-supervision label model + manufactured negatives** — **BUILT
+   (`clean_anchors.py` + `weak_supervision.py`).**
 4. **Case-control matching at export time** — **BUILT (`case_control.py`,
    `--case-control`).**
 5. **Expected-billing residual twin BUILT (`expected_billing.py`)**; remaining

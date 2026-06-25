@@ -194,6 +194,15 @@ LEIE-flavored fraud) and **out-of-time training** (train on features dated *befo
 `conduct_start` — the leakage fix you can use today). Everything in `label_metadata`
 is target-derived and is kept out of the feature set.
 
+**Weak-supervision soft label (`weak_label_score`).** Beyond the hard
+`provider_on_exclusion`, the export fuses ~12 noisy labeling functions (via
+accuracies learned from the anchors) into a probabilistic `weak_label_score` for
+*every* provider — a Snorkel-style expansion of the sparse positives. It's a **soft
+training target** (in `label_metadata`, never a feature), useful for semi-supervised
+/ PU training; the per-LF accuracy and coverage are in the manifest's
+`weak_supervision` block. It inherits the leakage-adjacency of its exclusion-proximity
+functions, so apply the same out-of-time discipline as the hard label.
+
 **Leakage is made explicit so the backtest stays honest.** The manifest separates:
 
 - **`leakage_hard`** — `billed_after_exclusion`, `excluded_after_billing`,

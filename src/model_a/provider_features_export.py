@@ -310,6 +310,14 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
               "incons_lone_org_scale", "consistency_flags"]:
         out[c] = cons[c].to_numpy()
 
+    # Pillar 2: weak-supervision label model — many noisy labeling functions fused
+    # via accuracies learned from the anchors into a soft probabilistic label for
+    # EVERY provider (expands the sparse hard labels). A TARGET, not a feature.
+    from .weak_supervision import weak_supervision
+    ws, ws_audit = weak_supervision(out)
+    for c in ["weak_label_score", "weak_label", "weak_label_votes"]:
+        out[c] = ws[c].to_numpy()
+
     raw_feature_cols = sorted(
         [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
                      + adapter_present + PROVIDER_STATS)
@@ -340,8 +348,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # for scheme-stratified and out-of-time validation.
     label_metadata = [c for c in ["exclusion_label_sources", "fraud_scheme",
                                   "conduct_start", "conduct_end", "case_ids",
-                                  "provider_on_leie", "confirmed_clean",
-                                  "clean_basis"] if c in out.columns]
+                                  "provider_on_leie", "confirmed_clean", "clean_basis",
+                                  "weak_label_score", "weak_label", "weak_label_votes"]
+                      if c in out.columns]
     raw_feature_cols = [c for c in raw_feature_cols
                         if c not in leakage_hard and c not in label_metadata]
 
@@ -351,6 +360,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "label": label,
         "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
         "label_metadata": label_metadata,
+        "weak_supervision": ws_audit,
         "leakage_hard": leakage_hard,
         "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns] + graph_adjacent,
         "identifier_cols": [c for c in IDENTIFIER_COLS if c in out.columns],

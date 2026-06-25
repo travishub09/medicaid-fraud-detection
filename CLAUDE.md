@@ -228,8 +228,13 @@ python -m pytest tests/ -v
   `billing_residual` = unexplained excess; doesn't punish the legitimately large)
   and `model_a/consistency.py` — cross-source incoherence flags (individual at
   institutional scale, no-tenure full-scale biller, solo billing implausibly broad
-  codes, one-NPI org at institutional scale → `consistency_flags`).
-  Full suite: `pytest tests/` (305 tests).
+  codes, one-NPI org at institutional scale → `consistency_flags`). Weak-supervision
+  label model (`model_a/weak_supervision.py`): ~12 labeling functions vote
+  fraud/clean/abstain, a label model learns each one's accuracy from the anchors,
+  fused into a soft `weak_label_score` for every provider (a TARGET in
+  `label_metadata`, with per-LF audit in the manifest) — Snorkel-style expansion of
+  the sparse hard labels.
+  Full suite: `pytest tests/` (309 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
