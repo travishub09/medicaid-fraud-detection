@@ -364,6 +364,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     from .billing_lm import EMB_PREFIX as _BILL_EMB
     billing_emb_cols = [c for c in out.columns if c.startswith(_BILL_EMB)]
     extra_clean = [c for c in ["addr_is_mailbox", "addr_provider_count", "addr_shared",
+                               "addr_is_cmra", "addr_distinct_orgs", "addr_cluster_degree",
                                "addr_geocoded", "addr_no_match",
                                "graph_emb_drift", "graph_degree_delta", "graph_kcore_delta",
                                "billing_surprisal", "sequence_surprisal",
@@ -1001,17 +1002,30 @@ def main() -> None:
         # external grounding (address) + temporal-graph velocity + billing LM
         pdim_p = _first_existing(processed, "provider_dim.parquet")
         if pdim_p:
-            from .address_grounding import address_flags
+            from .address_grounding import address_flags, load_cmra_reference
             geocoder = None
             if args.geocode:
                 from src.feeds.geocode import census_geocoder
                 geocoder = census_geocoder()
                 print("    [address] live-geocoding via Census (network) …")
-            af = address_flags(pd.read_parquet(pdim_p), geocoder=geocoder)
+            # optional USPS CMRA registry for an exact-match flag
+            cmra_set = None
+            cmra_p = _first_existing(preclean / "usps", "cmra.csv", "*.csv")
+            if cmra_p:
+                cmra_set = load_cmra_reference(_read_any(cmra_p))
+                print(f"    [address] loaded {len(cmra_set):,} USPS CMRA addresses")
+            # attach org_node_id so the cluster-degree (distinct orgs per address) fires
+            pdim = pd.read_parquet(pdim_p)
+            pdim["npi"] = pdim["npi"].astype(str)
+            pdim = pdim.merge(npi_to_org[["npi", "org_node_id"]].astype(str)
+                              .drop_duplicates("npi"), on="npi", how="left")
+            af = address_flags(pdim, geocoder=geocoder, cmra_addresses=cmra_set)
             if len(af):
                 adapter_frames["address"] = af
+                _clu = int(af["addr_cluster_degree"].sum()) if "addr_cluster_degree" in af else 0
                 print(f"    [address] {int(af['addr_is_mailbox'].sum()):,} mailbox/PO-box "
-                      f"addresses, {int(af['addr_shared'].sum()):,} shared-address providers")
+                      f"addresses, {int(af['addr_shared'].sum()):,} shared-address providers, "
+                      f"{_clu:,} shell-cluster addresses")
         try:
             from src.entity_graph.graph_velocity import velocity_from_snapshots
             vel = velocity_from_snapshots(root / "feature_snapshots")

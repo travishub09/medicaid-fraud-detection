@@ -402,8 +402,10 @@ absolute value or the peer-relative rank).
 ### 5.9 External grounding — clean features
 | Metric | Definition | From | Why signal |
 |---|---|---|---|
-| `addr_is_mailbox` | address is a CMRA/PMB/PO-box/mailbox-store | NPPES address string | can't deliver care from a mailbox |
+| `addr_is_mailbox` | address is a CMRA/PMB/PO-box/mailbox-store (regex) | NPPES address string | can't deliver care from a mailbox |
+| `addr_is_cmra` | exact match to the USPS CMRA registry | NPPES address × USPS CMRA list | precise mailbox confirmation, no false brand match |
 | `addr_provider_count`, `addr_shared` | providers billing from the exact same address | NPPES addresses | shell farm at one address |
+| `addr_distinct_orgs`, `addr_cluster_degree` | distinct ORGANIZATIONS at one address | NPPES address × org graph | one clinic = one org; many unrelated orgs at a suite = shell cluster |
 | `addr_geocoded`, `addr_no_match` | does the address resolve to a real location (live Census geocode) | Census geocoder | a billing address that doesn't geocode is a phantom-clinic tell |
 
 ### 5.10 Billing language model — clean features
@@ -411,7 +413,7 @@ absolute value or the peer-relative rank).
 |---|---|---|---|
 | `billing_emb_0..15` | self-supervised provider embedding (claim-weighted mean of code vectors) | spending code co-occurrence (PPMI/SVD) | dense representation of billing CONTENT, no labels |
 | `billing_surprisal` | how unlikely the code mix is for the specialty | spending × taxonomy | scheme-agnostic novelty signal |
-| `sequence_surprisal` | how unusual the ORDER of adopting codes is | spending (ordered) | what bag-of-codes misses |
+| `sequence_surprisal` | how unusual the ORDER of adopting codes is (add-k bigram, or interpolated Kneser-Ney via `smoothing="kn"`, configurable `order`) | spending (ordered) | what bag-of-codes misses; KN calibrates the rare-code tail |
 
 ---
 
@@ -520,20 +522,25 @@ further, so none is just a shrug.
   `case_control.covariate_balance` (standardized mean differences) + `separability_auc`
   prove the matched clean set isn't a giveaway (AUC near 0.5 on covariates alone =
   fair contrast); fix the match if a confounder is unbalanced.
-- **External grounding coverage.** Offline mailbox detection is pattern-based (misses
-  unlisted CMRAs); live geocoding depends on network access and the Census match rate.
-  *Reducible:* fold in a USPS CMRA reference list + an address-cluster-degree feature
-  (how many unrelated NPIs share the suite).
+- **External grounding coverage — now broadened.** Beyond the brand-name mailbox
+  regex, the export now does an EXACT match against the USPS CMRA registry
+  (`addr_is_cmra`, when the registry file is present) and computes an
+  address-cluster-degree (`addr_distinct_orgs` / `addr_cluster_degree` = how many
+  UNRELATED organizations share one suite — a real clinic is one org, a shell farm is
+  many). Residual gap: live geocoding still depends on network access and the Census
+  match rate.
 - **Scale of `--with-analytics` — now full-DuckDB (resolved).** Growth, clinical
   plausibility, and the billing-LM (code co-occurrence, provider embeddings, and
   taxonomy surprisal) now run entirely as DuckDB self-joins / GROUP BYs over the
   spending parquet — the provider×code matrix never materializes in pandas, so they
   scale to the full universe with no RAM ceiling. Only the small (npi, hcpcs,
   first-month) adoption frame for `sequence_surprisal` is pulled into pandas.
-- **Sequence model is an n-gram.** The bigram captures adoption-order today behind a
-  stable `sequence_surprisal` interface. A neural transformer is a drop-in upgrade
-  but needs a GPU + line-level claims (a compute/licensing decision); an interim step
-  is higher-order Kneser-Ney n-grams.
+- **Sequence model is an n-gram — now Kneser-Ney.** `sequence_surprisal` now supports
+  `smoothing="kn"` with configurable `order` (bigram/trigram): interpolated
+  Kneser-Ney, whose continuation probability ("in how many distinct contexts does this
+  code appear") calibrates the rare-HCPCS tail far better than add-k. A neural
+  transformer remains the eventual drop-in upgrade behind the same interface, gated on
+  a GPU + line-level claims.
 - **Not yet validated on real procured files at scale.** Behavior is verified on
   synthetic fixtures + the unit suite; the first full real-data run is the true test.
 

@@ -273,7 +273,13 @@ python -m pytest tests/ -v
   CQR recovery bands), per-subgroup calibration (`calibration.fit_grouped_calibrators`
   + `reliability_by_group`), and matched-set covariate-balance diagnostics
   (`case_control.covariate_balance` SMDs + `separability_auc`).
-  Full suite: `pytest tests/` (334 tests).
+  Polish upgrades BUILT: USPS CMRA exact-match (`address_grounding.load_cmra_reference`
+  → `addr_is_cmra`) + address-cluster-degree (`addr_distinct_orgs`/`addr_cluster_degree`
+  = distinct orgs per suite; export loads `preclean/usps/cmra.csv` + joins org grain),
+  and interpolated Kneser-Ney for the sequence LM (`billing_sequence_lm.build_kn_model`
+  + `sequence_surprisal(smoothing="kn", order=2|3)` — continuation-probability
+  smoothing for the rare-HCPCS tail; add-k stays the default).
+  Full suite: `pytest tests/` (339 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
