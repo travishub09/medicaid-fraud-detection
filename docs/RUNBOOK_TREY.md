@@ -14,14 +14,14 @@ filenames, and save paths), and the exact order to run things. Pair it with
 ```bash
 git clone <repo> && cd medicaid-fraud-detection
 pip install -r requirements.txt
-make test            # 319 tests, no data needed — confirms the install is sane
-make demo            # end-to-end on synthetic data → /tmp/demo (sanity check)
+make test            # 319 tests, no data needed - confirms the install is sane
+make demo            # end-to-end on synthetic data -> /tmp/demo (sanity check)
 ```
 
 Set your data root once (everything reads/writes under it; default `~/Desktop/data`):
 
 ```bash
-export MEDICAID_DATA_ROOT=~/Desktop/data       # or pass DATA_ROOT=… to each make target
+export MEDICAID_DATA_ROOT=~/Desktop/data       # or pass DATA_ROOT=... to each make target
 ```
 
 **Golden rules for every file below**
@@ -46,8 +46,8 @@ NPPES + PECOS + LEIE you already have feed the 13-stage pipeline:
 Then build the processed backbone, the entity graph, and the feature export:
 
 ```bash
-make pipeline            # 13 stages → processed/spending_fact.parquet, provider_dim.parquet, detection/fraud_leads_v3.parquet
-make graph               # entity graph → graph/ (nodes, edges, npi_to_org, node_embeddings)
+make pipeline            # 13 stages -> processed/spending_fact.parquet, provider_dim.parquet, detection/fraud_leads_v3.parquet
+make graph               # entity graph -> graph/ (nodes, edges, npi_to_org, node_embeddings)
 make provider-features   # rebuilds graph, then writes the per-NPI export for Travis
 ```
 
@@ -90,29 +90,29 @@ skip-loads anything absent and logs why.
 ### 2.2 The unlock builders (download + one build command)
 
 ```bash
-# SSA Death Master File → invalid_identity (billing-after-death)
+# SSA Death Master File -> invalid_identity (billing-after-death)
 #   Get: https://dmf.ntis.gov (paid limited-access) or the free pre-2011 public DMF mirror.
-#   Needs: last/first name, DOB, date of death. Save → preclean/dmf/dmf.csv  (no build step)
+#   Needs: last/first name, DOB, date of death. Save -> preclean/dmf/dmf.csv  (no build step)
 
-# OpenSanctions → widen exclusions + the label (LEIE + SAM + ~45 state lists)
+# OpenSanctions -> widen exclusions + the label (LEIE + SAM + ~45 state lists)
 #   Free bulk: https://data.opensanctions.org/datasets/latest/debarment/targets.simple.csv
-make opensanctions OPENSANCTIONS_FILE=preclean/opensanctions/targets.simple.csv   # → processed/exclusions_opensanctions.parquet
+make opensanctions OPENSANCTIONS_FILE=preclean/opensanctions/targets.simple.csv   # -> processed/exclusions_opensanctions.parquet
 
-# CMS revoked providers → widen the label
+# CMS revoked providers -> widen the label
 python -m src.enforcement.medicare_revocations --in preclean/revocations/revocations.csv \
     --out processed/exclusions_medicare_revocations.parquet
 
-# SAM exclusions → widen the label (needs a free SAM API key in env)
+# SAM exclusions -> widen the label (needs a free SAM API key in env)
 python -m src.enforcement.sam_api --out processed/
 
-# PECOS CCN↔NPI crosswalk → facility / hospice / cost-report schemes
-make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv     # → processed/ccn_to_npi.parquet
+# PECOS CCN<->NPI crosswalk -> facility / hospice / cost-report schemes
+make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv     # -> processed/ccn_to_npi.parquet
 
 # NDC drug claims & referral claims (richer extracts than the by-HCPCS spending file)
 python -m src.ingest_cms.claim_slices --kind ndc --in <rx_claims.csv> --out processed/ndc_claims.parquet
 python -m src.ingest_cms.claim_slices --kind referral --in <claims_with_referrer.csv> --out processed/referred_claims.parquet
 
-# DOJ / qui tam case DB → scheme-typed, time-boxed positives (the strongest label)
+# DOJ / qui tam case DB -> scheme-typed, time-boxed positives (the strongest label)
 #   DOJ press releases (justice.gov/news, filter "False Claims Act") + OIG enforcement.
 ```
 

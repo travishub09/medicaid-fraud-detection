@@ -142,7 +142,7 @@ and the adapter is built, but this third input is not auto-wired into the export
 - **Run:**
   ```bash
   make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv
-  # → processed/ccn_to_npi.parquet (auto-detected by the export)
+  # -> processed/ccn_to_npi.parquet (auto-detected by the export)
   ```
 - This is the single highest-value unlock: it turns the three facility/cost-report CCN-grain schemes from blocked to scoring.
 

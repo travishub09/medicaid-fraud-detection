@@ -119,7 +119,7 @@ Every `subscore_<scheme>` is built the same way (`src/model_a/scheme_subscores.p
 3. **Sigmoid squash**, centered and sharpened:
 
    ```
-   subscore_s = sigmoid( 6.0 · ( weighted_mean − 0.5 ) )
+   subscore_s = sigmoid( 6.0 * ( weighted_mean - 0.5 ) )
    ```
 
    So a provider at the peer median (0.5) scores 0.5; ~0.9 → ~0.92; ~0.1 → ~0.08.
@@ -249,7 +249,7 @@ df = pd.read_parquet("provider_features/provider_features_for_model.parquet")
 
 feature_cols = [c for c in (m["raw_feature_cols"] + m["peerpct_cols"] + m["subscore_cols"])
                 if c not in m["leakage_hard"]]
-X = df[feature_cols]                      # keep NaNs — LightGBM handles them
+X = df[feature_cols]                      # keep NaNs - LightGBM handles them
 y = df[m["label"]].fillna(0).astype(int)  # PU positive label
 # For the headline backtest, exclude m["leakage_adjacent"] from feature_cols and/or
 # split out-of-time on exclusion date before trusting them.

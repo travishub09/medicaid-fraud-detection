@@ -178,19 +178,19 @@ comparisons for counsel.
 ## Architecture, layered
 
 ```
-raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1: timestamp everything)
-                                                │
-        ┌───────────────────────────────────────┼───────────────────────────────┐
+raw sources ?? entity resolution (have) ?? BITEMPORAL feature store (P1: timestamp everything)
+                                                ?
+        ?????????????????????????????????????????????????????????????????????????
    behavioral/billing          GRAPH embeddings (P3, built)        consistency + external (P4)
    (have: subscores)           + motifs + fraud-field              + expected-residual twin
-        └───────────────────────────────────────┼───────────────────────────────┘
+        ?????????????????????????????????????????????????????????????????????????
                                           wide per-NPI matrix
-                                                │
+                                                ?
               LABEL ENGINE (P2): outcomes + weak supervision + manufactured negatives
-                                                │
-                       case-control matched training set ─► Travis's graph-tree model
-                                                │
-                       adjudications ─► label store ─► compounding moat (active learning)
+                                                ?
+                       case-control matched training set ?? Travis's graph-tree model
+                                                ?
+                       adjudications ?? label store ?? compounding moat (active learning)
 ```
 
 ---
