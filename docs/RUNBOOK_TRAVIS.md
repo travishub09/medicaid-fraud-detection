@@ -396,14 +396,47 @@ absolute value or the peer-relative rank).
 
 ---
 
-## 8. Honest limitations
-- The label is still an incomplete ground truth (caught fraud); widening + weak
-  supervision mitigate but don't erase the bias — lead with lift, not recall.
-- The graph embedding/fraud-field encode exclusion neighborhood (leakage-adjacent).
-- `--with-analytics` (billing LM, plausibility, growth) is opt-in and heavier; run on
-  a filtered spending file if RAM-bound.
-- The sequence model is an n-gram today; a neural transformer is a drop-in upgrade
-  behind the same `sequence_surprisal` interface once a GPU + line-level claims exist.
+## 8. Limitations — and how each is mitigated or can be reduced
+
+Each limitation is paired with what already reduces it and what would reduce it
+further, so none is just a shrug.
+
+- **Label ceiling.** LEIE/DOJ capture *caught* fraud, skewed by scheme — so the model
+  partly learns "who gets caught," not "who commits fraud." *Mitigated by:* the
+  widened multi-source label + weak supervision + manufactured negatives; leading
+  with precision@k / lift (not recall/accuracy); stratifying lift within scheme.
+  *Reducible further:* PU class-prior estimation (report a contamination-corrected
+  lift), more positive sources (state MFCU case reports, unsealed PACER qui tams, the
+  CMS preclusion list), and detection-propensity reweighting. Never fully eliminable
+  — disclose it.
+- **Graph embeddings are leakage-adjacent.** `graph_emb_*` / `graph_fraud_proximity`
+  encode the exclusion neighborhood, so a random split over-credits them. *Mitigated
+  by:* the out-of-time split + `--asof` point-in-time graph. *Reducible now:* compute
+  the embeddings on an **exclusion-free graph** (drop exclusion nodes before the
+  walks) so the embedding captures pure ownership/co-location structure and becomes a
+  *clean* feature, with the fraud-proximity field kept as the separate, explicitly
+  leakage-adjacent signal.
+- **Scores aren't probability-calibrated.** The subscores and `weak_label_score` rank
+  well but aren't calibrated probabilities. For dollar-sizing (Model C) or a hard
+  threshold, fit isotonic/Platt calibration on a held-out set first.
+- **Org→NPI broadcast residual.** A provider not present in the graph (a single-NPI
+  org) still inherits an org-level value; `org_node_id` + the per-NPI graph embedding
+  mitigate it, but model it group-aware rather than treating every NPI as independent.
+- **Peer grouping trusts self-reported taxonomy.** NUCC fixes cohort coherence, but a
+  deliberately mis-coded taxonomy can dodge its peers; `specialty_mismatch` and the
+  billing-implied-specialty signals partially catch that.
+- **External grounding coverage.** Offline mailbox detection is pattern-based (misses
+  unlisted CMRAs); live geocoding depends on network access and the Census match rate.
+- **Scale of `--with-analytics`.** Growth/plausibility/billing-LM still hold a
+  per-(npi, code) frame in pandas. *Mitigated by:* DuckDB streaming + by-state
+  filtering. *Reducible:* push the prevalence join + embedding pre-aggregation fully
+  into DuckDB (or chunk by taxonomy) to remove the RAM ceiling.
+- **Sequence model is an n-gram.** The bigram captures adoption-order today behind a
+  stable `sequence_surprisal` interface. A neural transformer is a drop-in upgrade
+  but needs a GPU + line-level claims (a compute/licensing decision); an interim step
+  is higher-order Kneser-Ney n-grams.
+- **Not yet validated on real procured files at scale.** Behavior is verified on
+  synthetic fixtures + the unit suite; the first full real-data run is the true test.
 
 *Investigative-analytics framework. These features are statistical risk rankings of
 public data, surfaced as model inputs and leads for human and counsel review — never
