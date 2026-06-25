@@ -35,7 +35,70 @@ can train and validate without leaking the future.
 
 ---
 
-## 2. Loading and column roles
+## 2. What changed and improved since the first hand-off (walkthrough)
+
+The first export you saw was essentially Trey's six rules-based scheme subscores on a
+candidate set. This version is a different artifact. Here's everything that changed,
+and why each helps your model — read this before the catalog so the new columns make
+sense.
+
+**Labels — from one flag to a rich, time-aware target.**
+- *Before:* a single `provider_on_leie` boolean (caught, untyped, untimed).
+- *Now:* `provider_on_exclusion` unions LEIE + CMS revocations + SAM + OpenSanctions
+  + **DOJ/qui-tam case defendants**, with `exclusion_label_sources` provenance. DOJ
+  positives carry a `fraud_scheme` and a **conduct window** (`conduct_start/end`).
+- *Why it matters:* far more positives and less scheme bias; the conduct window lets
+  you train **out-of-time** (score a provider on features that predate the fraud)
+  and the scheme lets you measure lift **within scheme families**. Plus a Snorkel-style
+  **`weak_label_score`** — a dense soft target fused from ~12 labeling functions — to
+  pre-train on before fine-tuning the hard label.
+
+**A real contrast set — from imbalanced soup to matched case-control.**
+- *Now:* manufactured high-confidence negatives (`confirmed_clean`: institutional /
+  long-tenure + benign + no fraud proximity) and a `--case-control` output
+  (`provider_features_matched.parquet`) that pairs each positive with comparable
+  clean controls (same specialty/geography/size). Train on that to learn *what
+  differs* holding confounders fixed instead of fighting the 0.2% base rate.
+
+**Peer grouping — fewer false positives.**
+- *Now:* a NUCC taxonomy crosswalk rolls the noisy ~870-code taxonomy up to a
+  coherent classification cohort and adds it as a fallback rung, so a thin or
+  mis-coded specialty is ranked against the right peers (`peer_group_key`). Every
+  peer-relative feature got cleaner as a result.
+
+**The graph view — the signal your billing-only model can't see.**
+- *Now:* DeepWalk-style node **embeddings** (`graph_emb_*`), a personalized-PageRank
+  **fraud-proximity field**, structural **motifs** (k-core/triangles/clustering),
+  and **temporal velocity** (how fast a provider's graph position is changing). A
+  clean-billing provider in a fraud-dense neighborhood now lights up. This also
+  **fixes the org→NPI broadcast problem** — each NPI carries its own graph position
+  instead of one smeared org value (plus `org_member_count` + `has_excluded_owner`
+  to sharpen it).
+
+**New attribute families — separating fraud from mere anomaly.**
+- *Now:* the **expected-billing residual** (`billing_residual` — unexplained billing
+  after conditioning on size/specialty/breadth, so a big *honest* biller isn't
+  punished); **cross-source consistency** flags (`consistency_flags` — registration
+  record vs. billing); **address grounding** (mailbox/PO-box + live geocode); and a
+  self-supervised **billing language model** (`billing_emb_*`, `billing_surprisal`,
+  order-aware `sequence_surprisal`).
+
+**Packaging — built for honest training.**
+- Each adapter metric ships **raw + `__peerpct` + subscore** (use what wins).
+- A **leakage manifest** splits `leakage_hard` (never train) from `leakage_adjacent`
+  (train, but validate out-of-time) — keeps your backtest non-circular.
+- **Point-in-time correctness:** a snapshot store + `--asof` graph builds let you
+  reconstruct features as they stood before a label date (leakage handled
+  architecturally, not as a caveat).
+- **Scale:** the heavy enrichments (growth, plausibility, billing LM) are
+  DuckDB-streamed (`--with-analytics`) so they run on the full universe.
+- **No candidate gate:** the export now covers the full provider universe (you need
+  the negatives), not just the suspicious tail.
+
+The rest of this runbook details how to load it (§3), train on it (§4), and what
+every resulting column means (§5).
+
+## 3. Loading and column roles
 
 Read the roles from the manifest — don't hard-code column lists:
 
@@ -57,7 +120,7 @@ y = df[m["label"]].fillna(0).astype(int) # provider_on_exclusion (PU positive)
 | `raw_feature_cols` | clean, trainable raw + engineered features | train on |
 | `peerpct_cols` | one-sided taxonomy-peer percentile of each adapter metric | train on |
 | `subscore_cols` | the 0–1 scheme subscores | train on |
-| `embedding_cols` | graph + billing embedding columns | train on (graph_emb_* are leakage-adjacent — see §6) |
+| `embedding_cols` | graph + billing embedding columns | train on (graph_emb_* are leakage-adjacent — see §7) |
 | `leakage_hard` | derived from the provider's OWN exclusion | **never train on** |
 | `leakage_adjacent` | exclusion-PROXIMITY signals | train, but validate out-of-time |
 | `label_metadata` | target-derived (scheme, conduct window, weak label, clean anchors) | targets / stratifiers, **not features** |
@@ -68,7 +131,7 @@ y = df[m["label"]].fillna(0).astype(int) # provider_on_exclusion (PU positive)
 
 ---
 
-## 3. The recommended training recipe
+## 4. The recommended training recipe
 
 1. **PU learning.** A `1` is a confirmed bad actor; a `0` is *unlabeled*, not
    confirmed clean. Use your Elkan–Noto / PU setup; treat `confirmed_clean == 1`
@@ -92,7 +155,7 @@ y = df[m["label"]].fillna(0).astype(int) # provider_on_exclusion (PU positive)
 
 ---
 
-## 4. Metric catalog — what each is, its data, and why it's fraud signal
+## 5. Metric catalog — what each is, its data, and why it's fraud signal
 
 The "why" is the False Claims Act / program-integrity theory that makes the variable
 predict *prosecuted* fraud, not just unusual billing.
@@ -194,7 +257,7 @@ Each ships raw and as its one-sided taxonomy-peer percentile.
 
 ---
 
-## 5. Label & label-metadata catalog (targets, not features)
+## 6. Label & label-metadata catalog (targets, not features)
 | Column | Meaning |
 |---|---|
 | `provider_on_exclusion` | **the label** — on any exclusion list OR a resolved DOJ defendant (PU positive) |
@@ -209,7 +272,7 @@ Each ships raw and as its one-sided taxonomy-peer percentile.
 
 ---
 
-## 6. The leakage discipline (read before you trust a number)
+## 7. The leakage discipline (read before you trust a number)
 - **`leakage_hard`** is circular (it encodes the answer). The export quarantines it
   out of `raw_feature_cols`; keep it out of `X`.
 - **`leakage_adjacent`** (exclusion-proximity: `within_2_hops_of_exclusion`,
@@ -224,7 +287,7 @@ Each ships raw and as its one-sided taxonomy-peer percentile.
 
 ---
 
-## 7. Honest limitations
+## 8. Honest limitations
 - The label is still an incomplete ground truth (caught fraud); widening + weak
   supervision mitigate but don't erase the bias — lead with lift, not recall.
 - The graph embedding/fraud-field encode exclusion neighborhood (leakage-adjacent).
