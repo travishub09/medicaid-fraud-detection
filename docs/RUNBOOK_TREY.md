@@ -14,14 +14,18 @@ filenames, and save paths), and the exact order to run things. Pair it with
 ```bash
 git clone <repo> && cd medicaid-fraud-detection
 pip install -r requirements.txt
-make test            # 319 tests, no data needed - confirms the install is sane
-make demo            # end-to-end on synthetic data -> /tmp/demo (sanity check)
+make test
+make demo
 ```
 
-Set your data root once (everything reads/writes under it; default `~/Desktop/data`):
+`make test` runs the 319-test suite (no data needed) to confirm the install is sane;
+`make demo` runs end-to-end on synthetic data into `/tmp/demo` as a sanity check.
+
+Set your data root once — everything reads and writes under it (default
+`~/Desktop/data`; or pass `DATA_ROOT=/path` to each make target):
 
 ```bash
-export MEDICAID_DATA_ROOT=~/Desktop/data       # or pass DATA_ROOT=... to each make target
+export MEDICAID_DATA_ROOT=~/Desktop/data
 ```
 
 **Golden rules for every file below**
@@ -46,10 +50,15 @@ NPPES + PECOS + LEIE you already have feed the 13-stage pipeline:
 Then build the processed backbone, the entity graph, and the feature export:
 
 ```bash
-make pipeline            # 13 stages -> processed/spending_fact.parquet, provider_dim.parquet, detection/fraud_leads_v3.parquet
-make graph               # entity graph -> graph/ (nodes, edges, npi_to_org, node_embeddings)
-make provider-features   # rebuilds graph, then writes the per-NPI export for Travis
+make pipeline
+make graph
+make provider-features
 ```
+
+`make pipeline` runs the 13 stages that produce `processed/spending_fact.parquet`,
+`processed/provider_dim.parquet`, and `detection/fraud_leads_v3.parquet`. `make graph`
+builds the entity graph into `graph/` (nodes, edges, `npi_to_org`, node embeddings).
+`make provider-features` rebuilds the graph and then writes the per-NPI export for Travis.
 
 `make provider-features` writes to `model_a/provider_features/`:
 - `provider_features_for_model.parquet` — the matrix (one row per NPI)
@@ -89,58 +98,84 @@ skip-loads anything absent and logs why.
 
 ### 2.2 The unlock builders (download + one build command)
 
+Each is a download plus one command. After running any of them, **re-run `make graph`
+then `make provider-features`** so the graph rebuilds and OpenSanctions / revocations /
+CCN flow through.
+
+**SSA Death Master File** → unlocks `invalid_identity` (billing-after-death). Get it
+from https://dmf.ntis.gov (paid limited-access) or the free pre-2011 public DMF
+mirror; it needs last/first name, DOB, and date of death. Save to `preclean/dmf/dmf.csv`
+— there is no build step.
+
+**OpenSanctions** → widens both the exclusion graph and the label (LEIE + SAM + ~45
+state lists). Free bulk download: https://data.opensanctions.org/datasets/latest/debarment/targets.simple.csv.
+Then build `processed/exclusions_opensanctions.parquet`:
+
 ```bash
-# SSA Death Master File -> invalid_identity (billing-after-death)
-#   Get: https://dmf.ntis.gov (paid limited-access) or the free pre-2011 public DMF mirror.
-#   Needs: last/first name, DOB, date of death. Save -> preclean/dmf/dmf.csv  (no build step)
-
-# OpenSanctions -> widen exclusions + the label (LEIE + SAM + ~45 state lists)
-#   Free bulk: https://data.opensanctions.org/datasets/latest/debarment/targets.simple.csv
-make opensanctions OPENSANCTIONS_FILE=preclean/opensanctions/targets.simple.csv   # -> processed/exclusions_opensanctions.parquet
-
-# CMS revoked providers -> widen the label
-python -m src.enforcement.medicare_revocations --in preclean/revocations/revocations.csv \
-    --out processed/exclusions_medicare_revocations.parquet
-
-# SAM exclusions -> widen the label (needs a free SAM API key in env)
-python -m src.enforcement.sam_api --out processed/
-
-# PECOS CCN<->NPI crosswalk -> facility / hospice / cost-report schemes
-make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv     # -> processed/ccn_to_npi.parquet
-
-# NDC drug claims & referral claims (richer extracts than the by-HCPCS spending file)
-python -m src.ingest_cms.claim_slices --kind ndc --in <rx_claims.csv> --out processed/ndc_claims.parquet
-python -m src.ingest_cms.claim_slices --kind referral --in <claims_with_referrer.csv> --out processed/referred_claims.parquet
-
-# DOJ / qui tam case DB -> scheme-typed, time-boxed positives (the strongest label)
-#   DOJ press releases (justice.gov/news, filter "False Claims Act") + OIG enforcement.
+make opensanctions OPENSANCTIONS_FILE=preclean/opensanctions/targets.simple.csv
 ```
 
-After any of these, **re-run `make graph` then `make provider-features`** (the graph
-must rebuild so OpenSanctions/revocations/CCN flow through).
+**CMS revoked providers** → widens the label, writing `processed/exclusions_medicare_revocations.parquet`:
+
+```bash
+python -m src.enforcement.medicare_revocations \
+    --in preclean/revocations/revocations.csv \
+    --out processed/exclusions_medicare_revocations.parquet
+```
+
+**SAM exclusions** → widens the label (needs a free SAM API key in your environment):
+
+```bash
+python -m src.enforcement.sam_api --out processed/
+```
+
+**PECOS CCN-to-NPI crosswalk** → unlocks the facility / hospice / cost-report schemes,
+writing `processed/ccn_to_npi.parquet`:
+
+```bash
+make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv
+```
+
+**NDC drug claims & referral claims** → richer extracts than the by-HCPCS spending
+file, for the drug-spread and ineligible-referral signals:
+
+```bash
+python -m src.ingest_cms.claim_slices --kind ndc --in <rx_claims.csv> --out processed/ndc_claims.parquet
+python -m src.ingest_cms.claim_slices --kind referral --in <claims_with_referrer.csv> --out processed/referred_claims.parquet
+```
+
+**DOJ / qui tam case DB** → scheme-typed, time-boxed positives (the strongest label).
+Source: DOJ press releases (justice.gov/news, filtered to "False Claims Act") plus OIG
+enforcement, saved as the case CSV that the export reads via `--case-db`.
 
 ---
 
 ## 3. The full run, with all the bells
 
+Three steps — build the backbone, build the graph (point-in-time optional, see
+section 5), then run the export with every optional capability turned on:
+
 ```bash
-# 1. backbone
 make pipeline
-# 2. graph (point-in-time optional - see section 5)
 make graph
-# 3. the export with every optional capability
 python -m src.model_a.provider_features_export \
     --graph-dir   $MEDICAID_DATA_ROOT/graph \
     --leads       $MEDICAID_DATA_ROOT/detection/fraud_leads_v3.parquet \
     --preclean    $MEDICAID_DATA_ROOT/preclean \
     --processed   $MEDICAID_DATA_ROOT/processed \
     --case-db     $MEDICAID_DATA_ROOT/preclean/enforcement/doj_cases.csv \
-    --with-analytics \      # growth + plausibility + billing-LM (DuckDB-streamed; use a filtered/by-state spending file if RAM-bound)
-    --case-control \        # also writes provider_features_matched.parquet
-    --geocode \             # live Census geocoding of addresses (network)
-    --snapshot --asof 2026-06-01 \   # archive a valid-time snapshot
+    --with-analytics \
+    --case-control \
+    --geocode \
+    --snapshot --asof 2026-06-01 \
     --out         $MEDICAID_DATA_ROOT/model_a/provider_features
 ```
+
+What the optional flags do:
+- `--with-analytics` — adds growth, clinical plausibility, and the billing-LM features (DuckDB-streamed; use a filtered/by-state spending file if RAM-bound).
+- `--case-control` — also writes `provider_features_matched.parquet` (matched positives + clean controls).
+- `--geocode` — live Census geocoding of billing addresses (network).
+- `--snapshot --asof DATE` — archives a valid-time snapshot for point-in-time training.
 
 Hand Travis `provider_features_for_model.parquet` + `feature_manifest.json` (and
 `provider_features_matched.parquet` if you ran `--case-control`).
@@ -152,11 +187,13 @@ Hand Travis `provider_features_for_model.parquet` + `feature_manifest.json` (and
 Three signals need accumulated history; start the clock now by running these monthly:
 
 ```bash
-make graph && make owner-snapshot                              # ownership_turnover (CHOW churn)
-make provider-features && make feature-snapshot ASOF=$(date +%F)  # graph_velocity + point-in-time store
+make graph && make owner-snapshot
+make provider-features && make feature-snapshot ASOF=$(date +%F)
 ```
 
-`ownership_turnover` activates after 2 owner snapshots; `graph_velocity` after 2
+The first line archives an owner snapshot (for `ownership_turnover` / CHOW churn);
+the second archives a feature snapshot (for `graph_velocity` + the point-in-time
+store). `ownership_turnover` activates after 2 owner snapshots; `graph_velocity` after 2
 feature snapshots. Nothing to procure — just the cadence. Refresh the underlying
 sources on the calendar in `docs/platform/12-data-runbook.md`.
 

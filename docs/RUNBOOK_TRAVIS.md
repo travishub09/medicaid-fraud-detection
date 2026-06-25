@@ -143,8 +143,8 @@ provider_table = provider_table.merge(df, on="npi", how="left")
 feat_cols = [c for c in (m["raw_feature_cols"] + m["peerpct_cols"]
                          + m["subscore_cols"] + m["embedding_cols"])
              if c not in m["leakage_hard"]]
-X = provider_table[feat_cols]                  # keep NaNs - the tree splits on "missing"
-y = provider_table[m["label"]].fillna(0).astype(int)   # provider_on_exclusion
+X = provider_table[feat_cols]
+y = provider_table[m["label"]].fillna(0).astype(int)
 ```
 
 **Step 3 — Train your tree as usual, with PU framing.** A `1` is a confirmed bad
@@ -162,7 +162,7 @@ comparable clean controls, `match_id` ties a case to its controls. The model lea
 
 ```python
 from src.model_a.feature_store import temporal_split
-train_mask, test_mask = temporal_split(provider_table, cutoff_year=2021)  # by conduct_start
+train_mask, test_mask = temporal_split(provider_table, cutoff_year=2021)
 ```
 
 For strict correctness, score each positive on features reconstructed *before* its
