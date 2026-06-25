@@ -112,11 +112,14 @@ smeared org value.
 
 Four families, all fed raw + engineered to the tree:
 
-1. **Expected-billing residuals (a "digital twin").** Train a model of *expected*
-   billing given specialty, geography, patient mix, and size — fraud is the
-   **unexplained excess after conditioning on everything legitimate**. The residual
-   is a far cleaner attribute than a raw peer percentile (it doesn't punish the
-   legitimately unusual). Generalizes `plausibility.py` into a counterfactual.
+1. **Expected-billing residuals (a "digital twin"). (BUILT — `expected_billing.py`.)**
+   A robust per-taxonomy regression predicts *expected* billing from legitimate
+   covariates (volume, claim lines, code breadth); fraud is the **unexplained excess
+   after conditioning on everything legitimate** (`billing_residual`, one-sided).
+   Unlike a raw peer percentile it does NOT punish the legitimately large — a
+   high-volume referral center whose dollars track its volume scores low; a small
+   provider billing 30× what its volume justifies scores high. *Next: add patient-mix
+   and geography covariates.*
 2. **Cross-source consistency checks.** Fraud surfaces as *incoherence across
    independent systems*: NPPES says solo but bills like a group; PECOS deactivated
    but still billing; address doesn't geocode to a clinic; hours billed exceed
@@ -194,8 +197,9 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
    model is the remaining half.
 4. **Case-control matching at export time** — **BUILT (`case_control.py`,
    `--case-control`).**
-5. **Expected-billing residual twin**, then the **foundation-model embedding**
-   (moonshot).
+5. **Expected-billing residual twin BUILT (`expected_billing.py`)**; remaining
+   Pillar-4 families (cross-source consistency, external grounding) and then the
+   **foundation-model embedding** (moonshot).
 
 Net: stop shipping "anomaly percentiles," start shipping **three independent views
 of each provider — what they bill, who they're connected to, and whether their

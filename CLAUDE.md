@@ -222,8 +222,11 @@ python -m pytest tests/ -v
   manufactures high-confidence negatives (`confirmed_clean`: institutional/FQHC or
   long-tenure + benign billing + no fraud proximity) and `model_a/case_control.py`
   matches each positive to comparable clean controls (taxonomy×state×size ladder)
-  → `provider_features_matched.parquet` via export `--case-control`.
-  Full suite: `pytest tests/` (298 tests).
+  → `provider_features_matched.parquet` via export `--case-control`. Pillar 4
+  started: `model_a/expected_billing.py` — the "digital twin" residual (robust
+  per-taxonomy regression of billing on legitimate covariates → one-sided
+  `billing_residual` = unexplained excess; doesn't punish the legitimately large).
+  Full suite: `pytest tests/` (301 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
