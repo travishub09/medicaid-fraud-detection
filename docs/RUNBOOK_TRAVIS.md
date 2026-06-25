@@ -143,7 +143,7 @@ provider_table = provider_table.merge(df, on="npi", how="left")
 feat_cols = [c for c in (m["raw_feature_cols"] + m["peerpct_cols"]
                          + m["subscore_cols"] + m["embedding_cols"])
              if c not in m["leakage_hard"]]
-X = provider_table[feat_cols]                  # keep NaNs — the tree splits on "missing"
+X = provider_table[feat_cols]                  # keep NaNs - the tree splits on "missing"
 y = provider_table[m["label"]].fillna(0).astype(int)   # provider_on_exclusion
 ```
 

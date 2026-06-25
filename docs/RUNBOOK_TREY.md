@@ -126,7 +126,7 @@ must rebuild so OpenSanctions/revocations/CCN flow through).
 ```bash
 # 1. backbone
 make pipeline
-# 2. graph (point-in-time optional — see §5)
+# 2. graph (point-in-time optional - see section 5)
 make graph
 # 3. the export with every optional capability
 python -m src.model_a.provider_features_export \
