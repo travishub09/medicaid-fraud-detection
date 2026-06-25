@@ -68,7 +68,7 @@ skip-loads anything absent and logs why.
 
 ### 2.1 Quick-win adapter files (one CSV each)
 
-| # | Dataset (search title on the host) | URL | Save as | Unlocks |
+| Source | Dataset (search title on the host) | URL | Save as | Unlocks |
 |---|---|---|---|---|
 | Part B | "Medicare Physician & Other Practitioners – by Provider and Service" | data.cms.gov/provider-summary-by-type-of-service/medicare-physician-other-practitioners | `preclean/partb/partb.csv` | `upcoding` |
 | Part D | "Medicare Part D Prescribers – **by Provider and Drug**" (Download, not API) | data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers | `preclean/partd/partd.csv` | `drug_outlier`, `pharma_kickback` |
