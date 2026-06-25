@@ -57,7 +57,7 @@ src/feeds/          API-feed plumbing + DOJ/CourtListener/SAM/NPPES/ProPublica/
                     USAspending/openFDA clients (cached, injectable transport)
 src/analytics/      peer engine + confidence + growth + plausibility (built)
 src/enforcement/    DOJ case DB + API fetcher + SAM/state-licensing/OpenSanctions/medicare-revocations/
-                    death-master + label store (built)
+                    preclusion-list/death-master + label store (built)
 src/nlp/            GLiNER zero-shot entity extraction (optional dep, injectable)
 tests/              pytest; fixtures/synthetic.py generates data — no data files committed
 docs/platform/      architecture, roadmap, and component specs (the source of truth)
@@ -252,7 +252,18 @@ python -m pytest tests/ -v
   hook; export `--geocode`), and `model_a/temporal_sources.py` (per-source
   valid-time: `point_in_time_tables` + `python -m src.entity_graph --asof` builds a
   leakage-correct point-in-time exclusion graph).
-  Full suite: `pytest tests/` (319 tests).
+  Second limitation-mitigation batch BUILT: `model_a/calibration.py` (isotonic/Platt
+  + reliability table + Brier/ECE — turns a ranking score into a calibrated
+  P(offender) for Model C / thresholds), `model_a/pu_prior.py` (Elkan-Noto label-
+  frequency `c` + class-prior + contamination-corrected top-decile lift — the honest
+  PU metric), `model_a/billing_specialty.py` (billing-implied specialty via nearest-
+  centroid in the billing-embedding space → `billing_taxonomy_mismatch`/`_fit`/
+  `_margin` + `billing_implied_taxonomy`; defends the self-reported-taxonomy peer key),
+  `enforcement/preclusion.py` (CMS Preclusion List → exclusions schema; widens the PU
+  label with a `preclusion` source tag — sponsor-channel data, gated), and the export
+  now emits `group_id` (manifest `group_cols`, for group-aware CV) + an `assessable`
+  flag (manifest `assessability`, so thin-evidence providers aren't force-ranked).
+  Full suite: `pytest tests/` (329 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

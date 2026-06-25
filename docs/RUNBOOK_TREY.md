@@ -129,6 +129,17 @@ python -m src.enforcement.medicare_revocations \
 python -m src.enforcement.sam_api --out processed/
 ```
 
+**CMS Preclusion List** → widens the label with a `preclusion` source tag, writing
+`processed/exclusions_preclusion.parquet`. Unlike the lists above, this one is **not
+a public download** — CMS distributes it to MA / Part D plan sponsors through HPMS,
+so you need a sponsor-channel copy of the file. Once you have it:
+
+```bash
+python -m src.enforcement.preclusion \
+    --in preclean/preclusion/preclusion_list.csv \
+    --out processed/exclusions_preclusion.parquet
+```
+
 **PECOS CCN-to-NPI crosswalk** → unlocks the facility / hospice / cost-report schemes,
 writing `processed/ccn_to_npi.parquet`:
 

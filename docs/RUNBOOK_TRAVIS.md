@@ -117,7 +117,9 @@ df = pd.read_parquet("provider_features_for_model.parquet")
 | `embedding_cols` | graph + billing embedding columns | train on (graph_emb_* are now CLEAN — computed on an exclusion-free graph; see §7) |
 | `leakage_hard` | derived from the provider's OWN exclusion | **never train on** |
 | `leakage_adjacent` | exclusion-PROXIMITY signals | train, but validate out-of-time |
-| `label_metadata` | target-derived (scheme, conduct window, weak label, clean anchors) | targets / stratifiers, **not features** |
+| `label_metadata` | target-derived (scheme, conduct window, weak label, clean anchors, `billing_implied_taxonomy`) | targets / stratifiers / explanations, **not features** |
+| `group_cols` | `group_id` (= org_node_id) | the grouping key for **group-aware CV** — don't train on it |
+| `assessability` | `assessable` (1 = enough evidence to score) | filter / down-weight thin-evidence rows — **not a feature** |
 | `weak_supervision` | per-labeling-function accuracy + coverage | audit |
 
 **Null ≠ zero.** A null source column means the provider isn't in that source
@@ -169,13 +171,36 @@ For strict correctness, score each positive on features reconstructed *before* i
 `conduct_start` — either `feature_store.asof_join` against snapshots, or train on an
 `--asof` graph build (`RUNBOOK_TREY.md` §5). Report **PR-AUC, precision@k, recall@k,
 top-decile lift**, stratified **within `fraud_scheme`** and within size bands — not
-accuracy (everything is "accurate" at a 0.2% base rate).
+accuracy (everything is "accurate" at a 0.2% base rate). Because the label is
+positive-unlabeled, also report the **contamination-corrected lift**:
 
-**Step 6 — Keys, not features.** Keep `npi` and `org_node_id` aside for joining
-predictions back and for **group-aware splits** — don't let two NPIs of the same org
-straddle train/test (the ownership signal is org-level).
+```python
+from src.model_a.pu_prior import estimate_label_frequency, corrected_lift
+c = estimate_label_frequency(g_scores, s, holdout_mask=test_mask)
+print(corrected_lift(model_scores, s, c, k_frac=0.1))
+```
 
-**Step 7 — Optional: pre-train on the soft label.** `weak_label_score` is a dense
+This rescales the caught count by the estimated catch rate so uncaught offenders in
+the top decile don't count as misses — the honest number to quote.
+
+**Step 6 — Keys + group-aware splits.** Keep `npi` and `group_id` (manifest
+`group_cols`) aside for joining predictions back and for **group-aware CV**: pass
+`group_id` to `GroupKFold` (or as the group in your splitter) so an org's NPIs never
+straddle train/test — the ownership signal is org-level. Down-weight or filter rows
+where `assessable == 0` (manifest `assessability`); their rank isn't earned.
+
+**Step 7 — Calibrate before you threshold.** A LightGBM score (or a subscore) ranks
+but isn't a probability. Fit a calibrator on the held-out OOT slice, then read off a
+real `P(offender)` for Model C dollar-sizing or a defensible cutoff:
+
+```python
+from src.model_a.calibration import fit_calibrator, reliability_table, calibration_metrics
+cal = fit_calibrator(model_scores[test_mask], s[test_mask], method="isotonic")
+p = cal.predict(model_scores)
+print(calibration_metrics(p[test_mask], s[test_mask]))   # Brier + ECE
+```
+
+**Step 8 — Optional: pre-train on the soft label.** `weak_label_score` is a dense
 probabilistic target; semi-supervised pre-training on it, then fine-tuning on the
 hard label, can lift performance when hard positives are scarce.
 
@@ -405,11 +430,14 @@ further, so none is just a shrug.
 - **Label ceiling.** LEIE/DOJ capture *caught* fraud, skewed by scheme — so the model
   partly learns "who gets caught," not "who commits fraud." *Mitigated by:* the
   widened multi-source label + weak supervision + manufactured negatives; leading
-  with precision@k / lift (not recall/accuracy); stratifying lift within scheme.
-  *Reducible further:* PU class-prior estimation (report a contamination-corrected
-  lift), more positive sources (state MFCU case reports, unsealed PACER qui tams, the
-  CMS preclusion list), and detection-propensity reweighting. Never fully eliminable
-  — disclose it.
+  with precision@k / lift (not recall/accuracy); stratifying lift within scheme; the
+  **CMS Preclusion List** folded in as another positive source
+  (`src/enforcement/preclusion.py` → `exclusion_label_sources` gets a `preclusion`
+  tag); and **PU class-prior estimation** (`src/model_a/pu_prior.py`) that reports a
+  **contamination-corrected lift** — rescale the caught count by the estimated catch
+  rate `c` so uncaught offenders in the top decile aren't scored as misses. *Reducible
+  further:* more positive sources (state MFCU case reports, unsealed PACER qui tams),
+  detection-propensity reweighting. Never fully eliminable — disclose it.
 - **Graph embeddings — now clean (resolved).** `graph_emb_*` and the structural
   motifs are computed on an **exclusion-free graph** (exclusion nodes are dropped
   before the random walks), so they encode pure ownership/co-location structure and
@@ -418,15 +446,29 @@ further, so none is just a shrug.
   `graph_fraud_proximity` (personalized PageRank on the full graph), is the only
   graph column kept `leakage_adjacent`; still validate it on the out-of-time split +
   `--asof` point-in-time graph.
-- **Scores aren't probability-calibrated.** The subscores and `weak_label_score` rank
-  well but aren't calibrated probabilities. For dollar-sizing (Model C) or a hard
-  threshold, fit isotonic/Platt calibration on a held-out set first.
-- **Org→NPI broadcast residual.** A provider not present in the graph (a single-NPI
-  org) still inherits an org-level value; `org_node_id` + the per-NPI graph embedding
-  mitigate it, but model it group-aware rather than treating every NPI as independent.
-- **Peer grouping trusts self-reported taxonomy.** NUCC fixes cohort coherence, but a
-  deliberately mis-coded taxonomy can dodge its peers; `specialty_mismatch` and the
-  billing-implied-specialty signals partially catch that.
+- **Scores aren't probability-calibrated — now tooled.** The subscores and
+  `weak_label_score` rank well but aren't probabilities. `src/model_a/calibration.py`
+  fits isotonic (or Platt) on a held-out **out-of-time** slice and ships a reliability
+  table + Brier/ECE so you can turn a score into a calibrated `P(offender)` for Model
+  C dollar-sizing or a defensible cutoff — fit it on your trained model's scores
+  before thresholding.
+- **Org→NPI broadcast residual — now group-aware.** A provider not present in the
+  graph (a single-NPI org) still inherits an org-level value; `org_node_id` + the
+  per-NPI graph embedding already mitigate it, and the export now emits an explicit
+  `group_id` (manifest `group_cols`) so you can use **group-aware cross-validation**
+  (an org's NPIs never straddle the train/test split) instead of treating every NPI
+  as independent.
+- **Peer grouping trusts self-reported taxonomy — now defended.** NUCC fixes cohort
+  coherence, but a deliberately mis-coded taxonomy can dodge its peers. The
+  **billing-implied specialty** (`src/model_a/billing_specialty.py`) learns what each
+  taxonomy's billing looks like and flags providers whose billing resembles a
+  *different* specialty than they claim (`billing_taxonomy_mismatch`,
+  `billing_taxonomy_fit`, `billing_taxonomy_margin`, + the `billing_implied_taxonomy`
+  explanation) — a direct check on the one input a fraudster sets themselves.
+- **Thin-evidence providers — now flagged.** Providers without a real peer group or
+  with negligible billing can't be fairly scored. The export emits an `assessable`
+  flag (manifest `assessability`) so they aren't force-ranked into a percentile they
+  didn't earn — filter or down-weight them rather than reading their rank as signal.
 - **External grounding coverage.** Offline mailbox detection is pattern-based (misses
   unlisted CMRAs); live geocoding depends on network access and the Census match rate.
 - **Scale of `--with-analytics` — now full-DuckDB (resolved).** Growth, clinical

@@ -318,6 +318,27 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     for c in ["weak_label_score", "weak_label", "weak_label_votes"]:
         out[c] = ws[c].to_numpy()
 
+    # Group id + assessability mask (don't train on these — use them).
+    #  * group_id = org_node_id makes group-aware CV trivial (don't let an org's
+    #    NPIs straddle the train/test split), the modeling-side fix for the
+    #    org->NPI broadcast residual.
+    #  * assessable = the provider has enough evidence to be SCORED at all: a real
+    #    peer group (some metric got a non-null peer percentile) AND non-trivial
+    #    billing. Thin-evidence providers are flagged so they aren't force-ranked
+    #    into a percentile they didn't earn (precision + defamation-safety).
+    out["group_id"] = (out["org_node_id"].astype(str) if "org_node_id" in out.columns
+                       else pd.Series("", index=out.index))
+
+    def _num(col: str) -> pd.Series:
+        s = out[col] if col in out.columns else pd.Series(0.0, index=out.index)
+        return pd.to_numeric(s, errors="coerce").fillna(0.0)
+
+    _peer_now = [c for c in out.columns if c.endswith("__peerpct")]
+    has_peer = (out[_peer_now].notna().any(axis=1) if _peer_now
+                else pd.Series(False, index=out.index))
+    _billing = _num("net_paid") if "net_paid" in out.columns else _num("gross_paid")
+    out["assessable"] = (has_peer & ((_billing > 0) | (_num("service_volume") > 0))).astype(int)
+
     raw_feature_cols = sorted(
         [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
                      + adapter_present + PROVIDER_STATS)
@@ -345,7 +366,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     extra_clean = [c for c in ["addr_is_mailbox", "addr_provider_count", "addr_shared",
                                "addr_geocoded", "addr_no_match",
                                "graph_emb_drift", "graph_degree_delta", "graph_kcore_delta",
-                               "billing_surprisal", "sequence_surprisal"]
+                               "billing_surprisal", "sequence_surprisal",
+                               "billing_taxonomy_mismatch", "billing_taxonomy_fit",
+                               "billing_taxonomy_margin"]
                    if c in out.columns] + billing_emb_cols + embedding_cols
     if "graph_fraud_proximity_delta" in out.columns:
         graph_adjacent = graph_adjacent + ["graph_fraud_proximity_delta"]
@@ -362,7 +385,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     label_metadata = [c for c in ["exclusion_label_sources", "fraud_scheme",
                                   "conduct_start", "conduct_end", "case_ids",
                                   "provider_on_leie", "confirmed_clean", "clean_basis",
-                                  "weak_label_score", "weak_label", "weak_label_votes"]
+                                  "weak_label_score", "weak_label", "weak_label_votes",
+                                  "billing_implied_taxonomy"]
                       if c in out.columns]
     raw_feature_cols = [c for c in raw_feature_cols
                         if c not in leakage_hard and c not in label_metadata]
@@ -373,6 +397,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "label": label,
         "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
         "label_metadata": label_metadata,
+        "group_cols": [c for c in ["group_id"] if c in out.columns],
+        "assessability": [c for c in ["assessable"] if c in out.columns],
         "weak_supervision": ws_audit,
         "leakage_hard": leakage_hard,
         "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns] + graph_adjacent,
@@ -431,6 +457,8 @@ def _label_source(excl_type: str) -> str:
         return "opensanctions"
     if t.startswith("medicare_revocation"):
         return "medicare_revocation"
+    if t.startswith("preclusion"):
+        return "preclusion"
     if t.startswith("sam"):
         return "sam"
     return "leie"
@@ -471,7 +499,7 @@ def _billing_lm_from_parquet(spending_path: Path, provider_dim: pd.DataFrame, lo
     sequence surprisal."""
     import duckdb
     from .billing_lm import (build_code_embeddings_duckdb, provider_embeddings_duckdb,
-                             billing_surprisal_duckdb)
+                             billing_surprisal_duckdb, EMB_PREFIX as EMB_PREFIX_BILL)
     from .billing_sequence_lm import sequence_surprisal
     con = duckdb.connect()
     p = str(spending_path).replace("'", "''")
@@ -491,8 +519,16 @@ def _billing_lm_from_parquet(spending_path: Path, provider_dim: pd.DataFrame, lo
         GROUP BY 1, 2""").df()
     con.close()
     out = out.merge(sequence_surprisal(seq_in, taxonomy=tax), on="npi", how="outer")
+    # Billing-implied specialty: which taxonomy the provider's billing resembles,
+    # vs. the claimed one — catches self-reported-taxonomy gaming. Reuses the
+    # billing_emb_* just computed (no extra heavy pass).
+    from .billing_specialty import implied_specialty
+    emb_only = out[["npi"] + [c for c in out.columns if c.startswith(EMB_PREFIX_BILL)]]
+    spec = implied_specialty(emb_only, provider_dim)
+    if len(spec):
+        out = out.merge(spec, on="npi", how="left")
     log(f"    [billing_lm] {len(out):,} providers, {len(codes):,} codes embedded "
-        f"(+ billing_surprisal + sequence_surprisal)")
+        f"(+ billing_surprisal + sequence_surprisal + billing_implied_taxonomy)")
     return out
 
 
