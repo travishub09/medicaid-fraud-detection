@@ -337,7 +337,17 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                            "incons_solo_scale", "incons_instant_scale",
                            "incons_breadth", "incons_lone_org_scale",
                            "consistency_flags"] if c in out.columns]
-    raw_feature_cols = sorted(set(raw_feature_cols) | set(struct_present) | set(pillar4))
+    # external grounding + temporal-graph velocity + billing-LM (clean features);
+    # the fraud-proximity DELTA is leakage-adjacent like the proximity field itself.
+    from .billing_lm import EMB_PREFIX as _BILL_EMB
+    billing_emb_cols = [c for c in out.columns if c.startswith(_BILL_EMB)]
+    extra_clean = [c for c in ["addr_is_mailbox", "addr_provider_count", "addr_shared",
+                               "graph_emb_drift", "graph_degree_delta", "graph_kcore_delta",
+                               "billing_surprisal"] if c in out.columns] + billing_emb_cols
+    if "graph_fraud_proximity_delta" in out.columns:
+        graph_adjacent = graph_adjacent + ["graph_fraud_proximity_delta"]
+    raw_feature_cols = sorted(set(raw_feature_cols) | set(struct_present)
+                              | set(pillar4) | set(extra_clean))
 
     # Prefer the widened multi-source label when present (LEIE + revocations + SAM +
     # OpenSanctions), keeping provider_on_leie available for back-compat.
@@ -447,6 +457,31 @@ def _widened_label_from_graph(graph_dir: Path, log):
     log(f"    [label] widened positives from {len(out):,} NPI-matched exclusions "
         f"across: {', '.join(srcs)}")
     return out.reset_index(drop=True)
+
+
+def _billing_lm_from_parquet(spending_path: Path, provider_dim: pd.DataFrame, log):
+    """Billing language model from the spending parquet: DuckDB collapses to
+    (npi, hcpcs, weight), then code embeddings + provider embedding + surprisal."""
+    import duckdb
+    from .billing_lm import build_code_embeddings, provider_embeddings, billing_surprisal
+    con = duckdb.connect()
+    p = str(spending_path).replace("'", "''")
+    npi_code = con.execute(f"""
+        SELECT CAST(billing_npi AS VARCHAR) AS npi,
+               UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) AS hcpcs,
+               SUM(CAST(total_paid AS DOUBLE)) AS weight
+        FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL
+        GROUP BY 1, 2""").df()
+    con.close()
+    if not len(npi_code):
+        return pd.DataFrame(columns=["npi"])
+    codes, cvecs = build_code_embeddings(npi_code)
+    emb = provider_embeddings(npi_code, codes, cvecs)
+    sur = billing_surprisal(npi_code, provider_dim[["npi", "taxonomy_code"]])
+    out = emb.merge(sur, on="npi", how="outer")
+    log(f"    [billing_lm] {len(out):,} providers, {len(codes):,} codes embedded "
+        f"(+ billing_surprisal)")
+    return out
 
 
 def _read_spending_cols(path: Path, cols: list[str]) -> pd.DataFrame:
@@ -836,6 +871,10 @@ def main() -> None:
         pe = to_provider_grain(outputs.get("node_embeddings"), npi_to_org)
         if len(pe):
             adapter_frames["graph_embeddings"] = pe
+        from .address_grounding import address_flags
+        af = address_flags(build_synthetic_inputs()["provider_dim"])
+        if len(af):
+            adapter_frames["address"] = af
         org_grain = {}
         nucc_pg, widened, case_lbls = None, None, None
     else:
@@ -884,6 +923,35 @@ def main() -> None:
             case_lbls = build_case_labels(cdb, org_nodes, npi_to_org)
             print(f"    [doj_case] {len(case_lbls):,} NPIs labeled from DOJ cases "
                   f"(scheme-typed + conduct windows)")
+
+        # external grounding (address) + temporal-graph velocity + billing LM
+        pdim_p = _first_existing(processed, "provider_dim.parquet")
+        if pdim_p:
+            from .address_grounding import address_flags
+            af = address_flags(pd.read_parquet(pdim_p))
+            if len(af):
+                adapter_frames["address"] = af
+                print(f"    [address] {int(af['addr_is_mailbox'].sum()):,} mailbox/PO-box "
+                      f"addresses, {int(af['addr_shared'].sum()):,} shared-address providers")
+        try:
+            from src.entity_graph.graph_velocity import velocity_from_snapshots
+            vel = velocity_from_snapshots(root / "feature_snapshots")
+            if len(vel):
+                adapter_frames["graph_velocity"] = vel
+                print(f"    [graph_velocity] {len(vel):,} providers (snapshot diff)")
+            else:
+                print("    [graph_velocity] skipped: needs ≥2 feature snapshots "
+                      "(make feature-snapshot on a cadence)")
+        except Exception as e:
+            print(f"    [graph_velocity] skipped: {e}")
+        if args.with_analytics and pdim_p:
+            spend_p = _first_existing(processed, "spending_fact.parquet")
+            if spend_p:
+                try:
+                    adapter_frames["billing_lm"] = _billing_lm_from_parquet(
+                        spend_p, pd.read_parquet(pdim_p), print)
+                except Exception as e:
+                    print(f"    [billing_lm] skipped: {e}")
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(

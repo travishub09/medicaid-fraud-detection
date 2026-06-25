@@ -76,6 +76,9 @@ Recoverable Value for human dossier review. Your model trains on **providers
 | Graph motifs | `graph_kcore`, `graph_triangles`, `graph_clustering`, `graph_degree` | structural position (clean features) |
 | Expected-billing | `billing_residual`, `expected_net_paid` | "digital twin" residual — unexplained billing after conditioning on size/specialty/breadth (clean; doesn't punish the legitimately large) |
 | Consistency | `consistency_flags`, `incons_solo_scale`, `incons_instant_scale`, `incons_breadth`, `incons_lone_org_scale` | cross-source incoherence (registration record vs. billing) — high-precision, hard to fake (clean features) |
+| Address grounding | `addr_is_mailbox`, `addr_provider_count`, `addr_shared` | mailbox/PO-box detection + address reuse ("bills from a UPS-Store mailbox") — offline external grounding (clean) |
+| Graph velocity | `graph_emb_drift`, `graph_degree_delta`, `graph_kcore_delta` | how fast the graph position is changing between snapshots (clean; `graph_fraud_proximity_delta` = leakage-adjacent) |
+| Billing LM | `billing_emb_0..15`, `billing_surprisal` | self-supervised code embeddings + cross-entropy of the code mix vs. specialty (clean; `--with-analytics`) |
 | Adapter raw features | `em_high_level_share`, `opioid_claim_share`, `hcris_cost_anomaly`, … | each CMS source's raw metric |
 | **Peer percentiles** | `<feature>__peerpct` | one-sided taxonomy-peer percentile of each adapter metric |
 | **Scheme subscores** | `subscore_<scheme>` | the 0–1 fraud-scheme scores (§4–5) |

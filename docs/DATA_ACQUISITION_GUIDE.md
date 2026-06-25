@@ -52,10 +52,12 @@ For each: download the file, drop it at the path, re-run the export. No builder 
 - **Verify columns:** `Rfrg_NPI`, `HCPCS_Cd`, `Tot_Suplr_Srvcs`, `Avg_Suplr_Mdcr_Alowd_Amt` (auto-resolved). The per-HCPCS detail is what powers high-cost-item share + code concentration.
 - **Note:** the dormant `dme_ordering_md_concentration` piece needs supplier↔referrer *pair* data no public DMEPOS file carries — it stays dormant.
 
-### B4. CMS Opioid Prescriber file → `pill_mill`
-- **Get:** data.cms.gov → "**Medicare Part D Opioid Prescribing Rates - by Provider**" (the renamed "Opioid Prescriber Summary File"; pick **by Provider**, NPI grain — NOT "by Geography", and NOT the Part D "by Provider and Drug" file from B2, which has no long-acting-opioid split).
+### B4. CMS opioid metrics → `pill_mill`
+The opioid breakout columns the adapter needs are per-provider. Two ways to get them:
+- **Preferred (most reliable today):** the "**Medicare Part D Prescribers - by Provider**" *summary* file (one row per NPI — the per-provider aggregate, NOT "by Provider and Drug"). It carries `Opioid_Tot_Clms`, `Opioid_LA_Tot_Clms`, `Opioid_Prscrbr_Rate` alongside `Tot_Clms`. This is the file to use if the standalone opioid dataset only shows "by Geography."
+- **Alternative:** the standalone "Medicare Part D Opioid Prescribing Rates - **by Provider**" if available (NPI grain). **Do NOT** use "Opioid Prescribing Rates - **by Geography**" (state/county/ZIP, no NPI).
 - **Save:** `preclean/opioid/opioid.csv`.
-- **Verify columns:** `Prscrbr_NPI`, `Tot_Clms`, `Opioid_Tot_Clms`, `Opioid_LA_Tot_Clms` (the long-acting split is what separates a chronic-pain practice from a diversion mill).
+- **Verify columns:** `Prscrbr_NPI`, `Tot_Clms`, `Opioid_Tot_Clms`, `Opioid_LA_Tot_Clms` (the long-acting split separates a chronic-pain practice from a diversion mill).
 
 ### B5. Open Payments → `pharma_kickback` (pairs with Part D)
 - **Get:** https://openpaymentsdata.cms.gov/datasets — General + Research payments, latest 3 years.

@@ -101,8 +101,10 @@ embeddings on the entity graph and feed them in as columns.**
 - **Structural motif features** — k-core, triangle count, clustering: is this
   provider the hub of a star (one owner, many single-NPI shells), in a tight
   clique, the apex of a referral pyramid? **(Built.)**
-- **Temporal graph velocity** — how fast the ownership/address/reassignment
-  structure churns (the fly-by-night signature at the graph level). *(Next.)*
+- **Temporal graph velocity. (BUILT — `graph_velocity.py`.)** Diffs two feature-store
+  snapshots into per-NPI `graph_emb_drift` + degree/k-core/proximity deltas — how
+  fast a provider's graph position is changing (the fly-by-night signature at the
+  graph level). Dormant until two snapshots accumulate.
 
 This also **dissolves the org→NPI broadcast problem**: a provider that sits in the
 graph gets its *own* embedding from its *own* position, instead of inheriting one
@@ -132,24 +134,30 @@ Four families, all fed raw + engineered to the tree:
 3. **Behavioral-sequence signatures.** Treat the monthly claim stream as a sequence
    and extract the *lifecycle* — "ramp → harvest → dissolve," code-mix drift,
    change-point density. Shape, not just level.
-4. **External-world grounding (the wild one).** Does the claimed footprint exist?
-   Geocode + street/satellite of the billing address (real clinic vs. mailbox store
-   vs. residential), business-registration records, web presence. "Bills $8M from a
-   UPS-Store mailbox" is one of the strongest fraud priors there is — and it lives
-   *outside* every CMS file.
+4. **External-world grounding (the wild one). (BUILT, offline core — `address_grounding.py`.)**
+   `addr_is_mailbox` flags CMRA / PMB / PO-box / mailbox-store addresses, and
+   `addr_provider_count` / `addr_shared` count providers billing from the exact same
+   address (the NPI-grain complement to the graph's co-location rings). "Bills $8M
+   from a UPS-Store mailbox" is one of the strongest fraud priors there is, and it
+   lives *outside* every CMS file. An injectable geocoder hook is left for the live
+   "real clinic vs. residence" check.
 
 ---
 
-## The moonshot — a foundation model for billing ("BillingBERT")
+## The moonshot — a foundation model for billing ("BillingBERT") — BUILT (core)
 
-Pre-train a self-supervised transformer on the *sequence of claims* across all
-providers (tokens = billing codes). Two payoffs:
+The full transformer is future work, but the two ideas are delivered dependency-light
+in `billing_lm.py`:
 
-- Every provider gets a **learned embedding** from millions of unlabeled sequences
-  — rich features with no labels needed.
-- **Surprisal as a feature**: model perplexity on a provider's billing = "how
-  unlikely is this sequence." Fraud is often low-probability billing the model is
-  "surprised" by. Turns the entire unlabeled universe into self-supervision.
+- Every provider gets a **learned embedding** (`billing_emb_*`) from the code
+  co-occurrence structure (PPMI → truncated SVD — the word2vec-as-matrix-factorization
+  shortcut — then a claim-weighted mean of its code vectors). Self-supervised, no
+  labels.
+- **Surprisal as a feature** (`billing_surprisal`): the cross-entropy of a provider's
+  code mix against its taxonomy's code distribution — "how unlikely is this billing
+  for the specialty." High surprisal = the model is "surprised." Turns the unlabeled
+  universe into self-supervision; opt-in via `--with-analytics` (DuckDB-streamed).
+  Upgrading the embedding to a true sequence transformer is the remaining step.
 
 ---
 
@@ -200,9 +208,12 @@ raw sources ─► entity resolution (have) ─► BITEMPORAL feature store (P1:
    (`clean_anchors.py` + `weak_supervision.py`).**
 4. **Case-control matching at export time** — **BUILT (`case_control.py`,
    `--case-control`).**
-5. **Expected-billing residual twin BUILT (`expected_billing.py`)**; remaining
-   Pillar-4 families (cross-source consistency, external grounding) and then the
-   **foundation-model embedding** (moonshot).
+5. **All Pillar-4 families BUILT** (`expected_billing.py` residual twin,
+   `consistency.py` cross-source checks, `address_grounding.py` external grounding),
+   plus **temporal-graph velocity** (`graph_velocity.py`) and the **billing-LM
+   moonshot core** (`billing_lm.py`). Every §17 pillar/item now has a working core;
+   what remains is depth (a true sequence transformer, live geocoding, the full
+   bitemporal per-source valid-time back-fill).
 
 Net: stop shipping "anomaly percentiles," start shipping **three independent views
 of each provider — what they bill, who they're connected to, and whether their

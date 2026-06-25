@@ -233,8 +233,14 @@ python -m pytest tests/ -v
   fraud/clean/abstain, a label model learns each one's accuracy from the anchors,
   fused into a soft `weak_label_score` for every provider (a TARGET in
   `label_metadata`, with per-LF audit in the manifest) — Snorkel-style expansion of
-  the sparse hard labels.
-  Full suite: `pytest tests/` (309 tests).
+  the sparse hard labels. The remaining docs/platform/17 items are BUILT:
+  temporal-graph velocity (`entity_graph/graph_velocity.py` — diff two feature
+  snapshots → `graph_emb_drift` + degree/kcore/proximity deltas), external grounding
+  (`model_a/address_grounding.py` — mailbox/PO-box + address-reuse flags), and the
+  billing-LM moonshot (`model_a/billing_lm.py` — PPMI/SVD code embeddings +
+  per-provider `billing_surprisal`; export `--with-analytics`). All seven §17
+  pillars/items now have working cores.
+  Full suite: `pytest tests/` (314 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
