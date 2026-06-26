@@ -86,7 +86,7 @@ skip-loads anything absent and logs why.
 | Open Payments | General + Research payments, latest 3 yrs | https://openpaymentsdata.cms.gov/datasets | `preclean/open_payments/open_payments.csv` | `pharma_kickback` |
 | NADAC | "NADAC (National Average Drug Acquisition Cost)" | https://data.medicaid.gov | `preclean/nadac/nadac.csv` | `drug_outlier` (spread) |
 | Market Saturation | "Market Saturation & Utilization State-County" | https://data.cms.gov/tools | `preclean/saturation/saturation.csv` | `saturation_fraud` |
-| 340B OPAIS | Daily Report (covered entities + contract pharmacies) | https://340bopais.hrsa.gov | `preclean/hrsa_340b/opais.csv` | `contract_pharmacy` |
+| 340B OPAIS | **Covered Entity Daily Report** (Excel — the 3-worksheet file) | https://340bopais.hrsa.gov | `preclean/hrsa_340b/opais.xlsx` (drop the native .xlsx as-is; or export the Contract Pharmacies worksheet to `opais.csv`) | `contract_pharmacy` |
 | NPPES deactivation | monthly "NPPES Deactivated NPI Report" | https://download.cms.gov/nppes | `preclean/nppes_deactivation/deactivation.csv` | `invalid_identity` (deactivation) |
 | Order & Referring | "Order and Referring" | data.cms.gov | `preclean/order_referring/order_referring.csv` | `dme_ring` (ineligible-referral) |
 | PBJ staffing | "Payroll Based Journal Daily Nurse Staffing" | data.cms.gov | `preclean/facility/pbj.csv` | `worthless_services` |

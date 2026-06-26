@@ -774,9 +774,10 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # --- 340B contract-pharmacy concentration (OPAIS entities + org_nodes) ---
     try:
         from src.ingest_cms import hrsa_340b
-        ent_p = _first_existing(pc / "hrsa_340b", "opais.csv", "*.csv")
+        ent_p = _first_existing(pc / "hrsa_340b", "opais.xlsx", "opais.csv",
+                                "*.xlsx", "*.csv")
         if ent_p and org_nodes is not None:
-            ents = hrsa_340b.covered_entities(_read_any(ent_p))
+            ents = hrsa_340b.covered_entities(hrsa_340b.load_opais(ent_p))
             base = org_nodes[["org_node_id"]].copy()
             out = hrsa_340b.attach_340b(base, org_nodes, ents)
             _emit("hrsa_340b", out[["org_node_id", "contract_pharmacy_concentration"]],

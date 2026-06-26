@@ -75,9 +75,16 @@ The opioid breakout columns the adapter needs are per-provider. Two ways to get 
 - **Needs:** service type, FIPS, state, county, provider count, beneficiary count. (Also needs `org_nodes`, already in `graph/`.)
 
 ### B8. HRSA 340B OPAIS → `contract_pharmacy`
-- **Get:** https://340bopais.hrsa.gov → Daily Report (covered entities + contract pharmacies).
-- **Save:** `preclean/hrsa_340b/opais.csv`.
-- **Needs:** entity id, name, entity type, state, contract pharmacy.
+- **Get:** https://340bopais.hrsa.gov → **Covered Entity Daily Report** (the Excel
+  download — a 3-worksheet file: Covered Entities / Shipping Addresses / Contract
+  Pharmacies). The Contract Pharmacies worksheet is the entity×pharmacy grain the
+  adapter needs; `state` comes from the Covered Entities worksheet.
+- **Save:** drop the native file at `preclean/hrsa_340b/opais.xlsx` — the adapter
+  (`hrsa_340b.load_opais`) reads the .xlsx directly, picks the Contract Pharmacies
+  worksheet, and merges `State` on the 340B ID. (Or export that one worksheet to
+  `opais.csv` if you prefer a flat file; both are accepted.)
+- **Needs:** entity id, name, entity type, state, contract pharmacy — all present in
+  the Covered Entity Daily Report.
 
 ### B9. NPPES deactivation report → `invalid_identity` (deactivation piece)
 - **Get:** https://download.cms.gov/nppes — the monthly "**NPPES Deactivated NPI Report**".

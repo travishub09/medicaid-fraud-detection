@@ -52,7 +52,7 @@ from .facility import (compute_pbj_metrics, compute_hospice_metrics,
                        rollup_ccn_to_org)
 from .opioid import compute_opioid_metrics
 from .nppes_deactivation import deactivated_npis, billing_after_deactivation
-from .hrsa_340b import covered_entities, attach_340b
+from .hrsa_340b import covered_entities, attach_340b, load_opais
 from .pos import compute_pos_capacity, capacity_billing_mismatch
 from .order_referring import eligible_referrers, ineligible_referral_share
 from .census_population import county_population, zip_to_county

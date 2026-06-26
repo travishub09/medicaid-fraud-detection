@@ -20,12 +20,53 @@ flag is corroborative context, not proof. Dormant until the file is loaded.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns
 from src.entity_graph.resolve_entities import norm_org_name
 
 PHARMACY_SATURATION = 25        # contract pharmacies at/above this → concentration 1.0
+
+
+def load_opais(path: str | Path) -> pd.DataFrame:
+    """Load the OPAIS daily report in whatever form HRSA hands you.
+
+    The native download is the 3-worksheet ``Covered Entity Daily Report`` .xlsx
+    (Covered Entities / Shipping Addresses / Contract Pharmacies), with a title +
+    "Exported On" banner above the real header row. This reads the Contract Pharmacies
+    worksheet — the (entity x pharmacy) grain ``covered_entities`` wants — and merges
+    ``State`` from the Covered Entities worksheet on the 340B ID, so the raw file
+    drops in with no manual worksheet-exporting. A flat ``.csv``/``.parquet`` (an
+    already-exported worksheet) is read as-is.
+    """
+    p = Path(path)
+    if p.suffix.lower() not in (".xlsx", ".xls"):
+        return (pd.read_parquet(p) if p.suffix.lower() == ".parquet"
+                else pd.read_csv(p, dtype=str))
+
+    sheets = pd.read_excel(p, sheet_name=None, dtype=str, header=2)   # row 3 = headers
+    cp = next((df for name, df in sheets.items()
+               if "contract" in name.lower() and "pharmac" in name.lower()), None)
+    if cp is None:                               # single flat sheet — use it directly
+        return next(iter(sheets.values()))
+    cp = cp.copy()
+
+    def _idcol(df):
+        return next((c for c in df.columns if str(c).strip() in ("340B ID", "ID_340B")), None)
+
+    ce = next((df for name, df in sheets.items()
+               if "covered" in name.lower() and "entit" in name.lower()), None)
+    cp_id = _idcol(cp)
+    if ce is not None and cp_id and "State" not in cp.columns:
+        ce_id = _idcol(ce)
+        st = next((c for c in ce.columns if str(c).strip().lower() in ("state", "entity state")), None)
+        if ce_id and st:
+            xref = (ce[[ce_id, st]].rename(columns={ce_id: "_id", st: "State"})
+                    .drop_duplicates("_id"))
+            cp = cp.merge(xref, left_on=cp_id, right_on="_id", how="left").drop(columns=["_id"])
+    return cp
 
 OPAIS_COLS = {
     "entity_id": ["340B ID", "ID_340B", "id_340b", "Entity ID", "entity_id"],
