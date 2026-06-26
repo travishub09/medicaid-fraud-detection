@@ -156,12 +156,18 @@ python -m src.enforcement.preclusion \
     --out processed/exclusions_preclusion.parquet
 ```
 
-**PECOS CCN-to-NPI crosswalk** → unlocks the facility / hospice / cost-report schemes,
-writing `processed/ccn_to_npi.parquet`:
+**CCN-to-NPI crosswalk** → unlocks the facility / hospice / cost-report schemes,
+writing `processed/ccn_to_npi.parquet`. Needs a file with BOTH a CCN and an NPI.
+The PECOS *enrollment* extract has NPI-but-no-CCN and the standard POS file has
+CCN-but-no-NPI, so point it at the **raw NPPES file** — it bridges via the NPPES
+"Other Provider Identifier" type-06 (Medicare CCN) fields:
 
 ```bash
-make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv
+python -m src.ingest_cms.ccn_npi_crosswalk --in preclean/NPPES.csv --out processed/ccn_to_npi.parquet
 ```
+
+(If you ever have a single file that carries both columns — e.g. an institutional
+PECOS file or a POS vintage with NPI — point `--in` there instead; it auto-detects.)
 
 **NDC drug claims & referral claims** → richer extracts than the by-HCPCS spending
 file, for the drug-spread and ineligible-referral signals:
