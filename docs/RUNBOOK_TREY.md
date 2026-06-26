@@ -33,6 +33,22 @@ export MEDICAID_DATA_ROOT=~/Desktop/data
 - Save under `MEDICAID_DATA_ROOT`; `preclean/` (raw inputs) and `processed/` (pipeline outputs) live inside it.
 - IDs are strings. The loaders read everything as text first; don't pre-convert.
 
+### Confirm your files are in place — run preflight first
+
+After downloading, check that everything is present and named correctly **before**
+running anything else:
+
+```bash
+python -m src.preflight --data-root "C:\Users\treyr\OneDrive\Desktop\data"
+```
+
+It scans `preclean/`, then prints `[ok]` / `[MISSING]` / `[rename?]` for every
+expected file — grouped into CORE (required), UNLOCKS (each adds schemes), and
+OPTIONAL/GATED — plus what each missing item would enable and the next command. The
+`[rename?]` flag means a folder has files but none match an accepted name (the most
+common foot-gun). `python -m src.pipeline_status` then shows which pipeline OUTPUTS
+you've already built. Read-only and instant.
+
 ---
 
 ## 1. The core pipeline inputs (required)
@@ -45,7 +61,7 @@ NPPES + PECOS + LEIE you already have feed the 13-stage pipeline:
 | Medicaid provider spending by HCPCS | `preclean/Spending.csv` | T-MSIS-derived HHS open-data extract (see `docs/platform/09`) |
 | NPPES provider registry | `preclean/NPPES.csv` | https://download.cms.gov/nppes/NPI_Files.html |
 | PECOS enrollment / ownership | `preclean/PECOS.csv` | https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment |
-| LEIE exclusions | `preclean/leie.csv` | https://oig.hhs.gov/exclusions/exclusions_list.asp |
+| LEIE exclusions | `preclean/Caught.csv` (the integrate default; `leie.csv` also accepted) | https://oig.hhs.gov/exclusions/exclusions_list.asp |
 
 Then build the processed backbone, the entity graph, and the feature export:
 

@@ -75,6 +75,9 @@ python -m src.attempt_2.ingest.integrate            # stages run in README order
 python -m src.entity_graph --input ~/Desktop/data/processed --out ~/Desktop/data/graph
 python -m src.entity_graph --fixture --out /tmp/graph_out    # synthetic, no real data
 
+# Preflight — "do I have the data, named right?" (read-only; checks preclean/ inputs)
+python -m src.preflight --data-root ~/Desktop/data
+
 # Pipeline status — "where did I leave off?" (read-only; honors MEDICAID_DATA_ROOT)
 python -m src.pipeline_status
 
