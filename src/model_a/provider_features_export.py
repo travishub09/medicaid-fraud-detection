@@ -424,7 +424,8 @@ def _read_any(path: Path) -> pd.DataFrame | None:
         return None
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
-    return pd.read_csv(path, dtype=str)
+    from src.attempt_2.clean_data import read_csv_text
+    return read_csv_text(path)
 
 
 def _load_nucc_peer_groups(preclean: Path, processed: Path, log):

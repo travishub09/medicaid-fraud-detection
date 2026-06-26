@@ -524,7 +524,8 @@ def merge_exclusion_sources(exclusions: pd.DataFrame,
     frames = [exclusions]
     if revocations_path and Path(revocations_path).is_file():
         from src.enforcement.medicare_revocations import normalize_revocations
-        raw = pd.read_csv(revocations_path, dtype=str, keep_default_na=False)
+        from src.attempt_2.clean_data import read_csv_text
+        raw = read_csv_text(revocations_path, keep_default_na=False)
         rev = normalize_revocations(raw).reindex(columns=cols)
         frames.append(rev)
         if qa is not None:

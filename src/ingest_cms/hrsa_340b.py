@@ -43,8 +43,10 @@ def load_opais(path: str | Path) -> pd.DataFrame:
     """
     p = Path(path)
     if p.suffix.lower() not in (".xlsx", ".xls"):
-        return (pd.read_parquet(p) if p.suffix.lower() == ".parquet"
-                else pd.read_csv(p, dtype=str))
+        if p.suffix.lower() == ".parquet":
+            return pd.read_parquet(p)
+        from src.attempt_2.clean_data import read_csv_text
+        return read_csv_text(p)
 
     sheets = pd.read_excel(p, sheet_name=None, dtype=str, header=2)   # row 3 = headers
     cp = next((df for name, df in sheets.items()

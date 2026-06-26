@@ -67,9 +67,9 @@ def main() -> None:
                     help="PECOS enrollment / POS file (csv or parquet)")
     ap.add_argument("--out", required=True, help="output ccn_to_npi parquet")
     args = ap.parse_args()
+    from src.attempt_2.clean_data import read_csv_text
     p = Path(args.inp)
-    raw = (pd.read_parquet(p) if p.suffix == ".parquet"
-           else pd.read_csv(p, dtype=str))
+    raw = (pd.read_parquet(p) if p.suffix == ".parquet" else read_csv_text(p))
     xw = build_ccn_npi_crosswalk(raw)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

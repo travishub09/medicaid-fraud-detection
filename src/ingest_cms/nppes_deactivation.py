@@ -59,7 +59,8 @@ def load_deactivation(path: str | Path) -> pd.DataFrame:
     if suf == ".parquet":
         return pd.read_parquet(p)
     if suf == ".csv":
-        return pd.read_csv(p, dtype=str)
+        from src.attempt_2.clean_data import read_csv_text
+        return read_csv_text(p)
 
     data, name = None, p.name
     if suf == ".zip":                                   # unzip the Excel/CSV inside
@@ -71,7 +72,8 @@ def load_deactivation(path: str | Path) -> pd.DataFrame:
             data, name = z.read(inner), inner
 
     if name.lower().endswith(".csv"):
-        return pd.read_csv(io.BytesIO(data) if data else p, dtype=str)
+        from src.attempt_2.clean_data import read_csv_text
+        return read_csv_text(io.BytesIO(data) if data else p)
     src = io.BytesIO(data) if data is not None else p
     probe = pd.read_excel(src, dtype=str, header=None, nrows=12)
     hdr = _find_header_row(probe)

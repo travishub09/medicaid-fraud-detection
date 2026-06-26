@@ -286,8 +286,11 @@ python -m pytest tests/ -v
   OPAIS Covered Entity Daily Report .xlsx — Contract Pharmacies grain + merged State)
   and `nppes_deactivation.load_deactivation` (unzips the CMS Deactivated NPI Report
   .zip/.xlsx, auto-detects the banner header row); the export discovers .xlsx/.zip,
-  not just .csv. `openpyxl` added to requirements.
-  Full suite: `pytest tests/` (343 tests).
+  not just .csv. `openpyxl` added to requirements. Non-UTF-8 tolerance: a shared
+  `clean_data.read_csv_text` (UTF-8 → Latin-1 fallback) + `encoding='latin-1'` on the
+  DuckDB `read_csv_auto` paths, so CP1252/Latin-1 CMS files (stray 0xA0 bytes) load
+  instead of crashing; every raw-CSV entry point routes through it.
+  Full suite: `pytest tests/` (349 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

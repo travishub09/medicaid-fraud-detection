@@ -184,11 +184,28 @@ def _is_parquet(path: str) -> bool:
     return path.lower().endswith((".parquet", ".pq"))
 
 
+def read_csv_text(path, **kwargs) -> pd.DataFrame:
+    """Read a CSV as all-strings, tolerant of non-UTF-8 government files.
+
+    Many CMS/HRSA exports are Latin-1/CP1252 (a stray 0xA0 non-breaking space is
+    the usual culprit), which crashes pandas' default UTF-8 reader. This tries
+    UTF-8 first, then falls back to Latin-1 — lossless for the ASCII join keys
+    (NPIs/CCNs/ZIPs); only cosmetic bytes in free-text name fields differ. THE
+    shared raw-CSV reader; route new readers through it."""
+    kwargs.setdefault("dtype", str)
+    try:
+        return pd.read_csv(path, **kwargs)
+    except UnicodeDecodeError:
+        return pd.read_csv(path, encoding="latin-1", **kwargs)
+
+
 def _read_any(path: str) -> str:
-    """DuckDB table-function call selected by file extension."""
+    """DuckDB table-function call selected by file extension. encoding='latin-1'
+    keeps non-UTF-8 CMS files from crashing the reader (lossless for ASCII IDs)."""
     if _is_parquet(path):
         return f"read_parquet('{path}')"
-    return f"read_csv_auto('{path}', ignore_errors=true, all_varchar=true)"
+    return (f"read_csv_auto('{path}', ignore_errors=true, all_varchar=true, "
+            f"encoding='latin-1')")
 
 
 def _table_header(path: str) -> list[str]:
@@ -196,7 +213,7 @@ def _table_header(path: str) -> list[str]:
     if _is_parquet(path):
         import pyarrow.parquet as pq
         return list(pq.ParquetFile(path).schema_arrow.names)
-    return pd.read_csv(path, nrows=0).columns.tolist()
+    return read_csv_text(path, nrows=0).columns.tolist()
 
 
 def _read_table_df(path: str, columns: list[str] | None = None) -> pd.DataFrame:
@@ -208,12 +225,19 @@ def _read_table_df(path: str, columns: list[str] | None = None) -> pd.DataFrame:
     """
     if _is_parquet(path):
         return pd.read_parquet(path, columns=columns)
-    if columns is None:
-        chunks = pd.read_csv(path, dtype=str, chunksize=500_000, low_memory=False)
-    else:
-        chunks = pd.read_csv(path, usecols=columns, dtype=str,
-                             chunksize=500_000, low_memory=False)
-    return pd.concat(chunks, ignore_index=True)
+
+    def _read(encoding=None):
+        kw = dict(dtype=str, chunksize=500_000, low_memory=False)
+        if columns is not None:
+            kw["usecols"] = columns
+        if encoding:
+            kw["encoding"] = encoding
+        return pd.concat(pd.read_csv(path, **kw), ignore_index=True)
+
+    try:
+        return _read()
+    except UnicodeDecodeError:
+        return _read("latin-1")
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +254,8 @@ def csv_to_parquet(con: duckdb.DuckDBPyConnection, csv_path: str, out_dir: Path)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / (Path(csv_path).stem + ".parquet")
     con.execute(f"""
-        COPY (SELECT * FROM read_csv_auto('{csv_path}', all_varchar=true, ignore_errors=true))
+        COPY (SELECT * FROM read_csv_auto('{csv_path}', all_varchar=true,
+                                          ignore_errors=true, encoding='latin-1'))
         TO '{out}' (FORMAT PARQUET)
     """)
     print(f"  {Path(csv_path).name} → {out}")

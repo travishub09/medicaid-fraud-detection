@@ -99,7 +99,8 @@ def load_opensanctions_file(path: str | Path):
     if p.suffix.lower() in (".json", ".jsonl") or p.name.endswith(".ftm.json"):
         with open(p, encoding="utf-8") as fh:
             return [json.loads(ln) for ln in fh if ln.strip()]
-    return _records_from_simple(pd.read_csv(p, dtype=str))
+    from src.attempt_2.clean_data import read_csv_text
+    return _records_from_simple(read_csv_text(p))
 
 
 def main() -> None:

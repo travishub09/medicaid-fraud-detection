@@ -93,9 +93,9 @@ def main() -> None:
     ap.add_argument("--in", dest="inp", required=True, help="claims file (csv/parquet)")
     ap.add_argument("--out", required=True, help="output parquet")
     args = ap.parse_args()
+    from src.attempt_2.clean_data import read_csv_text
     p = Path(args.inp)
-    raw = (pd.read_parquet(p) if p.suffix == ".parquet"
-           else pd.read_csv(p, dtype=str))
+    raw = (pd.read_parquet(p) if p.suffix == ".parquet" else read_csv_text(p))
     out_df = build_ndc_claims(raw) if args.kind == "ndc" else build_referred_claims(raw)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

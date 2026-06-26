@@ -94,7 +94,8 @@ def main() -> None:
     ap.add_argument("--in", dest="inp", required=True, help="CMS revocations csv")
     ap.add_argument("--out", required=True, help="output exclusions parquet")
     args = ap.parse_args()
-    df = normalize_revocations(pd.read_csv(args.inp, dtype=str))
+    from src.attempt_2.clean_data import read_csv_text
+    df = normalize_revocations(read_csv_text(args.inp))
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(args.out, index=False)
     print(f"medicare revocations: {len(df):,} rows "
