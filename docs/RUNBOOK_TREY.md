@@ -166,8 +166,17 @@ CCN-but-no-NPI, so point it at the **raw NPPES file** — it bridges via the NPP
 python -m src.ingest_cms.ccn_npi_crosswalk --in preclean/NPPES.csv --out processed/ccn_to_npi.parquet
 ```
 
+If your NPPES vintage uses only type-code 01/05 (no type-06 Medicare CCN — common),
+the line above returns 0 pairs. In that case bridge through the **POS file** instead:
+pass POS as `--in` and NPPES as `--nppes`, and it joins them two ways (POS Medicaid
+vendor number ↔ NPPES type-05 IDs, plus normalized facility name + ZIP):
+
+```bash
+python -m src.ingest_cms.ccn_npi_crosswalk --in preclean/pos/pos.csv --nppes preclean/NPPES.csv --out processed/ccn_to_npi.parquet
+```
+
 (If you ever have a single file that carries both columns — e.g. an institutional
-PECOS file or a POS vintage with NPI — point `--in` there instead; it auto-detects.)
+PECOS file or a POS vintage with NPI — point `--in` there alone; it auto-detects.)
 
 **NDC drug claims & referral claims** → richer extracts than the by-HCPCS spending
 file, for the drug-spread and ineligible-referral signals:

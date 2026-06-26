@@ -94,6 +94,121 @@ def crosswalk_from_nppes(raw: pd.DataFrame) -> pd.DataFrame:
     return df.drop_duplicates().reset_index(drop=True)
 
 
+# POS-side header candidates (token-matched).
+_POS_WANTED = {
+    "ccn": ["prvdr_num", "ccn", "provider_number", "prvdrnum"],
+    "name": ["fac_name", "facility_name", "name"],
+    "line1": ["st_adr", "street_address", "address", "addr"],
+    "city": ["city_name", "city"],
+    "state": ["state_cd", "state", "st"],
+    "zip": ["zip_cd", "zip", "zip_code", "postal"],
+    "mdcd": ["mdcd_vndr_num", "medicaid_vendor", "medicaid_id"],
+}
+
+
+def _find_col(header: list[str], needles: list[str]) -> str | None:
+    """First header containing any needle (case-insensitive substring)."""
+    low = [(c, str(c).lower()) for c in header]
+    for n in needles:
+        for c, cl in low:
+            if n in cl:
+                return c
+    return None
+
+
+def load_nppes_for_ccn(path: str | Path):
+    """Read ONLY the NPPES columns needed to bridge to facility CCNs (so the 330-col
+    file stays manageable): NPI, legal business name, practice-location address, and
+    the Other-Provider-Identifier slots. Returns (facilities, medicaid) where
+    facilities = [npi, name_key, zip5] and medicaid = [npi, mdcd] (exploded type-05)."""
+    from src.attempt_2.clean_data import read_csv_text, _standardize_address
+    from src.entity_graph.resolve_entities import norm_org_name
+    header = list(read_csv_text(path, nrows=0).columns)
+    npi_c = _find_col(header, ["npi"])
+    name_c = _find_col(header, ["legal business name", "organization name"])
+    l1_c = _find_col(header, ["first line business practice location"])
+    city_c = _find_col(header, ["practice location address city"])
+    state_c = _find_col(header, ["practice location address state"])
+    zip_c = _find_col(header, ["practice location address postal"])
+    opi = _nppes_opi_columns(header)
+    if npi_c is None:
+        raise ValueError(f"NPPES file has no NPI column; saw {header[:8]}")
+    usecols = [c for c in [npi_c, name_c, l1_c, city_c, state_c, zip_c] if c]
+    usecols += [c for pair in opi for c in pair]
+    raw = read_csv_text(path, usecols=list(dict.fromkeys(usecols)))
+    npi = canonicalize_series(raw[npi_c])
+
+    addr_df = pd.DataFrame({
+        "line1": raw[l1_c] if l1_c else "", "city": raw[city_c] if city_c else "",
+        "state": raw[state_c] if state_c else "", "zip": raw[zip_c] if zip_c else ""})
+    fac = pd.DataFrame({
+        "npi": npi,
+        "name_key": (raw[name_c].map(norm_org_name) if name_c else ""),
+        "zip5": (raw[zip_c].fillna("").astype(str).str.replace(r"\D", "", regex=True)
+                 .str.slice(0, 5) if zip_c else ""),
+        "addr_key": _standardize_address(addr_df),
+    })
+    fac = fac[npi.notna()].drop_duplicates()
+
+    med_rows = []
+    for val_c, type_c in opi:
+        t = raw[type_c].fillna("").astype(str).str.strip().str.zfill(2)
+        m = t == "05"
+        if m.any():
+            med_rows.append(pd.DataFrame({
+                "npi": npi[m],
+                "mdcd": raw[val_c][m].fillna("").astype(str).str.strip().str.upper()}))
+    medicaid = (pd.concat(med_rows, ignore_index=True).dropna(subset=["npi"])
+                if med_rows else pd.DataFrame(columns=["npi", "mdcd"]))
+    medicaid = medicaid[medicaid["mdcd"] != ""].drop_duplicates()
+    return fac.reset_index(drop=True), medicaid.reset_index(drop=True)
+
+
+def crosswalk_from_pos_nppes(pos_raw: pd.DataFrame, facilities: pd.DataFrame,
+                             medicaid: pd.DataFrame) -> pd.DataFrame:
+    """Bridge CCN↔NPI by joining the POS facility file to NPPES two ways and unioning:
+      1. Medicaid vendor number — POS ``mdcd_vndr_num`` == an NPPES type-05 identifier
+         (an exact key match).
+      2. Normalized facility name + ZIP5 — the platform's standard org-matching key.
+    Returns deduped (ccn, npi, match_source). Approximate by design (facility name/ID
+    matching), so the facility signals it unlocks stay corroborative."""
+    from src.attempt_2.clean_data import _standardize_address
+    from src.entity_graph.resolve_entities import norm_org_name
+    res = _resolve_columns(list(pos_raw.columns), _POS_WANTED)
+    if "ccn" not in res:
+        raise ValueError(f"POS file has no CCN (prvdr_num) column; "
+                         f"saw {list(pos_raw.columns)[:12]}")
+    ccn = _canon_ccn(pos_raw[res["ccn"]])
+    pos = pd.DataFrame({"ccn": ccn})
+    pos["name_key"] = (pos_raw[res["name"]].map(norm_org_name) if "name" in res else "")
+    pos["zip5"] = (pos_raw[res["zip"]].fillna("").astype(str).str.replace(r"\D", "", regex=True)
+                   .str.slice(0, 5) if "zip" in res else "")
+    pos["mdcd"] = (pos_raw[res["mdcd"]].fillna("").astype(str).str.strip().str.upper()
+                   if "mdcd" in res else "")
+    pos = pos[ccn.notna()]
+
+    out = []
+    # 1. Medicaid vendor number (exact)
+    if "mdcd" in res and len(medicaid):
+        j = pos[pos["mdcd"] != ""].merge(medicaid, on="mdcd", how="inner")
+        out.append(j[["ccn", "npi"]].assign(match_source="medicaid_vendor"))
+    # 2. name + zip5
+    nz = pos[(pos["name_key"] != "") & (pos["zip5"] != "")]
+    facnz = facilities[(facilities["name_key"] != "") & (facilities["zip5"] != "")]
+    if len(nz) and len(facnz):
+        j = nz.merge(facnz[["name_key", "zip5", "npi"]], on=["name_key", "zip5"], how="inner")
+        out.append(j[["ccn", "npi"]].assign(match_source="name_zip"))
+
+    if not out:
+        return pd.DataFrame(columns=["ccn", "npi", "match_source"])
+    xw = pd.concat(out, ignore_index=True).dropna(subset=["ccn", "npi"])
+    # keep one row per (ccn, npi); prefer the exact Medicaid-vendor match in the label
+    xw["_rank"] = (xw["match_source"] == "medicaid_vendor").astype(int)
+    xw = (xw.sort_values("_rank", ascending=False)
+            .drop_duplicates(["ccn", "npi"]).drop(columns="_rank"))
+    return xw.reset_index(drop=True)
+
+
 def build_ccn_npi_crosswalk(raw: pd.DataFrame) -> pd.DataFrame:
     """Enrollment/POS-style rows → deduplicated (ccn, npi) crosswalk.
 
@@ -123,13 +238,27 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--in", dest="inp", required=True,
-                    help="PECOS enrollment / POS file (csv or parquet)")
+                    help="CCN source: a single file with both CCN+NPI, the raw NPPES "
+                         "(type-06 bridge), or the POS file when --nppes is given")
+    ap.add_argument("--nppes", default=None,
+                    help="raw NPPES file: when set, --in is treated as the POS file and "
+                         "CCN↔NPI is built by the POS↔NPPES (Medicaid# + name/ZIP) join")
     ap.add_argument("--out", required=True, help="output ccn_to_npi parquet")
     args = ap.parse_args()
     from src.attempt_2.clean_data import read_csv_text
     p = Path(args.inp)
     raw = (pd.read_parquet(p) if p.suffix == ".parquet" else read_csv_text(p))
-    xw = build_ccn_npi_crosswalk(raw)
+    if args.nppes:
+        print(f"  reading NPPES facility/Medicaid columns from {args.nppes} …")
+        facilities, medicaid = load_nppes_for_ccn(args.nppes)
+        print(f"  NPPES: {len(facilities):,} NPIs (name+ZIP), {len(medicaid):,} type-05 Medicaid IDs")
+        xw = crosswalk_from_pos_nppes(raw, facilities, medicaid)
+        if "match_source" in xw.columns and len(xw):
+            print("  matches by source: "
+                  + ", ".join(f"{k}={v}" for k, v in xw["match_source"].value_counts().items()))
+            xw = xw[["ccn", "npi"]]
+    else:
+        xw = build_ccn_npi_crosswalk(raw)
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     xw.to_parquet(out, index=False)
