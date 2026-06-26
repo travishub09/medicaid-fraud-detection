@@ -87,8 +87,13 @@ The opioid breakout columns the adapter needs are per-provider. Two ways to get 
   the Covered Entity Daily Report.
 
 ### B9. NPPES deactivation report → `invalid_identity` (deactivation piece)
-- **Get:** https://download.cms.gov/nppes — the monthly "**NPPES Deactivated NPI Report**".
-- **Save:** `preclean/nppes_deactivation/deactivation.csv`.
+- **Get:** https://download.cms.gov/nppes/NPI_Files.html (the bare `/nppes` directory
+  doesn't render a listing — use the `NPI_Files.html` index page). Scroll to the
+  "**NPPES Deactivated NPI Report**" section; it's a small **`.zip` containing an Excel
+  file** (NPI + NPPES Deactivation Date), with a title banner above the header row.
+- **Save:** drop the native file at `preclean/nppes_deactivation/deactivation.zip`
+  (or `.xlsx`) — the adapter (`nppes_deactivation.load_deactivation`) unzips it,
+  finds the header row, and reads it directly. A flat `deactivation.csv` also works.
 - **Needs:** NPI, deactivation date. (Also reads `processed/spending_fact.parquet`.)
 
 ### B10. Order & Referring → `dme_ring` (ineligible-referral piece)

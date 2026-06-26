@@ -21,6 +21,10 @@ Dormant until the deactivation file + spending are loaded; exact-match, no fuzz.
 
 from __future__ import annotations
 
+import io
+import zipfile
+from pathlib import Path
+
 import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns, canonicalize_series
@@ -30,6 +34,49 @@ DEACT_COLS = {
     "deactivation_date": ["NPI Deactivation Date", "Deactivation Date",
                           "deactivation_date", "NPPES Deactivation Date"],
 }
+
+
+def _find_header_row(df0: pd.DataFrame, max_scan: int = 10) -> int:
+    """The CMS Deactivated NPI Report has a title/notice banner above the real
+    header. Find the first row that contains an 'NPI' cell → that's the header."""
+    for i in range(min(max_scan, len(df0))):
+        cells = [str(x).strip().upper() for x in df0.iloc[i].tolist()]
+        if "NPI" in cells:
+            return i
+    return 0
+
+
+def load_deactivation(path: str | Path) -> pd.DataFrame:
+    """Load the CMS NPPES Deactivated NPI Report in whatever form CMS hands you.
+
+    The native download is a ``.zip`` containing an Excel report (NPI + NPPES
+    Deactivation Date) with a title/notice banner above the header row. This unzips
+    in memory if needed, finds the real header row, and returns a clean frame — so
+    the raw file drops in as-is. A flat ``.csv``/``.parquet`` is read directly.
+    """
+    p = Path(path)
+    suf = p.suffix.lower()
+    if suf == ".parquet":
+        return pd.read_parquet(p)
+    if suf == ".csv":
+        return pd.read_csv(p, dtype=str)
+
+    data, name = None, p.name
+    if suf == ".zip":                                   # unzip the Excel/CSV inside
+        with zipfile.ZipFile(p) as z:
+            inner = next((n for n in z.namelist()
+                          if n.lower().endswith((".xlsx", ".xls", ".csv"))), None)
+            if inner is None:
+                raise ValueError(f"no .xlsx/.csv inside {p.name}")
+            data, name = z.read(inner), inner
+
+    if name.lower().endswith(".csv"):
+        return pd.read_csv(io.BytesIO(data) if data else p, dtype=str)
+    src = io.BytesIO(data) if data is not None else p
+    probe = pd.read_excel(src, dtype=str, header=None, nrows=12)
+    hdr = _find_header_row(probe)
+    src = io.BytesIO(data) if data is not None else p   # re-seek for the real read
+    return pd.read_excel(src, dtype=str, header=hdr)
 
 
 def deactivated_npis(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:

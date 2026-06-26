@@ -279,7 +279,12 @@ python -m pytest tests/ -v
   and interpolated Kneser-Ney for the sequence LM (`billing_sequence_lm.build_kn_model`
   + `sequence_surprisal(smoothing="kn", order=2|3)` — continuation-probability
   smoothing for the rare-HCPCS tail; add-k stays the default).
-  Full suite: `pytest tests/` (339 tests).
+  Native-file loaders for the operator: `hrsa_340b.load_opais` (reads the 3-worksheet
+  OPAIS Covered Entity Daily Report .xlsx — Contract Pharmacies grain + merged State)
+  and `nppes_deactivation.load_deactivation` (unzips the CMS Deactivated NPI Report
+  .zip/.xlsx, auto-detects the banner header row); the export discovers .xlsx/.zip,
+  not just .csv. `openpyxl` added to requirements.
+  Full suite: `pytest tests/` (343 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

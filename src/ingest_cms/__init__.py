@@ -51,7 +51,8 @@ from .facility import (compute_pbj_metrics, compute_hospice_metrics,
                        compute_deficiency_counts, facility_peer_percentiles,
                        rollup_ccn_to_org)
 from .opioid import compute_opioid_metrics
-from .nppes_deactivation import deactivated_npis, billing_after_deactivation
+from .nppes_deactivation import (deactivated_npis, billing_after_deactivation,
+                                 load_deactivation)
 from .hrsa_340b import covered_entities, attach_340b, load_opais
 from .pos import compute_pos_capacity, capacity_billing_mismatch
 from .order_referring import eligible_referrers, ineligible_referral_share
@@ -85,8 +86,10 @@ __all__ = [
     "compute_opioid_metrics",
     "deactivated_npis",
     "billing_after_deactivation",
+    "load_deactivation",
     "covered_entities",
     "attach_340b",
+    "load_opais",
     "compute_pos_capacity",
     "capacity_billing_mismatch",
     "eligible_referrers",

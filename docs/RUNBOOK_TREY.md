@@ -87,7 +87,7 @@ skip-loads anything absent and logs why.
 | NADAC | "NADAC (National Average Drug Acquisition Cost)" | https://data.medicaid.gov | `preclean/nadac/nadac.csv` | `drug_outlier` (spread) |
 | Market Saturation | "Market Saturation & Utilization State-County" | https://data.cms.gov/tools | `preclean/saturation/saturation.csv` | `saturation_fraud` |
 | 340B OPAIS | **Covered Entity Daily Report** (Excel — the 3-worksheet file) | https://340bopais.hrsa.gov | `preclean/hrsa_340b/opais.xlsx` (drop the native .xlsx as-is; or export the Contract Pharmacies worksheet to `opais.csv`) | `contract_pharmacy` |
-| NPPES deactivation | monthly "NPPES Deactivated NPI Report" | https://download.cms.gov/nppes | `preclean/nppes_deactivation/deactivation.csv` | `invalid_identity` (deactivation) |
+| NPPES deactivation | monthly "NPPES Deactivated NPI Report" (a .zip of an Excel file) | https://download.cms.gov/nppes/NPI_Files.html | `preclean/nppes_deactivation/deactivation.zip` (drop the native zip/.xlsx as-is; the adapter unzips + reads it) | `invalid_identity` (deactivation) |
 | Order & Referring | "Order and Referring" | data.cms.gov | `preclean/order_referring/order_referring.csv` | `dme_ring` (ineligible-referral) |
 | PBJ staffing | "Payroll Based Journal Daily Nurse Staffing" | data.cms.gov | `preclean/facility/pbj.csv` | `worthless_services` |
 | Care Compare hospice | hospice live-discharge measure | https://data.cms.gov/provider-data | `preclean/facility/hospice.csv` | `hospice_ineligibility` |

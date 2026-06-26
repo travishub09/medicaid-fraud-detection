@@ -707,9 +707,10 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # --- post-deactivation billing (spending + deactivated NPIs + npi_to_org) ---
     try:
         from src.ingest_cms import nppes_deactivation as nd
-        dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv", "*.csv")
+        dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv",
+                             "deactivation.xlsx", "*.zip", "*.xlsx", "*.csv")
         if dp and spending_p:
-            deact, _ = nd.deactivated_npis(_read_any(dp))
+            deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
             spend = _spending_for_npis(spending_p, deact["npi"].tolist())
             _emit("nppes_deactivation",
                   nd.billing_after_deactivation(spend, deact, npi_to_org),
