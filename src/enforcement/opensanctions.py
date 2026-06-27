@@ -66,13 +66,16 @@ def normalize_opensanctions(entities) -> pd.DataFrame:
             "entity_name": name,
             "name_key": norm_org_name(name),
             "excl_type": excl_type,
-            "excl_date": pd.to_datetime(_first(props, "startDate")
-                                        or _first(props, "listingDate"), errors="coerce"),
-            "reinstate_date": pd.to_datetime(_first(props, "endDate"), errors="coerce"),
+            # keep the raw date STRINGS; parse the whole columns vectorized below
+            # (per-row pd.to_datetime is O(N) slow scalar calls on a big bulk file).
+            "excl_date": _first(props, "startDate") or _first(props, "listingDate"),
+            "reinstate_date": _first(props, "endDate"),
         })
     df = pd.DataFrame(rows, columns=EXCLUSION_COLS[:-1])
     if not len(df):
         return pd.DataFrame(columns=EXCLUSION_COLS)
+    df["excl_date"] = pd.to_datetime(df["excl_date"], errors="coerce")
+    df["reinstate_date"] = pd.to_datetime(df["reinstate_date"], errors="coerce")
     df["currently_active"] = df["reinstate_date"].isna().astype(int)
     return df[df["name_key"] != ""].reset_index(drop=True)[EXCLUSION_COLS]
 
