@@ -126,7 +126,7 @@ def _fraud_proximity(G: nx.Graph, exclusion_ids) -> dict:
 
 def compute_node_embeddings(G: nx.Graph, exclusion_ids=frozenset(), dim: int = 16,
                             walk_len: int = 20, n_walks: int = 10, window: int = 5,
-                            seed: int = 42) -> pd.DataFrame:
+                            seed: int = 42, max_component_size: int = 150_000) -> pd.DataFrame:
     """One row per (non-exclusion) node: embeddings + fraud proximity + structural motifs.
 
     The embeddings and structural motifs are computed on the EXCLUSION-FREE graph
@@ -150,6 +150,24 @@ def compute_node_embeddings(G: nx.Graph, exclusion_ids=frozenset(), dim: int = 1
     if not active:
         return pd.DataFrame(columns=cols)
     G = G.subgraph(active).copy()
+
+    # Drop OVERSIZED connected components: a handful of shared-address mega-clusters
+    # (billing-service addresses, PO boxes, big-campus suites where thousands of
+    # unrelated NPIs register) form giant artifact "hairballs" that are not fraud
+    # rings — they dominate memory (the DeepWalk co-occurrence is superlinear in
+    # component size) and add no signal. Keeping only components <= the cap makes the
+    # full embedding family computable in bounded RAM AND removes noise. Nodes in
+    # dropped components simply get no row → null graph_* in the export (correct: a
+    # 5M-node address blob has no meaningful position).
+    if max_component_size and G.number_of_nodes() > max_component_size:
+        keep: set = set()
+        for comp in nx.connected_components(G):
+            if len(comp) <= max_component_size:
+                keep |= comp
+        if len(keep) < G.number_of_nodes():
+            G = G.subgraph(keep).copy()
+    if G.number_of_nodes() == 0:
+        return pd.DataFrame(columns=cols)
 
     # fraud-proximity from the (connected) graph (exclusion-seeded — leakage-adjacent)
     prox = _fraud_proximity(G, exclusion_ids)

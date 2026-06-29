@@ -99,12 +99,19 @@ def excluded_party_proximity(org_nodes, owner_nodes, exclusion_nodes, member_edg
     G = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
                     owned_by_edges, excluded_in_edges, co_located_edges)
     dist, _ = _distance_to_exclusions(G, set(exclusion_nodes["node_id"].astype(str)))
-    name_by_id = dict(zip(org_nodes["org_node_id"].astype(str),
-                          org_nodes.get("org_name", org_nodes["org_node_id"]).astype(str))) \
-        if org_nodes is not None and len(org_nodes) else {}
+    # Only orgs WITHIN range need a name — look those up from a filtered org_nodes
+    # rather than building a dict over all ~9M orgs (that full dict was the OOM at
+    # scale; the in-range set is tiny).
+    near = {nid: h for nid, h in dist.items()
+            if str(nid).startswith("org:") and 0 < h <= max_hops}
+    name_by_id: dict = {}
+    if near and org_nodes is not None and len(org_nodes):
+        oid = org_nodes["org_node_id"].astype(str)
+        sub = org_nodes[oid.isin(near.keys())]
+        soid = sub["org_node_id"].astype(str)
+        name_by_id = dict(zip(soid, sub.get("org_name", soid).astype(str)))
     rows = [{"org_node_id": nid, "org_name": name_by_id.get(nid, ""), "hops_to_exclusion": h}
-            for nid, h in dist.items()
-            if str(nid).startswith("org:") and 0 < h <= max_hops]
+            for nid, h in near.items()]
     return (pd.DataFrame(rows, columns=cols)
             .sort_values("hops_to_exclusion").reset_index(drop=True))
 

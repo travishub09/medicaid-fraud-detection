@@ -72,7 +72,7 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
 
 def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         embeddings: bool = True,
-        max_embedding_nodes: int = 1_500_000) -> dict[str, pd.DataFrame]:
+        max_component_size: int = 150_000) -> dict[str, pd.DataFrame]:
     """Build the graph from in-memory tables; write parquet; return the outputs."""
     provider_dim = tables["provider_dim"]
     npi_xwalk = tables.get("npi_xwalk")
@@ -121,27 +121,22 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
                         owned_by_edges, excluded_in_edges, co_located_edges)
     excl_ids = (set(exclusion_nodes["node_id"].astype(str))
                 if exclusion_nodes is not None and len(exclusion_nodes) else set())
-    # the embedding cost scales with the CONNECTED node count, not the full set —
-    # millions of isolated solo-orgs are dropped before the walks, so guard on that.
-    n_active = sum(1 for _, d in G_emb.degree() if d > 0)
     if not embeddings:
         node_embeddings = compute_node_embeddings(nx.Graph())   # schema-only, empty
         log("    embeddings SKIPPED (--no-embeddings); core graph features unaffected")
-    elif n_active > max_embedding_nodes:
-        node_embeddings = compute_node_embeddings(nx.Graph())
-        log(f"    embeddings SKIPPED — {n_active:,} connected nodes exceeds the "
-            f"memory-safe cap ({max_embedding_nodes:,}); pass --max-embedding-nodes to "
-            f"override. Core graph features (shell/ownership) are unaffected; only the "
-            f"graph_emb_* / motif columns are absent.")
     else:
         try:
-            node_embeddings = compute_node_embeddings(G_emb, excl_ids)
-            log(f"    embedded {len(node_embeddings):,} graph nodes "
-                f"(DeepWalk-style + fraud-proximity + structural motifs)")
+            # the component cap drops giant shared-address artifact hairballs, keeping
+            # the embeddable set small + meaningful → the full family fits in bounded RAM
+            node_embeddings = compute_node_embeddings(
+                G_emb, excl_ids, max_component_size=max_component_size)
+            log(f"    embedded {len(node_embeddings):,} graph nodes in components "
+                f"<= {max_component_size:,} (DeepWalk + fraud-proximity + motifs; "
+                f"giant co-location artifact components dropped)")
         except MemoryError:
             node_embeddings = compute_node_embeddings(nx.Graph())
-            log(f"    embeddings SKIPPED — ran out of memory on {n_nodes:,} nodes; "
-                f"core graph features are unaffected (graph_emb_*/motifs absent).")
+            log(f"    embeddings SKIPPED — ran out of memory; core graph features are "
+                f"unaffected (graph_emb_*/motifs absent). Lower --max-component-size.")
 
     log("Running ring detection …")
     shells = shared_address_shell_clusters(org_nodes)
@@ -213,11 +208,12 @@ def main() -> None:
                          "relationships known before this date (YYYY-MM-DD) so the "
                          "embeddings/proximity/label are leakage-correct as-of then")
     ap.add_argument("--no-embeddings", action="store_true",
-                    help="skip the DeepWalk node embeddings (memory-heavy on a huge "
-                         "graph); core graph features are still computed")
-    ap.add_argument("--max-embedding-nodes", type=int, default=1_500_000,
-                    help="auto-skip embeddings above this node count (default 1.5M) "
-                         "to avoid OOM; raise it if you have the RAM")
+                    help="skip the DeepWalk node embeddings entirely; core graph "
+                         "features are still computed")
+    ap.add_argument("--max-component-size", type=int, default=150_000,
+                    help="drop connected components larger than this before embedding "
+                         "(giant shared-address artifact hairballs); keeps memory "
+                         "bounded + signal clean. Lower it (e.g. 50000) on tight RAM.")
     args = ap.parse_args()
 
     if args.fixture:
@@ -236,7 +232,7 @@ def main() -> None:
         log(f"    point-in-time as-of {args.asof}: "
             f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")
     run(tables, Path(args.out), embeddings=not args.no_embeddings,
-        max_embedding_nodes=args.max_embedding_nodes)
+        max_component_size=args.max_component_size)
 
     if args.neo4j_bulk:
         from .neo4j_export import write_bulk_import
