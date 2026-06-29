@@ -72,7 +72,8 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
 
 def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         embeddings: bool = True,
-        max_component_size: int = 150_000) -> dict[str, pd.DataFrame]:
+        max_component_size: int = 150_000,
+        max_colocation_cluster: int = 100) -> dict[str, pd.DataFrame]:
     """Build the graph from in-memory tables; write parquet; return the outputs."""
     provider_dim = tables["provider_dim"]
     npi_xwalk = tables.get("npi_xwalk")
@@ -117,8 +118,12 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
     import networkx as nx
     from .graph_features import build_graph
     from .graph_embeddings import compute_node_embeddings
+    # prune mega-address co-location edges from the EMBEDDING graph so the giant
+    # artifact component shatters into genuine clusters that fit under the size cap
+    # (rescues real rings that were only fused to the blob through a shared mail drop)
     G_emb = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
-                        owned_by_edges, excluded_in_edges, co_located_edges)
+                        owned_by_edges, excluded_in_edges, co_located_edges,
+                        max_colocation_cluster=max_colocation_cluster)
     excl_ids = (set(exclusion_nodes["node_id"].astype(str))
                 if exclusion_nodes is not None and len(exclusion_nodes) else set())
     if not embeddings:
@@ -214,6 +219,11 @@ def main() -> None:
                     help="drop connected components larger than this before embedding "
                          "(giant shared-address artifact hairballs); keeps memory "
                          "bounded + signal clean. Lower it (e.g. 50000) on tight RAM.")
+    ap.add_argument("--max-colocation-cluster", type=int, default=100,
+                    help="treat an address shared by more than this many orgs as a "
+                         "mail-drop (not a real co-location) and drop its edges from "
+                         "the embedding graph, so genuine rings fused to the blob via "
+                         "a shared mail drop are rescued. Raise to keep larger clusters.")
     args = ap.parse_args()
 
     if args.fixture:
@@ -232,7 +242,8 @@ def main() -> None:
         log(f"    point-in-time as-of {args.asof}: "
             f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")
     run(tables, Path(args.out), embeddings=not args.no_embeddings,
-        max_component_size=args.max_component_size)
+        max_component_size=args.max_component_size,
+        max_colocation_cluster=args.max_colocation_cluster)
 
     if args.neo4j_bulk:
         from .neo4j_export import write_bulk_import

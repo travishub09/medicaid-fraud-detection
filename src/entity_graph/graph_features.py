@@ -65,7 +65,8 @@ def _betweenness(G: nx.Graph) -> dict:
 def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                 exclusion_nodes: pd.DataFrame, member_edges: pd.DataFrame,
                 owned_by_edges: pd.DataFrame, excluded_in_edges: pd.DataFrame,
-                co_located_edges: pd.DataFrame) -> nx.Graph:
+                co_located_edges: pd.DataFrame,
+                max_colocation_cluster: int | None = None) -> nx.Graph:
     """Assemble the undirected graph used for community/betweenness/exclusion-distance.
 
     SCALE GUARD: member edges to SINGLE-NPI orgs are isolated 2-node components
@@ -104,7 +105,20 @@ def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
         for r in member_edges[keep].itertuples():
             G.add_edge(str(r.src_id), str(r.dst_id), edge_type=r.edge_type)
 
-    for edges in (owned_by_edges, excluded_in_edges, co_located_edges):
+    # co-location edges through a MEGA-address (a registered-agent office / mail
+    # drop / big-campus suite shared by hundreds–thousands of unrelated orgs) are
+    # not a real "these two are related" signal — they're what fuse millions of
+    # unrelated orgs into one giant artifact component. When max_colocation_cluster
+    # is set, drop those edges from the graph (the per-org co_location_cluster_size
+    # FEATURE is computed separately from the edge table, so it's unaffected) — this
+    # shatters the blob back into genuine small clusters. Owner/exclusion edges are
+    # always kept in full.
+    colo = co_located_edges
+    if (max_colocation_cluster is not None and colo is not None and len(colo)
+            and "cluster_size" in colo.columns):
+        keep = pd.to_numeric(colo["cluster_size"], errors="coerce").fillna(0) <= max_colocation_cluster
+        colo = colo[keep]
+    for edges in (owned_by_edges, excluded_in_edges, colo):
         if edges is None or not len(edges):
             continue
         for r in edges.itertuples():
