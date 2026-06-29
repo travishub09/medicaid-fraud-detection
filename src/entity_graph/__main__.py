@@ -70,7 +70,9 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     return tables
 
 
-def run(tables: dict[str, pd.DataFrame], out_dir: Path) -> dict[str, pd.DataFrame]:
+def run(tables: dict[str, pd.DataFrame], out_dir: Path,
+        embeddings: bool = True,
+        max_embedding_nodes: int = 1_500_000) -> dict[str, pd.DataFrame]:
     """Build the graph from in-memory tables; write parquet; return the outputs."""
     provider_dim = tables["provider_dim"]
     npi_xwalk = tables.get("npi_xwalk")
@@ -112,15 +114,32 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path) -> dict[str, pd.DataFram
             f"{len(org_features)} vs {len(org_nodes)}")
 
     log("Computing graph node embeddings …")
+    import networkx as nx
     from .graph_features import build_graph
     from .graph_embeddings import compute_node_embeddings
     G_emb = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
                         owned_by_edges, excluded_in_edges, co_located_edges)
     excl_ids = (set(exclusion_nodes["node_id"].astype(str))
                 if exclusion_nodes is not None and len(exclusion_nodes) else set())
-    node_embeddings = compute_node_embeddings(G_emb, excl_ids)
-    log(f"    embedded {len(node_embeddings):,} graph nodes "
-        f"(DeepWalk-style + fraud-proximity + structural motifs)")
+    n_nodes = G_emb.number_of_nodes()
+    if not embeddings:
+        node_embeddings = compute_node_embeddings(nx.Graph())   # schema-only, empty
+        log("    embeddings SKIPPED (--no-embeddings); core graph features unaffected")
+    elif n_nodes > max_embedding_nodes:
+        node_embeddings = compute_node_embeddings(nx.Graph())
+        log(f"    embeddings SKIPPED — {n_nodes:,} nodes exceeds the memory-safe cap "
+            f"({max_embedding_nodes:,}); pass --max-embedding-nodes to override. Core "
+            f"graph features (proximity/shell/ownership) are unaffected; only the "
+            f"graph_emb_* / motif columns are absent.")
+    else:
+        try:
+            node_embeddings = compute_node_embeddings(G_emb, excl_ids)
+            log(f"    embedded {len(node_embeddings):,} graph nodes "
+                f"(DeepWalk-style + fraud-proximity + structural motifs)")
+        except MemoryError:
+            node_embeddings = compute_node_embeddings(nx.Graph())
+            log(f"    embeddings SKIPPED — ran out of memory on {n_nodes:,} nodes; "
+                f"core graph features are unaffected (graph_emb_*/motifs absent).")
 
     log("Running ring detection …")
     shells = shared_address_shell_clusters(org_nodes)
@@ -191,6 +210,12 @@ def main() -> None:
                     help="build a POINT-IN-TIME graph: keep only exclusions/owner "
                          "relationships known before this date (YYYY-MM-DD) so the "
                          "embeddings/proximity/label are leakage-correct as-of then")
+    ap.add_argument("--no-embeddings", action="store_true",
+                    help="skip the DeepWalk node embeddings (memory-heavy on a huge "
+                         "graph); core graph features are still computed")
+    ap.add_argument("--max-embedding-nodes", type=int, default=1_500_000,
+                    help="auto-skip embeddings above this node count (default 1.5M) "
+                         "to avoid OOM; raise it if you have the RAM")
     args = ap.parse_args()
 
     if args.fixture:
@@ -208,7 +233,8 @@ def main() -> None:
         _ex2 = tables.get("exclusions")
         log(f"    point-in-time as-of {args.asof}: "
             f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")
-    run(tables, Path(args.out))
+    run(tables, Path(args.out), embeddings=not args.no_embeddings,
+        max_embedding_nodes=args.max_embedding_nodes)
 
     if args.neo4j_bulk:
         from .neo4j_export import write_bulk_import
