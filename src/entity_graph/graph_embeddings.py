@@ -140,7 +140,18 @@ def compute_node_embeddings(G: nx.Graph, exclusion_ids=frozenset(), dim: int = 1
     if G is None or G.number_of_nodes() == 0:
         return pd.DataFrame(columns=cols)
 
-    # fraud-proximity from the FULL graph (exclusion-seeded — leakage-adjacent)
+    # Restrict to the CONNECTED subgraph: isolated nodes (the millions of solo,
+    # single-provider "orgs" with no owner/co-location/exclusion edge) have no
+    # relational structure to embed — they'd get a zero vector anyway. Dropping them
+    # before the walks is both memory-feasible at full scale and more correct (the
+    # full node set is 9M+; the connected core is a small fraction). Isolated nodes
+    # simply don't appear in the output → the export leaves their graph_* columns null.
+    active = [n for n, d in G.degree() if d > 0]
+    if not active:
+        return pd.DataFrame(columns=cols)
+    G = G.subgraph(active).copy()
+
+    # fraud-proximity from the (connected) graph (exclusion-seeded — leakage-adjacent)
     prox = _fraud_proximity(G, exclusion_ids)
 
     # clean graph: drop exclusion nodes + self-loops; embeddings/motifs see only

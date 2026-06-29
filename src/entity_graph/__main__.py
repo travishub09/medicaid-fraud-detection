@@ -121,15 +121,17 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
                         owned_by_edges, excluded_in_edges, co_located_edges)
     excl_ids = (set(exclusion_nodes["node_id"].astype(str))
                 if exclusion_nodes is not None and len(exclusion_nodes) else set())
-    n_nodes = G_emb.number_of_nodes()
+    # the embedding cost scales with the CONNECTED node count, not the full set —
+    # millions of isolated solo-orgs are dropped before the walks, so guard on that.
+    n_active = sum(1 for _, d in G_emb.degree() if d > 0)
     if not embeddings:
         node_embeddings = compute_node_embeddings(nx.Graph())   # schema-only, empty
         log("    embeddings SKIPPED (--no-embeddings); core graph features unaffected")
-    elif n_nodes > max_embedding_nodes:
+    elif n_active > max_embedding_nodes:
         node_embeddings = compute_node_embeddings(nx.Graph())
-        log(f"    embeddings SKIPPED — {n_nodes:,} nodes exceeds the memory-safe cap "
-            f"({max_embedding_nodes:,}); pass --max-embedding-nodes to override. Core "
-            f"graph features (proximity/shell/ownership) are unaffected; only the "
+        log(f"    embeddings SKIPPED — {n_active:,} connected nodes exceeds the "
+            f"memory-safe cap ({max_embedding_nodes:,}); pass --max-embedding-nodes to "
+            f"override. Core graph features (shell/ownership) are unaffected; only the "
             f"graph_emb_* / motif columns are absent.")
     else:
         try:
