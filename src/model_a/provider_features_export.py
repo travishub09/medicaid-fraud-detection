@@ -581,10 +581,20 @@ def _warn_if_graph_stale(graph_dir: Path, leads_path: Path, log) -> None:
 
 def _first_existing(base: Path, *names: str) -> Path | None:
     for n in names:
+        # a glob pattern (e.g. "*.csv") globs the base folder itself — so a
+        # year-suffixed real file (partb_2016.csv, dmepos__referring_2022.csv) is
+        # found even when it isn't named the canonical partb.csv. (Callers pass the
+        # exact name first, then a "*.ext" fallback; glob only fires for patterns,
+        # so root-level exact lookups never match a sibling by accident.)
+        if any(ch in n for ch in "*?["):
+            hits = sorted(base.glob(n)) if base.is_dir() else []
+            if hits:
+                return hits[0]
+            continue
         p = base / n
         if p.exists():
             return p
-    # also accept a directory containing a single csv/parquet
+    # also accept a sibling directory named after the stem holding a single file
     for n in names:
         d = base / Path(n).stem
         if d.is_dir():
