@@ -78,8 +78,12 @@ builds the entity graph into `graph/` (nodes, edges, `npi_to_org`, node embeddin
 
 `make provider-features` writes to `model_a/provider_features/`:
 - `provider_features_for_model.parquet` — the matrix (one row per NPI)
-- `feature_manifest.json` — column roles (label / leakage / features / metadata)
+- `feature_manifest.json` — column roles (label / leakage / features / metadata),
+  plus a `sources_audit` block: every source as used/skipped with reason + file
 - `PROVIDER_FEATURES_DICTIONARY.md` and `PROVIDER_FEATURES_EXPORT_REPORT.md`
+- `SOURCES_REPORT.md` — **read this first**: one table of which sources contributed
+  and which were skipped (and why / which file), so a silently-missed file is
+  impossible to overlook. The console also prints `sources: N used / M skipped`.
 
 That's the minimum viable run. Everything in §2 is **additive and optional** — each
 file you add lights up more columns; the export report tells you what it found.

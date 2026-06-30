@@ -641,6 +641,65 @@ def _first_existing(base: Path, *names: str) -> Path | None:
     return None
 
 
+class _SourceAudit:
+    """Wraps the export's ``print``/``log`` so every ``    [name] …`` progress line is
+    ALSO recorded as a structured (source, status, detail) row — without touching the
+    dozens of call sites that emit them. One run then yields a single SOURCES_REPORT
+    table: which sources lit up, which were skipped and why, instead of grepping the
+    console (the silent year-suffixed Part-B/D skip class of bug is now visible at a
+    glance). The convention every adapter already follows:
+
+        ``    [name] <summary>``            → used   (row counts / columns / file)
+        ``    [name] skipped: <reason>``     → skipped (the precise data-block reason)
+
+    ``[assert …]`` and ``[WARN …]`` lines are infrastructure, not sources — ignored.
+    """
+
+    import re as _re
+    _LINE = _re.compile(r"^\s*\[([^\]]+)\]\s*(.*)$")
+    _IGNORE = {"assert", "assert PASS", "assert FAIL", "WARN", "asof"}
+
+    def __init__(self, inner):
+        self._inner = inner
+        # source -> {"status": str, "details": [str, …]}; "used" always wins over "skipped"
+        self._seen: dict[str, dict] = {}
+
+    def __call__(self, msg: str) -> None:
+        self._inner(msg)
+        self._capture(str(msg))
+
+    def _capture(self, msg: str) -> None:
+        m = self._LINE.match(msg)
+        if not m:
+            return
+        name, rest = m.group(1).strip(), m.group(2).strip()
+        if name in self._IGNORE or name.startswith("assert"):
+            return
+        # a "skipped:" / "skipped " prefix marks a data-blocked source; anything else
+        # is a source that contributed (rows/cols/file summary).
+        low = rest.lower()
+        if low.startswith("skipped"):
+            status, detail = "skipped", rest.split(":", 1)[-1].strip() if ":" in rest else rest
+        else:
+            status, detail = "used", rest
+        for sub in name.split("/"):           # "[growth/plausibility] skipped" → both
+            sub = sub.strip()
+            if not sub:
+                continue
+            rec = self._seen.setdefault(sub, {"status": status, "details": []})
+            if status == "used" and rec["status"] != "used":
+                rec["status"], rec["details"] = "used", []   # a used line supersedes earlier skips
+            if (status == rec["status"]) and detail and detail not in rec["details"]:
+                rec["details"].append(detail)
+
+    def records(self) -> list[dict]:
+        """Audit rows, used-first then alphabetical — the manifest/report payload."""
+        rows = [{"source": s, "status": v["status"], "detail": "; ".join(v["details"])}
+                for s, v in self._seen.items()]
+        rows.sort(key=lambda r: (r["status"] != "used", r["source"]))
+        return rows
+
+
 def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
@@ -650,17 +709,21 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
     """
     frames: dict[str, pd.DataFrame] = {}
 
-    def _try(name: str, finder, fn):
+    def _try(name: str, folder: Path, cols: dict | None, fn):
         try:
-            raw = finder()                       # now returns a DataFrame (or None)
+            src_file = _latest_year_file(folder)     # the exact file we'll read (or None)
+            if src_file is None:
+                log(f"    [{name}] skipped: no source file in {folder.name}/")
+                return
+            raw = _read_latest(folder, cols)
             if raw is None or not len(raw):
-                log(f"    [{name}] skipped: no source file")
+                log(f"    [{name}] skipped: empty source file {src_file.name}")
                 return
             res = fn(raw)
             df = res[0] if isinstance(res, tuple) else res
             if df is not None and len(df) and "npi" in df.columns:
                 frames[name] = df
-                log(f"    [{name}] {len(df):,} providers, "
+                log(f"    [{name}] {len(df):,} providers from {src_file.name}, "
                     f"cols: {', '.join(c for c in df.columns if c != 'npi')}")
         except Exception as e:               # one bad source must never sink the run
             log(f"    [{name}] skipped: {e}")
@@ -669,16 +732,15 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
     from src.ingest_cms import partb, partd, dmepos, opioid, openpayments
     # multi-year folders: use the LATEST year, and read ONLY the columns the adapter
     # needs (the PUFs run to multiple GB — usecols keeps a 16 GB box from OOMing).
-    _try("partb", lambda: _read_latest(pc / "partb", partb.PARTB_COLS),
+    _try("partb", pc / "partb", partb.PARTB_COLS,
          lambda r: partb.compute_partb_metrics(r))
-    _try("partd", lambda: _read_latest(pc / "partd", partd.PARTD_COLS),
+    _try("partd", pc / "partd", partd.PARTD_COLS,
          lambda r: partd.compute_partd_metrics(r))
-    _try("dmepos", lambda: _read_latest(pc / "dmepos", dmepos.DMEPOS_COLS),
+    _try("dmepos", pc / "dmepos", dmepos.DMEPOS_COLS,
          lambda r: dmepos.compute_dmepos_metrics(r))
-    _try("opioid", lambda: _read_latest(pc / "opioid", opioid.OPIOID_COLS),
+    _try("opioid", pc / "opioid", opioid.OPIOID_COLS,
          lambda r: opioid.compute_opioid_metrics(r))
-    _try("open_payments",
-         lambda: _read_latest(pc / "open_payments", openpayments.OP_COLS),
+    _try("open_payments", pc / "open_payments", openpayments.OP_COLS,
          lambda r: openpayments.compute_openpayments_metrics(r))
 
     # Part D × Open Payments kickback co-occurrence (per-NPI) needs BOTH raws.
@@ -965,6 +1027,11 @@ def main() -> None:
     root = Path(args.data_root or os.environ.get(
         "MEDICAID_DATA_ROOT", str(Path.home() / "Desktop" / "data")))
 
+    # Capture every "[source] …" progress line into a structured audit so the run
+    # ends with one SOURCES_REPORT table (used/skipped + reason + file), not a console
+    # the operator has to grep. ``audit`` IS the log everywhere a source is reported.
+    audit = _SourceAudit(print)
+
     if args.fixture:
         from src.entity_graph.__main__ import run as run_graph
         from tests.fixtures.synthetic import (build_synthetic_inputs,
@@ -1003,17 +1070,18 @@ def main() -> None:
         ccn_xw = Path(args.ccn_to_npi) if args.ccn_to_npi else processed / "ccn_to_npi.parquet"
         ccn_to_npi = _read_any(ccn_xw)
         print("  running per-NPI adapters …")
-        adapter_frames = _run_npi_adapters(preclean, print)
+        adapter_frames = _run_npi_adapters(preclean, audit)
         ne_p = g / "node_embeddings.parquet"
         if ne_p.exists():
             from src.entity_graph.graph_embeddings import to_provider_grain
             pe = to_provider_grain(pd.read_parquet(ne_p), npi_to_org)
             if len(pe):
                 adapter_frames["graph_embeddings"] = pe
-                print(f"    [graph_embeddings] {len(pe):,} providers, "
-                      f"{pe.shape[1] - 1} graph columns (embeddings + proximity + motifs)")
+                audit(f"    [graph_embeddings] {len(pe):,} providers from "
+                      f"{ne_p.name}, {pe.shape[1] - 1} graph columns "
+                      f"(embeddings + proximity + motifs)")
         else:
-            print("    [graph_embeddings] skipped: rebuild the graph to emit "
+            audit("    [graph_embeddings] skipped: rebuild the graph to emit "
                   "node_embeddings.parquet")
         # Point-in-time billing: filter the spending fact to BEFORE the cutoff once,
         # then every billing builder runs unchanged on the leakage-correct file.
@@ -1034,20 +1102,20 @@ def main() -> None:
         snapshots_dir = (Path(args.owner_snapshots) if args.owner_snapshots
                          else root / "owner_snapshots")
         org_grain = _run_org_grain_adapters(preclean, processed, npi_to_org,
-                                            org_nodes, ccn_to_npi, print,
+                                            org_nodes, ccn_to_npi, audit,
                                             with_analytics=args.with_analytics,
                                             snapshots_dir=snapshots_dir,
                                             asof_spending=asof_spend_p)
-        nucc_pg = _load_nucc_peer_groups(preclean, processed, print)
-        widened = _widened_label_from_graph(g, print)
+        nucc_pg = _load_nucc_peer_groups(preclean, processed, audit)
+        widened = _widened_label_from_graph(g, audit)
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
             cdb = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
                    else pd.read_parquet(args.case_db))
             case_lbls = build_case_labels(cdb, org_nodes, npi_to_org)
-            print(f"    [doj_case] {len(case_lbls):,} NPIs labeled from DOJ cases "
-                  f"(scheme-typed + conduct windows)")
+            audit(f"    [doj_case] {len(case_lbls):,} NPIs labeled from "
+                  f"{Path(args.case_db).name} (scheme-typed + conduct windows)")
 
         # external grounding (address) + temporal-graph velocity + billing LM
         pdim_p = _first_existing(processed, "provider_dim.parquet")
@@ -1073,28 +1141,34 @@ def main() -> None:
             if len(af):
                 adapter_frames["address"] = af
                 _clu = int(af["addr_cluster_degree"].sum()) if "addr_cluster_degree" in af else 0
-                print(f"    [address] {int(af['addr_is_mailbox'].sum()):,} mailbox/PO-box "
+                audit(f"    [address] {int(af['addr_is_mailbox'].sum()):,} mailbox/PO-box "
                       f"addresses, {int(af['addr_shared'].sum()):,} shared-address providers, "
-                      f"{_clu:,} shell-cluster addresses")
+                      f"{_clu:,} shell-cluster addresses (from {Path(pdim_p).name})")
+        else:
+            audit("    [address] skipped: needs processed/provider_dim.parquet")
         try:
             from src.entity_graph.graph_velocity import velocity_from_snapshots
             vel = velocity_from_snapshots(root / "feature_snapshots")
             if len(vel):
                 adapter_frames["graph_velocity"] = vel
-                print(f"    [graph_velocity] {len(vel):,} providers (snapshot diff)")
+                audit(f"    [graph_velocity] {len(vel):,} providers (snapshot diff)")
             else:
-                print("    [graph_velocity] skipped: needs ≥2 feature snapshots "
+                audit("    [graph_velocity] skipped: needs ≥2 feature snapshots "
                       "(make feature-snapshot on a cadence)")
         except Exception as e:
-            print(f"    [graph_velocity] skipped: {e}")
+            audit(f"    [graph_velocity] skipped: {e}")
         if args.with_analytics and pdim_p:
             spend_p = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
             if spend_p:
                 try:
                     adapter_frames["billing_lm"] = _billing_lm_from_parquet(
-                        spend_p, pd.read_parquet(pdim_p), print)
+                        spend_p, pd.read_parquet(pdim_p), audit)
                 except Exception as e:
-                    print(f"    [billing_lm] skipped: {e}")
+                    audit(f"    [billing_lm] skipped: {e}")
+            else:
+                audit("    [billing_lm] skipped: no processed/spending_fact.parquet")
+        elif not args.with_analytics:
+            audit("    [billing_lm] skipped: pass --with-analytics")
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     matrix, manifest = build_provider_matrix(
@@ -1102,12 +1176,21 @@ def main() -> None:
         adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
         nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls)
 
+    # Consolidated source audit: the single table of what each source DID this run
+    # (used/skipped + reason + file), so a silent skip is impossible to miss.
+    manifest["sources_audit"] = audit.records()
+
     out_dir.mkdir(parents=True, exist_ok=True)
     matrix.to_parquet(out_dir / "provider_features_for_model.parquet", index=False)
     (out_dir / "feature_manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8")
     _write_dictionary(matrix, manifest, out_dir)
     _write_report(matrix, manifest, out_dir)
+    _write_sources_report(manifest["sources_audit"], out_dir)
+    used = sum(1 for r in manifest["sources_audit"] if r["status"] == "used")
+    skipped = sum(1 for r in manifest["sources_audit"] if r["status"] == "skipped")
+    print(f"  sources: {used} used / {skipped} skipped "
+          f"→ {out_dir / 'SOURCES_REPORT.md'}")
     print(f"Wrote {out_dir}/provider_features_for_model.parquet "
           f"— {manifest['n_providers']:,} providers × {matrix.shape[1]} columns")
     print(f"  schemes scored: {', '.join(sorted(manifest['scheme_coverage']))}")
@@ -1210,6 +1293,28 @@ def _write_report(matrix: pd.DataFrame, manifest: dict, out_dir: Path) -> None:
         lines.append(f"- `{c}`: {share:.1%}\n")
     (out_dir / "PROVIDER_FEATURES_EXPORT_REPORT.md").write_text(
         "".join(lines), encoding="utf-8")
+
+
+def _write_sources_report(audit: list[dict], out_dir: Path) -> None:
+    """One glance: every source this run touched, used vs. skipped, with the reason /
+    file. Built from the captured ``[source] …`` progress lines (see _SourceAudit) so
+    a silently-dropped source — the year-suffixed Part-B/D skip class of bug — is now
+    impossible to miss without grepping the console."""
+    used = [r for r in audit if r["status"] == "used"]
+    skipped = [r for r in audit if r["status"] == "skipped"]
+    lines = ["# SOURCES_REPORT — what each source did this run\n\n",
+             f"_{len(used)} source(s) contributed features; {len(skipped)} skipped. "
+             "A skip is usually a missing/un-procured file, not an error — the column "
+             "lights up on the next run once the file lands (skip-missing design)._\n\n",
+             "| source | status | detail (rows / columns / file, or skip reason) |\n",
+             "|---|---|---|\n"]
+    if not audit:
+        lines.append("| _(none recorded)_ | — | run against real data to populate |\n")
+    for r in used + skipped:
+        badge = "✅ used" if r["status"] == "used" else "⏭️ skipped"
+        detail = (r["detail"] or "").replace("|", "\\|")
+        lines.append(f"| `{r['source']}` | {badge} | {detail} |\n")
+    (out_dir / "SOURCES_REPORT.md").write_text("".join(lines), encoding="utf-8")
 
 
 if __name__ == "__main__":

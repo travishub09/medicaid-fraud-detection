@@ -191,7 +191,11 @@ python -m pytest tests/ -v
   The provider export now orchestrates ALL sources (per-NPI adapters + org/CCN-grain
   broadcast + optional `--with-analytics` growth/plausibility), with a CCN→NPI
   crosswalk builder, NDC/referral claim-slice builders, a stale-graph guard, and a
-  `make provider-features` target that rebuilds the graph first.
+  `make provider-features` target that rebuilds the graph first. Every run ends with
+  a consolidated `SOURCES_REPORT.md` (+ a `sources_audit` block in the manifest): a
+  log-captured table of every source as used/skipped with the reason + the file it
+  read, so a silently-dropped input (the year-suffixed Part-B/D skip class of bug) is
+  caught at a glance; the per-NPI adapters now name the exact file in their log line.
   SSA Death Master File (`enforcement/death_master.py`, DOB-corroborated →
   billing_after_death) and OpenSanctions (`enforcement/opensanctions.py` CLI →
   `processed/exclusions_*.parquet`, merged into graph exclusion nodes by a
