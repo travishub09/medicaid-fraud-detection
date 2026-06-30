@@ -173,9 +173,15 @@ def build_sparse_adjacency(org_nodes, owner_nodes, exclusion_nodes, member_edges
 
     if not src_parts:
         return [], sp.csr_matrix((0, 0))
-    src = np.concatenate(src_parts); dst = np.concatenate(dst_parts)
-    nodes, inv = np.unique(np.concatenate([src, dst]), return_inverse=True)
-    si, di = inv[:len(src)], inv[len(src):]
+    n_src = sum(len(p) for p in src_parts)
+    # factorize node-id strings to integer codes in ONE hash pass (pd.factorize is
+    # hash-based — far leaner + faster than np.unique's full sort on millions of
+    # Python string objects, which was the memory/IO hog during the build).
+    allids = np.concatenate(src_parts + dst_parts)
+    del src_parts, dst_parts
+    inv, nodes = pd.factorize(allids, sort=False)
+    del allids
+    si, di = inv[:n_src], inv[n_src:]
     m = si != di                                   # drop self-loops
     si, di = si[m], di[m]
     n = len(nodes)
