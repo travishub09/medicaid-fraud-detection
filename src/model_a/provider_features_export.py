@@ -771,7 +771,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                             ccn_to_npi: pd.DataFrame | None, log,
                             with_analytics: bool = False,
                             snapshots_dir: Path | None = None,
-                            asof_spending: Path | None = None
+                            asof_spending: Path | None = None,
+                            skip: set | None = None
                             ) -> dict[str, pd.DataFrame]:
     """Run the adapters that resolve at ORG or CCN grain and return org-keyed frames
     (build_provider_matrix broadcasts them down to each member NPI).
@@ -782,8 +783,15 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     copy, so the billing-derived enrichments are point-in-time correct.
     """
     frames: dict[str, pd.DataFrame] = {}
+    skip = skip or set()
     pc, proc = preclean, processed
     spending_p = asof_spending or _first_existing(proc, "spending_fact.parquet")
+
+    def _skipped(name: str) -> bool:
+        if name in skip:
+            log(f"    [{name}] skipped: --skip-sources")
+            return True
+        return False
 
     # --- analytics enrichments (growth-shock + clinical plausibility) -----------
     # DuckDB-streamed straight from the spending parquet (the 238M-row fact never
@@ -908,7 +916,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         log(f"    [hrsa_340b] skipped: {e}")
 
     # --- market saturation (county file → metrics + org_nodes) ---
-    try:
+    if not _skipped("saturation"):
+      try:
         from src.ingest_cms import saturation as sat
         sat_p = _first_existing(pc / "saturation", "saturation.csv", "*.csv")
         if sat_p and org_nodes is not None:
@@ -919,7 +928,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                   ["market_saturation_index"])
         else:
             log("    [saturation] skipped: needs county saturation file + org_nodes")
-    except Exception as e:
+      except Exception as e:
         log(f"    [saturation] skipped: {e}")
 
     # --- ownership churn (CHOW): diff accumulated owner snapshots → turnover ----
@@ -939,7 +948,9 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         log(f"    [ownership_churn] skipped: {e}")
 
     # --- facility (PBJ/hospice/deficiency) + HCRIS + POS: CCN-grain → org via ccn_to_npi ---
-    if ccn_to_npi is None:
+    if _skipped("facility"):
+        pass
+    elif ccn_to_npi is None:
         log("    [facility/hcris/pos] skipped: no CCN→NPI crosswalk "
             "(processed/ccn_to_npi.parquet) — the one missing link for the "
             "facility / cost-report / capacity schemes")
@@ -1119,7 +1130,7 @@ def main() -> None:
                                             org_nodes, ccn_to_npi, audit,
                                             with_analytics=args.with_analytics,
                                             snapshots_dir=snapshots_dir,
-                                            asof_spending=asof_spend_p)
+                                            asof_spending=asof_spend_p, skip=skip)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, audit)
         widened = _widened_label_from_graph(g, audit)
         case_lbls = None
@@ -1133,7 +1144,9 @@ def main() -> None:
 
         # external grounding (address) + temporal-graph velocity + billing LM
         pdim_p = _first_existing(processed, "provider_dim.parquet")
-        if pdim_p:
+        if "address" in skip:
+            audit("    [address] skipped: --skip-sources")
+        elif pdim_p:
             from .address_grounding import address_flags, load_cmra_reference
             geocoder = None
             if args.geocode:
