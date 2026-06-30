@@ -32,14 +32,15 @@ def test_embeddings_shape_and_determinism(tmp_path):
     assert len(ne) == out["nodes/org_nodes"].shape[0] or len(ne) > 0
     assert all(f"{EMB_PREFIX}{i}" in ne.columns for i in range(16))
     assert all(c in ne.columns for c in STRUCT_COLS + [PROXIMITY_COL])
-    # deterministic given the seed: recompute from the same edges → identical
-    from src.entity_graph.graph_features import build_graph
-    G = build_graph(out["nodes/org_nodes"], out["nodes/owner_nodes"],
-                    out["nodes/exclusion_nodes"], out["edges/member_edges"],
-                    out["edges/owned_by_edges"], out["edges/excluded_in_edges"],
-                    out["edges/co_located_edges"])
+    # deterministic given the seed: recompute via the SAME (sparse) backend run() uses
+    from src.entity_graph.graph_features import build_sparse_adjacency
+    from src.entity_graph.graph_embeddings_sparse import compute_node_embeddings_sparse
+    nodes, A = build_sparse_adjacency(
+        out["nodes/org_nodes"], out["nodes/owner_nodes"], out["nodes/exclusion_nodes"],
+        out["edges/member_edges"], out["edges/owned_by_edges"],
+        out["edges/excluded_in_edges"], out["edges/co_located_edges"])
     excl = set(out["nodes/exclusion_nodes"]["node_id"].astype(str))
-    again = compute_node_embeddings(G, excl)
+    again = compute_node_embeddings_sparse(nodes, A, excl)
     pd.testing.assert_frame_equal(ne.reset_index(drop=True), again.reset_index(drop=True))
 
 

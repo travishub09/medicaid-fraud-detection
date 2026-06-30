@@ -115,33 +115,28 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
             f"{len(org_features)} vs {len(org_nodes)}")
 
     log("Computing graph node embeddings …")
-    import networkx as nx
-    from .graph_features import build_graph
     from .graph_embeddings import compute_node_embeddings
-    # prune mega-address co-location edges from the EMBEDDING graph so the giant
-    # artifact component shatters into genuine clusters that fit under the size cap
-    # (rescues real rings that were only fused to the blob through a shared mail drop)
-    G_emb = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
-                        owned_by_edges, excluded_in_edges, co_located_edges,
-                        max_colocation_cluster=max_colocation_cluster)
     excl_ids = (set(exclusion_nodes["node_id"].astype(str))
                 if exclusion_nodes is not None and len(exclusion_nodes) else set())
     if not embeddings:
+        import networkx as nx
         node_embeddings = compute_node_embeddings(nx.Graph())   # schema-only, empty
         log("    embeddings SKIPPED (--no-embeddings); core graph features unaffected")
     else:
-        try:
-            # the component cap drops giant shared-address artifact hairballs, keeping
-            # the embeddable set small + meaningful → the full family fits in bounded RAM
-            node_embeddings = compute_node_embeddings(
-                G_emb, excl_ids, max_component_size=max_component_size)
-            log(f"    embedded {len(node_embeddings):,} graph nodes in components "
-                f"<= {max_component_size:,} (DeepWalk + fraud-proximity + motifs; "
-                f"giant co-location artifact components dropped)")
-        except MemoryError:
-            node_embeddings = compute_node_embeddings(nx.Graph())
-            log(f"    embeddings SKIPPED — ran out of memory; core graph features are "
-                f"unaffected (graph_emb_*/motifs absent). Lower --max-component-size.")
+        # SciPy-sparse backend: holds the full national graph (~14M nodes) in a few GB
+        # instead of 30-50, so embeddings run on a 16 GB machine. Mega-address
+        # co-location edges are pruned (artifact blobs shatter into real clusters) and
+        # giant components are size-capped — both keep memory bounded AND signal clean.
+        from .graph_features import build_sparse_adjacency
+        from .graph_embeddings_sparse import compute_node_embeddings_sparse
+        nodes, A = build_sparse_adjacency(
+            org_nodes, owner_nodes, exclusion_nodes, member_edges, owned_by_edges,
+            excluded_in_edges, co_located_edges, max_colocation_cluster=max_colocation_cluster)
+        node_embeddings = compute_node_embeddings_sparse(
+            nodes, A, excl_ids, max_component_size=max_component_size)
+        log(f"    embedded {len(node_embeddings):,} graph nodes (SciPy-sparse: DeepWalk "
+            f"+ fraud-proximity + motifs; mega-address edges pruned, components "
+            f"<= {max_component_size:,})")
 
     log("Running ring detection …")
     shells = shared_address_shell_clusters(org_nodes)

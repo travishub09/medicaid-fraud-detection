@@ -126,6 +126,66 @@ def build_graph(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
     return G
 
 
+def build_sparse_adjacency(org_nodes, owner_nodes, exclusion_nodes, member_edges,
+                           owned_by_edges, excluded_in_edges, co_located_edges,
+                           max_colocation_cluster: int | None = None):
+    """Same node/edge SELECTION as ``build_graph`` (multi-NPI-org member filter,
+    structural set, mail-drop pruning) but emitted as a SciPy CSR adjacency instead of
+    a NetworkX object — so a 14M-node graph fits in ~2-4 GB rather than 30-50 GB.
+
+    Returns ``(nodes, A)``: the node-id list (index = matrix row) and a symmetric 0/1
+    CSR adjacency with self-loops removed. Memory-light path for the embedding backend;
+    the NetworkX builder above stays for the feature/ring code and the unit tests.
+    """
+    import numpy as np
+    import scipy.sparse as sp
+
+    multi_orgs: set[str] = set()
+    if (org_nodes is not None and len(org_nodes)
+            and "n_constituent_npis" in org_nodes.columns):
+        big = pd.to_numeric(org_nodes["n_constituent_npis"],
+                            errors="coerce").fillna(1) >= 2
+        multi_orgs = set(org_nodes.loc[big, "org_node_id"].astype(str))
+    structural: set[str] = set()
+    for edges in (owned_by_edges, excluded_in_edges, co_located_edges):
+        if edges is not None and len(edges):
+            structural.update(edges["src_id"].astype(str))
+            structural.update(edges["dst_id"].astype(str))
+
+    src_parts, dst_parts = [], []
+    if member_edges is not None and len(member_edges):
+        s = member_edges["src_id"].astype(str)
+        d = member_edges["dst_id"].astype(str)
+        keep = (d.isin(multi_orgs) | s.isin(multi_orgs)
+                | s.isin(structural) | d.isin(structural))
+        src_parts.append(s[keep].to_numpy()); dst_parts.append(d[keep].to_numpy())
+
+    colo = co_located_edges
+    if (max_colocation_cluster is not None and colo is not None and len(colo)
+            and "cluster_size" in colo.columns):
+        keepc = pd.to_numeric(colo["cluster_size"], errors="coerce").fillna(0) <= max_colocation_cluster
+        colo = colo[keepc]
+    for edges in (owned_by_edges, excluded_in_edges, colo):
+        if edges is None or not len(edges):
+            continue
+        src_parts.append(edges["src_id"].astype(str).to_numpy())
+        dst_parts.append(edges["dst_id"].astype(str).to_numpy())
+
+    if not src_parts:
+        return [], sp.csr_matrix((0, 0))
+    src = np.concatenate(src_parts); dst = np.concatenate(dst_parts)
+    nodes, inv = np.unique(np.concatenate([src, dst]), return_inverse=True)
+    si, di = inv[:len(src)], inv[len(src):]
+    m = si != di                                   # drop self-loops
+    si, di = si[m], di[m]
+    n = len(nodes)
+    rows = np.concatenate([si, di]); cols = np.concatenate([di, si])  # undirected
+    A = sp.csr_matrix((np.ones(len(rows), dtype=np.float32), (rows, cols)), shape=(n, n))
+    A.sum_duplicates()
+    A.data[:] = 1.0                                # collapse parallel edges to 1
+    return list(nodes), A
+
+
 def _distance_to_exclusions(G: nx.Graph, exclusion_ids: set[str]) -> tuple[dict, dict]:
     """Multi-source BFS from every exclusion node.
 
