@@ -101,23 +101,33 @@ def kickback_co_occurrence(op_raw: pd.DataFrame, partd_raw: pd.DataFrame) -> pd.
         for n, grp in op.groupby("npi")
     }
 
+    # Set of (npi, paid-product) keys — a row matches if its drug name was paid for
+    # THAT prescriber. Vectorized membership against this set replaces a per-group
+    # Python loop (the old path scanned 1M+ prescriber groups one at a time with
+    # repeated .loc indexing — slow AND it pinned every frame in RAM long enough to
+    # tip a 16 GB box into swap).
+    SEP = "\x1f"
+    paid_keys = set()
+    for npi_val, prods in paid_products.items():
+        for p in prods:
+            paid_keys.add(f"{npi_val}{SEP}{p}")
+
     # Part D side: per NPI × drug cost
     pd_resolved = _resolve_columns(list(partd_raw.columns), PARTD_COLS)
     d = partd_raw.rename(columns={v: k for k, v in pd_resolved.items()})
     d = d.assign(npi=canonicalize_series(d["npi"]))
     d = d[d["npi"].notna()].copy()
     d["cost"] = pd.to_numeric(d["cost"], errors="coerce").fillna(0.0)
-    brand = d.get("brand_name", pd.Series("", index=d.index)).fillna("").str.strip().str.upper()
-    generic = d.get("generic_name", pd.Series("", index=d.index)).fillna("").str.strip().str.upper()
+    npi_s = d["npi"].astype(str)
+    brand = d.get("brand_name", pd.Series("", index=d.index)).fillna("").astype(str).str.strip().str.upper()
+    generic = d.get("generic_name", pd.Series("", index=d.index)).fillna("").astype(str).str.strip().str.upper()
 
-    def paid_share(npi: str, grp_idx) -> float:
-        prods = paid_products.get(npi, set())
-        if not prods:
-            return 0.0
-        hit = brand.loc[grp_idx].isin(prods) | generic.loc[grp_idx].isin(prods)
-        total = d.loc[grp_idx, "cost"].sum()
-        return float(d.loc[grp_idx, "cost"][hit].sum() / total) if total > 0 else 0.0
-
-    rows = [{"npi": n, "op_payment_utilization_corr": paid_share(n, grp.index)}
-            for n, grp in d.groupby("npi")]
-    return pd.DataFrame(rows, columns=["npi", "op_payment_utilization_corr"])
+    # a drug row is "paid" if its brand OR generic name was a paid product for its NPI
+    hit = (npi_s + SEP + brand).isin(paid_keys) | (npi_s + SEP + generic).isin(paid_keys)
+    agg = pd.DataFrame({"npi": d["npi"].to_numpy(),
+                        "cost": d["cost"].to_numpy(),
+                        "hit_cost": d["cost"].to_numpy() * hit.to_numpy()}
+                       ).groupby("npi", as_index=False).agg(
+        total=("cost", "sum"), hit=("hit_cost", "sum"))
+    agg["op_payment_utilization_corr"] = (agg["hit"] / agg["total"]).where(agg["total"] > 0, 0.0)
+    return agg[["npi", "op_payment_utilization_corr"]]

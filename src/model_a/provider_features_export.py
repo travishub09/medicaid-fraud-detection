@@ -700,16 +700,22 @@ class _SourceAudit:
         return rows
 
 
-def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
+def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
     Each entry is (source_name, subdir/filenames, callable(raw)->npi-keyed frame).
     Missing files are skipped silently — a source landing later just lights up its
     columns on the next run (the skip-missing philosophy of the subscore engine).
+    ``skip`` (lower-cased source names) force-skips an adapter — a safety valve for a
+    memory-heavy source on a tight box.
     """
     frames: dict[str, pd.DataFrame] = {}
+    skip = skip or set()
 
     def _try(name: str, folder: Path, cols: dict | None, fn):
+        if name in skip:
+            log(f"    [{name}] skipped: --skip-sources")
+            return
         try:
             src_file = _latest_year_file(folder)     # the exact file we'll read (or None)
             if src_file is None:
@@ -744,6 +750,9 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
          lambda r: openpayments.compute_openpayments_metrics(r))
 
     # Part D × Open Payments kickback co-occurrence (per-NPI) needs BOTH raws.
+    if "kickback" in skip:
+        log("    [kickback] skipped: --skip-sources")
+        return frames
     try:
         op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS)
         pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS)
@@ -1022,7 +1031,12 @@ def main() -> None:
                     help="feature-snapshot store dir (default <data-root>/feature_snapshots)")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
+    ap.add_argument("--skip-sources", default=None,
+                    help="comma-separated source names to skip (e.g. "
+                         "'kickback,billing_lm') — a safety valve for a memory-heavy "
+                         "adapter on a tight box; the column is simply absent (NaN)")
     args = ap.parse_args()
+    skip = {s.strip().lower() for s in (args.skip_sources or "").split(",") if s.strip()}
 
     root = Path(args.data_root or os.environ.get(
         "MEDICAID_DATA_ROOT", str(Path.home() / "Desktop" / "data")))
@@ -1070,7 +1084,7 @@ def main() -> None:
         ccn_xw = Path(args.ccn_to_npi) if args.ccn_to_npi else processed / "ccn_to_npi.parquet"
         ccn_to_npi = _read_any(ccn_xw)
         print("  running per-NPI adapters …")
-        adapter_frames = _run_npi_adapters(preclean, audit)
+        adapter_frames = _run_npi_adapters(preclean, audit, skip=skip)
         ne_p = g / "node_embeddings.parquet"
         if ne_p.exists():
             from src.entity_graph.graph_embeddings import to_provider_grain
