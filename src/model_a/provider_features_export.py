@@ -418,6 +418,43 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
 # CLI orchestration: discover source files under preclean/ and run each adapter
 # --------------------------------------------------------------------------- #
 
+def _latest_year_file(folder: Path) -> Path | None:
+    """The newest-year file in a multi-year source folder (partb_2024.csv over
+    partb_2016.csv). Year parsed from the filename; ties broken by name."""
+    import re
+    if folder is None or not folder.is_dir():
+        return None
+    files = sorted(list(folder.glob("*.csv")) + list(folder.glob("*.xlsx"))
+                   + list(folder.glob("*.parquet")))
+    if not files:
+        return None
+
+    def _yr(p: Path) -> int:
+        yrs = re.findall(r"(20\d{2})", p.stem)
+        return max((int(y) for y in yrs), default=-1)
+    return max(files, key=lambda p: (_yr(p), p.name))
+
+
+def _read_latest(folder: Path, cols_dict: dict | None = None) -> pd.DataFrame | None:
+    """Load the latest-year file in ``folder`` reading ONLY the columns the adapter
+    resolves (memory-safe for multi-GB CMS PUFs on a 16 GB box). Falls back to all
+    columns if none resolve (so the adapter raises its own clear error)."""
+    p = _latest_year_file(folder)
+    if p is None:
+        return None
+    if p.suffix == ".parquet":
+        return pd.read_parquet(p)
+    from src.attempt_2.clean_data import read_csv_text, _resolve_columns
+    if p.suffix.lower() in (".xlsx", ".xls"):
+        return _read_any(p)
+    if not cols_dict:
+        return read_csv_text(p)
+    header = list(read_csv_text(p, nrows=0).columns)
+    resolved = _resolve_columns(header, cols_dict)
+    use = list(dict.fromkeys(resolved.values()))
+    return read_csv_text(p, usecols=use) if use else read_csv_text(p)
+
+
 def _read_any(path: Path) -> pd.DataFrame | None:
     """Read csv/parquet as all-string (IDs keep leading zeros — hard rule #1)."""
     if not path or not path.exists():
@@ -615,8 +652,7 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
 
     def _try(name: str, finder, fn):
         try:
-            p = finder()
-            raw = _read_any(p) if p else None
+            raw = finder()                       # now returns a DataFrame (or None)
             if raw is None or not len(raw):
                 log(f"    [{name}] skipped: no source file")
                 return
@@ -631,23 +667,24 @@ def _run_npi_adapters(preclean: Path, log) -> dict[str, pd.DataFrame]:
 
     pc = preclean
     from src.ingest_cms import partb, partd, dmepos, opioid, openpayments
-    _try("partb", lambda: _first_existing(pc / "partb", "partb.csv", "*.csv"),
+    # multi-year folders: use the LATEST year, and read ONLY the columns the adapter
+    # needs (the PUFs run to multiple GB — usecols keeps a 16 GB box from OOMing).
+    _try("partb", lambda: _read_latest(pc / "partb", partb.PARTB_COLS),
          lambda r: partb.compute_partb_metrics(r))
-    _try("partd", lambda: _first_existing(pc / "partd", "partd.csv", "*.csv"),
+    _try("partd", lambda: _read_latest(pc / "partd", partd.PARTD_COLS),
          lambda r: partd.compute_partd_metrics(r))
-    _try("dmepos", lambda: _first_existing(pc / "dmepos", "dmepos.csv", "*.csv"),
+    _try("dmepos", lambda: _read_latest(pc / "dmepos", dmepos.DMEPOS_COLS),
          lambda r: dmepos.compute_dmepos_metrics(r))
-    _try("opioid", lambda: _first_existing(pc / "opioid", "opioid.csv", "*.csv"),
+    _try("opioid", lambda: _read_latest(pc / "opioid", opioid.OPIOID_COLS),
          lambda r: opioid.compute_opioid_metrics(r))
     _try("open_payments",
-         lambda: _first_existing(pc / "open_payments", "open_payments.csv", "*.csv"),
+         lambda: _read_latest(pc / "open_payments", openpayments.OP_COLS),
          lambda r: openpayments.compute_openpayments_metrics(r))
 
     # Part D × Open Payments kickback co-occurrence (per-NPI) needs BOTH raws.
     try:
-        op_p = _first_existing(pc / "open_payments", "open_payments.csv", "*.csv")
-        pd_p = _first_existing(pc / "partd", "partd.csv", "*.csv")
-        op_raw, pd_raw = (_read_any(op_p) if op_p else None), (_read_any(pd_p) if pd_p else None)
+        op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS)
+        pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS)
         if op_raw is not None and pd_raw is not None:
             kb = openpayments.kickback_co_occurrence(op_raw, pd_raw)
             if kb is not None and len(kb) and "npi" in kb.columns:
