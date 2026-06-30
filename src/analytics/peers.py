@@ -76,10 +76,22 @@ def assign_peer_groups(df: pd.DataFrame,
         if any(c not in out.columns for c in level):
             out[keycol] = pd.NA
             continue
-        vals = out[list(level)].astype(str)
+        vals = out[list(level)]
+        # guard against duplicate column labels (a 2-D selection breaks the join)
+        if getattr(vals, "columns", pd.Index([])).duplicated().any():
+            vals = vals.loc[:, ~vals.columns.duplicated()]
+        vals = vals.astype(str)
         complete = vals.ne("").all(axis=1) & vals.ne("nan").all(axis=1) \
             & vals.ne("<NA>").all(axis=1)
-        key = (f"L{i}:" + vals.agg("|".join, axis=1)).where(complete)
+        # Vectorized, string-safe key build: str.cat over explicitly-stringified
+        # columns. Avoids the row-wise ``agg("|".join)`` (which crashed on any value
+        # a float slipped past — "expected str, found float" — and was a slow Python
+        # apply over the full universe).
+        parts = [vals.iloc[:, j] for j in range(vals.shape[1])]
+        joined = parts[0]
+        for p in parts[1:]:
+            joined = joined.str.cat(p, sep="|")
+        key = (f"L{i}:" + joined).where(complete)
         out[keycol] = key
         sizes = key.value_counts()                 # FULL population per cell
         cell_n = key.map(sizes)
