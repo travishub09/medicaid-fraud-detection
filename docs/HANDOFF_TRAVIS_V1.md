@@ -4,20 +4,46 @@ _First Medicaid feature export for the supervised (graph-based tree) model. One 
 per NPI, full universe. Produced by `python -m src.model_a.provider_features_export`
 against the national procured data._
 
-## The two files that matter
+## The files you have — what to do with each
 
-Both land in the export output dir (e.g.
-`…/data/model_a/provider_features/`):
+You've been sent the whole folder. Here's what each file is for, so you know which
+matter for training and which are just reference or operations.
 
-- **`provider_features_for_model.parquet`** — the training matrix:
-  **617,062 providers × 111 columns**, one row per NPI.
-- **`feature_manifest.json`** — the column contract. **Read this first** — it names
-  the role of every column (label / leakage / features / metadata). Everything below
-  references manifest keys so the exact column names travel with the data, not this
-  doc.
+**Train on this (pick one — they carry the same features):**
+- **`provider_features_for_model.parquet`** — the training matrix: **617,062 providers ×
+  111 columns**, one row per NPI. The canonical training file.
+- **`provider_scored.parquet`** — the *same* matrix **plus** state / city / names and a
+  few convenience columns (`anomaly_score`, `anomaly_pct`, `signals_tripped`). Fine to
+  train from this instead — just train on the feature columns the manifest lists, and
+  **do NOT feed `anomaly_score` / `anomaly_pct` / `signals_tripped` into the model** —
+  those are a heuristic summary for sorting, not inputs (feeding them back in is
+  circular).
 
-Also written, for humans: `PROVIDER_FEATURES_DICTIONARY.md` (per-column reference)
-and `SOURCES_REPORT.md` (which sources fed the run, used vs. skipped + why).
+**Read this first — the rulebook:**
+- **`feature_manifest.json`** — the column contract: which column is the label, which
+  are leakage (don't train on them), the feature families, and the `group_id` for
+  grouped cross-validation. Everything below references these keys, so the exact column
+  names travel with the data.
+
+**Reference (open when you need them, don't train on them):**
+- **`PROVIDER_FEATURES_DICTIONARY.md`** — plain definition of every column.
+- **`PROVIDER_FEATURES_EXPORT_REPORT.md`** — which data sources produced which features.
+- **`SOURCES_REPORT.md`** — every source used vs. skipped, and why.
+- **`signal_ranking.csv`** — how well each feature separates known-banned providers from
+  the rest (AUC + top-decile lift). **Useful sanity check:** your model's feature
+  importance should roughly echo this — and if `subscore_ownership_integrity` or the
+  exclusion-proximity columns top *either* list, that's the leakage flag.
+
+**Leads / operations — NOT training data (ignore for the model):**
+- **`top_new_leads.csv`**, **`excluded_adjacent_leads.csv`** — ranked leads for the
+  investigation side, not inputs.
+- **`doj_overlap.csv`** — providers that matched real DOJ cases (context, not a label —
+  see the master write-up for why).
+
+**Context (background reading):**
+- **`FINDINGS_LOG.md`** — the raw evidence numbers.
+- **`Medicaid_Model_Master_Deliverable.pdf`** — the full results + this handoff, in one
+  document (Part 4 is the technical section).
 
 ## This is a PU (positive-unlabeled) problem, not balanced classification
 
