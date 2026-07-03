@@ -246,11 +246,23 @@ do. Action: a curated `state_fca` table (state → has-FCA, covers-managed-care,
 band) becomes a **Model C case-value multiplier** — all else equal, rank/underwrite leads in
 state-FCA states higher, without dropping federal-only states. Free; the CSV is the data.
 
-### Phase 2a — turn on what's already built + trivial new (public, cheap, high value)
-- **Procure the files the built adapters are already waiting on** (SOURCES_REPORT shows them
-  skipped for missing/mis-named files): year-suffixed Part B/D, the **DMEPOS by-supplier &
-  HCPCS** file (v1 had the referring layout), opioid, HCRIS, POS. One `openpyxl` install unblocks
-  **340B** + **nppes_deactivation**. No new code.
+### Phase 2a — reconcile first, then turn on the rest (public, cheap, high value)
+- **Reconcile what you already hold — do NOT re-procure.** Run
+  `python -m src.preflight --data-root <root>` (the built data-doctor: stats `preclean/` and
+  reports found / missing / named-wrong for ~25 sources + what each unlocks) and read the last
+  run's `SOURCES_REPORT.md`. Per that report the core is already in and used: Part B, Part D,
+  opioid, Open Payments, market saturation, facility, address/NPPES, NUCC, kickback, and the
+  LEIE label. What actually remains:
+  - **Just a flag, no data:** `--with-analytics` turns on growth / clinical-plausibility /
+    billing-LM; two dated snapshots turn on graph-velocity + ownership-churn.
+  - **One `pip install openpyxl`:** unlocks **340B** + **nppes_deactivation** (files already held).
+  - **Genuinely need a file/fix:** the **DMEPOS by-supplier-&-HCPCS** file (the run had the
+    referring layout — note: `preflight`'s dmepos entry still names the referring file, fix that
+    too), the **SSA Death Master File**, the **order/referring eligibility** file (+ the
+    `referred_claims` build), and **NADAC** (+ `ndc_claims`). HCRIS/POS unlock after the
+    `ccn_to_npi` crosswalk is built (`python -m src.ingest_cms.ccn_npi_crosswalk`).
+  - **New small curated tables (not bulk data):** enrollment moratoria, revalidation-due list,
+    SFF list, State-FCA / MFCU overlays.
 - **Provider Enrollment Moratoria** (nationwide HHA + Hospice, May 2026) — CMS's own
   highest-risk determination; tiny curated file → feeds the government-interest / revalidation
   overlay (I2). NEW, trivial.
