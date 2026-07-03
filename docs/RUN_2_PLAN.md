@@ -301,3 +301,71 @@ _Sequencing: N1 is the free public new sources + curated overlays + the 3-4 stil
 (days). N2 adds licensing, directories, ARCOS, owners, CLIA. N3 holds the licensing/DUA calls.
 None of it blocks a rerun — the ~20 sources you already hold are enough to rerun today, and the
 "switch-on" one-liner above lights up several more with no procurement at all._
+
+---
+
+## K. SCHEME OPTIMIZATION — double down on the winners (no new data needed)
+_These are the schemes already carrying signal. The single highest-ROI change here needs zero
+new data — it's fixing how we score what we already compute._
+
+### The headline fix: the 0–1 subscores are throwing away their own raw signal
+`signal_ranking.csv` shows the raw features (and their peer-percentiles) beat the rules-engine
+`subscore_*` versions — at the top of the list, which is exactly the slice that becomes leads:
+
+| scheme | raw feature (AUC / top-decile lift) | subscore (AUC / top-decile lift) |
+|---|---|---|
+| saturation | `market_saturation_index` 0.534 / **7.22×** | `subscore_saturation_fraud` 0.549 / **1.00×** |
+| pharma kickback | `op_payment_concentration__peerpct` **0.599** / 0.64 | `subscore_pharma_kickback` **0.423** / 0.28 |
+| specialty mismatch | `specialty_mismatch` 0.545 / **1.96×** | `subscore_specialty_mismatch` 0.529 / 1.86× |
+| overutilization | `service_intensity` 0.550 / **1.71×** | `subscore_overutilization` 0.533 / 1.68× |
+
+The saturation subscore has **no** top-decile concentration (1.0×) while its raw feature has
+**7.2×**; the kickback subscore is literally **below random** (0.42) while its raw peer-percentile
+is our **best single separator** (0.599). The 0–1 transforms (hard thresholds + squashing) are
+flattening the peer-relative signal. Two-part fix:
+1. **Train on raw + `__peerpct`, not the subscores** (the handoff already says this). Keep the
+   subscores for *explainability only* — they name the driver; they must never be the ranking
+   input. Add an audit that fails if any `subscore_*` outranks its own raw feature in the model.
+2. **Rebuild the subscore transform to preserve top-decile concentration** — score directly off
+   the one-sided robust peer-percentile (median/MAD, clipped), not a threshold, so the subscore's
+   top decile matches the raw 7.2×, not 1.0×.
+
+### Per-scheme tuning
+- **Saturation (strongest — 10.3× in the top 1%).** Compute supply-vs-need at **county ×
+  provider-type** off the CMS Market Saturation file (not a coarse cell); blend with the growth
+  signal (markets that *recently* over-saturated = fresh ring spin-up); auto-promote when it
+  co-occurs with banned-adjacency (the 555).
+- **Overutilization / service intensity (3.4×).** Residualize harder inside tighter NUCC peer
+  cells so legitimately-large practices don't dilute the tail; corroborate with the
+  **impossible-day** metric (§I3) — intensity + impossible-day is near-certain; separate
+  intensity-per-patient from patients-per-provider (distinct fraud shapes).
+- **Specialty mismatch (2.2×).** Replace the self-reported taxonomy (gameable) with the **built
+  billing-implied taxonomy classifier** (`model_a/billing_specialty.py` →
+  `billing_taxonomy_mismatch`); weight by *how far* outside the specialty the codes sit
+  (magnitude, not binary).
+- **Pharma kickback (best new separator, 0.599, but ~17% coverage).** Load **multiple Open
+  Payments vintages** → a true longitudinal payment↔utilization correlation (v1 used one year);
+  add the Insys shape as one feature (money concentrated in one manufacturer AND that
+  manufacturer's product a disproportionate share of the provider's billing); weight
+  **ownership-stake** payments highest.
+- **Rapid ramp (temporal, Travis's #3).** Decompose the single temporal feature into ramp-slope +
+  level-shift + volatility (the raw columns already exist); add the "spike-then-vanish"
+  fly-by-night shape distinct from steady growth; measure it point-in-time via the built
+  `asof_billing` so it stays leakage-correct.
+- **Network / ownership (7.8× operational — our strongest).** The 64 GB **graph embeddings** are
+  the optimization (crude 2-hop → full neighborhood); densify the graph with the **shared-patient
+  referral edges** (N1) before the walks; add tight-shell-cluster motif detection.
+
+### Cross-cutting (multiplies every scheme)
+- **Peer-grouping quality** is the lever under all of it: the NUCC coherent-cohort fallback is
+  built — audit that the ladder resolves to `taxonomy × entity × state` where it can, and flag
+  cells that fall back to national (those are weak comparisons diluting the scheme).
+- **Per-scheme calibration** (`model_a/calibration.py`, built) so each scheme's score is a
+  comparable probability before they stack.
+- **Feed the model the signal-count** (§I3 clustering fix) so the *combination* of these tuned
+  schemes is rewarded, not each in isolation.
+
+_Highest ROI, in order: (1) stop ranking on the lossy subscores — free, immediate; (2) rebuild
+the subscore transform off the robust peer-percentile; (3) swap specialty-mismatch to the
+billing-implied taxonomy (module already built); (4) tighten saturation's geography. None need
+new data._
