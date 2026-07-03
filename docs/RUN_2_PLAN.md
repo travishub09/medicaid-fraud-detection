@@ -227,3 +227,70 @@ _Fast wins to fold into Run 2a: I1 (no-NPI), I2 (revalidation overlay), I3 (impo
 approximation), I4 (NEMT base), I5 (behavioral-health), and I6 top-5 states — all run on
 public data already in hand. I7/I8 and every "deep" variant stay gated on lawful data +
 counsel._
+
+---
+
+## J. DATA-SOURCE EXPANSION — prioritized + phased (from the federal + state research files)
+_The research catalogs ~80 federal datasets and a 50-state resource map. Most of the adapters
+already exist in `ingest_cms/` and `enforcement/` (built, dormant, waiting on the file). So this
+is mainly a **procurement + activation order**, not a build list. Phased by value ÷ friction ÷
+gating. Guardrail unchanged: DUA/permitted-use-restricted sources (T-MSIS, APCD, PDMP, MA
+encounter) are barred for litigation-targeting — counsel-gated (docs/platform/02)._
+
+### Standout free win: the State False Claims Act overlay (Model C, zero procurement)
+The federal FCA covers Medicaid (the federal share) in every state. But **35 states + DC have
+their own FCA** (adds the state share, and often a better relator deal); **16 do not** — AL,
+AK, AZ, AR, ID, KY, MO, NE, ND, **OH**, OR, PA, SD, UT, WV, WI. That matters here because **Ohio
+is one of our largest data volumes (13.2M rows) and has no state FCA**, while CA / NY / TX / FL
+do. Action: a curated `state_fca` table (state → has-FCA, covers-managed-care, relator-share
+band) becomes a **Model C case-value multiplier** — all else equal, rank/underwrite leads in
+state-FCA states higher, without dropping federal-only states. Free; the CSV is the data.
+
+### Phase 2a — turn on what's already built + trivial new (public, cheap, high value)
+- **Procure the files the built adapters are already waiting on** (SOURCES_REPORT shows them
+  skipped for missing/mis-named files): year-suffixed Part B/D, the **DMEPOS by-supplier &
+  HCPCS** file (v1 had the referring layout), opioid, HCRIS, POS. One `openpyxl` install unblocks
+  **340B** + **nppes_deactivation**. No new code.
+- **Provider Enrollment Moratoria** (nationwide HHA + Hospice, May 2026) — CMS's own
+  highest-risk determination; tiny curated file → feeds the government-interest / revalidation
+  overlay (I2). NEW, trivial.
+- **Revalidation Due Date List** (NPI + due date) + **Special Focus Facility list** — overdue /
+  SFF providers = risk flags for the same overlay. NEW, small.
+- **State FCA + MFCU-activity overlays** — the case-value win above, plus MFCU recovery volume
+  as a "receptiveness" prior for Model C. Curated tables.
+
+### Phase 2b — medium build, public, highest network value
+- **Physician Shared Patient Patterns** (free NBER/CMS file: NPI↔NPI shared-patient + same-day
+  counts) → **activate the built DocGraph referral edges + referral-ring detection**. This is the
+  single biggest network add — referral rings are the kickback signature, and the network layer
+  is already our strongest.
+- **DEA ARCOS** (opioid distribution by pharmacy/county; free WaPo mirror) → pill-mill (I5)
+  corroboration.
+- **SNF All Owners** + **Nursing Home Penalties / Health Deficiencies** → related-party / shell
+  ownership + facility risk (extends the facility adapter's `deficiency_count`).
+- **State medical/nursing/pharmacy licensing** (URLs in the CSV) → **procure for the built
+  state-licensing adapter**: license status + discipline = identity corroboration + soft
+  exclusions. Start the top-volume states (CA, NY, OH, TX, FL).
+- **National Provider Directory** (`directory.cms.gov`, FHIR NDJSON) + **state MCO directories**
+  → phantom-provider detection (pairs with I7): billing NPIs absent from every directory.
+
+### Phase 3 — gated on DUA / license / counsel (biggest coverage, real friction)
+- **State APCDs** (all-payer claims, not just Medicaid FFS — the single largest coverage
+  expansion; the CSV flags which states have one). Per-state DUA + permitted-use review with
+  counsel.
+- **T-MSIS TAF via ResDAC DUA** — claims-level Medicaid gold standard (diagnoses + bene linkage;
+  unlocks the *deep* NEMT / impossible-day / rides-to-nowhere variants). DUA bars
+  litigation-targeting → Brad + counsel decision.
+- **State PDMP** (controlled-substance scripts) — law-enforcement-restricted → gated.
+- **MA risk-adjustment / encounter data** — Medicare Advantage diagnosis upcoding (MedPAC
+  estimates ~8% coding inflation; a huge theater) — restricted access.
+- **Price-transparency MRFs** (hospital + payer negotiated vs billed rates) — public but heavy
+  and messy; low near-term ROI.
+- **Defacto payer-directory APIs** (127+ payers, commercial) — phantom-network at scale; Brad
+  license decision.
+- **State Secretary-of-State business search** (ownership / shell entity resolution) — heavy
+  per-state scraping; do top states in 2b, the long tail here.
+
+_Sequencing note: 2a is pure procurement + two curated tables (days, not weeks). 2b is where the
+referral network (shared-patient) pays off. Phase 3 is where the licensing/DUA calls live — none
+of it blocks Runs 2a/2b, which already have enough public data to rerun._
