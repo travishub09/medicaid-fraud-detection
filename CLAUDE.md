@@ -78,6 +78,12 @@ python -m src.entity_graph --fixture --out /tmp/graph_out    # synthetic, no rea
 # Preflight — "do I have the data, named right?" (read-only; checks preclean/ inputs)
 python -m src.preflight --data-root ~/Desktop/data
 
+# Source registry — the single map of every source: WIRED adapter + file + schemes + gating.
+# --registry prints it (data column filled if --data-root has data); --markdown regenerates
+# docs/SOURCE_REGISTRY.md so the doc never goes stale.
+python -m src.preflight --registry --data-root ~/Desktop/data
+python -m src.preflight --markdown > docs/SOURCE_REGISTRY.md
+
 # Pipeline status — "where did I leave off?" (read-only; honors MEDICAID_DATA_ROOT)
 python -m src.pipeline_status
 
