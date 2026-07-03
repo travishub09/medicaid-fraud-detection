@@ -246,50 +246,44 @@ do. Action: a curated `state_fca` table (state → has-FCA, covers-managed-care,
 band) becomes a **Model C case-value multiplier** — all else equal, rank/underwrite leads in
 state-FCA states higher, without dropping federal-only states. Free; the CSV is the data.
 
-### Phase 2a — reconcile first, then turn on the rest (public, cheap, high value)
-- **Reconcile what you already hold — do NOT re-procure.** Run
-  `python -m src.preflight --data-root <root>` (the built data-doctor: stats `preclean/` and
-  reports found / missing / named-wrong for ~25 sources + what each unlocks) and read the last
-  run's `SOURCES_REPORT.md`. Per that report the core is already in and used: Part B, Part D,
-  opioid, Open Payments, market saturation, facility, address/NPPES, NUCC, kickback, and the
-  LEIE label. What actually remains:
-  - **Just a flag, no data:** `--with-analytics` turns on growth / clinical-plausibility /
-    billing-LM; two dated snapshots turn on graph-velocity + ownership-churn.
-  - **One `pip install openpyxl`:** unlocks **340B** + **nppes_deactivation** (files already held).
-  - **Genuinely need a file/fix:** the **DMEPOS by-supplier-&-HCPCS** file (the run had the
-    referring layout — note: `preflight`'s dmepos entry still names the referring file, fix that
-    too), the **SSA Death Master File**, the **order/referring eligibility** file (+ the
-    `referred_claims` build), and **NADAC** (+ `ndc_claims`). HCRIS/POS unlock after the
-    `ccn_to_npi` crosswalk is built (`python -m src.ingest_cms.ccn_npi_crosswalk`).
-  - **New small curated tables (not bulk data):** enrollment moratoria, revalidation-due list,
-    SFF list, State-FCA / MFCU overlays.
-- **Provider Enrollment Moratoria** (nationwide HHA + Hospice, May 2026) — CMS's own
-  highest-risk determination; tiny curated file → feeds the government-interest / revalidation
-  overlay (I2). NEW, trivial.
-- **Revalidation Due Date List** (NPI + due date) + **Special Focus Facility list** — overdue /
-  SFF providers = risk flags for the same overlay. NEW, small.
-- **State FCA + MFCU-activity overlays** — the case-value win above, plus MFCU recovery volume
-  as a "receptiveness" prior for Model C. Curated tables.
+### Already in hand — EXCLUDED from the phases below
+Per the last run's `SOURCES_REPORT` (and the source registry), **~20 of the 21 sources from the
+last run are already held** — Part B/D, opioid, Open Payments, saturation, facility, NPPES/
+address, NUCC, kickback, LEIE, and the rest. Those are **not re-listed here.** The few that only
+need *switching on* (no new data) are a one-liner, not a phase: `--with-analytics` (growth /
+plausibility / billing-LM), `pip install openpyxl` (340B + deactivation), two dated snapshots
+(graph-velocity + ownership-churn), and building `ccn_to_npi` (unlocks HCRIS/POS). **Everything
+below is net-new or still-missing data only.**
 
-### Phase 2b — medium build, public, highest network value
+### Phase N1 — new, cheap, public, highest value (acquire now)
 - **Physician Shared Patient Patterns** (free NBER/CMS file: NPI↔NPI shared-patient + same-day
-  counts) → **activate the built DocGraph referral edges + referral-ring detection**. This is the
-  single biggest network add — referral rings are the kickback signature, and the network layer
-  is already our strongest.
-- **DEA ARCOS** (opioid distribution by pharmacy/county; free WaPo mirror) → pill-mill (I5)
-  corroboration.
-- **SNF All Owners** + **Nursing Home Penalties / Health Deficiencies** → related-party / shell
-  ownership + facility risk (extends the facility adapter's `deficiency_count`).
-- **State medical/nursing/pharmacy licensing** (URLs in the CSV) → **procure for the built
-  state-licensing adapter**: license status + discipline = identity corroboration + soft
-  exclusions. Start the top-volume states (CA, NY, OH, TX, FL).
-- **National Provider Directory** (`directory.cms.gov`, FHIR NDJSON) + **state MCO directories**
-  → phantom-provider detection (pairs with I7): billing NPIs absent from every directory.
+  counts) → activates the built DocGraph referral edges + **referral-ring detection**. Single
+  biggest add — referral rings are the kickback signature and the network layer is our strongest.
+- **CMS Provider Enrollment Moratoria** (nationwide HHA + Hospice, May 2026) — CMS's own
+  highest-risk determination; tiny curated file → government-interest / revalidation overlay.
+- **Revalidation Due Date List** (NPI + due date) + **Special Focus Facility list** — overdue /
+  SFF providers as risk flags for the same overlay. Small.
+- **State FCA + MFCU-activity overlays** (curated tables) — the case-value win above + MFCU
+  recovery volume as a Model C receptiveness prior. Zero bulk data.
+- **The genuinely-missing files from the last run** (the "+1" that was NOT in hand): **SSA Death
+  Master File** (billing-after-death), **NADAC** + the NDC claim slice (drug-spread), the
+  **order/referring eligibility** file (dme_ring), and a re-pull of **DMEPOS in the
+  by-supplier-&-HCPCS layout** (last run had the referring layout, so it produced nothing).
 
-### Phase 3 — gated on DUA / license / counsel (biggest coverage, real friction)
+### Phase N2 — new, medium build, public
+- **State medical/nursing/pharmacy licensing** (URLs in the state CSV) → procure for the built
+  state-licensing adapter: license status + discipline = identity corroboration + soft
+  exclusions. Top-volume states first (CA, NY, OH, TX, FL).
+- **National Provider Directory** (`directory.cms.gov`, FHIR NDJSON) + **state MCO directories**
+  → phantom-provider detection: billing NPIs absent from every directory.
+- **DEA ARCOS** (opioid distribution by pharmacy/county; free WaPo mirror) → pill-mill corroboration.
+- **SNF All Owners** + **Nursing-Home Penalties** → related-party / shell ownership + facility
+  risk (extends the facility adapter).
+- **CLIA lab registry** (CDC) → lab-capacity mismatch (labs billing beyond their certificate).
+
+### Phase N3 — gated on DUA / license / counsel (biggest coverage, real friction)
 - **State APCDs** (all-payer claims, not just Medicaid FFS — the single largest coverage
-  expansion; the CSV flags which states have one). Per-state DUA + permitted-use review with
-  counsel.
+  expansion; the CSV flags which states have one). Per-state DUA + permitted-use review, counsel.
 - **T-MSIS TAF via ResDAC DUA** — claims-level Medicaid gold standard (diagnoses + bene linkage;
   unlocks the *deep* NEMT / impossible-day / rides-to-nowhere variants). DUA bars
   litigation-targeting → Brad + counsel decision.
@@ -301,8 +295,9 @@ state-FCA states higher, without dropping federal-only states. Free; the CSV is 
 - **Defacto payer-directory APIs** (127+ payers, commercial) — phantom-network at scale; Brad
   license decision.
 - **State Secretary-of-State business search** (ownership / shell entity resolution) — heavy
-  per-state scraping; do top states in 2b, the long tail here.
+  per-state scraping.
 
-_Sequencing note: 2a is pure procurement + two curated tables (days, not weeks). 2b is where the
-referral network (shared-patient) pays off. Phase 3 is where the licensing/DUA calls live — none
-of it blocks Runs 2a/2b, which already have enough public data to rerun._
+_Sequencing: N1 is the free public new sources + curated overlays + the 3-4 still-missing files
+(days). N2 adds licensing, directories, ARCOS, owners, CLIA. N3 holds the licensing/DUA calls.
+None of it blocks a rerun — the ~20 sources you already hold are enough to rerun today, and the
+"switch-on" one-liner above lights up several more with no procurement at all._
