@@ -126,3 +126,104 @@ _(from docs/MEDICARE_BATCH_PLAN.md — build AFTER the current Medicaid run + Tr
    then **Medicare Phase 2** (B).
 4. **Ongoing:** accumulate snapshots for the prospective test (F); decide the gated data
    licenses (G).
+5. **Phase-2 additions (I):** slot the CMS-revalidation-wave items into 2a (the cheap,
+   public-data ones) and gate the rest.
+
+---
+
+## I. PHASE-2 ADDITIONS — ride the CMS "swift revalidation" wave (new, July 2026)
+_Context: on 2026-04-23 CMS ordered every state to **swiftly revalidate high-risk Medicaid
+provider organizations** (10-day first pass, 2-year strategy in 30 days). CMS's named
+high-risk categories are **home health, hospice, DME, skilled nursing, and providers without
+NPIs**. That is the government publishing its own high-risk Medicaid target list — the exact
+sectors we already score — so these additions both sharpen the model and ride a live
+enforcement tailwind (higher P(intervene) for Model C, plus a dual-use sell: the same engine
+IS the revalidation-triage tool states now need on a clock). Guiding rule below: every **base**
+version runs on PUBLIC data we already hold (the Medicaid PUF-grain fact + public registries);
+the **deep** versions that need beneficiary-level, day-level, or GPS/EVV data are T-MSIS-RIF /
+EVV / state-DUA restricted and barred for litigation-targeting (docs/platform/02) — keep them
+gated behind counsel._
+
+**I1. No-NPI / weak-identity flag (CMS's own #1 high-risk marker).**
+- _Detects:_ billing/enrolling under a missing, invalid, deactivated, or mismatched identifier.
+- _Data strategy:_ **no new procurement.** Validate every billing + servicing NPI in the
+  Medicaid fact against **NPPES bulk** (held) and **PECOS enrollment** (held); light up the
+  built-but-gated **`nppes_deactivation`** adapter (one `openpyxl` install) and DuckDB-filter
+  the spending fact for billing after the deactivation month (same pattern as the deceased-NPI
+  check). Flags: NPI absent from NPPES; deactivated-then-billing; thin-history NPI (recently
+  issued) with immediate high volume; servicing-NPI missing while billing at scale; PECOS
+  Medicaid enrollment with no NPI link. New `billed_without_valid_npi` → folds into
+  `consistency_flags`. _Cost: free. Slot: **Run 2a.**_
+
+**I2. CMS-revalidation sector overlay + Model C signal.**
+- _Detects:_ nothing new in the data — it re-weights ranking and underwriting toward the
+  sectors CMS is actively hunting.
+- _Data strategy:_ a **curated priors table** (`cms_revalidation_2026`: sector → boost weight,
+  effective date, source cite), mapped to providers by **NUCC taxonomy / PECOS enrollment
+  type**. Feed the existing **`model_a/government_interest`** overlay (refresh quarterly, same
+  cadence as the OIG Work Plan table) and add a **Model C** feature
+  `sector_under_active_revalidation` (raises P(intervene)). As states publish **revalidation /
+  termination lists**, scrape them into the exclusions schema + label store (fresh positives).
+  _Cost: free (curation + light scraping). Slot: **2a** (overlay) + **ongoing** (state lists)._
+
+**I3. Impossible-day metric (definitional, smoking-gun class).**
+- _Detects:_ time billed per provider per day beyond physical limits (the 500-hrs/day archetype).
+- _Data strategy:_ our fact is NPI×HCPCS×**month**, so exact per-day needs day-level claims
+  (T-MSIS/state — gated). **Public approximation:** build an `hcpcs_time_map` from public CMS
+  PFS time files (time-based codes — psychotherapy, ABA, anesthesia — define their own minutes);
+  implied-minutes = Σ(claim_lines × code_minutes) per NPI per month → implied hours/day =
+  minutes / (working-days × 60) → `implied_hours_per_day`, `impossible_day_flag` at a
+  conservative cut. _Cost: free (public map). Slot: **2a** (monthly approximation); true
+  per-day **gated** on lawful day-level data._
+
+**I4. NEMT (non-emergency medical transport) as a first-class scheme.**
+- _Detects:_ phantom trips, mileage inflation — Medicaid-specific; two of our own
+  billed-after-ban smoking guns are transport companies.
+- _Data strategy:_ **already in the fact.** NEMT bills under transport HCPCS (A0080–A0999
+  ambulance/mileage; T2001–T2005 non-emergency transport; S0209/S0215; taxi/livery) and
+  transport NUCC taxonomies. Identify NEMT providers, then peer-relative signals: mileage-units
+  per trip, trips per patient, base-rate-to-mileage ratio, one-way/round-trip anomalies → new
+  `subscore_nemt_fraud`. Deep "rides with no destination service that day" needs
+  beneficiary-day linkage (T-MSIS / state EVV — gated). _Cost: free base. Slot: **2a** (base
+  subscore); deep version **gated**._
+
+**I5. Behavioral-health / SUD / ABA sector overlay.**
+- _Detects:_ patient brokering, group-billed-as-individual, ABA unit inflation, impossible
+  counseling hours (our impossible-volume DOJ example IS behavioral health).
+- _Data strategy:_ **already in the fact** — BH taxonomies + BH HCPCS (H0001–H2037, 90791/90837,
+  ABA 97151–97158). BH-stratified peer cells; signals: units/day (ties to I3), ABA-units-per-
+  child, group-vs-individual code mix, rapid SUD panel growth → `subscore_behavioral_health`.
+  _Cost: free. Slot: **2a.**_
+
+**I6. State Medicaid exclusion lists (not just federal LEIE).**
+- _Detects:_ more banned actors + more banned-adjacency; state MFCU exclusions often precede
+  federal and are Medicaid-specific.
+- _Data strategy:_ new `enforcement/state_exclusions.py` that scrapes/downloads each state
+  Medicaid-agency / MFCU exclusion list (free, fragmented; fields: name, NPI-where-present,
+  license, date, cause) and normalizes into the **existing `exclusions` schema** via the shared
+  name normalizer, then merges into graph exclusion nodes + widens the PU label with source tag
+  `state_medicaid`. Reuse the generalized exclusion loader already built for OpenSanctions/LEIE.
+  Prioritize the highest-row states (CA, NY, OH, TX, FL). _Cost: free; per-state scraping
+  friction. Slot: **2a** (top-5 states) → **ongoing.**_
+
+**I7. Phantom-network / provider-directory mismatch.**
+- _Detects:_ providers listed in Medicaid MCO networks with little/no real billing (phantom
+  network); identity fields that disagree across directories (shell).
+- _Data strategy:_ near-term proxy — scrape **state Medicaid MCO provider directories** and
+  cross listed NPIs against billing presence in the fact → `network_listed_no_billing`. Future
+  taps — the **National Directory of Healthcare Providers (NDH)** + the interop-mandated payer
+  **Provider Directory / Provider Access APIs** (the article's subject) → `directory_identity_
+  mismatch` across NDH/NPPES/PECOS. _Cost: scraping now; APIs when live. Slot: **2b** (state-
+  directory proxy) / **gated** (national APIs not fully shipped)._
+
+**I8. CLIA lab-capacity mismatch (bonus, lab sector).**
+- _Detects:_ labs billing test complexity/volume beyond their CLIA certificate.
+- _Data strategy:_ new `ingest_cms/clia.py` off the public **CDC CLIA Laboratory Registry**
+  (CLIA #, certificate type, location); join to lab NPIs (name/address fuzzy) → flag billed
+  high-complexity tests under a waiver/PPM cert, or volume implausible for the certificate.
+  _Cost: free; CLIA↔NPI join friction. Slot: **2b.**_
+
+_Fast wins to fold into Run 2a: I1 (no-NPI), I2 (revalidation overlay), I3 (impossible-day
+approximation), I4 (NEMT base), I5 (behavioral-health), and I6 top-5 states — all run on
+public data already in hand. I7/I8 and every "deep" variant stay gated on lawful data +
+counsel._
