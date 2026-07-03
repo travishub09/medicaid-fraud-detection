@@ -111,3 +111,25 @@ forward.
 Train a first PU model on the v1 matrix, then send back **feature importance** — that
 tells us which v2 additions (embeddings vs. analytics vs. the extra sources) are worth
 prioritizing on the VM.
+
+## Train on raw + `__peerpct`, NOT the `subscore_*` (they're lossy)
+
+Signal analysis (`signal_ranking.csv`) shows the raw features and their peer-percentiles beat
+the 0–1 rules-engine subscores at the **top of the list** — the slice that becomes leads:
+
+| scheme | raw (AUC / top-decile lift) | subscore (AUC / lift) |
+|---|---|---|
+| saturation | `market_saturation_index` 0.534 / **7.22×** | `subscore_saturation_fraud` 0.549 / **1.00×** |
+| pharma kickback | `op_payment_concentration__peerpct` **0.599** / 0.64 | `subscore_pharma_kickback` **0.423** / 0.28 |
+| specialty mismatch | `specialty_mismatch` 0.545 / **1.96×** | `subscore_specialty_mismatch` 0.529 / 1.86× |
+| overutilization | `service_intensity` 0.550 / **1.71×** | `subscore_overutilization` 0.533 / 1.68× |
+
+The 0–1 transforms (thresholds + squashing) flatten the peer-relative signal. The subscores are
+for **explainability only** (naming the driver on a dossier), not ranking inputs. So:
+1. Prefer the raw + `__peerpct` set; treat `subscore_*` as optional (your v2/v4 already do this).
+2. Audit: no `subscore_<scheme>` should outrank its own raw feature / `__peerpct` in gain
+   importance. If one does, the transform is doing the work, not the signal.
+3. If you include subscores, include them **alongside** the raws, never instead.
+
+A rebuilt subscore transform (scored off the robust peer-percentile, preserving the raw
+top-decile concentration) is coming on our side; until then, raw + peerpct is the safe bet.
