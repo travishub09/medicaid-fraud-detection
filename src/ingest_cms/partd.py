@@ -6,7 +6,10 @@ CSV (09-data-procurement.md #2). Grain: prescriber NPI × drug.
 
 Per-NPI metrics produced (raw; percentile with peer_percentiles):
   brand_generic_cost_ratio  brand drug cost / generic drug cost   → pharma steering
-  high_cost_drug_share      cost in top-decile cost-per-claim drugs / total cost
+  high_cost_drug_share      cost in top-decile cost-per-DAY drugs / total cost
+                            (day-supply-normalized so a 90-day fill isn't read
+                            as 3× the cost of a 30-day fill; falls back to
+                            cost-per-claim when day-supply is absent)
   controlled_substance_share (only if an opioid/controlled column is present —
                               the by-provider summary file carries it; the
                               by-provider-and-drug file does not)
@@ -30,6 +33,7 @@ PARTD_COLS = {
     "cost": ["Tot_Drug_Cst", "TOT_DRUG_CST", "total_drug_cost"],
     # present in the by-provider summary file only; optional here
     "opioid_claims": ["Opioid_Tot_Clms", "OPIOID_TOT_CLMS"],
+    "day_supply": ["Tot_Day_Suply", "TOT_DAY_SUPLY", "total_day_supply"],
 }
 
 
@@ -55,10 +59,17 @@ def compute_partd_metrics(raw: pd.DataFrame,
     generic = df.get("generic_name", pd.Series("", index=df.index)).fillna("").str.strip().str.upper()
     df["is_brand"] = (brand != "") & (generic != "") & (brand != generic)
 
-    # top-decile cost-per-claim across the file = the "high-cost drug" set
-    per_claim = (df["cost"] / df["claims"]).replace([float("inf")], pd.NA)
-    threshold = per_claim.dropna().quantile(high_cost_decile) if per_claim.notna().any() else None
-    df["is_high_cost"] = per_claim.notna() & (per_claim >= threshold) if threshold is not None else False
+    # top-decile cost-per-DAY across the file = the "high-cost drug" set.
+    # Day-supply is the fair unit: cost-per-CLAIM reads a 90-day fill as 3× the
+    # "cost" of a 30-day fill of the same drug (scheme audit). Falls back to
+    # cost-per-claim only when the file carries no day-supply column.
+    if "day_supply" in df.columns:
+        days = pd.to_numeric(df["day_supply"], errors="coerce")
+        per_unit = (df["cost"] / days).where(days > 0)
+    else:
+        per_unit = (df["cost"] / df["claims"]).replace([float("inf")], pd.NA)
+    threshold = per_unit.dropna().quantile(high_cost_decile) if per_unit.notna().any() else None
+    df["is_high_cost"] = per_unit.notna() & (per_unit >= threshold) if threshold is not None else False
 
     g = df.groupby("npi")
     out = pd.DataFrame({

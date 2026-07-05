@@ -100,7 +100,8 @@ def state_saturation_index(county_metrics: pd.DataFrame) -> pd.DataFrame:
 
 def attach_market_saturation(features: pd.DataFrame, org_nodes: pd.DataFrame,
                              county_metrics: pd.DataFrame,
-                             sector_to_service: dict[str, str] | None = None
+                             sector_to_service: dict[str, str] | None = None,
+                             zip_to_county: pd.DataFrame | None = None
                              ) -> pd.DataFrame:
     """Attach ``market_saturation_index`` to org-grain features (state-grain).
 
@@ -112,6 +113,32 @@ def attach_market_saturation(features: pd.DataFrame, org_nodes: pd.DataFrame,
     states = state_saturation_index(county_metrics)
 
     orgs = org_nodes.set_index("org_node_id")
+
+    # COUNTY grain when the plumbing exists: org ZIP (org_nodes.addr_zip) +
+    # a ZIP→county-FIPS crosswalk (HUD/Census, preclean/hud/zip_county.csv).
+    # This is the audit's "local area" upgrade — the state fallback below has
+    # ~50 distinct values per sector, so its top slice is substantially a
+    # sector×state fixed effect, not local oversupply. County stays optional
+    # (skip-missing): without the crosswalk, behavior is unchanged.
+    zip2fips: dict[str, str] = {}
+    if zip_to_county is not None and len(zip_to_county):
+        z = zip_to_county.rename(columns={c: c.lower() for c in zip_to_county.columns})
+        zc = [c for c in z.columns if c in ("zip", "zip_code", "zcta")]
+        fc = [c for c in z.columns if "fips" in c or c in ("county", "geoid")]
+        if zc and fc:
+            zips = z[zc[0]].astype(str).str.strip().str.zfill(5)
+            fips = z[fc[0]].astype(str).str.strip().str.zfill(5)
+            zip2fips = dict(zip(zips, fips))
+    by_county: dict[str, list[tuple[str, float]]] = {}
+    if zip2fips:
+        for r in county_metrics.itertuples():
+            f = str(r.fips).strip()
+            if f:
+                by_county.setdefault(f.zfill(5), []).append(
+                    (str(r.service_type).lower(), r.market_saturation_index))
+        for f in by_county:
+            by_county[f].sort(key=lambda t: (len(t[0]), t[0]))
+
     # Deterministic (state, sector-fragment) → index resolution: candidate
     # service types are matched in sorted order and the shortest matching name
     # wins (the most specific label containing the fragment). The old dict-
@@ -130,8 +157,17 @@ def attach_market_saturation(features: pd.DataFrame, org_nodes: pd.DataFrame,
         row = orgs.loc[org_id]
         sector = sector_for_taxonomy(row.get("primary_taxonomy"))
         frag = smap.get(sector)
+        if not frag:
+            return float("nan")
+        if zip2fips:                                  # county first, when wired
+            z = str(row.get("addr_zip", "") or "").strip()[:5]
+            fips = zip2fips.get(z.zfill(5)) if z else None
+            if fips:
+                for svc, idx in by_county.get(fips, ()):
+                    if frag in svc:
+                        return idx
         state = str(row.get("addr_state", "") or "").strip().upper()
-        if not frag or not state:
+        if not state:
             return float("nan")
         for svc, idx in by_state.get(state, ()):
             if frag in svc:

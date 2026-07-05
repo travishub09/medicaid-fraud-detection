@@ -115,6 +115,10 @@ OPTIONAL = [
         "billing_after_death (needs name/DOB)", "enforcement.death_master", "gated"),
     Src("owners", "PECOS ownership detail", "owners", ["owners.csv"], [".csv"],
         "richer ownership edges", "entity_graph (ownership)"),
+    Src("zip_county", "HUD/Census ZIP→county crosswalk", "hud",
+        ["zip_county.csv"], [".csv"],
+        "county-grain market saturation (upgrades the state fallback)",
+        "ingest_cms.saturation (attach_market_saturation)"),
 ]
 
 ALL_SECTIONS = [("CORE", CORE), ("UNLOCK", UNLOCKS), ("OPTIONAL", OPTIONAL)]

@@ -61,7 +61,16 @@ DEFICIENCY_COLS = {
     "ccn": ["CMS Certification Number (CCN)", "cms_certification_number_ccn",
             "Federal Provider Number", "federal_provider_number",
             "PROVNUM", "CCN", "ccn"],
+    "severity": ["Scope Severity Code", "scope_severity_code",
+                 "Scope Severity", "SCOPE_SEVERITY_CODE"],
 }
+
+# CMS scope/severity letters → weight. A raw citation COUNT correlates with
+# facility size and survey frequency, not badness (its shipped AUC was below
+# chance); the letters carry the actual gravity: J–L = immediate jeopardy,
+# G–I = actual harm, D–F = potential for harm, A–C = minimal.
+SEVERITY_WEIGHT = {**{c: 1.0 for c in "ABC"}, **{c: 2.0 for c in "DEF"},
+                   **{c: 4.0 for c in "GHI"}, **{c: 8.0 for c in "JKL"}}
 
 LIVE_DISCHARGE_PATTERN = "live discharge"
 
@@ -148,15 +157,28 @@ def compute_hospice_metrics(raw: pd.DataFrame,
 
 
 def compute_deficiency_counts(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-    """Care Compare health deficiencies (one row per citation) → count per CCN."""
+    """Care Compare health deficiencies (one row per citation) → per-CCN
+    ``deficiency_count`` (raw citations) + ``deficiency_severity_weighted``
+    (scope/severity-weighted sum; equals the count when the file has no
+    severity column — skip-missing, never silently zero)."""
     resolved = _resolve_columns(list(raw.columns), DEFICIENCY_COLS)
     if "ccn" not in resolved:
         raise ValueError(f"deficiency file missing a CCN column; "
                          f"saw {list(raw.columns)[:12]}")
     ccn = _canon_ccn(raw[resolved["ccn"]])
     quarantined = int(ccn.isna().sum())
-    out = (ccn.dropna().value_counts().rename_axis("ccn")
-           .reset_index(name="deficiency_count"))
+    df = pd.DataFrame({"ccn": ccn})
+    if "severity" in resolved:
+        sev = (raw[resolved["severity"]].fillna("").astype(str)
+               .str.strip().str.upper().str.slice(0, 1))
+        df["weight"] = sev.map(SEVERITY_WEIGHT).fillna(1.0)
+    else:
+        df["weight"] = 1.0
+    df = df[df["ccn"].notna()]
+    g = df.groupby("ccn")
+    out = pd.DataFrame({"deficiency_count": g.size(),
+                        "deficiency_severity_weighted": g["weight"].sum()}
+                       ).reset_index()
     return out, quarantined
 
 

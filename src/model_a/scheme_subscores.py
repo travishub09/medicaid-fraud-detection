@@ -74,7 +74,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
                  "ineligible_referral_share": 0.4},
     # future (B1/B2 facility + saturation adapters: ingest_cms/facility.py,
     # ingest_cms/saturation.py — percentile features at the org grain)
-    "worthless_services": {"pbj_understaffing": 0.7, "deficiency_count": 0.4,
+    # severity-weighted deficiencies carry the gravity (immediate jeopardy = 8×);
+    # the raw count keeps a small weight (size/survey-frequency confounded)
+    "worthless_services": {"pbj_understaffing": 0.7,
+                           "deficiency_severity_weighted": 0.5,
+                           "deficiency_count": 0.2,
                            # capacity-vs-billing "impossible org" (POS, sweep 2.5)
                            "capacity_mismatch": 0.6},
     "hospice_ineligibility": {"hospice_live_discharge_rate": 1.0},

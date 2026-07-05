@@ -983,7 +983,8 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
         defp = _first_existing(pc / "facility", "deficiencies.csv")
         if defp:
             m, _ = fac.compute_deficiency_counts(_read_any(defp))
-            ccn_feats.append(fac.facility_peer_percentiles(m, ["deficiency_count"]))
+            ccn_feats.append(fac.facility_peer_percentiles(
+                m, ["deficiency_count", "deficiency_severity_weighted"]))
         if ccn_feats:
             merged = ccn_feats[0]
             for extra in ccn_feats[1:]:

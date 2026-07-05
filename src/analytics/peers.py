@@ -159,6 +159,13 @@ def complexity_adjust(df: pd.DataFrame, metric_cols: list[str],
     """
     controls = [c for c in control_cols if c in df.columns]
     out = pd.DataFrame(index=df.index)
+    # hoist every O(n) coercion out of the per-cell loop — the old path
+    # re-coerced ALL controls over the FULL frame once per cell and built each
+    # cell's row mask with an O(n) isin, which is quadratic-ish at the full
+    # 617k-provider universe (it read as a hang under --with-analytics)
+    X_num = (df[controls].apply(pd.to_numeric, errors="coerce")
+             if controls else None)
+    X_ok_all = X_num.notna().all(axis=1) if controls else None
     for m in metric_cols:
         if m not in df.columns:
             continue
@@ -167,21 +174,20 @@ def complexity_adjust(df: pd.DataFrame, metric_cols: list[str],
         how = pd.Series("", index=df.index)
         for i in _levels_in(df):
             keycol = _KEY.format(i=i)
-            at_level = df["peer_level"] == i
-            if not at_level.any():
+            at_level_idx = df.index[df["peer_level"] == i]
+            if at_level_idx.empty:
                 continue
             for _, idx in df[df[keycol].notna()].groupby(keycol).groups.items():
-                sel = df.index.isin(idx) & at_level         # rows to fill here
-                if not sel.any():
+                target = pd.Index(idx).intersection(at_level_idx)  # rows to fill
+                if target.empty:
                     continue
                 y = y_all.loc[idx]
-                X = (df.loc[idx, controls].apply(pd.to_numeric, errors="coerce")
-                     if controls else pd.DataFrame(index=idx))
-                fit = y.notna() & (X.notna().all(axis=1) if controls else True)
+                fit = y.notna() & (X_ok_all.loc[idx] if controls else True)
                 if controls and int(fit.sum()) >= min_fit_n:
-                    Xf = np.column_stack([np.ones(int(fit.sum())),
-                                          X[fit].to_numpy(float)])
-                    yf = y[fit].to_numpy(float)
+                    fit_idx = y.index[fit]
+                    Xf = np.column_stack([np.ones(len(fit_idx)),
+                                          X_num.loc[fit_idx].to_numpy(float)])
+                    yf = y.loc[fit_idx].to_numpy(float)
                     beta, *_ = np.linalg.lstsq(Xf, yf, rcond=None)
                     # robust second pass: the fit itself must not be dragged by
                     # the very outliers we're hunting (median/MAD convention) —
@@ -194,25 +200,22 @@ def complexity_adjust(df: pd.DataFrame, metric_cols: list[str],
                         if min_fit_n <= int(keep.sum()) < len(resid):
                             beta, *_ = np.linalg.lstsq(Xf[keep], yf[keep],
                                                        rcond=None)
-                    ok = sel & y_all.notna() & \
-                        df[controls].apply(pd.to_numeric, errors="coerce") \
-                          .notna().all(axis=1)
-                    if ok.any():
-                        Xp = np.column_stack([
-                            np.ones(int(ok.sum())),
-                            df.loc[ok, controls].apply(
-                                pd.to_numeric, errors="coerce").to_numpy(float)])
-                        adj[ok] = y_all[ok].to_numpy(float) - Xp @ beta
-                        how[ok] = "residualized"
-                    rest = sel & y_all.notna() & ~ok
-                    if rest.any():
-                        adj[rest] = y_all[rest] - float(y[fit].median())
-                        how[rest] = "median_centered"
+                    ok = target[y_all.loc[target].notna()
+                                & X_ok_all.loc[target]]
+                    if len(ok):
+                        Xp = np.column_stack([np.ones(len(ok)),
+                                              X_num.loc[ok].to_numpy(float)])
+                        adj.loc[ok] = y_all.loc[ok].to_numpy(float) - Xp @ beta
+                        how.loc[ok] = "residualized"
+                    rest = target[y_all.loc[target].notna()].difference(ok)
+                    if len(rest):
+                        adj.loc[rest] = y_all.loc[rest] - float(y[fit].median())
+                        how.loc[rest] = "median_centered"
                 else:
                     med = float(y.median()) if y.notna().any() else np.nan
-                    rows = sel & y_all.notna()
-                    adj[rows] = y_all[rows] - med
-                    how[rows] = "median_centered"
+                    rows = target[y_all.loc[target].notna()]
+                    adj.loc[rows] = y_all.loc[rows] - med
+                    how.loc[rows] = "median_centered"
         out[f"{m}__adj"] = adj
         out[f"{m}__adjustment"] = how
     return out
