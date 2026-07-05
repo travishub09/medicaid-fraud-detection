@@ -29,6 +29,7 @@ TAXONOMY_SECTOR_PREFIXES: dict[str, str] = {
     "3747": "personal_care",      # personal care attendant / home care
     "372": "personal_care",       # home health aides etc.
     "332B": "dme",                # DME supplier
+    "3416": "ambulance",          # ambulance (land/air/water) — NEMT territory
     "291U": "lab",                # clinical medical laboratory
     "293D": "lab",
     "261QM08": "behavioral",      # mental health clinic/center
@@ -47,6 +48,7 @@ SECTOR_PRIOR_MULTIPLIER: dict[str, float] = {
     "hospice": 1.6,
     "personal_care": 1.5,   # EVV territory; Medicaid-dense (our data's strength)
     "dme": 1.5,
+    "ambulance": 1.5,       # NEMT / dialysis-transport — a standing DOJ priority
     "lab": 1.4,
     "behavioral": 1.4,
     "snf": 1.3,

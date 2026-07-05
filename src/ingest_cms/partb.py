@@ -49,12 +49,20 @@ def compute_partb_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     df = df.assign(npi=npi)[npi.notna()].copy()
 
     df["hcpcs"] = df["hcpcs"].fillna("").astype(str).str.strip().str.upper()
-    for c in ["services", "benes", "avg_allowed"]:
+    for c in ["services", "avg_allowed"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
         else:
             df[c] = 0.0
+    # benes keeps NaN where blank: CMS suppresses small counts, and a suppressed
+    # cell is "unobserved", not zero. The per-bene ratios below pair numerator
+    # and denominator over the SAME observed rows so a partially-suppressed
+    # provider isn't ratio-inflated by services whose benes are hidden.
+    df["benes"] = (pd.to_numeric(df["benes"], errors="coerce")
+                   if "benes" in df.columns else float("nan"))
     df["allowed_dollars"] = df["avg_allowed"] * df["services"]
+    df["services_w_benes"] = df["services"].where(df["benes"].notna())
+    df["allowed_w_benes"] = df["allowed_dollars"].where(df["benes"].notna())
 
     is_em = df["hcpcs"].isin(EM_OFFICE_CODES)
     is_high = df["hcpcs"].isin(EM_HIGH_CODES)
@@ -67,20 +75,26 @@ def compute_partb_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     g = df.groupby("npi")
     out = pd.DataFrame({
         "total_services": g["services"].sum(),
-        "total_benes": g["benes"].sum(),
+        "total_benes": g["benes"].sum(min_count=1),
         "total_allowed": g["allowed_dollars"].sum(),
+        "svc_w_benes": g["services_w_benes"].sum(min_count=1),
+        "alw_w_benes": g["allowed_w_benes"].sum(min_count=1),
         "em_services": df[is_em].groupby("npi")["services"].sum(),
         "em_high_services": df[is_high].groupby("npi")["services"].sum(),
         "em_level_x_srv": df[is_em].groupby("npi")["em_level_x_srv"].sum(),
-    }).fillna(0.0)
+    })
+    for c in ("total_services", "total_allowed", "em_services",
+              "em_high_services", "em_level_x_srv"):
+        out[c] = out[c].fillna(0.0)
 
     out["em_high_level_share"] = (out["em_high_services"] / out["em_services"]).where(
         out["em_services"] > 0)
     out["em_level_mean"] = (out["em_level_x_srv"] / out["em_services"]).where(
         out["em_services"] > 0)
-    out["services_per_bene"] = (out["total_services"] / out["total_benes"]).where(
+    # ratios pair the benes-observed numerator with the benes-observed denominator
+    out["services_per_bene"] = (out["svc_w_benes"] / out["total_benes"]).where(
         out["total_benes"] > 0)
-    out["allowed_per_bene"] = (out["total_allowed"] / out["total_benes"]).where(
+    out["allowed_per_bene"] = (out["alw_w_benes"] / out["total_benes"]).where(
         out["total_benes"] > 0)
 
     # HHI of allowed dollars across HCPCS (1.0 = single-code biller)

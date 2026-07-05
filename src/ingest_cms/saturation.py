@@ -37,11 +37,16 @@ SATURATION_COLS = {
 }
 
 # Model A sector (sector_priors) → substring of the PUF's "Type of Service".
+# DME and ambulance are IN the PUF (CMS tracks them precisely because they're
+# the highest-risk sectors) — leaving them unmapped silently NaN'd the two
+# sectors this saturation prior matters most for.
 SECTOR_TO_SERVICE: dict[str, str] = {
     "home_health": "home health",
     "hospice": "hospice",
     "snf": "skilled nursing",
     "lab": "clinical laboratory",
+    "dme": "durable medical",
+    "ambulance": "ambulance",
 }
 
 
@@ -107,9 +112,17 @@ def attach_market_saturation(features: pd.DataFrame, org_nodes: pd.DataFrame,
     states = state_saturation_index(county_metrics)
 
     orgs = org_nodes.set_index("org_node_id")
-    lookup: dict[tuple[str, str], float] = {}
+    # Deterministic (state, sector-fragment) → index resolution: candidate
+    # service types are matched in sorted order and the shortest matching name
+    # wins (the most specific label containing the fragment). The old dict-
+    # iteration loop returned whichever matching entry insertion order served
+    # first — file-ordering-dependent.
+    by_state: dict[str, list[tuple[str, float]]] = {}
     for r in states.itertuples():
-        lookup[(r.state, str(r.service_type).lower())] = r.market_saturation_index
+        by_state.setdefault(r.state, []).append(
+            (str(r.service_type).lower(), r.market_saturation_index))
+    for st in by_state:
+        by_state[st].sort(key=lambda t: (len(t[0]), t[0]))
 
     def _index_for(org_id: str) -> float:
         if org_id not in orgs.index:
@@ -120,8 +133,8 @@ def attach_market_saturation(features: pd.DataFrame, org_nodes: pd.DataFrame,
         state = str(row.get("addr_state", "") or "").strip().upper()
         if not frag or not state:
             return float("nan")
-        for (st, svc), idx in lookup.items():
-            if st == state and frag in svc:
+        for svc, idx in by_state.get(state, ()):
+            if frag in svc:
                 return idx
         return float("nan")
 

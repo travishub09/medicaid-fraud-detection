@@ -7,15 +7,18 @@ to section K (subscore transform) and the analytics review (digital twin, plausi
 
 ## Cross-cutting findings (affect many schemes at once)
 
-**X1 — CMS PUF suppression is being converted to zero.** In the Part B, Part D, and opioid
-prescriber PUFs, cells derived from fewer than 11 claims are **suppressed and published as
-blanks** (CMS methodology). The adapters do `pd.to_numeric(...).fillna(0.0)` on those columns
-(`partb.py`, `partd.py`, `opioid.py`), so "suppressed 1–10 claims" becomes "zero claims." Effect:
-low-volume prescribers get their opioid share, E/M mix, and drug costs systematically
-understated, and providers with most rows suppressed can show a falsely concentrated code mix
-(HHI ≈ 1 from the two surviving rows → false single-service-mill signal at small Medicare
-volume). Fix: distinguish blank (suppressed → NaN, provider partially unobserved) from literal 0;
-never impute zero for a suppressed cell.
+**X1 — CMS PUF suppression is being converted to zero. FIXED (see below).** Precision on the
+mechanism: in the Part B and Part D by-provider-and-service/drug PUFs CMS **drops the whole
+row** when it derives from ≤10 beneficiaries/claims (the bias is missing rows — not fixable
+in-adapter, only documentable), while the **opioid by-provider summary blank-suppresses cells
+in place** — and `opioid.py` was `fillna(0.0)`-ing those blanks, so "suppressed 1–10 opioid
+claims" became "zero opioid claims" (falsely clean). A secondary effect in Part B: rows whose
+bene count is unavailable still contributed their services to the per-bene ratio's numerator
+while contributing nothing to its denominator. **Fixes landed:** `opioid.py` keeps blanks as
+NaN (suppressed prescribers are unscored, never clean; `min_count=1` sums), and `partb.py`
+pairs the per-bene numerator and denominator over the same benes-observed rows. The
+row-dropping bias in Part B/D remains a documented limitation (HHI can still read concentrated
+for heavily-suppressed small providers).
 
 **X2 — Medicare-file features score a Medicaid-label universe.** Part B/D/opioid/Open Payments
 describe *Medicare* behavior; the label is Medicaid-era exclusion and the fact table is Medicaid.
@@ -68,12 +71,25 @@ discount broadcast signals.
 3. The within-state-within-sector saturation re-cut (one query on the real data) — decides
    whether the 10.3× headline survives.
 
-## Priority fixes from this audit
-1. **Saturation:** correct the outbound "local area" claim; add DME + ambulance to
-   `SECTOR_TO_SERVICE`; build the ZIP→county join (Census file is already procured per the
-   runbook); run the within-sector/state re-cut.
-2. **Suppression handling (X1):** blanks → NaN, never 0, in `partb`/`partd`/`opioid`.
-3. **Kickback co-occurrence:** token/crosswalk matching + all five OP product fields.
-4. **Deficiency severity weighting + per-bed normalization** in `facility.py`.
-5. **Day-supply normalization** for `high_cost_drug_share`; **pre-window history** for
-   `new_code_burst`; **prevalence shrinkage** for plausibility.
+## Priority fixes from this audit — status
+1. **Saturation** — DONE in part: DME + ambulance added to `SECTOR_TO_SERVICE` (+ an
+   `ambulance` sector in `sector_priors`), lookup made deterministic. REMAINING: correct the
+   outbound "local area" claim wherever repeated; build the ZIP→county join; run the
+   within-sector/state re-cut on real data.
+2. **Suppression handling (X1)** — DONE (`opioid.py` NaN-preserving; `partb.py` paired
+   per-bene ratios). Row-drop suppression in Part B/D stays a documented limitation.
+3. **Kickback co-occurrence** — DONE: form-stripped-name + first-distinctive-token matching
+   across ALL five OP product fields, with a loud warning when no product column exists.
+   The token fallback trades some precision for the recall that makes the signal exist;
+   documented in `_match_keys`. Re-measure AUC on real data after the next run.
+4. **Subscore NULL propagation** — DONE (`scheme_subscores.py`: per-row weight
+   renormalization; no observed evidence → NaN, the zero-imputed floor is gone). Downstream
+   note: subscore coverage in the export report will now reflect true source coverage
+   instead of a fake 100%.
+5. REMAINING: **deficiency severity weighting + per-bed normalization** (`facility.py`);
+   **day-supply normalization** for `high_cost_drug_share`; **pre-window history** for
+   `new_code_burst`; **prevalence shrinkage** for plausibility; digital-twin exogenous
+   controls (tracked in the analytics review).
+
+_All fixes above ship with regression tests in `tests/test_scheme_audit_fixes.py`; full suite
+376 passing._

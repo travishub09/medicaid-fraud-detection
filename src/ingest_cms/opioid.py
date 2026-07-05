@@ -46,11 +46,15 @@ def compute_opioid_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
                        & df["npi"].fillna("").astype(str).str.strip().ne("")).sum())
     df = df.assign(npi=npi)[npi.notna()].copy()
     for c in ("total_claims", "opioid_claims", "opioid_la_claims"):
-        df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0)
+        # CMS blank-suppresses counts derived from fewer than 11 claims — a blank
+        # means "somewhere in 1–10, unobserved", NOT zero. Keep NaN so a
+        # suppressed prescriber ranks as UNSCORED on that share instead of
+        # falsely clean (fillna(0) here understated opioid shares for every
+        # low-volume prescriber).
+        df[c] = pd.to_numeric(df.get(c, float("nan")), errors="coerce")
 
-    g = df.groupby("npi").agg(total_claims=("total_claims", "sum"),
-                              opioid_claims=("opioid_claims", "sum"),
-                              opioid_la_claims=("opioid_la_claims", "sum"))
+    g = df.groupby("npi")[["total_claims", "opioid_claims",
+                           "opioid_la_claims"]].sum(min_count=1)
     g["opioid_claim_share"] = (g["opioid_claims"] / g["total_claims"]).where(
         g["total_claims"] > 0)
     g["opioid_long_acting_share"] = (

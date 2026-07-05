@@ -128,8 +128,17 @@ def compute_subscores(features: pd.DataFrame,
         present = {c: w for c, w in wmap.items() if c in feats.columns}
         if not present:
             continue
-        wsum = sum(present.values())
-        x = sum(feats[c].fillna(0).clip(0, 1) * w for c, w in present.items()) / wsum
+        # NULL-aware weighted mean: a missing feature means "provider absent from
+        # that source" (the platform's NULL convention), NOT zero. Imputing 0 here
+        # floored every provider uncovered by a thin source at sigmoid(-3)≈0.047 —
+        # an identical constant for most of the universe that flooded the score's
+        # top decile with ties and anti-correlated it with the label wherever the
+        # excluded are under-covered. Weights renormalize over the features each
+        # row actually has; rows with NO observed evidence stay NaN (unscored,
+        # never force-scored).
+        num = sum(feats[c].clip(0, 1).fillna(0) * w for c, w in present.items())
+        den = sum(feats[c].notna() * w for c, w in present.items())
+        x = num / den.where(den > 0)
         out[f"subscore_{scheme}"] = _sigmoid(STEEPNESS * (x - THRESHOLD))
         coverage[scheme] = sorted(present)
     return out, coverage

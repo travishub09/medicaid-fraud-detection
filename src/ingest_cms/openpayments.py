@@ -22,6 +22,8 @@ Outputs:
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns, canonicalize_series
@@ -81,36 +83,77 @@ def compute_openpayments_metrics(raw: pd.DataFrame
     return metrics, pays_edges, quarantined
 
 
+# All five OP associated-product name fields (the old path read only field 1,
+# silently discarding up to 80% of the payment→product links).
+_PRODUCT_COL_RE = re.compile(
+    r"(name_of_(associated_covered_)?drug|product_category)", re.IGNORECASE)
+
+# Dosage/form noise stripped before matching — OP writes "XARELTO 20MG TABLET"
+# where Part D writes "XARELTO"; exact-string equality matched almost nothing
+# (the shipped signal ranked at chance because of it).
+_FORM_TOKENS = frozenset({
+    "MG", "MCG", "ML", "GM", "HCL", "ER", "XR", "XL", "DR", "SR", "CR", "LA",
+    "TABLET", "TABLETS", "TAB", "TABS", "CAPSULE", "CAPSULES", "CAP", "CAPS",
+    "ORAL", "SOLUTION", "SUSPENSION", "INJECTION", "INJ", "CREAM", "GEL",
+    "PATCH", "SPRAY", "KIT", "PEN", "DEVICE", "AND", "WITH", "FOR",
+})
+
+
+def _name_tokens(name: str) -> list[str]:
+    toks = re.split(r"[^A-Z0-9]+", str(name).upper())
+    return [t for t in toks
+            if t and not t.isdigit() and not t[0].isdigit() and t not in _FORM_TOKENS]
+
+
+def _match_keys(name: str) -> list[str]:
+    """Keys a product/drug name matches under: the full form-stripped name, plus
+    the first distinctive token (len ≥ 4) so "XARELTO 20MG TABLET" ↔ "XARELTO".
+    The token fallback trades a little precision (same-family drugs share a first
+    token) for the recall that makes the signal exist at all — acceptable for a
+    one-sided exposure share, and documented."""
+    toks = _name_tokens(name)
+    if not toks:
+        return []
+    keys = [" ".join(toks)]
+    if len(toks[0]) >= 4 and toks[0] != keys[0]:
+        keys.append(toks[0])
+    return keys
+
+
 def kickback_co_occurrence(op_raw: pd.DataFrame, partd_raw: pd.DataFrame) -> pd.DataFrame:
     """Cross OP payments with Part D utilization → per-NPI co-occurrence (0–1).
 
     For each prescriber: (drug cost on products whose names appear among the
     products of manufacturers who paid that prescriber) / (total drug cost).
-    Product↔drug match is by normalized name against Brnd_Name OR Gnrc_Name.
-    Prescribers with no OP payments score 0 (no kickback exposure observed).
+    Matching is form-stripped-name OR first-distinctive-token equality against
+    Brnd_Name OR Gnrc_Name, across ALL five OP product fields (see _match_keys
+    for the precision/recall tradeoff). Prescribers with no OP payments score 0
+    (no kickback exposure observed).
     """
-    # OP side: per NPI, the set of paid product names
+    # OP side: per NPI, the set of paid product match-keys, from every product column
     op_resolved = _resolve_columns(list(op_raw.columns), OP_COLS)
     op = op_raw.rename(columns={v: k for k, v in op_resolved.items()})
     op = op.assign(npi=canonicalize_series(op["npi"]))
     op = op[op["npi"].notna()]
-    op["product"] = (op["product"].fillna("").astype(str).str.strip().str.upper()
-                     if "product" in op.columns else "")
-    paid_products: dict[str, set] = {
-        n: {p for p in grp["product"] if p}
-        for n, grp in op.groupby("npi")
-    }
+    product_cols = [c for c in op.columns
+                    if c == "product" or _PRODUCT_COL_RE.search(str(c))]
+    if not product_cols:
+        # no product columns at all → the whole feature is silently zero; say so
+        import logging
+        logging.getLogger(__name__).warning(
+            "kickback_co_occurrence: no OP product columns found — "
+            "op_payment_utilization_corr will be 0 for everyone")
 
-    # Set of (npi, paid-product) keys — a row matches if its drug name was paid for
-    # THAT prescriber. Vectorized membership against this set replaces a per-group
-    # Python loop (the old path scanned 1M+ prescriber groups one at a time with
-    # repeated .loc indexing — slow AND it pinned every frame in RAM long enough to
-    # tip a 16 GB box into swap).
+    # Set of (npi, match-key) — a Part D row matches if any key of its drug name
+    # was paid for THAT prescriber. Vectorized set-membership (see history: the
+    # per-group loop swapped a 16 GB box).
     SEP = "\x1f"
-    paid_keys = set()
-    for npi_val, prods in paid_products.items():
-        for p in prods:
-            paid_keys.add(f"{npi_val}{SEP}{p}")
+    paid_keys: set[str] = set()
+    for c in product_cols:
+        vals = op[c].fillna("").astype(str)
+        for npi_val, name in zip(op["npi"].to_numpy(), vals.to_numpy()):
+            for k in _match_keys(name):
+                paid_keys.add(f"{npi_val}{SEP}{k}")
 
     # Part D side: per NPI × drug cost
     pd_resolved = _resolve_columns(list(partd_raw.columns), PARTD_COLS)
@@ -118,12 +161,23 @@ def kickback_co_occurrence(op_raw: pd.DataFrame, partd_raw: pd.DataFrame) -> pd.
     d = d.assign(npi=canonicalize_series(d["npi"]))
     d = d[d["npi"].notna()].copy()
     d["cost"] = pd.to_numeric(d["cost"], errors="coerce").fillna(0.0)
-    npi_s = d["npi"].astype(str)
-    brand = d.get("brand_name", pd.Series("", index=d.index)).fillna("").astype(str).str.strip().str.upper()
-    generic = d.get("generic_name", pd.Series("", index=d.index)).fillna("").astype(str).str.strip().str.upper()
+    npi_arr = d["npi"].astype(str).to_numpy()
+    brand = d.get("brand_name", pd.Series("", index=d.index)).fillna("").astype(str)
+    generic = d.get("generic_name", pd.Series("", index=d.index)).fillna("").astype(str)
 
-    # a drug row is "paid" if its brand OR generic name was a paid product for its NPI
-    hit = (npi_s + SEP + brand).isin(paid_keys) | (npi_s + SEP + generic).isin(paid_keys)
+    # memoize name → keys (Part D files repeat the same drug names constantly)
+    key_cache: dict[str, list[str]] = {}
+
+    def _keys_cached(name: str) -> list[str]:
+        got = key_cache.get(name)
+        if got is None:
+            got = key_cache[name] = _match_keys(name)
+        return got
+
+    hit = [any(f"{n}{SEP}{k}" in paid_keys for k in _keys_cached(b))
+           or any(f"{n}{SEP}{k}" in paid_keys for k in _keys_cached(ge))
+           for n, b, ge in zip(npi_arr, brand.to_numpy(), generic.to_numpy())]
+    hit = pd.Series(hit, index=d.index)
     agg = pd.DataFrame({"npi": d["npi"].to_numpy(),
                         "cost": d["cost"].to_numpy(),
                         "hit_cost": d["cost"].to_numpy() * hit.to_numpy()}
