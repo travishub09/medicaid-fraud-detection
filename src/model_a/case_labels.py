@@ -23,6 +23,7 @@ import re
 
 import pandas as pd
 
+from src.entity_graph.resolve_entities import norm_org_name
 from src.model_a.lookalikes import resolve_settled_orgs
 
 _YEAR = re.compile(r"\b(19\d{2}|20\d{2})\b")
@@ -49,16 +50,71 @@ def extract_conduct_window(text: str, announced_date: str = "",
     return None, None
 
 
+def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
+                   already: set, threshold: float) -> pd.DataFrame:
+    """Second-pass FUZZY defendant↔org matching (Run 2 §F) for cases the exact
+    name-key join missed — 'ACME HEALTH SERVICES LLC' vs 'ACME HEALTH SERVICES'.
+    difflib on normalized keys, conservative threshold, same output shape as
+    resolve_settled_orgs. Only cases with a real recovery."""
+    import difflib
+    cols = ["org_node_id", "matched_case_id"]
+    name_col = next((c for c in ("org_name", "name", "entity_name")
+                     if c in org_nodes.columns), None)
+    def_col = next((c for c in ("defendant", "defendant_name", "defendants")
+                    if c in case_db.columns), None)
+    if not name_col or not def_col or "case_id" not in case_db.columns:
+        return pd.DataFrame(columns=cols)
+    orgs = org_nodes[["org_node_id", name_col]].dropna().copy()
+    orgs["key"] = orgs[name_col].astype(str).map(norm_org_name)
+    orgs = orgs[orgs["key"].str.len() >= 8]           # short keys over-match
+    org_keys = orgs["key"].unique().tolist()
+    amount = pd.to_numeric(case_db.get("amount_usd"), errors="coerce").fillna(0.0)
+    live = case_db[(amount > 0) & ~case_db["case_id"].astype(str).isin(already)]
+    rows = []
+    for r in live.itertuples():
+        dkey = norm_org_name(str(getattr(r, def_col, "") or ""))
+        if len(dkey) < 8:
+            continue
+        hit = difflib.get_close_matches(dkey, org_keys, n=1, cutoff=threshold)
+        if hit:
+            for oid in orgs.loc[orgs["key"] == hit[0], "org_node_id"]:
+                rows.append({"org_node_id": str(oid),
+                             "matched_case_id": str(r.case_id)})
+    return pd.DataFrame(rows, columns=cols)
+
+
 def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
-                      npi_to_org: pd.DataFrame) -> pd.DataFrame:
+                      npi_to_org: pd.DataFrame,
+                      fuzzy_threshold: float | None = 0.92,
+                      medicaid_only: bool = False) -> pd.DataFrame:
     """Per-NPI DOJ-case labels: npi, fraud_label, fraud_scheme, conduct_start,
     conduct_end, case_ids, amount_usd, label_source. One row per NPI (a provider in
-    multiple cases takes the union of schemes, the widest window, summed dollars)."""
+    multiple cases takes the union of schemes, the widest window, summed dollars).
+
+    ``fuzzy_threshold`` adds a conservative difflib second pass for defendants the
+    exact name-key join missed (None disables — Run 2 §F). ``medicaid_only`` keeps
+    only cases whose text mentions Medicaid (the §F filter for the Medicaid label)."""
     cols = ["npi", "fraud_label", "fraud_scheme", "conduct_start", "conduct_end",
             "case_ids", "amount_usd", "label_source"]
     if case_db is None or not len(case_db) or org_nodes is None or not len(org_nodes):
         return pd.DataFrame(columns=cols)
+    if medicaid_only:
+        text = (case_db.get("summary", pd.Series("", index=case_db.index)).fillna("")
+                .astype(str) + " "
+                + case_db.get("title", pd.Series("", index=case_db.index)).fillna("")
+                .astype(str))
+        case_db = case_db[text.str.contains("medicaid", case=False)]
+        if not len(case_db):
+            return pd.DataFrame(columns=cols)
     settled = resolve_settled_orgs(org_nodes, case_db)        # org_node_id, matched_case_id, …
+    if fuzzy_threshold is not None:
+        extra = _fuzzy_settled(org_nodes, case_db,
+                               set(settled["matched_case_id"].astype(str))
+                               if len(settled) else set(),
+                               threshold=fuzzy_threshold)
+        if len(extra):
+            settled = (pd.concat([settled, extra], ignore_index=True)
+                       .drop_duplicates(["org_node_id", "matched_case_id"]))
     if not len(settled):
         return pd.DataFrame(columns=cols)
 

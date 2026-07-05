@@ -87,20 +87,20 @@ _(from docs/MEDICARE_BATCH_PLAN.md — build AFTER the current Medicaid run + Tr
 ---
 
 ## E. SMOKING-GUN + FEATURE UPGRADES  [Run 2a]
-- **Time attributes on billing-after-deactivation** (and billing-after-exclusion /
+- **Time attributes on billing-after-deactivation — BUILT** (`model_a/smoking_gun_timeline.py`; export wires excl+deact, death auto-follows when the DMF lands) (and billing-after-exclusion /
   after-death): not just a 0/1 flag — add *when* it happened, *how long after* the
   ban/deactivation/death, and *how much $* billed after. Turns each smoking gun into a
   dated timeline for a case file.
 - **Bake state + city + zip + names into the export natively — BUILT** (export joins provider_dim identifiers; stop the post-hoc
   `make_scored_parquet` join). Also fold the composite `anomaly_score` / `anomaly_pct` /
   `signals_tripped` into the export.
-- **Widen the training label** with the new near-certain sources as positives
+- **Widen the training label — BUILT** (deactivation/death smoking-gun positives with provenance tags; flags moved to leakage_hard) with the new near-certain sources as positives
   (deactivation, death, preclusion) — more positives = stronger model.
 
 ---
 
 ## F. VALIDATION & LABELS  [Run 2a/2b]
-- **DOJ case DB as a training label (not lead-validation):** add fuzzy matching + a
+- **DOJ case DB as a training label — BUILT** (`case_labels.py` fuzzy_threshold=0.92 difflib second pass + medicaid_only filter): add fuzzy matching + a
   Medicaid-only case filter, then fold matched, prosecuted outcomes into the label.
 - **Prospective validation (gold standard):** start archiving **point-in-time feature
   snapshots** now (`make feature-snapshot` on a cadence) + monthly **owner snapshots**

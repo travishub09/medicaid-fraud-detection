@@ -86,7 +86,14 @@ LABEL_COL = "provider_on_leie"
 
 # Features derived from the provider's OWN exclusion — circular with the label.
 LEAKAGE_HARD = ["billed_after_exclusion", "excluded_after_billing",
-                "provider_on_leie"]
+                "provider_on_leie",
+                # §E smoking-gun timelines (exclusion/deactivation/death-derived:
+                # case-file enrichment, never trainable)
+                *[f"{p}_{c}" for p in ("excl", "deact", "death")
+                  for c in ("months_after", "paid_after", "first_after", "last_after")],
+                # §E label widening: once these definitional flags feed the label,
+                # they are label-derived and must never also be features
+                "billing_after_deactivation", "billed_after_death"]
 
 # Exclusion-PROXIMITY features: predictive (rings get caught together) but
 # correlated with the label — use only under a strict out-of-time split. Includes
@@ -286,6 +293,26 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     out = pd.concat(pieces, axis=1)
     out = out.loc[:, ~out.columns.duplicated()]
     assert len(out) == n0, "matrix row count changed during assembly"
+
+    # §E: widen the label with the near-certain smoking guns as POSITIVES —
+    # billing after NPI deactivation / after death is definitional fraud conduct
+    # (more positives = a stronger PU label). Provenance-tagged like every other
+    # source; the source flags themselves are in LEAKAGE_HARD so they can never
+    # double as features once they feed the label.
+    if "provider_on_exclusion" in out.columns:
+        if "exclusion_label_sources" not in out.columns:
+            out["exclusion_label_sources"] = ""
+        for flag, tag in (("billing_after_deactivation", "deactivation"),
+                          ("billed_after_death", "death")):
+            if flag not in out.columns:
+                continue
+            pos = pd.to_numeric(out[flag], errors="coerce").fillna(0) > 0
+            if not pos.any():
+                continue
+            out.loc[pos, "provider_on_exclusion"] = 1
+            src = out.loc[pos, "exclusion_label_sources"].fillna("").astype(str)
+            out.loc[pos, "exclusion_label_sources"] = (
+                src.where(src == "", src + ";") + tag)
 
     # Manufacture high-confidence NEGATIVES (known non-offenders) so a model can
     # contrast fraud actors against a real clean cohort, not just the unlabeled mass.
@@ -1140,6 +1167,52 @@ def main() -> None:
                                             asof_spending=asof_spend_p, skip=skip)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, audit)
         widened = _widened_label_from_graph(g, audit)
+
+        # §E: smoking-gun TIME ATTRIBUTES — dated timelines for the definitional
+        # flags (months/dollars billed AFTER exclusion or deactivation). These are
+        # leakage_hard case-file enrichment, never features (LEAKAGE_HARD carries
+        # the column names, so the manifest quarantines them by contract). The
+        # same engine wires billing-after-death the day the SSA DMF lands.
+        try:
+            from .smoking_gun_timeline import billing_after_cutoff
+            spend_tl = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            cuts = []
+            ep = g / "nodes" / "exclusion_nodes.parquet"
+            if ep.exists():
+                ex = pd.read_parquet(ep)
+                dcol = next((c for c in ("excl_date", "exclusion_date", "EXCLDATE")
+                             if c in ex.columns), None)
+                if "npi" in ex.columns and dcol:
+                    ex = ex.copy()
+                    ex["npi"] = ex["npi"].astype(str)
+                    ex = ex[ex["npi"].str.len() >= 10]
+                    cuts.append(("excl", ex.rename(columns={dcol: "cutoff_date"})
+                                 [["npi", "cutoff_date"]]))
+            dp = _first_existing(preclean / "nppes_deactivation", "deactivation.csv",
+                                 "deactivation.xlsx", "*.zip", "*.xlsx", "*.csv")
+            if dp:
+                from src.ingest_cms import nppes_deactivation as nd
+                deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
+                if "deactivation_date" in deact.columns:
+                    cuts.append(("deact", deact.rename(
+                        columns={"deactivation_date": "cutoff_date"})
+                        [["npi", "cutoff_date"]]))
+            if spend_tl and cuts:
+                tl = None
+                for prefix, cut in cuts:
+                    spend = _spending_for_npis(spend_tl, cut["npi"].tolist())
+                    f = billing_after_cutoff(spend, cut, prefix)
+                    tl = f if tl is None else tl.merge(f, on="npi", how="outer")
+                if tl is not None and len(tl):
+                    adapter_frames["smoking_gun_timeline"] = tl
+                    audit(f"    [smoking_gun_timeline] {len(tl):,} providers with "
+                          f"cutoff timelines ({', '.join(p for p, _ in cuts)}) — "
+                          f"leakage_hard case-file columns, never features")
+            else:
+                audit("    [smoking_gun_timeline] skipped: needs spending_fact + "
+                      "exclusion dates (graph) or the deactivation file")
+        except Exception as e:
+            audit(f"    [smoking_gun_timeline] skipped: {e}")
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
