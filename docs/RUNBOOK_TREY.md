@@ -273,3 +273,74 @@ Then point the export's `--graph-dir` at `graph_2020`. See `RUNBOOK_TRAVIS.md` �
 | leading zeros gone from NPIs | a CSV was opened/saved in Excel — re-download the raw file |
 
 `python -m src.pipeline_status` prints "where did I leave off" (read-only).
+
+## 7. Run 2 additions — the new commands, in the order you run them
+
+Everything below landed after the first national run. Same rules as always: read-only
+on inputs, every step writes a report, nothing here needs code changes.
+
+**Before the rerun (one-time):**
+
+```bash
+pip install openpyxl                       # unlocks 340B + deactivation (files already downloaded)
+
+# OpenSanctions (already downloaded; free bulk CSV) → exclusions + ~45 state Medicaid lists
+python -m src.enforcement.opensanctions --in preclean/opensanctions/targets.simple.csv \
+    --out processed/exclusions_opensanctions.parquet
+
+# what do I have, and is it named right? (also regenerates the source-registry doc)
+python -m src.preflight --data-root ~/Desktop/data
+```
+
+**The rerun (Medicaid):** run the pipeline + graph + export as in §3. The export now
+adds automatically: the volume/price digital twins, smoking-gun timelines, the
+deactivation/death label widening, NEMT + behavioral-health schemes, native
+name/city/zip, and it ends with `EXPECTATIONS_REPORT.md` — read that first; every
+FAIL row is a calculation that ran but didn't behave, with "go look at" attached.
+
+**After the export:**
+
+```bash
+# per-feature signal trend (replaces the old scratchpad script)
+python -m src.model_a.signal_ranking --matrix provider_features_for_model.parquet \
+    --manifest feature_manifest.json --out signal_ranking.csv
+
+# the ranked, gated lead lists (no size cut; scheme-aware $5M gate)
+python -m src.model_a.lead_export --matrix provider_features_for_model.parquet \
+    --out-dir detection/leads
+
+# ghost NPIs — billing numbers absent from the registry (CMS's #1 high-risk marker)
+python -m src.model_a.identity_flags --spending processed/spending_fact.parquet \
+    --provider-dim processed/provider_dim.parquet --out ghost_npis.csv
+```
+
+**When Travis sends artifacts back:**
+
+```bash
+# audit his training against the contract (leakage, subscore-vs-raw, group split)
+python -m src.model_a.verify_training --importance feature_importance.csv \
+    --manifest feature_manifest.json --assignments train_test.csv \
+    --matrix provider_features_for_model.parquet
+
+# settle the negatives/split question with the ablation grid (the A/B answer, with receipts)
+python -m src.model_a.retrospective --matrix provider_features_for_model.parquet \
+    --manifest feature_manifest.json
+```
+
+**Medicare phase (once partb_<year>.csv / partd_<year>.csv vintages are staged):**
+
+```bash
+python -m src.ingest_cms.medicare_fact --partb-dir preclean/partb --partd-dir preclean/partd \
+    --out-dir processed/medicare
+python -m src.ingest_cms.medicare_growth --fact processed/medicare/medicare_fact.parquet \
+    --out processed/medicare/medicare_growth.parquet
+python -m src.model_a.medicare_export --medicare-dir processed/medicare --preclean preclean \
+    --provider-dim processed/provider_dim.parquet --graph-dir <graph-dir> --out-dir <out>
+```
+
+**Small optional files that light up more schemes** (drop in place, rerun the export):
+`preclean/hud/zip_county.csv` (county-grain saturation — the "local area" upgrade),
+`preclean/hcpcs_time/hcpcs_minutes.csv` (impossible-day), `preclean/cms_priority/`
+(moratoria.csv / revalidation_due.csv / sff.csv → the CMS-wave overlay flags),
+`preclean/dmf/dmf.csv` (billing-after-death), the DMEPOS by-Referring-AND-Service
+re-pull, and `preclean/docgraph/` shared-patient (referral rings).
