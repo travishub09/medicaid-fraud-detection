@@ -59,8 +59,10 @@ UNLOCKS = [
         "drug_outlier, pharma_kickback (high_cost_drug_share)", "ingest_cms.partd"),
     Src("opioid", "Part D by Provider (opioid summary)", "opioid", ["opioid.csv"], [".csv"],
         "pill_mill (opioid_claim_share, long_acting_share)", "ingest_cms.opioid"),
-    Src("dmepos", "DMEPOS by Supplier & HCPCS", "dmepos", ["dmepos.csv"], [".csv"],
-        "dme_ring (needs the by-supplier layout, NOT by-referring)", "ingest_cms.dmepos"),
+    Src("dmepos", "DMEPOS by Referring Provider & Service", "dmepos", ["dmepos.csv"], [".csv"],
+        "dme_ring signals + the INFLUENCED-dollars exposure basis for referrers "
+        "(needs the by-referring-AND-SERVICE layout: Rfrg_NPI + HCPCS; the "
+        "by-referring summary lacks HCPCS and fails)", "ingest_cms.dmepos"),
     Src("open_payments", "Open Payments (general + research)", "open_payments",
         ["open_payments.csv"], [".csv"],
         "pharma_kickback (op_payment_concentration, utilization_corr)", "ingest_cms.openpayments"),

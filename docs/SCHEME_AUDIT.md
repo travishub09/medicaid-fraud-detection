@@ -55,7 +55,7 @@ discount broadcast signals.
 | # | Scheme | Status | Audit note |
 |---|---|---|---|
 | 14 | **impossible_day** | dormant by data | Correctly refuses to fire (skip-missing); needs day-level counts or the PFS time-file approximation (§I3). Design sound. |
-| 15 | **dme_ring** | dormant — wrong file layout procured | The by-referring layout lacks `hcpcs`; adapter correctly raised. Registry now names the by-supplier file. Re-pull unlocks it. |
+| 15 | **dme_ring** | dormant — wrong file layout procured | The procured by-referring SUMMARY lacks `hcpcs`; the adapter wants the by-Referring-Provider-AND-SERVICE layout (Rfrg_NPI × HCPCS) — which doubles as the influenced-dollars exposure basis (docs/OUTPUT_METHODOLOGY.md). Registry corrected. Re-pull unlocks it. |
 | 16 | **contract_pharmacy (340B)** | gated on `openpyxl` | OPAIS 3-worksheet loader built; not audited against a real file this pass. |
 | 17 | **invalid_identity** | gated on `openpyxl` | Deactivation-report loader (banner-header handling) built; billing-after-deactivation is a DuckDB month filter — design correct, unverified on real file. |
 | 18 | **cost_report_fraud (HCRIS)** | dormant — needs `ccn_to_npi` | Not audited beyond wiring. |

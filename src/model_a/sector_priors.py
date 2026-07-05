@@ -56,6 +56,36 @@ SECTOR_PRIOR_MULTIPLIER: dict[str, float] = {
     "default": 1.0,
 }
 
+# Scheme → EXPOSURE BASIS: which dollar flow the recovery gate measures
+# (docs/OUTPUT_METHODOLOGY.md). own_billing = the provider's own claims;
+# influenced_dollars = claims billed by OTHERS on this provider's orders or
+# inducement (a referrer with tiny own billing orchestrating $8M of DME must
+# never be gated on their own dollars — the $136M-telemedicine-nurse shape);
+# ring_aggregate = the ring's combined billing, members inherit the ring's
+# pass/fail; facility_program = program payments at the CCN/org grain.
+SCHEME_EXPOSURE_BASIS: dict[str, str] = {
+    "upcoding": "own_billing",
+    "overutilization": "own_billing",
+    "payment_outlier": "own_billing",
+    "single_service_mill": "own_billing",
+    "rapid_ramp": "own_billing",
+    "specialty_mismatch": "own_billing",
+    "drug_outlier": "own_billing",
+    "pill_mill": "own_billing",
+    "impossible_day": "own_billing",
+    "dme_ring": "influenced_dollars",
+    "pharma_kickback": "influenced_dollars",
+    "ownership_integrity": "ring_aggregate",
+    "saturation_fraud": "ring_aggregate",
+    "hospice_ineligibility": "facility_program",
+    "worthless_services": "facility_program",
+    "cost_report_fraud": "facility_program",
+    "contract_pharmacy": "facility_program",
+    "invalid_identity": "own_billing",
+    "billing_after_death": "own_billing",
+    "drug_spread_anomaly": "own_billing",
+}
+
 # Scheme → recovery multiplier (the assumed recoverable share of annual program
 # payments if the scheme is real). Placeholders pending the case DB.
 SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {

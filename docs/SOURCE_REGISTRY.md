@@ -13,7 +13,7 @@ _Data column: not checked (run with --data-root)._
 | `partb` | UNLOCK | `ingest_cms.partb` | `preclean/partb/partb.csv` | upcoding (em_high_level_share, em_level_mean) | public | — |
 | `partd` | UNLOCK | `ingest_cms.partd` | `preclean/partd/partd.csv` | drug_outlier, pharma_kickback (high_cost_drug_share) | public | — |
 | `opioid` | UNLOCK | `ingest_cms.opioid` | `preclean/opioid/opioid.csv` | pill_mill (opioid_claim_share, long_acting_share) | public | — |
-| `dmepos` | UNLOCK | `ingest_cms.dmepos` | `preclean/dmepos/dmepos.csv` | dme_ring (needs the by-supplier layout, NOT by-referring) | public | — |
+| `dmepos` | UNLOCK | `ingest_cms.dmepos` | `preclean/dmepos/dmepos.csv` | dme_ring signals + the INFLUENCED-dollars exposure basis for referrers (needs the by-referring-AND-SERVICE layout: Rfrg_NPI + HCPCS; the by-referring summary lacks HCPCS and fails) | public | — |
 | `open_payments` | UNLOCK | `ingest_cms.openpayments` | `preclean/open_payments/open_payments.csv` | pharma_kickback (op_payment_concentration, utilization_corr) | public | — |
 | `nadac` | UNLOCK | `ingest_cms.nadac` | `preclean/nadac/nadac.csv` | drug_spread_anomaly (with the NDC claim slice) | gated | — |
 | `saturation` | UNLOCK | `ingest_cms.saturation` | `preclean/saturation/saturation.csv` | saturation_fraud (market_saturation_index) | public | — |

@@ -19,9 +19,15 @@ targets. Fix:
    **Audit that no raw-dollar column feeds the score or the model** — dollars may be a
    *display* field, never a *ranking* variable. A big provider that bills normally *for a
    big provider* must rank LOW; a big provider abnormal *for its kind* ranks high.
-3. **Add a recovery-potential FILTER on the OUTPUT at ~$5M.** Estimate dollars-at-risk →
-   expected recovery (billing exposure × plausible overpayment share × the FCA
-   treble-damages+penalties math × P(intervention)). This is **Model C / ERV** — apply it
+3. **Add a recovery-potential FILTER on the OUTPUT at ~$5M — SCHEME-AWARE, never a blanket
+   own-billing gate** (docs/OUTPUT_METHODOLOGY.md; `SCHEME_EXPOSURE_BASIS`). The gate's
+   dollar basis depends on where the scheme's dollars live: own billing for the volume/price
+   schemes; **INFLUENCED dollars for ordering/referring + kickback schemes** (the $136M
+   telemedicine nurse billed almost nothing herself — gating her on own billing deletes the
+   case); ring-aggregate for ownership/ring schemes (members inherit the ring's pass);
+   facility program payments for hospice/SNF/cost-report. A lead passes if ANY applicable
+   basis clears the threshold. Estimate expected recovery per basis (exposure × plausible
+   overpayment share × FCA treble+penalties × P(intervention)) — **Model C / ERV** — applied
    *after* ranking, as a gate. Size decides what surfaces; it never inflates a rank.
 4. **Big-entity-appropriate signals.** Institutional fraud often hides *within* the entity
    — lean on the billing residual, scheme-specific institutional signals (hospice
