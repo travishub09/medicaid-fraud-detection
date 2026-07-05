@@ -11,8 +11,9 @@ run order. "Run 2a" = the next Medicaid re-run (mostly laptop-feasible quick win
 complex providers to dodge the "big = looks intense" trap. That threw out the high-value
 targets. Fix:
 
-1. **Remove the size-exclusion from lead generation.** Big/complex providers go back in
-   the pool. Stop dropping the top-$ / "modest-scale-only" shortlist.
+1. **Remove the size-exclusion from lead generation — BUILT** (`model_a/lead_export.py`:
+   no size cut, anomaly-first rank with a dollars-never-in-the-key assert, scheme-aware
+   gate annotation). Big/complex providers go back in the pool.
 2. **Rank on size-ADJUSTED anomaly only.** Route the lead score through the existing
    `complexity_adjust` (residualize each metric against size/volume/breadth *within* the
    peer cell) + peer percentiles + the expected-billing residual ("digital twin").
