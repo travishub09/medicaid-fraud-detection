@@ -87,6 +87,10 @@ python -m src.preflight --markdown > docs/SOURCE_REGISTRY.md
 # Pipeline status — "where did I leave off?" (read-only; honors MEDICAID_DATA_ROOT)
 python -m src.pipeline_status
 
+# Expectations — the standing calc-integrity report (every export writes one;
+# also runs standalone on any delivered matrix)
+python -m src.model_a.expectations --matrix provider_features_for_model.parquet --manifest feature_manifest.json
+
 # Tests (work without any real data)
 python -m pytest tests/ -v
 ```

@@ -1221,6 +1221,26 @@ def main() -> None:
     _write_dictionary(matrix, manifest, out_dir)
     _write_report(matrix, manifest, out_dir)
     _write_sources_report(manifest["sources_audit"], out_dir)
+    # the standing calc-integrity feedback loop: file findings, never kill the run
+    try:
+        from .expectations import run_expectations, write_report as _write_exp
+        findings = run_expectations(matrix, manifest)
+        _write_exp(findings, out_dir / "EXPECTATIONS_REPORT.md",
+                   n_checked=len(manifest.get("raw_feature_cols", []))
+                   + len(manifest.get("peerpct_cols", []))
+                   + len(manifest.get("subscore_cols", [])))
+        manifest["expectations"] = {
+            "fails": int((findings["severity"] == "FAIL").sum()) if len(findings) else 0,
+            "warns": int((findings["severity"] == "WARN").sum()) if len(findings) else 0,
+        }
+        # manifest json was already written above — refresh it with the summary
+        (out_dir / "feature_manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8")
+        print(f"[expectations] {manifest['expectations']['fails']} FAIL / "
+              f"{manifest['expectations']['warns']} WARN "
+              f"→ {out_dir / 'EXPECTATIONS_REPORT.md'}")
+    except Exception as e:                                    # reporter, not a gate
+        print(f"[expectations] reporter failed (run unaffected): {e}")
     used = sum(1 for r in manifest["sources_audit"] if r["status"] == "used")
     skipped = sum(1 for r in manifest["sources_audit"] if r["status"] == "skipped")
     print(f"  sources: {used} used / {skipped} skipped "
