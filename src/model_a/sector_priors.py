@@ -73,6 +73,8 @@ SCHEME_EXPOSURE_BASIS: dict[str, str] = {
     "drug_outlier": "own_billing",
     "pill_mill": "own_billing",
     "impossible_day": "own_billing",
+    "nemt_fraud": "own_billing",
+    "behavioral_health": "own_billing",
     "dme_ring": "influenced_dollars",
     "pharma_kickback": "influenced_dollars",
     "ownership_integrity": "ring_aggregate",
@@ -89,6 +91,8 @@ SCHEME_EXPOSURE_BASIS: dict[str, str] = {
 # Scheme → recovery multiplier (the assumed recoverable share of annual program
 # payments if the scheme is real). Placeholders pending the case DB.
 SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {
+    "nemt_fraud": 0.50,          # phantom trips/mileage: most of the billing is the scheme
+    "behavioral_health": 0.40,
     "single_service_mill": 0.50,
     "ownership_integrity": 0.40,
     "payment_outlier": 0.30,

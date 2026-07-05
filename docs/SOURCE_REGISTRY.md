@@ -35,6 +35,7 @@ _Data column: not checked (run with --data-root)._
 | `preclusion` | OPTIONAL | `enforcement.preclusion` | `preclean/preclusion/preclusion_list.csv` | widened label (sponsor-channel data) | gated | — |
 | `dmf` | OPTIONAL | `enforcement.death_master` | `preclean/dmf/dmf.csv` | billing_after_death (needs name/DOB) | gated | — |
 | `owners` | OPTIONAL | `entity_graph (ownership)` | `preclean/owners/owners.csv` | richer ownership edges | public | — |
+| `hcpcs_time` | OPTIONAL | `ingest_cms.sector_schemes` | `preclean/hcpcs_time/hcpcs_minutes.csv` | impossible_day approximation (implied hours/day in the busiest month) | public | — |
 | `zip_county` | OPTIONAL | `ingest_cms.saturation (attach_market_saturation)` | `preclean/hud/zip_county.csv` | county-grain market saturation (upgrades the state fallback) | public | — |
 
 **Derived (you build these):**

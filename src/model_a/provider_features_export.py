@@ -1213,6 +1213,26 @@ def main() -> None:
                       "exclusion dates (graph) or the deactivation file")
         except Exception as e:
             audit(f"    [smoking_gun_timeline] skipped: {e}")
+
+        # §I4/I5/I3: Medicaid-fact sector schemes — NEMT, behavioral health, and
+        # the impossible-day approximation. New signal from data already in hand;
+        # DuckDB-streamed, the fact never enters pandas.
+        try:
+            from src.ingest_cms.sector_schemes import sector_metrics_from_parquet
+            spend_ss = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            mins = _first_existing(preclean / "hcpcs_time", "hcpcs_minutes.csv", "*.csv")
+            if spend_ss:
+                ss = sector_metrics_from_parquet(spend_ss, mins)
+                if len(ss):
+                    adapter_frames["sector_schemes"] = ss
+                    audit(f"    [sector_schemes] {len(ss):,} providers with NEMT/BH"
+                          + ("/impossible-day" if mins else "") + " metrics"
+                          + ("" if mins else " (impossible-day lights up with "
+                             "preclean/hcpcs_time/hcpcs_minutes.csv)"))
+            else:
+                audit("    [sector_schemes] skipped: needs processed/spending_fact.parquet")
+        except Exception as e:
+            audit(f"    [sector_schemes] skipped: {e}")
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels

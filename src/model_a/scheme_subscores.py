@@ -64,6 +64,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "impossible_day": {"bene_per_day_p95": 0.6, "time_minutes_per_day": 0.4},
     # future (Part D / Open Payments / DMEPOS)
     "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3},
+    # Medicaid-fact sector schemes (Run 2 I4/I5): transport + behavioral health,
+    # computed straight from the spending fact (ingest_cms/sector_schemes.py)
+    "nemt_fraud": {"nemt_paid_share": 0.5, "nemt_lines_per_patient": 0.5},
+    "behavioral_health": {"bh_paid_share": 0.4, "bh_lines_per_patient": 0.6},
     "drug_outlier": {"controlled_substance_share": 0.4, "high_cost_drug_share": 0.4,
                      # NADAC markup/spread anomaly (B4); absent until NDC claims load
                      "drug_spread_anomaly": 0.3},
