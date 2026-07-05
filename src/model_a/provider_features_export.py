@@ -428,6 +428,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     manifest = {
         "grain": "npi",
         "n_providers": int(n0),
+        "n_positives": (int(pd.to_numeric(out[label], errors="coerce").fillna(0).sum())
+                        if label else 0),
         "label": label,
         "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
         "label_metadata": label_metadata,

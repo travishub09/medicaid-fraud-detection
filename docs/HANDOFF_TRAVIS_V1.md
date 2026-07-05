@@ -70,7 +70,7 @@ matter for training and which are just reference or operations.
 - **`*__peerpct`** — one-sided taxonomy-peer percentile of each raw metric (the
   platform-canonical robust comparison; higher = more than peers).
 - **`subscore_<scheme>`** — 0–1 rules-engine score per scheme. v1 scores **13**:
-  `upcoding, drug_outlier, pharma_kickback, pill_mill, overutilization,
+  `upcoding, drug_outlier, pharma_kickback, pill_mill, nemt_fraud, behavioral_health, overutilization,
   single_service_mill, payment_outlier, specialty_mismatch, rapid_ramp,
   ownership_integrity, worthless_services, hospice_ineligibility, saturation_fraud`.
 

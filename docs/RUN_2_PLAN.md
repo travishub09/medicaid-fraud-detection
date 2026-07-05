@@ -52,6 +52,7 @@ _(from docs/MEDICARE_BATCH_PLAN.md — build AFTER the current Medicaid run + Tr
 - **`medicare_fact.py`** — BUILT (`ingest_cms/medicare_fact.py`): converts Part B "by Provider & Service" + Part D "by Provider &
   Drug" into a billing fact; run the SAME export against it → `provider_features_medicare.parquet`
   (identical schema, so Travis trains it in parallel and merges later if it wins).
+- **Runner BUILT** (`model_a/medicare_export.py` → provider_features_medicare.parquet, same manifest keys + expectations report).
 - **Physician-fraud signals lead here** (upcoding, kickbacks, pill-mill) — they under-cover
   the org-heavy Medicaid label but fit the Medicare population. Fold Medicare
   allowed/paid dollars into the exposure/ERV (kept separate from Medicaid, combinable later).
