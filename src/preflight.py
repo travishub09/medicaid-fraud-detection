@@ -110,7 +110,10 @@ OPTIONAL = [
         "addr_is_cmra exact-match mailbox flag", "model_a.address_grounding"),
     Src("opensanctions", "OpenSanctions debarment export", "opensanctions",
         ["targets.simple.csv", "entities.ftm.json"], [".csv", ".json"],
-        "widened exclusions / label", "enforcement.opensanctions", "gated"),
+        "widened exclusions / label + ~45 STATE Medicaid exclusion lists in one "
+        "file (bulk CSV is a FREE download — only the API costs; commercial-USE "
+        "sign-off from Brad runs in parallel, doesn't block testing)",
+        "enforcement.opensanctions"),
     Src("preclusion", "CMS Preclusion List", "preclusion", ["preclusion_list.csv"], [".csv"],
         "widened label (sponsor-channel data)", "enforcement.preclusion", "gated"),
     Src("dmf", "SSA Death Master File", "dmf", ["dmf.csv"], [".csv"],

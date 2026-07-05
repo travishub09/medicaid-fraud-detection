@@ -31,7 +31,7 @@ _Data column: not checked (run with --data-root)._
 | `state_licensing` | UNLOCK | `enforcement.state_licensing` | `preclean/state_licensing/licenses.csv` | identity corroboration + soft exclusions | public | — |
 | `nucc_xwalk` | OPTIONAL | `ingest_cms.nucc_taxonomy` | `preclean/nucc/specialty_crosswalk.csv` | sharper peer cohorts (companion to nucc) | public | — |
 | `usps_cmra` | OPTIONAL | `model_a.address_grounding` | `preclean/usps/cmra.csv` | addr_is_cmra exact-match mailbox flag | public | — |
-| `opensanctions` | OPTIONAL | `enforcement.opensanctions` | `preclean/opensanctions/targets.simple.csv` | widened exclusions / label | gated | — |
+| `opensanctions` | OPTIONAL | `enforcement.opensanctions` | `preclean/opensanctions/targets.simple.csv` | widened exclusions / label + ~45 STATE Medicaid exclusion lists in one file (bulk CSV is a FREE download — only the API costs; commercial-USE sign-off from Brad runs in parallel, doesn't block testing) | public | — |
 | `preclusion` | OPTIONAL | `enforcement.preclusion` | `preclean/preclusion/preclusion_list.csv` | widened label (sponsor-channel data) | gated | — |
 | `dmf` | OPTIONAL | `enforcement.death_master` | `preclean/dmf/dmf.csv` | billing_after_death (needs name/DOB) | gated | — |
 | `owners` | OPTIONAL | `entity_graph (ownership)` | `preclean/owners/owners.csv` | richer ownership edges | public | — |

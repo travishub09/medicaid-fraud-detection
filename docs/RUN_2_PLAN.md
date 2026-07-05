@@ -116,7 +116,11 @@ _(from docs/MEDICARE_BATCH_PLAN.md — build AFTER the current Medicaid run + Tr
 ## G. GATED / DECISIONS (money or licensing — Brad)
 - **Managed-care / NDC / diagnosis data (IQVIA or PurpleLab)** — fills the payer/drug/
   diagnosis gaps; clears many schemes. Licensing + permitted-use review with counsel.
-- **OpenSanctions commercial license** (widens exclusion label).
+- **OpenSanctions — DATA IN HAND (bulk CSV is a free download; only the API costs).**
+  Adapter wired (`enforcement.opensanctions`); it also carries ~45 STATE Medicaid
+  exclusion lists, substantially covering §I6 without scraping 50 state sites. Run it
+  now; the **commercial-USE sign-off** (Brad/counsel) proceeds in parallel and gates
+  production reliance, not testing.
 - **People-data vendor + FCRA review** to activate Model B (whistleblower audiences).
 - **DOJ 10-year backfill** already pulled (1,522 cases) — reuse as label source.
 
@@ -202,6 +206,8 @@ gated behind counsel._
   _Cost: free. Slot: **2a.**_
 
 **I6. State Medicaid exclusion lists (not just federal LEIE).**
+- _Shortcut: the OpenSanctions bulk file (already downloaded, adapter wired) aggregates
+  ~45 of these lists — run it first; per-state scraping then only fills the gaps._
 - _Detects:_ more banned actors + more banned-adjacency; state MFCU exclusions often precede
   federal and are Medicaid-specific.
 - _Data strategy:_ new `enforcement/state_exclusions.py` that scrapes/downloads each state
