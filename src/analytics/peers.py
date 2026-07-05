@@ -80,9 +80,15 @@ def assign_peer_groups(df: pd.DataFrame,
         # guard against duplicate column labels (a 2-D selection breaks the join)
         if getattr(vals, "columns", pd.Index([])).duplicated().any():
             vals = vals.loc[:, ~vals.columns.duplicated()]
+        # completeness from the RAW frame first: astype(str) turns a Python None
+        # into the string "None" (and NaT into "NaT"), which the string-sentinel
+        # checks alone missed — every missing-taxonomy provider then formed one
+        # fake giant "None" peer cell and was confidently ranked inside it.
+        complete = vals.notna().all(axis=1)
         vals = vals.astype(str)
-        complete = vals.ne("").all(axis=1) & vals.ne("nan").all(axis=1) \
-            & vals.ne("<NA>").all(axis=1)
+        complete &= vals.ne("").all(axis=1) & vals.ne("nan").all(axis=1) \
+            & vals.ne("<NA>").all(axis=1) & vals.ne("None").all(axis=1) \
+            & vals.ne("NaT").all(axis=1)
         # Vectorized, string-safe key build: str.cat over explicitly-stringified
         # columns. Avoids the row-wise ``agg("|".join)`` (which crashed on any value
         # a float slipped past — "expected str, found float" — and was a slow Python

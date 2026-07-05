@@ -297,10 +297,15 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # Pillar 4: the expected-billing "digital twin" residual — unexplained billing
     # after conditioning on specialty/size/breadth (doesn't punish the legitimately
     # large the way a raw peer percentile does). A clean, size-adjusted feature.
-    from .expected_billing import expected_billing_residual
+    from .expected_billing import expected_billing_residual, volume_residual
     eb = expected_billing_residual(out)
     out["billing_residual"] = eb["billing_residual"].to_numpy()
     out["expected_net_paid"] = eb["expected_net_paid"].to_numpy()
+    # the volume twin: claims vs EXOGENOUS capacity (tenure/active-months/org
+    # size) — catches the volume inflation the price twin conditions away
+    vr = volume_residual(out)
+    out["volume_residual"] = vr["volume_residual"].to_numpy()
+    out["expected_service_volume"] = vr["expected_service_volume"].to_numpy()
 
     # Pillar 4: cross-source consistency — incoherence between the NPPES/PECOS
     # registration record and the billing behavior (hard to fake on both sides).
@@ -356,6 +361,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     struct_present = [c for c in STRUCT_COLS if c in out.columns]
     graph_adjacent = ([PROXIMITY_COL] if PROXIMITY_COL in out.columns else [])
     pillar4 = [c for c in ["billing_residual", "expected_net_paid",
+                           "volume_residual", "expected_service_volume",
                            "incons_solo_scale", "incons_instant_scale",
                            "incons_breadth", "incons_lone_org_scale",
                            "consistency_flags"] if c in out.columns]

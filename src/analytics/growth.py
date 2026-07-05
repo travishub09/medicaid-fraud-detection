@@ -29,6 +29,10 @@ import pandas as pd
 MIN_MONTHS = 8          # below this, "a step" is indistinguishable from noise
 MIN_SEGMENT = 3
 BURST_WINDOW = 6        # trailing months that count as "new" code adoption
+MIN_PRE_MONTHS = 6      # history REQUIRED BEFORE the burst window: with less,
+                        # most codes are "new" by arithmetic and burst ≈ 1 for
+                        # every young org — collinear with tenure instead of the
+                        # independent code-mix-pivot signal (scheme audit)
 
 
 def _level_shift(series: pd.Series) -> float:
@@ -98,7 +102,7 @@ def _growth_from_aggregates(monthly_long: pd.Series,
         shifts.append(_level_shift(full))
 
         codes = first_seen.loc[org] if org in seen_orgs else pd.Series([], dtype=str)
-        if len(codes) == 0 or len(span) < MIN_MONTHS:
+        if len(codes) == 0 or len(span) < BURST_WINDOW + MIN_PRE_MONTHS:
             bursts.append(np.nan)
             continue
         cutoff = (span[-1] - (BURST_WINDOW - 1)).strftime("%Y-%m")

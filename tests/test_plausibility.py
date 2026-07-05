@@ -34,7 +34,8 @@ def _provider_dim(npi_taxonomy: dict[str, str]) -> pd.DataFrame:
 
 def test_prevalence_matrix_counts_and_assessable():
     # taxonomy HOSP has 6 providers: all bill Q5001, one also bills T1019.
-    # taxonomy TINY has 2 providers (below MIN_TAXONOMY_PROVIDERS=5).
+    # taxonomy TINY has 2 providers (below the explicit min of 5 used here —
+    # the mechanics are tested at 5; the production default is stricter).
     rows = []
     hosp = [f"100300000{i}" for i in range(6)]
     for npi in hosp:
@@ -46,11 +47,18 @@ def test_prevalence_matrix_counts_and_assessable():
     pdim = _provider_dim({**{n: "HOSP" for n in hosp},
                           "2003000001": "TINY", "2003000002": "TINY"})
 
-    m = code_prevalence_matrix(spending, pdim).set_index(["taxonomy_code", "hcpcs"])
+    m = code_prevalence_matrix(spending, pdim, min_taxonomy_providers=5
+                               ).set_index(["taxonomy_code", "hcpcs"])
     assert m.loc[("HOSP", "Q5001"), "prevalence"] == 1.0          # all 6 bill it
     assert m.loc[("HOSP", "T1019"), "prevalence"] == pytest.approx(1 / 6)
     assert bool(m.loc[("HOSP", "Q5001"), "assessable"]) is True
     assert bool(m.loc[("TINY", "80061"), "assessable"]) is False  # only 2 providers
+
+    # production default (raised to 25, scheme audit): a 6-provider cohort is
+    # UNJUDGEABLE by default — a small ring must not certify its own code mix
+    m_default = code_prevalence_matrix(spending, pdim
+                                       ).set_index(["taxonomy_code", "hcpcs"])
+    assert bool(m_default.loc[("HOSP", "Q5001"), "assessable"]) is False
 
 
 # ------------------------------------------------------- org scoring ---

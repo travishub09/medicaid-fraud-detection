@@ -39,7 +39,16 @@ from __future__ import annotations
 import pandas as pd
 
 RARE_THRESHOLD = 0.01          # billed by <1% of taxonomy peers = implausible
-MIN_TAXONOMY_PROVIDERS = 5     # below this a taxonomy can't anchor a prevalence
+MIN_TAXONOMY_PROVIDERS = 25    # below this a taxonomy can't anchor a prevalence.
+                               # Raised from 5 (scheme audit): prevalence is derived
+                               # from the same data being scored, so a tiny cohort
+                               # can certify its own code mix — a 6-provider taxonomy
+                               # where a coordinated ring bills the same absurd code
+                               # makes it 100% "prevalent" (normalized deviance).
+                               # Thin taxonomies stay UNJUDGEABLE: their dollars are
+                               # reported separately, never counted implausible OR
+                               # plausible. A cross-cohort prevalence prior is the
+                               # fuller fix (audit item), not yet built.
 MAX_DRIVERS = 3                # named implausible codes per org on the dossier
 
 
