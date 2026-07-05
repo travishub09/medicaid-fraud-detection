@@ -1214,6 +1214,32 @@ def main() -> None:
     # (used/skipped + reason + file), so a silent skip is impossible to miss.
     manifest["sources_audit"] = audit.records()
 
+    # §E: bake provider name / city / zip into the export natively (kills the
+    # post-hoc make_scored_parquet join). IDENTIFIERS, never features — they land
+    # in manifest identifier_cols so training code drops them by contract.
+    try:
+        pdim_p = processed / "provider_dim.parquet"
+        if pdim_p.exists():
+            import duckdb as _ddb
+            avail = _ddb.connect().execute(
+                f"SELECT * FROM read_parquet('{pdim_p}') LIMIT 0").df().columns
+            want = [c for c in ("provider_name", "first_name", "last_name",
+                                "addr_city", "addr_zip") if c in avail]
+            new_ids = [c for c in want if c not in matrix.columns]
+            if "npi" in avail and new_ids:
+                pdim = _ddb.connect().execute(
+                    f"SELECT npi, {', '.join(new_ids)} FROM read_parquet('{pdim_p}')"
+                ).df()
+                pdim["npi"] = pdim["npi"].astype(str)
+                n_m = len(matrix)
+                matrix = matrix.merge(pdim.drop_duplicates("npi"), on="npi", how="left")
+                assert len(matrix) == n_m, "provider_dim identifier join fanned out"
+                manifest["identifier_cols"] = list(manifest.get("identifier_cols", [])
+                                                   ) + new_ids
+                print(f"[identifiers] baked {', '.join(new_ids)} in natively")
+    except Exception as e:
+        print(f"[identifiers] provider_dim enrichment skipped: {e}")
+
     out_dir.mkdir(parents=True, exist_ok=True)
     matrix.to_parquet(out_dir / "provider_features_for_model.parquet", index=False)
     (out_dir / "feature_manifest.json").write_text(

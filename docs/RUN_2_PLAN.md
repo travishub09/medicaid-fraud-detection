@@ -43,12 +43,12 @@ targets. Fix:
 
 ---
 
-## B. MEDICARE PHASE 2 (Part B + Part D + multi-year growth)  [Run 2b]
+## B. MEDICARE PHASE 2 (Part B + Part D + multi-year growth)  [Run 2b] — CORE BUILT
 _(from docs/MEDICARE_BATCH_PLAN.md — build AFTER the current Medicaid run + Travis v1.)_
-- **`medicare_growth.py`** — multi-year (2016–2024) year-over-year spend/claims growth,
+- **`medicare_growth.py`** — BUILT (`ingest_cms/medicare_growth.py`): multi-year year-over-year spend growth,
   ramp/level-shift, new-code breadth (few columns × many years = memory-safe). The Medicare
   analogue of the Medicaid growth features.
-- **`medicare_fact.py`** — convert Part B "by Provider & Service" + Part D "by Provider &
+- **`medicare_fact.py`** — BUILT (`ingest_cms/medicare_fact.py`): converts Part B "by Provider & Service" + Part D "by Provider &
   Drug" into a billing fact; run the SAME export against it → `provider_features_medicare.parquet`
   (identical schema, so Travis trains it in parallel and merges later if it wins).
 - **Physician-fraud signals lead here** (upcoding, kickbacks, pill-mill) — they under-cover
@@ -91,7 +91,7 @@ _(from docs/MEDICARE_BATCH_PLAN.md — build AFTER the current Medicaid run + Tr
   after-death): not just a 0/1 flag — add *when* it happened, *how long after* the
   ban/deactivation/death, and *how much $* billed after. Turns each smoking gun into a
   dated timeline for a case file.
-- **Bake state + city + zip + names into the export natively** (stop the post-hoc
+- **Bake state + city + zip + names into the export natively — BUILT** (export joins provider_dim identifiers; stop the post-hoc
   `make_scored_parquet` join). Also fold the composite `anomaly_score` / `anomaly_pct` /
   `signals_tripped` into the export.
 - **Widen the training label** with the new near-certain sources as positives
