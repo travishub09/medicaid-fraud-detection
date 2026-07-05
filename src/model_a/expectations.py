@@ -42,6 +42,11 @@ _BOUNDED_HINTS = ("_share", "subscore_", "__peerpct", "_pct", "_index",
 _TIE_FLOOD_SHARE = 0.5        # >50% of the top decile at ONE identical value
 _UNIFORM_MEAN_BAND = (0.35, 0.65)   # peerpct mean far outside → fake cohort
 _MIN_COVERED = 200            # below this, distribution checks are noise
+# columns that are percentiles by construction and must be ~uniform on covered
+# rows — the v3 concept columns join the __peerpct/_residual families here
+# (the max-of-percentiles miscalibration class of bug)
+_PERCENTILE_COLS = {"concentration", "payment_intensity", "service_intensity",
+                    "specialty_mismatch", "temporal"}
 
 
 def _finding(findings: list, severity: str, scope: str, check: str,
@@ -127,7 +132,7 @@ def run_expectations(matrix: pd.DataFrame, manifest: dict,
                      "the saturation-subscore class of bug")
 
         # 5. peer percentiles: covered rows should be ~uniform (mean ≈ 0.5)
-        if c.endswith("__peerpct") or c.endswith("_residual"):
+        if c.endswith("__peerpct") or c.endswith("_residual") or c in _PERCENTILE_COLS:
             mu = float(covered.mean())
             if not (_UNIFORM_MEAN_BAND[0] <= mu <= _UNIFORM_MEAN_BAND[1]):
                 _finding(f, "WARN", c, "percentile_not_uniform",

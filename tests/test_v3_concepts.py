@@ -195,3 +195,34 @@ def test_classify_month_handles_nan_waiver_and_rein():
     assert classify_month("2021-06", [{"excl_month": float("nan"),
                                        "rein_month": float("nan"),
                                        "waiver_month": float("nan")}]) == "before"
+
+
+def test_concept_percentiles_are_calibrated_across_feature_counts():
+    """The max of k uniform percentiles is not uniform (mean k/(k+1)); without
+    the re-rank, 2-feature concepts crossed P99 ~2x as often as 1-feature
+    concepts on pure noise. After the re-rank every concept is ~uniform on the
+    scored rows, so the >=2-signals bar treats concepts equally."""
+    rng = np.random.default_rng(11)
+    n = 400
+    df = pd.DataFrame({
+        "provider_id": [f"p{i}" for i in range(n)],
+        "primary_taxonomy": "207Q00000X",
+        "entity_type": "1",
+        "gross_paid": 1e6,
+        "service_volume": 1e4,
+        "total_claim_lines": 1e4,
+        # iid noise: no provider is genuinely anomalous
+        **{f: rng.random(n) for f in ALL_FEATS},
+        CONTEXT_FEAT: rng.random(n),
+    })
+    out = score_concepts(df.copy())
+    sc = out["not_scored"] == False  # noqa: E712
+    for concept, feats in CONCEPTS.items():
+        vals = out.loc[sc, concept].dropna()
+        mu = float(vals.mean())
+        assert 0.45 <= mu <= 0.55, (
+            f"{concept} ({len(feats)} feats) mean {mu:.3f} — not uniform; "
+            "the max-of-percentiles bias is back")
+        # calibrated tail: ~1% of a 400-row cell sits at >= P99, give or take ties
+        tail = float((vals >= 0.99).mean())
+        assert tail <= 0.03, f"{concept} tail {tail:.3f} inflated at P99"

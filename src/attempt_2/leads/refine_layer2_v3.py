@@ -101,13 +101,26 @@ def score_concepts(df: pd.DataFrame) -> pd.DataFrame:
         p_tax = masked.groupby(df["primary_taxonomy"]).rank(pct=True)
         pct[f] = np.where(use_te.to_numpy(), p_te.to_numpy(), p_tax.to_numpy())
 
-    # ---- collapse correlated features into independent concepts (max pct) ----
+    # ---- collapse correlated features into independent concepts (max pct),
+    # then RE-RANK the max within the same peer baseline. The max of k uniform
+    # percentiles is NOT uniform (it piles up near 1, mean k/(k+1)), so without
+    # the re-rank a 2-feature concept crossed the P99 bar ~2× as often as a
+    # 1-feature concept on pure noise — biasing the ≥2-signals lead bar toward
+    # concentration/payment/temporal and mis-calibrating the exported concept
+    # columns. Re-ranking is order-preserving within the peer cell and
+    # idempotent for 1-feature concepts (rank of a rank), so only the
+    # calibration changes, never who is more extreme than whom.
     concept_pct = {}
     for concept, feats in CONCEPTS.items():
         stack = np.column_stack([pct[f] for f in feats])
         with np.errstate(all="ignore"):
-            concept_pct[concept] = np.where(np.all(np.isnan(stack), axis=1), np.nan,
-                                            np.nanmax(stack, axis=1))
+            raw_max = np.where(np.all(np.isnan(stack), axis=1), np.nan,
+                               np.nanmax(stack, axis=1))
+        masked = pd.Series(raw_max, index=df.index).where(sc)
+        p_te = masked.groupby([df["primary_taxonomy"], df["entity_type"]]).rank(pct=True)
+        p_tax = masked.groupby(df["primary_taxonomy"]).rank(pct=True)
+        concept_pct[concept] = np.where(use_te.to_numpy(), p_te.to_numpy(),
+                                        p_tax.to_numpy())
     ctx_pct = pct[CONTEXT_FEAT]
     # persist the per-concept percentiles (0–1) as columns — these are the
     # org-rollup inputs Model A consumes (build_features), and they make the

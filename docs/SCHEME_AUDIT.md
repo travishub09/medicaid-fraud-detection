@@ -37,9 +37,9 @@ discount broadcast signals.
 | # | Scheme | Calculation & join | Verdict | Findings |
 |---|---|---|---|---|
 | 1 | **upcoding** | `partb.py`: share of office E/M services at levels 4–5 (99204/05/14/15 over 99202–99215) + services-weighted mean level; NPI groupby over the NPI×HCPCS×place-of-service grain | **Sound** | Code sets match the post-2021 E/M set (99201 correctly absent). Place-of-service dual rows handled by the groupby. Caveats: X1 suppression; `Tot_Benes` overlap across rows is documented as an upper bound. |
-| 2 | **overutilization** | `service_intensity` (v3 concept off the Medicaid fact) + `services_per_bene` (Part B) | **Sound with bias note** | `total_benes` sums per-code bene counts, double-counting patients across codes → ratio biased *down* for broad-code providers, *up* for narrow billers. One-sided ranking survives it, but it systematically favors flagging narrow-mix providers — overlaps mill logic rather than being independent of it. v3 concept layer itself not deep-audited this pass (see "remaining debt"). |
+| 2 | **overutilization** | `service_intensity` (v3 concept off the Medicaid fact) + `services_per_bene` (Part B) | **Sound with bias note** | `total_benes` sums per-code bene counts, double-counting patients across codes → ratio biased *down* for broad-code providers, *up* for narrow billers. One-sided ranking survives it, but it systematically favors flagging narrow-mix providers — overlaps mill logic rather than being independent of it. v3 concept layer now audited (see the v3 section below). |
 | 3 | **single_service_mill** | `concentration` (v3, Medicaid fact) + `code_concentration_hhi` (Part B: HHI of allowed dollars across HCPCS) | **Sound / one artifact** | HHI arithmetic correct. Artifact via X1: heavily-suppressed small providers keep 1–2 rows → HHI ≈ 1 → false mill flag at low Medicare volume. Medicaid-side `concentration` is unaffected (no suppression in the fact). |
-| 4 | **payment_outlier** | `payment_intensity` (v3 concept) | **Not deep-audited** | Concept layer pass pending. |
+| 4 | **payment_outlier** | `payment_intensity` (v3 concept: max pct of paid-per-patient-instance, paid-per-claim-line, re-ranked) | **Sound after calibration fix** | Denominators NULLIF-guarded upstream; volume gate keeps ratios stable; suffered the max-of-percentiles bias (see v3 section) — fixed by the concept re-rank. |
 | 5 | **specialty_mismatch** | v3 concept + data-derived `clinical_implausibility` | **Method risk** | Plausibility prevalence is self-referential: a ≥5-provider taxonomy where a ring bills the same code makes that code "prevalent" — coordinated behavior defines its own normal. Needs a minimum absolute biller count + shrinkage to a cross-taxonomy prior. Self-reported taxonomy is the peer key (gameable) — the built billing-implied taxonomy is the fix. |
 | 6 | **rapid_ramp** | `temporal` (v3) + `growth.py` level-shift / new-code burst | **Sound core, one confound** | Level-shift is a valid one-sided CUSUM-style statistic with MAD scaling and a flat-series guard; own-months indexing correctly refuses to zero-pad short histories. Confound: `new_code_burst` is mechanically ≈1 for orgs with 8–13 months of history (all codes are "new"), making it collinear with tenure instead of an independent pivot signal. Require pre-window history. |
 | 7 | **ownership_integrity** | graph features (2-hop exclusion proximity, shell score, related-party density) | **Correct as built, leakage-flagged** | AUC 0.991 because it's exclusion-derived; correctly quarantined to `leakage_adjacent` and barred from training. Operations-only use is the right call. |
@@ -62,12 +62,38 @@ discount broadcast signals.
 | 19 | **drug_spread_anomaly (NADAC)** | gated — needs NDC-level claims | Correctly dormant; the Medicaid fact has no NDCs (HCPCS only), so this cannot light up on current data. |
 | 20 | **billing_after_death** | gated on SSA DMF | DOB-corroborated DuckDB filter design is right; unverified on real file. |
 
+## The v3 concept layer — audited (closes the debt item)
+Line-audit of `attempt_2/leads/refine_layer2_v3.py::score_concepts` + the upstream feature SQL
+(`attempt_2/ingest/features.py`). What's sound: denominators NULLIF-guarded; concentration over
+positive dollars only; temporal computed on MATURE months (maturity window excludes settlement
+lag); the volume-reliability gate; the full-taxonomy fallback baseline (the v2 size-1-peer-cell
+bug stays fixed); one-row-per-NPI + non-fan-out merges asserted; raw dollars context-only.
+
+Findings:
+1. **FIXED — max-of-percentiles miscalibration.** Concepts collapsed correlated features via
+   `nanmax` of per-feature percentiles, but the max of k uniform percentiles is not uniform
+   (mean k/(k+1)) — so the 2-feature concepts (concentration, payment_intensity, temporal)
+   crossed the P99 signal bar ~2× as often as the 1-feature concepts on pure noise, biasing the
+   ≥2-signals lead bar and mis-calibrating the exported concept columns Travis trains on
+   (`V4_RESTORE` includes all five). Fix: each concept's max is RE-RANKED within the same peer
+   baseline — order-preserving, idempotent for 1-feature concepts; every concept is now ~uniform
+   (regression test asserts mean ∈ [0.45, 0.55] + a calibrated P99 tail; the expectations loop
+   now watches the five concept columns for uniformity too). NOTE: v1-delivered concept columns
+   carry the old bias; Run 2's export supersedes them.
+2. **Documented — anomaly_score_v3 is not comparable across coverage.** It is the nanmean over
+   OBSERVED concepts, so a one-concept provider at 0.99 scores like a five-concept provider at
+   0.99. The lead flag is safe (requires ≥2 distinct observed signals) and Travis correctly
+   drops the score as detector-derived; treat the score as a sort key within similar coverage,
+   never a calibrated quantity.
+3. **Documented — rare_share_te coverage cliff.** A code can only be "rare" (<1% of peers) in a
+   (taxonomy × entity) cell with >100 providers; smaller cells have rare_share_te ≡ 0, so
+   specialty_mismatch cannot fire there by construction.
+4. **Documented — temporal for young providers.** `yoy_growth_net_paid` needs ~2 years of
+   mature history, so fly-by-night-age providers fall back to volatility alone; the growth
+   module's level-shift (org grain) is the complementary catch.
+
 ## Remaining audit debt (stated, not hidden)
-1. **The v3 concept layer** (`concentration`, `payment_intensity`, `service_intensity`,
-   `specialty_mismatch`, `temporal` — computed in `attempt_2/leads` off the Medicaid fact) feeds
-   five live schemes and Travis's top features, and was **not** line-audited in this pass. It is
-   the highest-value next audit target.
-2. Hospice measure-code pinning (see #13); 340B/deactivation/DMF loaders vs real files.
+1. Hospice measure-code pinning (see #13); 340B/deactivation/DMF loaders vs real files.
 3. The within-state-within-sector saturation re-cut (one query on the real data) — decides
    whether the 10.3× headline survives.
 
