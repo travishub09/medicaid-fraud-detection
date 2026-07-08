@@ -88,6 +88,11 @@ facility_program) — see `docs/OUTPUT_METHODOLOGY.md`.
   (first-ban-on/after-cutoff → `future_bans_after_<cutoff>.csv`); `make frozen-package`
   chains the as-of graph + as-of matrix + this label into one leakage-correct package.
   Protocol for Travis in `docs/FROZEN_PACKAGE_FOR_TRAVIS.md`.
+- `src/model_a/network_ab.py` — the SIZE-CONTROLLED network A/B. Trains with vs
+  without the graph family on (a) the full population and (b) a size/taxonomy/state-
+  matched case-control set. Verdict KEEP / SIZE ARTIFACT / NO SIGNAL from the MATCHED
+  delta (bootstrap CI). `make frozen-package` now runs it → `NETWORK_AB_REPORT.md`.
+  Settles whether the graph features are real signal or size in disguise.
 - `src/ingest_cms/medicare_fact.py` + `medicare_growth.py` — Medicare fact + multi-year ramp.
 - `src/ingest_cms/sector_schemes.py` — NEMT / behavioral-health / impossible-day from the fact.
 - `src/enforcement/cms_priority_lists.py` — moratoria / revalidation / SFF overlay flags.

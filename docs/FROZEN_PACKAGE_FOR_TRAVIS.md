@@ -53,16 +53,47 @@ Output lands in `model_a/frozen_2023-12/`:
 
 ## How to run the A/B
 
-Train and score on the frozen matrix. Use the forward file as the label. Then
-run it twice:
+`make frozen-package` now runs the A/B for you and writes `NETWORK_AB_REPORT.md`.
+If you want to run it by hand, or understand what it does:
 
 - **A: network columns IN.** Keep the graph family (embeddings, fraud proximity,
   ring density, the two-hops flag, ownership).
 - **B: network columns OUT.** Drop that whole family, keep everything else.
 
 If A beats B on the forward label (top-decile lift, PR-AUC), the network features
-are earning their place. If A and B are the same, they aren't, and we stop
-leaning on them. Either answer is useful. This is the test that tells us which.
+look like they're earning their place. If A and B are the same, they aren't.
+
+## The size trap (why we run it twice)
+
+There's a catch we learned the hard way. Some network features — "within two hops
+of a banned party," "related-party density" — go up just because an organization
+is **big and corporate-complex**. A national chain is automatically near some
+banned provider and automatically has high related-party density. So "A beats B"
+on the whole population could just mean "the graph knows who's big, and big orgs
+get excluded more." That's not signal. That's size wearing a costume.
+
+So the report runs the A/B a **second** time on a **size-matched** set: every
+excluded provider is placed next to clean providers of the **same size, specialty,
+and state** (`case_control.match_cohorts`). On that set, size can't do the work.
+
+Read the verdict this way:
+- **KEEP** — network beats no-network even against size-matched peers. Real,
+  size-independent signal. Use it (under the out-of-time split).
+- **SIZE ARTIFACT** — network wins on the full population but the edge vanishes
+  against matched peers. The lift was size. Drop it or size-normalize it.
+- **NO MEASURABLE SIGNAL** — network doesn't move the needle either way.
+
+The matched-set number is the one that settles it. This is the test that tells us
+whether the jump Travis saw was real or a mirage.
+
+Run by hand:
+```
+python -m src.model_a.network_ab \
+    --matrix  model_a/frozen_2023-12/provider_features_for_model.parquet \
+    --manifest model_a/frozen_2023-12/feature_manifest.json \
+    --future-label model_a/frozen_2023-12/future_bans_after_2023-12.csv \
+    --out NETWORK_AB_REPORT.md
+```
 
 ## Two things to watch
 

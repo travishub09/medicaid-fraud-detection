@@ -1,0 +1,290 @@
+"""
+network_ab.py — is the network (graph) family REAL signal, or size in disguise?
+
+The PI dig showed that graph features like ``within_2_hops_of_exclusion`` and
+``related_party_density`` scale with organization size and corporate complexity:
+national chains and hospitals score high automatically. So a naive "network-in vs
+network-out" A/B can show lift that is really a size/sector confound, not causal
+structure. This harness runs the A/B the honest way — twice:
+
+  FULL population   train with vs without the network family; report top-decile
+                    lift + PR-AUC on a grouped holdout. (The headline Travis saw.)
+
+  MATCHED set       the same A/B restricted to a size/taxonomy/state-matched
+                    case-control set (``case_control.match_cohorts``). Here every
+                    case sits beside clean peers of the SAME size and specialty, so
+                    a network win CANNOT come from size. This is the decisive test.
+
+Verdict logic:
+  * matched-set delta > 0 with a CI clear of zero  → network adds real, size-
+    independent signal; keep it (under the out-of-time split, since it is
+    leakage-adjacent).
+  * full delta > 0 but matched delta ~ 0           → the network lift was size;
+    drop the family or size-normalize it before trusting it.
+  * neither positive                                → network family adds nothing
+    measurable here.
+
+Run AFTER rebuilding the graph with the generic-collision fix, on the frozen
+(as-of) matrix, optionally scoring a forward label:
+  python -m src.model_a.network_ab --matrix provider_features_for_model.parquet \
+      --manifest feature_manifest.json --out NETWORK_AB_REPORT.md
+  # forward eval: --future-label future_bans_after_2023-12.csv
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+RANDOM_STATE = 42
+NETWORK_NAMED = {
+    "within_2_hops_of_exclusion", "shell_score", "related_party_density",
+    "related_party_density_norm", "has_excluded_owner",
+    "facility_has_excluded_owner_high", "facility_has_excluded_owner_probable",
+    "subscore_ownership_integrity",
+}
+
+
+def network_cols(cols) -> list[str]:
+    """Present columns that belong to the network/graph family."""
+    return [c for c in cols if str(c).startswith("graph_") or c in NETWORK_NAMED]
+
+
+def _trainable(matrix: pd.DataFrame, manifest: dict) -> list[str]:
+    fams = (manifest.get("raw_feature_cols", []) + manifest.get("peerpct_cols", [])
+            + manifest.get("subscore_cols", []) + manifest.get("leakage_adjacent", []))
+    hard = set(manifest.get("leakage_hard", []))
+    out, seen = [], set()
+    for c in fams:
+        if c in seen or c in hard or c not in matrix.columns:
+            continue
+        if pd.api.types.is_numeric_dtype(matrix[c]) or matrix[c].dtype == bool:
+            out.append(c)
+            seen.add(c)
+    return out
+
+
+def feature_sets(matrix: pd.DataFrame, manifest: dict):
+    """(without_network, with_network, network_only) trainable column lists."""
+    allf = _trainable(matrix, manifest)
+    net = [c for c in network_cols(allf)]
+    without = [c for c in allf if c not in set(net)]
+    return without, allf, net
+
+
+# ---- metrics -------------------------------------------------------------
+def _to_num(y):
+    return pd.to_numeric(pd.Series(y), errors="coerce").fillna(0).to_numpy()
+
+
+def top_decile_lift(y_true, scores, frac: float = 0.10) -> float:
+    y = _to_num(y_true)
+    base = y.mean()
+    if base <= 0 or len(y) < 10:
+        return float("nan")
+    k = max(1, int(len(y) * frac))
+    top = np.argsort(scores)[::-1][:k]
+    return float(y[top].mean() / base)
+
+
+def pr_auc(y_true, scores) -> float:
+    from sklearn.metrics import average_precision_score
+    y = _to_num(y_true)
+    if y.sum() == 0 or y.sum() == len(y):
+        return float("nan")
+    return float(average_precision_score(y, scores))
+
+
+def roc_auc(y_true, scores) -> float:
+    from sklearn.metrics import roc_auc_score
+    y = _to_num(y_true)
+    if y.sum() == 0 or y.sum() == len(y):
+        return float("nan")
+    return float(roc_auc_score(y, scores))
+
+
+def _fit_predict(Xtr, ytr, Xte, n_estimators=200):
+    from lightgbm import LGBMClassifier
+    clf = LGBMClassifier(n_estimators=n_estimators, num_leaves=15,
+                         random_state=RANDOM_STATE, verbose=-1)
+    clf.fit(Xtr, ytr)
+    return clf.predict_proba(Xte)[:, 1]
+
+
+def _grouped_split(n, groups, test_size=0.3):
+    from sklearn.model_selection import GroupShuffleSplit, ShuffleSplit
+    if groups is not None and pd.Series(groups).nunique() > 3:
+        gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=RANDOM_STATE)
+        return next(gss.split(np.zeros(n), groups=groups))
+    ss = ShuffleSplit(n_splits=1, test_size=test_size, random_state=RANDOM_STATE)
+    return next(ss.split(np.zeros(n)))
+
+
+def _ab_once(frame, y, with_net, without, groups, test_groups_for_boot, n_boot=200):
+    """Train with vs without network on a grouped split; return metrics + delta CI."""
+    n = len(frame)
+    tr, te = _grouped_split(n, groups)
+    yv = _to_num(y)
+    res = {}
+    scores = {}
+    for tag, cols in (("with", with_net), ("without", without)):
+        Xtr = frame.iloc[tr][cols].fillna(0.0).to_numpy()
+        Xte = frame.iloc[te][cols].fillna(0.0).to_numpy()
+        s = _fit_predict(Xtr, yv[tr], Xte)
+        scores[tag] = s
+        res[tag] = {"pr_auc": pr_auc(yv[te], s), "roc_auc": roc_auc(yv[te], s),
+                    "lift10": top_decile_lift(yv[te], s)}
+    yte = yv[te]
+    # bootstrap delta (with - without) on the test rows
+    rng = np.random.default_rng(RANDOM_STATE)
+    deltas = {"pr_auc": [], "roc_auc": [], "lift10": []}
+    m = len(yte)
+    for _ in range(n_boot):
+        idx = rng.integers(0, m, m)
+        yb = yte[idx]
+        if yb.sum() == 0 or yb.sum() == len(yb):
+            continue
+        deltas["pr_auc"].append(pr_auc(yb, scores["with"][idx]) - pr_auc(yb, scores["without"][idx]))
+        deltas["roc_auc"].append(roc_auc(yb, scores["with"][idx]) - roc_auc(yb, scores["without"][idx]))
+        deltas["lift10"].append(top_decile_lift(yb, scores["with"][idx]) - top_decile_lift(yb, scores["without"][idx]))
+    ci = {}
+    for k, v in deltas.items():
+        v = [x for x in v if x == x]  # drop nan
+        if v:
+            ci[k] = {"delta": float(np.mean(v)),
+                     "lo": float(np.percentile(v, 2.5)),
+                     "hi": float(np.percentile(v, 97.5))}
+        else:
+            ci[k] = {"delta": float("nan"), "lo": float("nan"), "hi": float("nan")}
+    return {"n_test": int(m), "pos_test": int(yte.sum()), "with": res["with"],
+            "without": res["without"], "delta_ci": ci}
+
+
+def run_network_ab(matrix: pd.DataFrame, manifest: dict,
+                   future_label: pd.DataFrame | None = None, n_boot: int = 200) -> dict:
+    label = manifest.get("label") or "provider_on_exclusion"
+    without, with_net, net = feature_sets(matrix, manifest)
+    out = {"label": label, "n_network_features": len(net),
+           "network_features": net, "n_trainable": len(with_net)}
+    if not net:
+        out["error"] = "no network/graph features present — nothing to test."
+        return out
+    if label not in matrix.columns and future_label is None:
+        out["error"] = f"label {label} not in matrix and no --future-label given."
+        return out
+
+    groups = matrix["group_id"].to_numpy() if "group_id" in matrix.columns else None
+
+    # ----- FULL population -----
+    if future_label is not None:
+        fl = future_label.copy()
+        fl["npi"] = fl["npi"].astype(str)
+        pos = set(fl.loc[pd.to_numeric(fl.get("is_prospective_positive", 1),
+                                       errors="coerce").fillna(0) == 1, "npi"])
+        drop = set(fl.loc[pd.to_numeric(fl.get("was_excluded_pre_cutoff", 0),
+                                        errors="coerce").fillna(0) == 1, "npi"])
+        m = matrix[~matrix["npi"].astype(str).isin(drop)].copy()
+        yfull = m["npi"].astype(str).isin(pos).astype(int)
+        gfull = m["group_id"].to_numpy() if "group_id" in m.columns else None
+        out["full_label"] = "forward (future bans)"
+        out["full"] = _ab_once(m, yfull, with_net, without, gfull, None, n_boot)
+    else:
+        out["full_label"] = label
+        out["full"] = _ab_once(matrix, matrix[label], with_net, without, groups, None, n_boot)
+
+    # ----- MATCHED set (size-controlled) -----
+    try:
+        from .case_control import match_cohorts
+        matched = match_cohorts(matrix, label_col=label)
+        if len(matched) and "cohort" in matched.columns:
+            ym = (matched["cohort"] == "case").astype(int)
+            gm = matched["match_id"].to_numpy() if "match_id" in matched.columns else None
+            out["matched"] = _ab_once(matched, ym, with_net, without, gm, None, n_boot)
+            out["matched_n"] = int(len(matched))
+        else:
+            out["matched_error"] = "match_cohorts produced no matched set (need positives + confirmed_clean)."
+    except Exception as e:  # pragma: no cover
+        out["matched_error"] = f"matched A/B failed: {e}"
+
+    out["verdict"] = _verdict(out)
+    return out
+
+
+def _verdict(out: dict) -> str:
+    full = out.get("full", {}).get("delta_ci", {}).get("lift10", {})
+    matched = out.get("matched", {}).get("delta_ci", {}).get("roc_auc", {})
+    if matched and matched.get("lo", float("nan")) == matched.get("lo") and matched["lo"] > 0:
+        return ("KEEP (size-independent): the network family lifts discrimination even "
+                "against size/taxonomy-matched controls (matched ROC-AUC delta CI > 0). "
+                "Use it under the out-of-time split.")
+    if full and full.get("lo", float("nan")) == full.get("lo") and full["lo"] > 0 \
+            and out.get("matched"):
+        return ("SIZE ARTIFACT: the network family lifts on the full population but the "
+                "advantage collapses against size-matched controls. Drop it or "
+                "size-normalize before trusting it.")
+    return ("NO MEASURABLE SIGNAL: the network family does not move the metrics beyond "
+            "noise here. Do not rely on it.")
+
+
+def _fmt(d):
+    return (f"{d.get('delta', float('nan')):+.4f} "
+            f"[{d.get('lo', float('nan')):+.4f}, {d.get('hi', float('nan')):+.4f}]")
+
+
+def to_markdown(out: dict) -> str:
+    L = ["# NETWORK A/B REPORT — is the graph family real signal or size?\n"]
+    if out.get("error"):
+        return "\n".join(L + [f"**{out['error']}**"])
+    L.append(f"- label: `{out['label']}`  |  network features tested: "
+             f"**{out['n_network_features']}**  |  trainable columns: {out['n_trainable']}")
+    L.append(f"- **VERDICT: {out['verdict']}**\n")
+    for pop in ("full", "matched"):
+        blk = out.get(pop)
+        if not blk:
+            if out.get(f"{pop}_error"):
+                L.append(f"## {pop.upper()}  \n_{out[f'{pop}_error']}_\n")
+            continue
+        lbl = out.get("full_label", "") if pop == "full" else "case vs size-matched control"
+        L.append(f"## {pop.upper()} — {lbl}")
+        L.append(f"n_test={blk['n_test']:,}  positives_test={blk['pos_test']:,}"
+                 + (f"  matched_rows={out.get('matched_n'):,}" if pop == "matched" else ""))
+        L.append("| metric | with network | without | delta (with-without) [95% CI] |")
+        L.append("|---|---|---|---|")
+        for m, nm in (("lift10", "top-decile lift"), ("pr_auc", "PR-AUC"), ("roc_auc", "ROC-AUC")):
+            w = blk["with"].get(m, float("nan"))
+            wo = blk["without"].get(m, float("nan"))
+            L.append(f"| {nm} | {w:.4f} | {wo:.4f} | {_fmt(blk['delta_ci'].get(m, {}))} |")
+        L.append("")
+    L.append("_Matched-set delta is decisive: a network advantage that survives size/"
+             "taxonomy matching is real; one that only shows on the full population was size._")
+    return "\n".join(L)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--matrix", required=True)
+    ap.add_argument("--manifest", required=True)
+    ap.add_argument("--future-label", default=None,
+                    help="prospective_label CSV (npi,is_prospective_positive,"
+                         "was_excluded_pre_cutoff) for a forward evaluation.")
+    ap.add_argument("--out", default="NETWORK_AB_REPORT.md")
+    ap.add_argument("--n-boot", type=int, default=200)
+    args = ap.parse_args()
+
+    matrix = pd.read_parquet(args.matrix)
+    manifest = json.loads(Path(args.manifest).read_text())
+    fut = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
+    out = run_network_ab(matrix, manifest, future_label=fut, n_boot=args.n_boot)
+    report = to_markdown(out)
+    Path(args.out).write_text(report)
+    print(report)
+    print(f"\nwrote {args.out}")
+
+
+if __name__ == "__main__":
+    main()

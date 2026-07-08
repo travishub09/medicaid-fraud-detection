@@ -103,9 +103,15 @@ frozen-package:
 		--exclusion-nodes $(DATA_ROOT)/graph/nodes/exclusion_nodes.parquet \
 		--cutoff $(ASOF_CUTOFF) \
 		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/future_bans_after_$(ASOF_CUTOFF).csv
+	$(PY) -m src.model_a.network_ab \
+		--matrix $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/provider_features_for_model.parquet \
+		--manifest $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/feature_manifest.json \
+		--future-label $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/future_bans_after_$(ASOF_CUTOFF).csv \
+		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/NETWORK_AB_REPORT.md
 	@echo "Frozen package ready in $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/"
 	@echo "  provider_features_for_model.parquet  = as-of features (network cols INCLUDED)"
 	@echo "  future_bans_after_$(ASOF_CUTOFF).csv  = the forward label to score against"
+	@echo "  NETWORK_AB_REPORT.md                  = size-matched network A/B verdict"
 
 # One-time PECOS CCN↔NPI crosswalk (unlocks facility/HCRIS/POS schemes).
 ccn-crosswalk:
