@@ -5,7 +5,10 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a provider-features feature-snapshot ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features feature-snapshot frozen-package ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
+
+# Feature-freeze cutoff for the frozen-package (Travis's forward network test).
+ASOF_CUTOFF ?= 2023-12
 
 help:
 	@echo "Targets:"
@@ -17,6 +20,7 @@ help:
 	@echo "  model-a    score orgs + render dossiers from real graph/features/spending"
 	@echo "  provider-features  rebuild graph, then export the per-NPI training matrix for Travis"
 	@echo "  feature-snapshot   archive a valid-time snapshot of the matrix (run on a cadence; point-in-time store)"
+	@echo "  frozen-package     leakage-correct as-of matrix + forward-ban label for Travis's network test (ASOF_CUTOFF=$(ASOF_CUTOFF))"
 	@echo "  ccn-crosswalk      build processed/ccn_to_npi.parquet (PECOS_FILE=path)"
 	@echo "  opensanctions      normalize OpenSanctions bulk -> processed/exclusions_opensanctions.parquet (OPENSANCTIONS_FILE=path)"
 	@echo "  owner-snapshot     archive this month's owner edges (run monthly; unlocks ownership_turnover at 2+)"
@@ -76,6 +80,32 @@ feature-snapshot:
 	$(PY) -m src.model_a.feature_store \
 		--matrix $(DATA_ROOT)/model_a/provider_features/provider_features_for_model.parquet \
 		--store-dir $(DATA_ROOT)/feature_snapshots --asof $(ASOF)
+
+# The frozen package for Travis's A/B network test. Three ordered steps, all
+# leakage-correct as-of ASOF_CUTOFF:
+#   1. point-in-time graph — embeddings/proximity/rings built ONLY from exclusions
+#      and owner edges known before the cutoff (no future bans leaking into features);
+#   2. the per-NPI matrix with the billing fact filtered to pre-cutoff service months
+#      (--asof-cutoff) so every billing feature is as-of-correct too;
+#   3. the forward label — NPIs whose FIRST exclusion lands on/after the cutoff.
+# Travis then scores the step-2 matrix against the step-3 label, WITH network
+# columns included, to see whether the graph family predicts future bans it never saw.
+frozen-package:
+	$(PY) -m src.entity_graph --input $(DATA_ROOT)/processed \
+		--out $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) --asof $(ASOF_CUTOFF)
+	$(PY) -m src.model_a.provider_features_export \
+		--graph-dir $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) \
+		--asof-cutoff $(ASOF_CUTOFF) \
+		--leads $(DATA_ROOT)/detection/fraud_leads_v3.parquet \
+		--preclean $(DATA_ROOT)/preclean --processed $(DATA_ROOT)/processed \
+		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)
+	$(PY) -m src.model_a.prospective_label \
+		--exclusion-nodes $(DATA_ROOT)/graph/nodes/exclusion_nodes.parquet \
+		--cutoff $(ASOF_CUTOFF) \
+		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/future_bans_after_$(ASOF_CUTOFF).csv
+	@echo "Frozen package ready in $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/"
+	@echo "  provider_features_for_model.parquet  = as-of features (network cols INCLUDED)"
+	@echo "  future_bans_after_$(ASOF_CUTOFF).csv  = the forward label to score against"
 
 # One-time PECOS CCN↔NPI crosswalk (unlocks facility/HCRIS/POS schemes).
 ccn-crosswalk:

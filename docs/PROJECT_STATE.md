@@ -84,6 +84,10 @@ facility_program) — see `docs/OUTPUT_METHODOLOGY.md`.
 - `src/model_a/state_fca.py` — State-FCA case-value overlay (Ohio has none; CA/NY/TX/FL do).
 - `src/model_a/identity_flags.py` — ghost-NPI report (billing NPIs absent from NPPES).
 - `src/model_a/medicare_export.py` — the Medicare-grain training matrix runner.
+- `src/model_a/prospective_label.py` — the FORWARD label for Travis's network test
+  (first-ban-on/after-cutoff → `future_bans_after_<cutoff>.csv`); `make frozen-package`
+  chains the as-of graph + as-of matrix + this label into one leakage-correct package.
+  Protocol for Travis in `docs/FROZEN_PACKAGE_FOR_TRAVIS.md`.
 - `src/ingest_cms/medicare_fact.py` + `medicare_growth.py` — Medicare fact + multi-year ramp.
 - `src/ingest_cms/sector_schemes.py` — NEMT / behavioral-health / impossible-day from the fact.
 - `src/enforcement/cms_priority_lists.py` — moratoria / revalidation / SFF overlay flags.
