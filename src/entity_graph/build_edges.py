@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from ..attempt_2.clean_data import distinctive_name_key
+
 
 def build_member_edges(npi_to_org: pd.DataFrame) -> pd.DataFrame:
     """provider/org NPI → canonical Organization (the resolution crosswalk as edges)."""
@@ -203,7 +205,7 @@ def build_excluded_in_edges(provider_dim: pd.DataFrame,
             if onpi and onpi in npi_to_excl.index:
                 rows.append({"src_id": r.node_id, "dst_id": npi_to_excl.loc[onpi],
                              "edge_type": "excluded_in", "match_tier": "exact"})
-            elif okey and okey in name_to_excl.index:
+            elif okey and okey in name_to_excl.index and distinctive_name_key(okey):
                 rows.append({"src_id": r.node_id, "dst_id": name_to_excl.loc[okey],
                              "edge_type": "excluded_in", "match_tier": "probable"})
 

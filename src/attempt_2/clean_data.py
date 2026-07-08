@@ -279,6 +279,36 @@ def _normalize_name(s: pd.Series) -> pd.Series:
     return out
 
 
+# Generic healthcare/business tokens that make a name-key match meaningless on
+# their own. A probable (name-only) exclusion match on a key built ONLY from these
+# ("HOMECARE", "HEALTH SERVICES") is a collision, not a link — it produced a false
+# "banned owner" lead against a 1990 LEIE entry. Distinctiveness is required before
+# a name-key equality is trusted as a probable match.
+GENERIC_NAME_TOKENS = frozenset({
+    "HOME", "CARE", "HOMECARE", "HEALTH", "HEALTHCARE", "MEDICAL", "MEDICINE",
+    "HOSPICE", "WELLNESS", "SERVICE", "SERVICES", "CLINIC", "CLINICS", "CENTER",
+    "CENTERS", "HOSPITAL", "PHARMACY", "THERAPY", "REHAB", "REHABILITATION",
+    "NURSING", "DIAGNOSTIC", "DIAGNOSTICS", "LAB", "LABS", "LABORATORY",
+    "LABORATORIES", "FAMILY", "SENIOR", "SENIORS", "LIFE", "COMMUNITY", "RECOVERY",
+    "BEHAVIORAL", "STAFFING", "AGENCY", "GROUP", "ASSOCIATES", "PARTNERS",
+    "MANAGEMENT", "HOLDINGS", "HOLDING", "ENTERPRISE", "ENTERPRISES", "SOLUTIONS",
+    "PROFESSIONAL", "PROVIDER", "PROVIDERS", "SYSTEMS", "SYSTEM", "NETWORK",
+    "PHYSICIAN", "PHYSICIANS", "PRACTICE", "ASSOCIATION", "REGIONAL", "NATIONAL",
+    "AMERICAN", "AMERICA", "USA", "THE", "OF", "AND", "FOR",
+})
+
+
+def distinctive_name_key(key) -> bool:
+    """True if a normalized name key has at least one distinctive (non-generic)
+    token of length >= 3. Guards probable name-key matches against generic
+    collisions like 'HOMECARE' / 'HEALTH SERVICES' matching a stale LEIE row.
+    Exact NPI matches never use this — they are hard keys.
+    """
+    toks = [t for t in str(key or "").upper().split()
+            if len(t) >= 3 and t not in GENERIC_NAME_TOKENS]
+    return len(toks) > 0
+
+
 def _standardize_address(df: pd.DataFrame, prefix: str = "") -> pd.Series:
     """Lightweight USPS-ish address key for blocking during entity resolution.
 

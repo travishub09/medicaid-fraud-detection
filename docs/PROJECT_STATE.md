@@ -175,7 +175,18 @@ python -m src.model_a.medicare_export    --medicare-dir processed\medicare --pre
    (and the HUD ZIP→county file for the county upgrade).
 5. **Gated (Brad)**: OpenSanctions commercial-USE sign-off; IQVIA/PurpleLab; people-data +
    FCRA (Model B); T-MSIS DUA. Bundle push to GitHub still pending.
-6. **PI case files**: waiting on `pi_out.txt` (from pi_extract3.py) to build the top-3.
+6. **PI targets — honest finding (2026-07-08)**: after screening, the Medicaid-only
+   data yields **no clean, PI-ready "billing under banned ownership" target**. The
+   `has_excluded_owner` probable tier was matching generic name keys ("HOMECARE") to
+   stale LEIE rows (a 1990 entry) → false leads. **Fixed**: `distinctive_name_key`
+   guard in `clean_data.py`, applied in `integrate.build_facility_flags` (tier B) and
+   `entity_graph.build_edges.build_excluded_in_edges` (probable). What the data DOES
+   give: (a) validation — 1,943 already-excluded providers re-surfaced by billing
+   alone; (b) sector leads (hospice/home-health chains) = Model-B insider-recruitment
+   targets, not PI targets. Real PI targets need real ownership data (PECOS/SNF/hospice
+   ownership), not name-key matching. Local selectors `pi_candidates{,2,3}.py` (v3 =
+   banned-ownership, screens institutions, names owner, EXACT vs PROBABLE tier, computes
+   $ billed after owner exclusion) built + delivered.
 
 ## 11. Exact next steps (in order)
 

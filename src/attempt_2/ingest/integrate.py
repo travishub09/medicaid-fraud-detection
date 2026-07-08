@@ -40,6 +40,7 @@ from ..clean_data import (
     PRECLEAN_DIR,
     canonicalize_series,
     _normalize_name,
+    distinctive_name_key,
     _standardize_address,
     _resolve_columns,
     _table_header,
@@ -567,7 +568,12 @@ def build_facility_flags(owners: pd.DataFrame, exclusions: pd.DataFrame, qa: QA)
     # Tier A (exact): owner NPI present and in LEIE ⇒ high confidence.
     o["tier_a"] = o["owner_npi"].notna() & o["owner_npi"].isin(excl_npi)
     # Tier B (probable): NOT matched in A, but owner name_key in LEIE name keys.
-    o["tier_b"] = (~o["tier_a"]) & o["match_key"].fillna("").isin(excl_names) & (o["match_key"].fillna("") != "")
+    # The match_key must be DISTINCTIVE — an all-generic key ("HOMECARE") matching
+    # a stale LEIE row is a collision, not a link, and produced a false banned-owner
+    # lead. Generic-only keys are dropped from the probable tier.
+    o["tier_b"] = ((~o["tier_a"]) & o["match_key"].fillna("").isin(excl_names)
+                   & (o["match_key"].fillna("") != "")
+                   & o["match_key"].map(distinctive_name_key))
     o["role_weight"] = o.get("owner_role", "").map(_role_weight)
 
     matched = o[o["tier_a"] | o["tier_b"]].copy()
