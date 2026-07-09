@@ -1032,6 +1032,29 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
             _emit("hcris", org, ["hcris_cost_anomaly"])
     except Exception as e:
         log(f"    [hcris] skipped: {e}")
+    # POS facility capacity (bed counts). CMS ships TWO quarterly files (the QIES
+    # hospital/non-hospital file + the iQIES HHA/hospice/SNF/ASC file) — read every
+    # csv in preclean/pos and concat, keeping each CCN's max bed figure. This block
+    # was missing entirely: pos was imported but never invoked, so a dropped-in
+    # POS file was silently unused (the DocGraph wiring-gap class of bug).
+    try:
+        pos_files = sorted((pc / "pos").glob("*.csv"))
+        if pos_files:
+            caps = []
+            for pf in pos_files:
+                caps.append(pos.compute_pos_capacity(_read_any(pf)))
+                log(f"    [pos] read {pf.name}")
+            cap = pd.concat(caps, ignore_index=True)
+            cap = cap.groupby("ccn", as_index=False).agg(
+                bed_count=("bed_count", "max"),
+                facility_type=("facility_type", "first"),
+                state=("state", "first"))
+            cap = cap.rename(columns={"bed_count": "pos_bed_count"})
+            org = fac.rollup_ccn_to_org(cap[["ccn", "pos_bed_count"]],
+                                        ccn_to_npi, npi_to_org)
+            _emit("pos", org, ["pos_bed_count"])
+    except Exception as e:
+        log(f"    [pos] skipped: {e}")
 
 
 def main() -> None:
