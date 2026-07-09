@@ -1,68 +1,125 @@
-# Run 3 procurement — every file to fetch, in value order
+# Run 3 Data Procurement Plan
 
-The plan for the full rerun: run `data_audit.py` first (it tells you which of
-these you already have, with the right layout). Then work this list top to
-bottom. Every item is a free public download unless marked PAID. Save paths are
-exact — the export's file-finders look in `preclean/<source>/`.
+Written July 9, 2026, from the audit of `C:\Users\treyr\OneDrive\Desktop\data`
+(DATA_AUDIT.txt) plus a code review of what each adapter expects. Three parts:
+what you already have (verified, do not re-download), the one broken file to
+replace, and the missing data ranked by how much it improves the model.
 
-Full URL detail lives in `docs/DATA_ACQUISITION_GUIDE.md`; this is the
-prioritized operator checklist for Run 3.
+---
 
-## Tier 0 — refresh what the frozen test depends on (do first, 20 min)
+## Part 1. What you already have, verified. Do NOT re-download.
 
-| # | File | Why it matters for Run 3 |
+The audit confirmed 22 of 26 sources are on disk with the right layout. This is
+almost everything. Highlights:
+
+| Source | Status on your machine | Feeds |
 |---|---|---|
-| 0.1 | **LEIE update** — https://oig.hhs.gov/exclusions/exclusions_list.asp → monthly CSV → `preclean/` (replace the old one) | The forward label = bans after 2023-12. A stale LEIE means fewer positives and wider error bars on Travis's test. |
-| 0.2 | **OpenSanctions** — already downloaded per Trey → confirm at `preclean/opensanctions/targets.simple.csv`, then run `make opensanctions` | Adds ~45 state Medicaid exclusion lists → more forward positives → tighter test. |
+| Medicaid Spending.csv / spending fact | 238M rows, 2018-01 to 2024-12 | the whole pipeline |
+| NPPES registry | 11.5 GB, correct layout | every per-NPI feature |
+| LEIE exclusions | fresh through June 2026; 5,410 NPI-carrying bans after 2023-12 | the fraud label AND Travis's forward test |
+| PECOS All Owners files (FQHC, HHA, Hospice, Hospital + 3 more) | April/May 2026 vintage, correct layout | ownership graph, banned-owner flags |
+| Medicare Part B, by provider and service | 9 yearly files, 2016 onward | upcoding |
+| Medicare Part D, by provider and drug | 8 yearly files (one bad, see Part 2) | drug outlier, kickback |
+| DMEPOS, by referring provider and service | 8 yearly files, correct layout | DME rings, influenced dollars |
+| Open Payments | 8.9 GB | kickback |
+| CMS opioid metrics | 2024 file | pill mill |
+| Market Saturation | correct layout | saturation fraud |
+| Order & Referring | correct layout | ineligible referrals |
+| NPPES deactivation report | zip present | billing after deactivation |
+| HRSA 340B OPAIS | two Excel files present | contract pharmacy |
+| PBJ staffing, hospice measures, deficiencies | present (the audit's "encoding" errors were a false alarm in the audit script, not your files) | worthless services, hospice ineligibility |
+| HCRIS cost reports (Hospital, SNF, HHA 2023) | correct layout | cost report fraud |
+| NUCC taxonomy + specialty crosswalk | already on disk | better peer groups for EVERY scheme |
+| Medicare revocations | correct layout | widens the fraud label |
+| OpenSanctions bulk | already downloaded AND already processed (exclusions_opensanctions.parquet exists) | 45 state exclusion lists |
+| NADAC drug pricing | correct layout | drug spread anomaly |
 
-## Tier 1 — free, each one lights up a scheme (an afternoon)
+Bottom line: your data is deeper than the plan assumed. Procurement is mostly done.
 
-| # | Get | Save to | Unlocks |
-|---|---|---|---|
-| 1.1 | **NUCC taxonomy** — nucc.org → provider-taxonomy CSV | `preclean/nucc/nucc_taxonomy.csv` | Coherent peer grouping — **improves every scheme's percentile**. The single highest-value 2-minute download in this list. |
-| 1.2 | **Medicare Part B, by Provider AND Service** — data.cms.gov, 3–5 annual CSVs | `preclean/partb/partb_<year>.csv` | upcoding (E&M level distribution) |
-| 1.3 | **Medicare Part D, by Provider AND Drug** — data.cms.gov | `preclean/partd/partd_<year>.csv` | drug_outlier + half of pharma_kickback |
-| 1.4 | **CMS opioid metrics** | `preclean/opioid/opioid.csv` | pill_mill |
-| 1.5 | **Open Payments** general payments, latest 3 years | `preclean/open_payments/open_payments.csv` | pharma_kickback (pairs with 1.3) |
-| 1.6 | **DMEPOS by Referring Provider AND Service** (NOT the plain by-referring summary — the audit checks for the HCPCS column) | `preclean/dmepos/dmepos.csv` | dme_ring + the influenced-dollars exposure for referrers |
-| 1.7 | **Order & Referring** | `preclean/order_referring/order_referring.csv` | ineligible-referral share |
-| 1.8 | **NPPES deactivation report** (.zip fine as-is) | `preclean/nppes_deactivation/deactivation.zip` | invalid_identity / billing-after-deactivation |
-| 1.9 | **Medicare revocations** | `preclean/revocations/revocations.csv` | widens the PU label (more positives) |
-| 1.10 | **Market Saturation & Utilization** | `preclean/saturation/saturation.csv` | saturation_fraud |
-| 1.11 | **HRSA 340B OPAIS daily report** (.xlsx as-is; `pip install openpyxl`) | `preclean/hrsa_340b/opais.xlsx` | contract_pharmacy |
+---
 
-## Tier 2 — free, needs one build step after download (a second afternoon)
+## Part 2. One broken file to replace (10 minutes) - DO THIS FIRST
 
-| # | Get | Save to | Then run | Unlocks |
-|---|---|---|---|---|
-| 2.1 | **PECOS enrollment** (you have PECOS; confirm the enrollment file with PAC ids is present) | `preclean/pecos/enrollment.csv` | `make ccn-crosswalk` | facility/HCRIS/POS schemes + better org resolution |
-| 2.2 | **PBJ staffing + Care Compare hospice + deficiencies** | `preclean/facility/{pbj,hospice,deficiencies}.csv` | (auto) | worthless_services + hospice_ineligibility |
-| 2.3 | **HCRIS cost reports** | `preclean/hcris/hcris.csv` | needs 2.1 | cost_report_fraud |
-| 2.4 | **Provider of Services** | `preclean/pos/pos.csv` | needs 2.1 | capacity checks |
-| 2.5 | **DocGraph / shared-patient** (docgraph.org, free tier) | `preclean/docgraph/` | (auto) | referral edges → referral-ring detection — the best NEW network signal available, and a real test for embeddings |
-| 2.6 | **HUD ZIP→county crosswalk** — huduser.gov | `preclean/zip_county/zip_county.csv` | (auto) | county-grain saturation (fixes the state-grain caveat) |
-| 2.7 | **NADAC** — data.medicaid.gov | `preclean/nadac/nadac.csv` | (auto) | drug_spread_anomaly |
+**Medicare Part D 2018.** Your `partd_2018.csv` is the wrong dataset. It is the
+provider SUMMARY (no drug names), while every other year is the correct
+"by Provider and Drug" file. This leaves a hole in the multi-year drug features.
 
-## Tier 3 — paid or gated (Brad decisions; do NOT block Run 3 on these)
+1. Go to: https://data.cms.gov/provider-summary-by-type-of-service/medicare-part-d-prescribers/medicare-part-d-prescribers-by-provider-and-drug
+2. In the data section, pick the **2018** vintage and download the full CSV.
+   Make sure the page says "by Provider and Drug", not "by Provider".
+3. Save it OVER the old file as:
+   `C:\Users\treyr\OneDrive\Desktop\data\preclean\partd\partd_2018.csv`
+4. Sanity check: the file should have columns named `Brnd_Name` and `Gnrc_Name`.
+   The old (wrong) file does not.
 
-| # | What | Cost | Unlocks |
-|---|---|---|---|
-| 3.1 | SSA Death Master File (NTIS) | ~$200/yr | billing-after-death |
-| 3.2 | USPS CMRA list | licensing | exact mailbox-storefront flag |
-| 3.3 | OpenSanctions commercial-USE sign-off | license | (testing already fine on the free bulk) |
-| 3.4 | People-data vendor + FCRA review | $$ | Model B activation |
-| 3.5 | 64 GB compute for embeddings | **~$10–40 one-time, NOT $500** — see PROJECT_STATE §review | graph_emb_* on the full graph |
+---
 
-## Run order once files land
+## Part 3. Missing data, ranked by impact
 
+### Priority 1: DocGraph shared-patient data (30 to 60 minutes)
+**Why it matters most:** it adds REFERRAL edges between providers, which is a
+brand-new network signal, not a re-mix of what you have. Fraud rings show up as
+tight referral loops. If the network test is your showpiece for Travis and Brad,
+this deepens it more than anything else on this list. The adapter is already
+wired (`ingest_cms.docgraph`).
+
+1. Free historical files: https://www.nber.org/research/data/physician-shared-patient-patterns-data
+   (the CMS "Physician Shared Patient Patterns" files, hosted by NBER).
+   Download one year's file (the 30-day version is standard).
+2. Save to: `C:\Users\treyr\OneDrive\Desktop\data\preclean\docgraph\`
+   (any .csv in that folder is picked up; the file has NPI pairs plus a shared
+   patient count).
+3. Note: these files are older (2009 to 2015). Referral-ring STRUCTURE ages
+   well, but flag the vintage in any writeup. Current-year versions are sold by
+   CareSet (https://careset.com) - a Brad decision, not needed for Run 3.
+
+### Priority 2: HUD ZIP-to-county crosswalk (5 minutes)
+**Why:** upgrades the saturation signal from state level to county level, which
+removes a known weakness in the 10.3x saturation headline.
+
+1. Go to: https://www.huduser.gov/portal/datasets/usps_crosswalk.html
+2. Pick the ZIP-COUNTY file, latest quarter, Excel or CSV.
+3. Save as: `C:\Users\treyr\OneDrive\Desktop\data\preclean\zip_county\zip_county.csv`
+   (if it downloads as Excel, open it and save-as CSV).
+
+### Priority 3: Provider of Services file (10 minutes)
+**Why:** facility capacity data (beds, staff counts) that feeds the
+worthless-services checks. Small but cheap.
+
+1. Go to: https://data.cms.gov and search "Provider of Services File
+   Hospital & Non-Hospital Facilities".
+2. Download the latest quarterly CSV.
+3. Save as: `C:\Users\treyr\OneDrive\Desktop\data\preclean\pos\pos.csv`
+
+### Priority 4 (optional): more opioid years (15 minutes)
+**Why:** you only have 2024. Adding 2021 to 2023 gives the pill-mill signal a
+trend dimension. Same page style as Part D:
+https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-medicaid-opioid-prescribing-rates
+Save as `preclean\opioid\opioid_prescriber_<year>.csv`.
+
+---
+
+## Part 4. Paid or gated. Brad decisions. Do NOT block Run 3 on these.
+
+| Item | Cost | What it adds |
+|---|---|---|
+| SSA Death Master File (https://dmf.ntis.gov) | about $200/yr | billing-after-death checks |
+| CareSet current DocGraph | quote | current-year referral edges |
+| USPS CMRA mailbox list | licensing | exact mail-drop storefront flag |
+| People-data vendor + FCRA review | significant | activates Model B (whistleblower ID) |
+| 64 GB compute for graph embeddings | $10 to $40 one time, NOT $500 | round-2 embeddings test, only if the forward verdict says the network family is real |
+
+---
+
+## Part 5. After the downloads
+
+1. Re-run the audit to confirm everything landed right:
 ```
-python data_audit.py                       # confirm layouts (again)
-make opensanctions OPENSANCTIONS_FILE=preclean/opensanctions/targets.simple.csv
-make ccn-crosswalk PECOS_FILE=preclean/pecos/enrollment.csv
-make graph                                 # rebuild with the grouping fixes
-make provider-features                     # Run-3 full matrix (all sources)
-make frozen-package FROZEN_GRAPH_FLAGS=--no-embeddings   # Travis's forward test
+python "C:\Users\treyr\Downloads\data_audit.py" > "C:\Users\treyr\Downloads\DATA_AUDIT2.txt"
 ```
-
-Read `RESULTS_DIGEST.md` + `SOURCES_REPORT.md` after each build — the sources
-report shows exactly which files were used vs skipped and why.
+2. Start the full rebuild:
+```
+"C:\Users\treyr\Downloads\run3.bat"
+```
+3. Send the five report files it names at the end. We verify together, then the
+Travis package goes out.
