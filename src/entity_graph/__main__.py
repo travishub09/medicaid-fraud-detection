@@ -70,6 +70,41 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     return tables
 
 
+def _load_docgraph(path: Path | None, input_dir: Path | None) -> pd.DataFrame | None:
+    """Load a DocGraph/CareSet shared-patient file (csv or csv.gz), projecting
+    ONLY the three needed columns via DuckDB so a multi-GB all-pairs file never
+    enters pandas whole. Auto-discovers ``<input>/../preclean/docgraph/*.csv*``
+    when no explicit path is given (repo data-layout convention)."""
+    if path is None and input_dir is not None:
+        cand = sorted((input_dir.parent / "preclean" / "docgraph").glob("*.csv*"))
+        path = cand[0] if cand else None
+    if path is None:
+        log("    (optional input absent) docgraph — no referral edges this build")
+        return None
+    import duckdb
+    from src.ingest_cms.docgraph import DOCGRAPH_COLS
+    con = duckdb.connect()
+    p = str(path).replace("'", "''")
+    hdr = list(con.execute(
+        f"SELECT * FROM read_csv_auto('{p}', SAMPLE_SIZE=2048) LIMIT 0").df().columns)
+    lower = {c.lower().strip(): c for c in hdr}
+    sel = {}
+    for want, aliases in DOCGRAPH_COLS.items():
+        for a in aliases:
+            if a.lower() in lower:
+                sel[want] = lower[a.lower()]
+                break
+    if "from_npi" not in sel or "to_npi" not in sel:
+        log(f"    docgraph SKIPPED: {path.name} lacks from/to NPI columns "
+            f"(found: {hdr[:8]}…)")
+        return None
+    cols = ", ".join(f'"{src}" AS {dst}' for dst, src in sel.items())
+    df = con.execute(f"SELECT {cols} FROM read_csv_auto('{p}')").df()
+    con.close()
+    log(f"    docgraph loaded: {len(df):,} shared-patient pairs from {path.name}")
+    return df
+
+
 def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         embeddings: bool = True,
         max_component_size: int = 150_000,
@@ -106,6 +141,17 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
     reassignment = tables.get("reassignment")
     reassigns_to_edges = build_reassignment_edges(reassignment, npi_to_org, org_nodes) \
         if reassignment is not None else None
+
+    # optional referral layer: DocGraph/CareSet shared-patient pairs → org→org
+    # refers_to edges (previously the adapter existed but was never invoked here,
+    # so a dropped-in file was silently unused).
+    docgraph = tables.get("docgraph")
+    refers_to_edges = None
+    if docgraph is not None and len(docgraph):
+        from src.ingest_cms.docgraph import build_referral_edges
+        refers_to_edges = build_referral_edges(docgraph, npi_to_org)
+        log(f"    referral edges: {len(refers_to_edges):,} org→org refers_to "
+            f"(from {len(docgraph):,} shared-patient pairs)")
 
     log("Computing graph features …")
     org_features = compute_graph_features(
@@ -145,7 +191,7 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
     proximity = excluded_party_proximity(
         org_nodes, owner_nodes, exclusion_nodes, member_edges,
         owned_by_edges, excluded_in_edges, co_located_edges)
-    rings = referral_rings()
+    rings = referral_rings(refers_to_edges)
 
     outputs = {
         "nodes/provider_nodes": provider_nodes,
@@ -166,6 +212,8 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
     }
     if reassigns_to_edges is not None:
         outputs["edges/reassigns_to_edges"] = reassigns_to_edges
+    if refers_to_edges is not None:
+        outputs["edges/refers_to_edges"] = refers_to_edges
     out_dir.mkdir(parents=True, exist_ok=True)
     for rel, df in outputs.items():
         path = out_dir / f"{rel}.parquet"
@@ -220,6 +268,10 @@ def main() -> None:
                          "mail-drop (not a real co-location) and drop its edges from "
                          "the embedding graph, so genuine rings fused to the blob via "
                          "a shared mail drop are rescued. Raise to keep larger clusters.")
+    ap.add_argument("--docgraph", default=None,
+                    help="DocGraph/CareSet shared-patient csv (or .csv.gz) → refers_to "
+                         "edges + referral rings. Default: auto-discover "
+                         "<input>/../preclean/docgraph/*.csv*")
     args = ap.parse_args()
 
     if args.fixture:
@@ -229,6 +281,8 @@ def main() -> None:
         if not args.input:
             ap.error("either --input <dir> or --fixture is required")
         tables = _load(Path(args.input))
+        tables["docgraph"] = _load_docgraph(
+            Path(args.docgraph) if args.docgraph else None, Path(args.input))
     if args.asof:
         from src.model_a.temporal_sources import point_in_time_tables
         _ex = tables.get("exclusions")

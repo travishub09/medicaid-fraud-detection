@@ -23,11 +23,16 @@ import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns, canonicalize_series
 
+# Aliases cover the public 2009-2015 releases AND the CareSet hop-teaming
+# layouts (npi_from/npi_to, transaction_count, etc.).
 DOCGRAPH_COLS = {
-    "from_npi": ["from_npi", "FROM_NPI", "npi_1", "Provider 1 NPI"],
-    "to_npi": ["to_npi", "TO_NPI", "npi_2", "Provider 2 NPI"],
+    "from_npi": ["from_npi", "FROM_NPI", "npi_1", "npi1", "npi_from",
+                 "Provider 1 NPI", "referring_npi", "initial_npi"],
+    "to_npi": ["to_npi", "TO_NPI", "npi_2", "npi2", "npi_to",
+               "Provider 2 NPI", "referred_to_npi", "subsequent_npi"],
     "patient_count": ["patient_count", "PATIENT_COUNT", "shared_patient_count",
-                      "pair_count"],
+                      "pair_count", "patients", "patient_total", "bene_count",
+                      "benes", "shared_count", "transaction_count"],
 }
 
 
