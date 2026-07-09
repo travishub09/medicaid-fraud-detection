@@ -36,6 +36,35 @@ def test_run_builds_refers_to_edges_and_rings(tmp_path):
     assert float(rings["shared_patient_volume"].max()) >= 35
 
 
+def test_duckdb_builder_streams_thresholds_and_caps(tmp_path):
+    # CareSet-style header (npi_from/npi_to variants), weak pairs thresholded,
+    # intra-org self-loop dropped, cap keeps the top edges by volume.
+    from src.ingest_cms.docgraph import build_referral_edges_duckdb
+    csv = tmp_path / "hop_teaming.csv"
+    pd.DataFrame({
+        "from_npi": ["1000000010", "1000000010", "1000000021", "1000000032"],
+        "to_npi":   ["1000000021", "1000000032", "1000000010", "1000000043"],
+        "patient_count": [50, 5, 30, 25],   # the 5-patient pair dies at threshold
+        "transaction_count": [80, 9, 44, 30],
+    }).to_csv(csv, index=False)
+    n2o = pd.DataFrame({
+        "npi": ["1000000010", "1000000021", "1000000032", "1000000043"],
+        "org_node_id": ["org:A", "org:B", "org:C", "org:C"],  # 32+43 same org
+    })
+    edges = build_referral_edges_duckdb(csv, n2o, min_patients=20, max_edges=10)
+    got = {(r.src_id, r.dst_id): r.shared_patient_volume for r in edges.itertuples()}
+    assert ("org:A", "org:B") in got and got[("org:A", "org:B")] == 50
+    assert ("org:B", "org:A") in got                      # the closed loop back-edge
+    assert ("org:A", "org:C") not in got                  # 5 patients < threshold
+    assert ("org:C", "org:C") not in got                  # self-loop dropped
+    assert edges.attrs.get("n_org_pairs_total") == len(edges)
+
+    capped = build_referral_edges_duckdb(csv, n2o, min_patients=0, max_edges=1)
+    assert len(capped) == 1
+    assert float(capped.iloc[0]["shared_patient_volume"]) == 50   # top by volume
+    assert capped.attrs["n_org_pairs_total"] >= 3
+
+
 def test_run_without_docgraph_unchanged(tmp_path):
     tables = build_synthetic_inputs()
     out = run(tables, tmp_path, embeddings=False)

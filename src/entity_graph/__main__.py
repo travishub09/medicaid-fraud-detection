@@ -70,45 +70,30 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     return tables
 
 
-def _load_docgraph(path: Path | None, input_dir: Path | None) -> pd.DataFrame | None:
-    """Load a DocGraph/CareSet shared-patient file (csv or csv.gz), projecting
-    ONLY the three needed columns via DuckDB so a multi-GB all-pairs file never
-    enters pandas whole. Auto-discovers ``<input>/../preclean/docgraph/*.csv*``
-    when no explicit path is given (repo data-layout convention)."""
+def _discover_docgraph(path: Path | None, input_dir: Path | None) -> Path | None:
+    """Resolve the DocGraph/CareSet shared-patient file path (the file itself is
+    NEVER loaded into pandas — the 2022 CareSet release is ~210M rows / 8 GB, so
+    the edge build streams it through DuckDB inside run()). Auto-discovers
+    ``<input>/../preclean/docgraph/*.csv*`` when no explicit path is given."""
     if path is None and input_dir is not None:
         cand = sorted((input_dir.parent / "preclean" / "docgraph").glob("*.csv*"))
         path = cand[0] if cand else None
     if path is None:
         log("    (optional input absent) docgraph — no referral edges this build")
         return None
-    import duckdb
-    from src.ingest_cms.docgraph import DOCGRAPH_COLS
-    con = duckdb.connect()
-    p = str(path).replace("'", "''")
-    hdr = list(con.execute(
-        f"SELECT * FROM read_csv_auto('{p}', SAMPLE_SIZE=2048) LIMIT 0").df().columns)
-    lower = {c.lower().strip(): c for c in hdr}
-    sel = {}
-    for want, aliases in DOCGRAPH_COLS.items():
-        for a in aliases:
-            if a.lower() in lower:
-                sel[want] = lower[a.lower()]
-                break
-    if "from_npi" not in sel or "to_npi" not in sel:
-        log(f"    docgraph SKIPPED: {path.name} lacks from/to NPI columns "
-            f"(found: {hdr[:8]}…)")
-        return None
-    cols = ", ".join(f'"{src}" AS {dst}' for dst, src in sel.items())
-    df = con.execute(f"SELECT {cols} FROM read_csv_auto('{p}')").df()
-    con.close()
-    log(f"    docgraph loaded: {len(df):,} shared-patient pairs from {path.name}")
-    return df
+    log(f"    docgraph file found: {path.name} "
+        f"({path.stat().st_size/1e6:,.0f} MB) — streamed via DuckDB during the build")
+    return path
 
 
 def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         embeddings: bool = True,
         max_component_size: int = 150_000,
-        max_colocation_cluster: int = 100) -> dict[str, pd.DataFrame]:
+        max_colocation_cluster: int = 100,
+        docgraph_path: Path | None = None,
+        docgraph_min_patients: float = 20,
+        docgraph_max_edges: int = 2_000_000,
+        ring_top_edges: int = 200_000) -> dict[str, pd.DataFrame]:
     """Build the graph from in-memory tables; write parquet; return the outputs."""
     provider_dim = tables["provider_dim"]
     npi_xwalk = tables.get("npi_xwalk")
@@ -144,7 +129,9 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
 
     # optional referral layer: DocGraph/CareSet shared-patient pairs → org→org
     # refers_to edges (previously the adapter existed but was never invoked here,
-    # so a dropped-in file was silently unused).
+    # so a dropped-in file was silently unused). Small in-memory frames (tests)
+    # take the pandas path; a real file streams through DuckDB — the 2022
+    # CareSet release is ~210M rows and must never enter pandas whole.
     docgraph = tables.get("docgraph")
     refers_to_edges = None
     if docgraph is not None and len(docgraph):
@@ -152,6 +139,20 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         refers_to_edges = build_referral_edges(docgraph, npi_to_org)
         log(f"    referral edges: {len(refers_to_edges):,} org→org refers_to "
             f"(from {len(docgraph):,} shared-patient pairs)")
+    elif docgraph_path is not None:
+        from src.ingest_cms.docgraph import build_referral_edges_duckdb
+        log(f"    building referral edges from {Path(docgraph_path).name} "
+            f"(min_patients={docgraph_min_patients}, streamed)…")
+        refers_to_edges = build_referral_edges_duckdb(
+            docgraph_path, npi_to_org, min_patients=docgraph_min_patients,
+            max_edges=docgraph_max_edges)
+        if refers_to_edges is None:
+            log("    docgraph SKIPPED: file lacks from/to NPI columns")
+        else:
+            n_tot = refers_to_edges.attrs.get("n_org_pairs_total", len(refers_to_edges))
+            log(f"    referral edges: kept {len(refers_to_edges):,} of {n_tot:,} "
+                f"org→org pairs (top by shared-patient volume; threshold "
+                f">={docgraph_min_patients} patients per NPI pair)")
 
     log("Computing graph features …")
     org_features = compute_graph_features(
@@ -191,7 +192,13 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
     proximity = excluded_party_proximity(
         org_nodes, owner_nodes, exclusion_nodes, member_edges,
         owned_by_edges, excluded_in_edges, co_located_edges)
-    rings = referral_rings(refers_to_edges)
+    ring_input = refers_to_edges
+    if ring_input is not None and len(ring_input) > ring_top_edges:
+        log(f"    referral rings: cycle search capped to the top {ring_top_edges:,} "
+            f"edges by volume (of {len(ring_input):,}; the FULL edge set is still "
+            f"written to edges/refers_to_edges.parquet)")
+        ring_input = ring_input.nlargest(ring_top_edges, "shared_patient_volume")
+    rings = referral_rings(ring_input)
 
     outputs = {
         "nodes/provider_nodes": provider_nodes,
@@ -272,8 +279,13 @@ def main() -> None:
                     help="DocGraph/CareSet shared-patient csv (or .csv.gz) → refers_to "
                          "edges + referral rings. Default: auto-discover "
                          "<input>/../preclean/docgraph/*.csv*")
+    ap.add_argument("--docgraph-min-patients", type=float, default=20,
+                    help="drop NPI pairs sharing fewer patients than this before "
+                         "aggregation (the 210M-row CareSet tail is mostly weak "
+                         "1-5-patient pairs; the threshold is logged, never silent)")
     args = ap.parse_args()
 
+    docgraph_path = None
     if args.fixture:
         from tests.fixtures.synthetic import build_synthetic_inputs
         tables = build_synthetic_inputs()
@@ -281,7 +293,7 @@ def main() -> None:
         if not args.input:
             ap.error("either --input <dir> or --fixture is required")
         tables = _load(Path(args.input))
-        tables["docgraph"] = _load_docgraph(
+        docgraph_path = _discover_docgraph(
             Path(args.docgraph) if args.docgraph else None, Path(args.input))
     if args.asof:
         from src.model_a.temporal_sources import point_in_time_tables
@@ -293,7 +305,9 @@ def main() -> None:
             f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")
     run(tables, Path(args.out), embeddings=not args.no_embeddings,
         max_component_size=args.max_component_size,
-        max_colocation_cluster=args.max_colocation_cluster)
+        max_colocation_cluster=args.max_colocation_cluster,
+        docgraph_path=docgraph_path,
+        docgraph_min_patients=args.docgraph_min_patients)
 
     if args.neo4j_bulk:
         from .neo4j_export import write_bulk_import

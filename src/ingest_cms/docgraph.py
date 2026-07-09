@@ -36,6 +36,73 @@ DOCGRAPH_COLS = {
 }
 
 
+def resolve_docgraph_columns(header: list[str]) -> dict[str, str]:
+    """Map the adapter's canonical names onto a file's actual header (exact,
+    case-insensitive alias match). Returns {} when from/to NPI can't be found."""
+    lower = {str(c).lower().strip(): c for c in header}
+    out = {}
+    for want, aliases in DOCGRAPH_COLS.items():
+        for a in aliases:
+            if a.lower() in lower:
+                out[want] = lower[a.lower()]
+                break
+    if "from_npi" not in out or "to_npi" not in out:
+        return {}
+    return out
+
+
+def build_referral_edges_duckdb(csv_path, npi_to_org: pd.DataFrame,
+                                min_patients: float = 20,
+                                max_edges: int = 2_000_000,
+                                memory_limit: str = "6GB") -> pd.DataFrame | None:
+    """Scale-safe referral-edge build for the FULL CareSet/DocGraph file.
+
+    The 2022 CareSet hop-teaming release is ~210M NPI-pair rows (~8 GB csv) —
+    far past what pandas can hold on a 16 GB machine. This streams the file
+    through DuckDB: threshold weak pairs (``min_patients``), join both NPIs to
+    their canonical orgs, aggregate to org→org, and keep the top ``max_edges``
+    by volume. Only the final org-pair table enters pandas. Dropped totals are
+    LOGGED by the caller (no silent caps — repo rule).
+
+    Returns None when the header lacks from/to NPI columns.
+    """
+    import duckdb
+    con = duckdb.connect()
+    con.execute(f"PRAGMA memory_limit='{memory_limit}'")
+    p = str(csv_path).replace("'", "''")
+    hdr = list(con.execute(
+        f"SELECT * FROM read_csv_auto('{p}', SAMPLE_SIZE=2048) LIMIT 0").df().columns)
+    sel = resolve_docgraph_columns(hdr)
+    if not sel:
+        con.close()
+        return None
+    f, t = sel["from_npi"], sel["to_npi"]
+    vol = (f'CAST("{sel["patient_count"]}" AS DOUBLE)' if "patient_count" in sel
+           else "1.0")
+    n2o = npi_to_org[["npi", "org_node_id"]].copy()
+    n2o["npi"] = n2o["npi"].astype(str)
+    con.register("n2o", n2o)
+    con.execute(f"""
+        CREATE TEMP TABLE org_pairs AS
+        SELECT a.org_node_id AS src_id, b.org_node_id AS dst_id,
+               SUM({vol}) AS shared_patient_volume
+        FROM read_csv_auto('{p}') d
+        JOIN n2o a ON CAST(d."{f}" AS VARCHAR) = a.npi
+        JOIN n2o b ON CAST(d."{t}" AS VARCHAR) = b.npi
+        WHERE a.org_node_id <> b.org_node_id
+          AND {vol} >= {float(min_patients)}
+        GROUP BY 1, 2""")
+    n_total = con.execute("SELECT COUNT(*) FROM org_pairs").fetchone()[0]
+    df = con.execute(f"""
+        SELECT src_id, dst_id, shared_patient_volume FROM org_pairs
+        ORDER BY shared_patient_volume DESC LIMIT {int(max_edges)}""").df()
+    con.close()
+    df["edge_type"] = "refers_to"
+    out = df[["src_id", "dst_id", "edge_type", "shared_patient_volume"]]
+    out.attrs["n_org_pairs_total"] = int(n_total)
+    return out
+
+
 def build_referral_edges(docgraph: pd.DataFrame,
                          npi_to_org: pd.DataFrame) -> pd.DataFrame:
     """Provider shared-patient pairs → org→org `refers_to` edges.
