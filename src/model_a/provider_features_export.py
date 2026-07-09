@@ -1038,7 +1038,10 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
     # was missing entirely: pos was imported but never invoked, so a dropped-in
     # POS file was silently unused (the DocGraph wiring-gap class of bug).
     try:
-        pos_files = sorted((pc / "pos").glob("*.csv"))
+        # rglob, not glob: the CMS zips extract into their own subfolders
+        # ("Provider of Services File - .../*.csv") — top-level-only matching
+        # would silently skip them.
+        pos_files = sorted((pc / "pos").rglob("*.csv"))
         if pos_files:
             caps = []
             for pf in pos_files:
