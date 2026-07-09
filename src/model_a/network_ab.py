@@ -222,16 +222,33 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
     # ----- MATCHED set (size-controlled) -----
     try:
         from .case_control import match_cohorts
-        match_input = matrix
-        if realistic_controls and "confirmed_clean" in matrix.columns:
-            # drop the manufactured-clean anchors so match_cohorts falls back to
-            # ordinary same-size/specialty providers as controls — a realistic
-            # (harder) comparison with headroom, not known-bad vs manufactured-clean.
-            match_input = matrix.drop(columns=["confirmed_clean"])
+        if future_label is not None:
+            # FORWARD matched: cases = FUTURE-banned providers, controls = matched
+            # not-yet-banned peers, features as-of. Matching on the in-time label
+            # here would put each case's own exclusion node back in the graph and
+            # let within_2_hops read off the answer — the exact leak this test
+            # exists to remove. Realistic controls forced (the clean anchors were
+            # selected with in-time criteria).
+            match_input = m.copy()
+            match_input["_forward_positive"] = yfull.to_numpy()
+            if "confirmed_clean" in match_input.columns:
+                match_input = match_input.drop(columns=["confirmed_clean"])
             out["control_kind"] = "realistic (ordinary matched peers)"
+            out["matched_label"] = "forward (future bans)"
+            match_label = "_forward_positive"
         else:
-            out["control_kind"] = "confirmed_clean anchors"
-        matched = match_cohorts(match_input, label_col=label)
+            match_input = matrix
+            match_label = label
+            out["matched_label"] = label
+            if realistic_controls and "confirmed_clean" in matrix.columns:
+                # drop the manufactured-clean anchors so match_cohorts falls back to
+                # ordinary same-size/specialty providers as controls — a realistic
+                # (harder) comparison with headroom, not known-bad vs manufactured-clean.
+                match_input = matrix.drop(columns=["confirmed_clean"])
+                out["control_kind"] = "realistic (ordinary matched peers)"
+            else:
+                out["control_kind"] = "confirmed_clean anchors"
+        matched = match_cohorts(match_input, label_col=match_label)
         if len(matched) and "cohort" in matched.columns:
             ym = (matched["cohort"] == "case").astype(int)
             gm = matched["match_id"].to_numpy() if "match_id" in matched.columns else None
@@ -324,7 +341,8 @@ def to_markdown(out: dict) -> str:
         if pop == "full":
             lbl = out.get("full_label", "")
         elif pop == "matched":
-            lbl = f"FULL network vs none, case vs matched control [{out.get('control_kind', '?')}]"
+            lbl = (f"FULL network vs none, case vs matched control "
+                   f"[label: {out.get('matched_label', '?')}; {out.get('control_kind', '?')}]")
         else:
             lbl = "STRUCTURAL network only vs none, case vs matched control (label-adjacent flags removed)"
         L.append(f"## {pop.upper()} — {lbl}")

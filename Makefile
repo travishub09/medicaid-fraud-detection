@@ -9,6 +9,10 @@ PY        ?= python3
 
 # Feature-freeze cutoff for the frozen-package (Travis's forward network test).
 ASOF_CUTOFF ?= 2023-12
+# Extra flags for the frozen graph build. On a 16 GB machine pass
+# FROZEN_GRAPH_FLAGS=--no-embeddings (the DeepWalk step needs ~64 GB at full
+# graph scale; the forward test stays valid on flags + structural features).
+FROZEN_GRAPH_FLAGS ?=
 
 help:
 	@echo "Targets:"
@@ -92,7 +96,7 @@ feature-snapshot:
 # columns included, to see whether the graph family predicts future bans it never saw.
 frozen-package:
 	$(PY) -m src.entity_graph --input $(DATA_ROOT)/processed \
-		--out $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) --asof $(ASOF_CUTOFF)
+		--out $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) --asof $(ASOF_CUTOFF) $(FROZEN_GRAPH_FLAGS)
 	$(PY) -m src.model_a.provider_features_export \
 		--graph-dir $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) \
 		--asof-cutoff $(ASOF_CUTOFF) \

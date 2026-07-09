@@ -36,9 +36,12 @@ def test_earliest_exclusion_and_cutoff_split():
     assert by.loc["1111111111", "is_prospective_positive"] == 0
     assert by.loc["1111111111", "first_excl_date"] == "2019-05-01"
 
-    # first ban after / exactly on the cutoff → positive
+    # first ban strictly after the freeze instant → positive
     assert by.loc["2222222222", "is_prospective_positive"] == 1
-    assert by.loc["5555555555", "is_prospective_positive"] == 1  # cutoff is inclusive
+    # a ban dated EXACTLY at the freeze instant is already in the as-of graph
+    # (features keep excl_date <= cutoff) → known, NOT a forward positive
+    assert by.loc["5555555555", "is_prospective_positive"] == 0
+    assert by.loc["5555555555", "was_excluded_pre_cutoff"] == 1
 
     # first ban just before cutoff → pre
     assert by.loc["3333333333", "was_excluded_pre_cutoff"] == 1
@@ -61,5 +64,6 @@ def test_empty_input():
 
 def test_positive_count_matches():
     out = build_prospective_label(_nodes(), cutoff="2024-01")
-    # 2222222222 and 5555555555 are the two forward positives
-    assert int(out["is_prospective_positive"].sum()) == 2
+    # only 2222222222 (2024-03) is strictly after the freeze; 5555555555 sits
+    # exactly on it and counts as known
+    assert int(out["is_prospective_positive"].sum()) == 1

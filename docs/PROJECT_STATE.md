@@ -90,9 +90,19 @@ facility_program) — see `docs/OUTPUT_METHODOLOGY.md`.
   Protocol for Travis in `docs/FROZEN_PACKAGE_FOR_TRAVIS.md`.
 - `src/model_a/network_ab.py` — the SIZE-CONTROLLED network A/B. Trains with vs
   without the graph family on (a) the full population and (b) a size/taxonomy/state-
-  matched case-control set. Verdict KEEP / SIZE ARTIFACT / NO SIGNAL from the MATCHED
-  delta (bootstrap CI). `make frozen-package` now runs it → `NETWORK_AB_REPORT.md`.
-  Settles whether the graph features are real signal or size in disguise.
+  matched case-control set. Verdict KEEP / SIZE ARTIFACT / SATURATED / NO SIGNAL from
+  the MATCHED delta (bootstrap CI). `make frozen-package` runs it → `NETWORK_AB_REPORT.md`.
+  Hardened across three review rounds against the real outputs: (1) ceiling guard —
+  the confirmed_clean run scored AUC 1.0 both sides (controls too easy) → SATURATED,
+  + `--realistic-controls`; (2) label-adjacent split — in-time, `within_2_hops` etc.
+  read the label off the graph (PR-AUC 0.013→0.67 was the tell), so in-time verdicts
+  are judged on STRUCTURAL features only; (3) Fable full review — FORWARD runs now
+  build the matched set on the FORWARD label (was silently matching in-time = leak),
+  `prospective_label` is strictly-after-the-freeze (one-day boundary leak closed),
+  and `FROZEN_GRAPH_FLAGS=--no-embeddings` makes the frozen build 16 GB-safe.
+  In-time A/B results to date are all inconclusive-by-design; the frozen forward
+  run (`run_frozen2.bat`) is the decisive one. Embeddings = round-2 on a 64 GB box
+  ONLY if round 1 shows forward signal.
 - `src/ingest_cms/medicare_fact.py` + `medicare_growth.py` — Medicare fact + multi-year ramp.
 - `src/ingest_cms/sector_schemes.py` — NEMT / behavioral-health / impossible-day from the fact.
 - `src/enforcement/cms_priority_lists.py` — moratoria / revalidation / SFF overlay flags.

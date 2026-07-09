@@ -95,14 +95,31 @@ python -m src.model_a.network_ab \
     --out NETWORK_AB_REPORT.md
 ```
 
-## Two things to watch
+## Three things to watch
 
-- Score only the rows that were **not** already banned before the cutoff. The
+- Score only the rows that were **not** already banned at the freeze. The
   label file flags those with `was_excluded_pre_cutoff`. Leaving them in inflates
-  the result the same way the old file did.
+  the result the same way the old file did. A ban dated exactly on the freeze day
+  counts as already known (it is in the frozen graph), not as a forward positive.
+- The matched A/B inside the report is built on the **forward** label too: cases
+  are future-banned providers, controls are matched not-yet-banned peers. Matching
+  on the old in-time label would let the proximity flags read the answer back off
+  the graph. The report header says which label the matched block used.
 - The forward label is thin by design. Bans are rare, and one year of forward bans
   is rarer still. Use top-decile lift and PR-AUC, not plain accuracy, and expect
   wide error bars. Small and real still beats big and leaked.
+
+## If the machine can't build embeddings
+
+The DeepWalk node embeddings need ~64 GB at full graph scale. On a 16 GB machine,
+build the frozen graph with `--no-embeddings` (or
+`make frozen-package FROZEN_GRAPH_FLAGS=--no-embeddings`). The test stays valid:
+it measures the exclusion-proximity flags plus the structural features
+(shell score, related-party density), which are fair in a forward test because
+they are built only from bans known before the freeze. The embeddings are a
+round-2 question: if round 1 shows real forward signal, a one-time run on a
+rented 64 GB box adds `graph_emb_*` and re-runs the same A/B to price their
+marginal lift.
 
 The label is built from public integrity events. It is a modelling label, not a
 claim about any person. Everything downstream is a lead for review, not an

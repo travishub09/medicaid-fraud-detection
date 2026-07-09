@@ -135,6 +135,31 @@ def test_in_time_leak_flag_judged_on_structural(tmp_path=None):
     assert "label-adjacent" in out["verdict"] and "frozen" in out["verdict"].lower()
 
 
+def test_forward_run_matches_on_forward_label():
+    # THE review fix: with a --future-label, the matched block must be built on the
+    # FORWARD label (future bans vs matched not-yet-banned peers), never the in-time
+    # exclusion label — matching in-time puts each case's own exclusion node back in
+    # the graph and lets within_2_hops read off the answer.
+    m = _matrix()
+    # forward file: 30 currently-clean providers become future positives;
+    # the in-time positives are pre-cutoff → dropped from the forward test.
+    clean_npis = m.loc[m["provider_on_exclusion"] == 0, "npi"].tolist()
+    banned_npis = m.loc[m["provider_on_exclusion"] == 1, "npi"].tolist()
+    fut = pd.DataFrame({
+        "npi": clean_npis[:30] + banned_npis,
+        "is_prospective_positive": [1] * 30 + [0] * len(banned_npis),
+        "was_excluded_pre_cutoff": [0] * 30 + [1] * len(banned_npis),
+    })
+    out = run_network_ab(m, _manifest(), future_label=fut, n_boot=30)
+    assert out["is_forward"]
+    assert out.get("matched_label") == "forward (future bans)"
+    assert out.get("control_kind") == "realistic (ordinary matched peers)"
+    # matched cases must be the forward positives (30), not the in-time positives (120)
+    assert "matched" in out
+    total_matched_cases = out["matched"]["pos_test"]
+    assert total_matched_cases <= 30
+
+
 def test_no_network_features_is_handled():
     m = _matrix().drop(columns=["graph_fraud_proximity", "within_2_hops_of_exclusion",
                                 "subscore_ownership_integrity"])

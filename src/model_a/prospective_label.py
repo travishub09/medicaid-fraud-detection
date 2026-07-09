@@ -16,9 +16,14 @@ This module produces step 2 — the ``future_bans_2024plus.csv`` file. It reads 
 exclusion nodes (``npi`` + ``excl_date``), collapses to one row per NPI at its
 EARLIEST exclusion, and splits the universe three ways for a given cutoff:
 
-  is_prospective_positive   first exclusion on/after the cutoff  → the forward label (1)
-  was_excluded_pre_cutoff   first exclusion before the cutoff    → drop from the test
-                            (already known-bad at freeze; not a fair forward case)
+  is_prospective_positive   first exclusion strictly AFTER the freeze instant → the
+                            forward label (1)
+  was_excluded_pre_cutoff   first exclusion at/before the freeze instant → drop from
+                            the test (already known-bad at freeze; not a fair forward
+                            case). The freeze instant itself counts as KNOWN because
+                            the as-of graph keeps exclusions dated <= the cutoff —
+                            counting a same-day ban as a forward positive would put
+                            the same event in both the features and the label.
   (neither)                 never excluded                       → candidate negative
 
 Only the FIRST exclusion per NPI matters: a provider banned in 2019 and re-listed
@@ -82,8 +87,11 @@ def build_prospective_label(exclusion_nodes: pd.DataFrame, cutoff: str) -> pd.Da
         "first_excl_date": first["_excl_dt"].dt.strftime("%Y-%m-%d").where(dated, ""),
         "excl_type": first.get("excl_type", pd.Series("", index=first.index)).fillna(""),
         "entity_name": first.get("entity_name", pd.Series("", index=first.index)).fillna(""),
-        "is_prospective_positive": (dated & (first["_excl_dt"] >= cutoff_ts)).astype(int),
-        "was_excluded_pre_cutoff": (dated & (first["_excl_dt"] < cutoff_ts)).astype(int),
+        # strictly AFTER the freeze instant: the as-of graph keeps exclusions dated
+        # <= the cutoff, so a ban dated exactly at the cutoff is already a feature
+        # and must not also be a label (the one-day boundary leak).
+        "is_prospective_positive": (dated & (first["_excl_dt"] > cutoff_ts)).astype(int),
+        "was_excluded_pre_cutoff": (dated & (first["_excl_dt"] <= cutoff_ts)).astype(int),
         "undated_exclusion": undated.astype(int),
     })
     return out.sort_values(["is_prospective_positive", "first_excl_date"],
@@ -103,8 +111,10 @@ def main() -> None:
     ap.add_argument("--exclusion-nodes", required=True,
                     help="graph/nodes/exclusion_nodes.parquet (npi + excl_date)")
     ap.add_argument("--cutoff", required=True,
-                    help="feature-freeze cutoff, YYYY-MM (e.g. 2024-01). Positives = "
-                         "first exclusion on/after this month.")
+                    help="feature-freeze cutoff, YYYY-MM (e.g. 2023-12). Positives = "
+                         "first exclusion strictly AFTER the freeze instant (the "
+                         "as-of graph keeps exclusions <= it, so same-day bans are "
+                         "features, not labels). Pass the SAME cutoff as --asof.")
     ap.add_argument("--out", default="future_bans_2024plus.csv")
     ap.add_argument("--positives-only", action="store_true",
                     help="write only the forward positives (default writes the full "
@@ -120,8 +130,8 @@ def main() -> None:
     written.to_csv(args.out, index=False)
 
     print(f"wrote {args.out} — {len(written):,} rows")
-    print(f"  forward positives (first ban ≥ {args.cutoff}): {pos:,}  ← the held-out label")
-    print(f"  excluded before cutoff (drop from the test):   {pre:,}")
+    print(f"  forward positives (first ban after {args.cutoff}): {pos:,}  <- the held-out label")
+    print(f"  excluded at/before cutoff (drop from the test):    {pre:,}")
     print(f"  undated exclusions (not counted as positive):  {und:,}")
     if pos == 0:
         print("  WARNING: zero forward positives — is the cutoff after your latest "
