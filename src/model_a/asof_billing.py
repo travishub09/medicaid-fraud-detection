@@ -43,7 +43,14 @@ def _ym(cutoff: str) -> str:
 def write_asof_spending(spending_path: str | Path, cutoff: str,
                         out_path: str | Path, con=None) -> tuple[int, int]:
     """Filter the spending fact to service months strictly before ``cutoff`` and
-    write it to ``out_path``. Returns (kept_rows, dropped_rows)."""
+    write it to ``out_path``. Returns (kept_rows, dropped_rows).
+
+    Also applies the corruption guard the features stage uses (the raw fact's
+    $21.8T total is dominated by overflowed aggregate rows — audit_corruption.py):
+    rows with total_paid > $500M are excluded, and when the fact carries a
+    ``provider_matched`` column only matched rows are kept. Without this the
+    FROZEN matrix would recompute billing stats over the corrupt rows the normal
+    features stage filters out."""
     import duckdb
     own = con is None
     con = con or duckdb.connect()
@@ -53,9 +60,14 @@ def write_asof_spending(spending_path: str | Path, cutoff: str,
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     total = con.execute(
         f"SELECT COUNT(*) FROM read_parquet('{p}')").fetchone()[0]
+    cols = [c[0] for c in con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet('{p}')").fetchall()]
+    guard = " AND CAST(total_paid AS DOUBLE) <= 500000000"
+    if "provider_matched" in cols:
+        guard += " AND provider_matched = TRUE"
     con.execute(f"""
         COPY (SELECT * FROM read_parquet('{p}')
-              WHERE substr(CAST(service_month AS VARCHAR), 1, 7) < '{cut}')
+              WHERE substr(CAST(service_month AS VARCHAR), 1, 7) < '{cut}'{guard})
         TO '{o}' (FORMAT PARQUET)""")
     kept = con.execute(
         f"SELECT COUNT(*) FROM read_parquet('{o}')").fetchone()[0]
