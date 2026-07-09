@@ -41,6 +41,13 @@ import numpy as np
 import pandas as pd
 
 RANDOM_STATE = 42
+# A matched-set AUC at/above this with AND without the network family means the
+# controls are too easy (or the matrix leaks): both models are perfect, so there
+# is no headroom to measure the network contribution. Verdict = SATURATED, not KEEP.
+CEILING_AUC = 0.98
+# KEEP also requires the matched ROC-AUC delta to clear this, not just clear zero:
+# a +0.0001 win at the ceiling is noise, not signal.
+MIN_KEEP_DELTA = 0.005
 NETWORK_NAMED = {
     "within_2_hops_of_exclusion", "shell_score", "related_party_density",
     "related_party_density_norm", "has_excluded_owner",
@@ -165,7 +172,8 @@ def _ab_once(frame, y, with_net, without, groups, test_groups_for_boot, n_boot=2
 
 
 def run_network_ab(matrix: pd.DataFrame, manifest: dict,
-                   future_label: pd.DataFrame | None = None, n_boot: int = 200) -> dict:
+                   future_label: pd.DataFrame | None = None, n_boot: int = 200,
+                   realistic_controls: bool = False) -> dict:
     label = manifest.get("label") or "provider_on_exclusion"
     without, with_net, net = feature_sets(matrix, manifest)
     out = {"label": label, "n_network_features": len(net),
@@ -199,7 +207,16 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
     # ----- MATCHED set (size-controlled) -----
     try:
         from .case_control import match_cohorts
-        matched = match_cohorts(matrix, label_col=label)
+        match_input = matrix
+        if realistic_controls and "confirmed_clean" in matrix.columns:
+            # drop the manufactured-clean anchors so match_cohorts falls back to
+            # ordinary same-size/specialty providers as controls — a realistic
+            # (harder) comparison with headroom, not known-bad vs manufactured-clean.
+            match_input = matrix.drop(columns=["confirmed_clean"])
+            out["control_kind"] = "realistic (ordinary matched peers)"
+        else:
+            out["control_kind"] = "confirmed_clean anchors"
+        matched = match_cohorts(match_input, label_col=label)
         if len(matched) and "cohort" in matched.columns:
             ym = (matched["cohort"] == "case").astype(int)
             gm = matched["match_id"].to_numpy() if "match_id" in matched.columns else None
@@ -215,19 +232,36 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
 
 
 def _verdict(out: dict) -> str:
+    mblk = out.get("matched", {})
+    matched = mblk.get("delta_ci", {}).get("roc_auc", {})
+    mwith = mblk.get("with", {}).get("roc_auc")
+    mwithout = mblk.get("without", {}).get("roc_auc")
+
+    # Ceiling guard: if BOTH models are near-perfect on the matched set, the test
+    # saturated (controls too easy or the matrix leaks). No headroom -> inconclusive.
+    if (mwith == mwith and mwithout == mwithout
+            and min(mwith or 0, mwithout or 0) >= CEILING_AUC):
+        return ("SATURATED / INCONCLUSIVE: both models score near-perfect on the matched "
+                f"set (ROC-AUC >= {CEILING_AUC} with AND without the network family), so "
+                "there is no headroom to measure the network contribution. The controls "
+                "are too easy or the matrix leaks. Rerun with realistic controls "
+                "(--realistic-controls) and the frozen (as-of) matrix before trusting a "
+                "verdict.")
+
+    lo, delta = matched.get("lo"), matched.get("delta")
+    if (lo == lo and delta == delta and lo > 0 and delta >= MIN_KEEP_DELTA):
+        return ("KEEP (size-independent): the network family lifts discrimination against "
+                f"size/taxonomy-matched controls by a real margin (delta {delta:+.3f}, CI "
+                "clear of zero). Use it under the out-of-time split.")
+
     full = out.get("full", {}).get("delta_ci", {}).get("lift10", {})
-    matched = out.get("matched", {}).get("delta_ci", {}).get("roc_auc", {})
-    if matched and matched.get("lo", float("nan")) == matched.get("lo") and matched["lo"] > 0:
-        return ("KEEP (size-independent): the network family lifts discrimination even "
-                "against size/taxonomy-matched controls (matched ROC-AUC delta CI > 0). "
-                "Use it under the out-of-time split.")
-    if full and full.get("lo", float("nan")) == full.get("lo") and full["lo"] > 0 \
-            and out.get("matched"):
+    if (full and full.get("lo", float("nan")) == full.get("lo") and full["lo"] > 0
+            and out.get("matched")):
         return ("SIZE ARTIFACT: the network family lifts on the full population but the "
-                "advantage collapses against size-matched controls. Drop it or "
-                "size-normalize before trusting it.")
-    return ("NO MEASURABLE SIGNAL: the network family does not move the metrics beyond "
-            "noise here. Do not rely on it.")
+                "advantage does not survive size matching. Drop it or size-normalize "
+                "before trusting it.")
+    return ("NO MEASURABLE SIGNAL: the network family does not move the matched metric "
+            "beyond noise. Do not rely on it.")
 
 
 def _fmt(d):
@@ -248,7 +282,8 @@ def to_markdown(out: dict) -> str:
             if out.get(f"{pop}_error"):
                 L.append(f"## {pop.upper()}  \n_{out[f'{pop}_error']}_\n")
             continue
-        lbl = out.get("full_label", "") if pop == "full" else "case vs size-matched control"
+        lbl = out.get("full_label", "") if pop == "full" else \
+            f"case vs size-matched control [{out.get('control_kind', '?')}]"
         L.append(f"## {pop.upper()} — {lbl}")
         L.append(f"n_test={blk['n_test']:,}  positives_test={blk['pos_test']:,}"
                  + (f"  matched_rows={out.get('matched_n'):,}" if pop == "matched" else ""))
@@ -274,12 +309,17 @@ def main() -> None:
                          "was_excluded_pre_cutoff) for a forward evaluation.")
     ap.add_argument("--out", default="NETWORK_AB_REPORT.md")
     ap.add_argument("--n-boot", type=int, default=200)
+    ap.add_argument("--realistic-controls", action="store_true",
+                    help="match cases to ORDINARY same-size/specialty providers instead "
+                         "of the manufactured-clean anchors — a harder, headroom-having "
+                         "test. Use this when the confirmed_clean run saturates at AUC 1.")
     args = ap.parse_args()
 
     matrix = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
     fut = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
-    out = run_network_ab(matrix, manifest, future_label=fut, n_boot=args.n_boot)
+    out = run_network_ab(matrix, manifest, future_label=fut, n_boot=args.n_boot,
+                         realistic_controls=args.realistic_controls)
     report = to_markdown(out)
     Path(args.out).write_text(report)
     print(report)

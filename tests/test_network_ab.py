@@ -75,6 +75,34 @@ def test_run_reports_both_populations_and_keeps_real_signal():
     assert out["verdict"].startswith("KEEP")
 
 
+def test_saturation_is_flagged_not_kept():
+    # both cohorts perfectly separable by a NON-network feature -> AUC ~1 with and
+    # without network -> must be SATURATED, not KEEP.
+    from src.model_a.network_ab import _verdict
+    out = {
+        "matched": {
+            "with": {"roc_auc": 1.0}, "without": {"roc_auc": 0.999},
+            "delta_ci": {"roc_auc": {"delta": 0.0001, "lo": 0.0, "hi": 0.0003}},
+        },
+    }
+    assert _verdict(out).startswith("SATURATED")
+
+
+def test_small_win_at_ceiling_not_kept():
+    from src.model_a.network_ab import _verdict
+    # delta positive and CI clear of zero, but tiny and at ceiling -> not KEEP
+    out = {"matched": {"with": {"roc_auc": 0.995}, "without": {"roc_auc": 0.993},
+                       "delta_ci": {"roc_auc": {"delta": 0.002, "lo": 0.001, "hi": 0.003}}}}
+    assert not _verdict(out).startswith("KEEP")
+
+
+def test_real_win_below_ceiling_is_kept():
+    from src.model_a.network_ab import _verdict
+    out = {"matched": {"with": {"roc_auc": 0.78}, "without": {"roc_auc": 0.71},
+                       "delta_ci": {"roc_auc": {"delta": 0.07, "lo": 0.03, "hi": 0.11}}}}
+    assert _verdict(out).startswith("KEEP")
+
+
 def test_no_network_features_is_handled():
     m = _matrix().drop(columns=["graph_fraud_proximity", "within_2_hops_of_exclusion",
                                 "subscore_ownership_integrity"])
