@@ -5,7 +5,7 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a provider-features feature-snapshot frozen-package ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features feature-snapshot frozen-package digest ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
 
 # Feature-freeze cutoff for the frozen-package (Travis's forward network test).
 ASOF_CUTOFF ?= 2023-12
@@ -108,10 +108,19 @@ frozen-package:
 		--manifest $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/feature_manifest.json \
 		--future-label $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/future_bans_after_$(ASOF_CUTOFF).csv \
 		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/NETWORK_AB_REPORT.md
+	$(PY) -m src.model_a.results_digest \
+		--dir $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF) \
+		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/RESULTS_DIGEST.md
 	@echo "Frozen package ready in $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/"
 	@echo "  provider_features_for_model.parquet  = as-of features (network cols INCLUDED)"
 	@echo "  future_bans_after_$(ASOF_CUTOFF).csv  = the forward label to score against"
 	@echo "  NETWORK_AB_REPORT.md                  = size-matched network A/B verdict"
+	@echo "  RESULTS_DIGEST.md                     = plain-English summary (read this first)"
+
+# Plain-English one-page summary of any run's outputs. Point it at a directory
+# holding feature_manifest.json / signal_ranking.csv / NETWORK_AB_REPORT.md.
+digest:
+	$(PY) -m src.model_a.results_digest --dir $(DIGEST_DIR) --out $(DIGEST_DIR)/RESULTS_DIGEST.md
 
 # One-time PECOS CCN↔NPI crosswalk (unlocks facility/HCRIS/POS schemes).
 ccn-crosswalk:
