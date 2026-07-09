@@ -224,10 +224,22 @@ def _distance_to_exclusions(G: nx.Graph, exclusion_ids: set[str]) -> tuple[dict,
 def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                            exclusion_nodes: pd.DataFrame, member_edges: pd.DataFrame,
                            owned_by_edges: pd.DataFrame, excluded_in_edges: pd.DataFrame,
-                           co_located_edges: pd.DataFrame) -> pd.DataFrame:
-    """One row per organization with the graph features above."""
+                           co_located_edges: pd.DataFrame,
+                           max_colocation_cluster: int | None = 100) -> pd.DataFrame:
+    """One row per organization with the graph features above.
+
+    ``max_colocation_cluster`` prunes mega-address co-location edges from the
+    feature graph (same knob the embeddings path already used). Without it,
+    ``within_2_hops_of_exclusion`` counts paths THROUGH a registered-agent /
+    virtual-office address: one excluded org at a big mail-drop would falsely put
+    every other org registered there "near a banned party." Proximity through a
+    small shared suite (a genuine ring pattern) still counts; the per-org
+    ``co_location_cluster_size`` feature is computed from the full edge table and
+    is unaffected.
+    """
     G = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
-                    owned_by_edges, excluded_in_edges, co_located_edges)
+                    owned_by_edges, excluded_in_edges, co_located_edges,
+                    max_colocation_cluster=max_colocation_cluster)
 
     excl_ids = set(exclusion_nodes["node_id"].astype(str)) if exclusion_nodes is not None and len(exclusion_nodes) else set()
     dist, nearest = _distance_to_exclusions(G, excl_ids)

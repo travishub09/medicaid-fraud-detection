@@ -29,8 +29,8 @@ import unicodedata
 import numpy as np
 import pandas as pd
 
-# Reuse the shared name normalizer rather than reinventing it (clean_data rule 8).
-from src.attempt_2.clean_data import _normalize_name
+# Reuse the shared name normalizer + distinctiveness guard (clean_data rule 8).
+from src.attempt_2.clean_data import _normalize_name, distinctive_name_key
 
 # Mirrors company_rollup.norm_company: a stricter exact-match key that also strips
 # the leading "THE" and a few suffixes the shared normalizer leaves in.
@@ -102,7 +102,14 @@ def resolve_organizations(provider_dim: pd.DataFrame,
 
     pac_key = df["npi"].map(pac)
     owner_key = df["_owner"].where(df["_owner"].isin(shared_owners))
-    name_ok = (~df["npi"].isin(pac)) & owner_key.isna() & (df["_name_key"] != "")
+    # A tier-3 name merge requires a DISTINCTIVE name key: an all-generic key
+    # ("HOMECARE", "FAMILY MEDICAL CENTER") would fuse unrelated providers across
+    # the country into one fake mega-org — corrupting org_member_count, ring
+    # density, and within_2_hops (one excluded member would falsely contaminate
+    # every namesake). Generic-named NPIs stay single-NPI orgs; genuinely
+    # distinctive chains (SOUTHERNCARE, BLUEWATER TOXICOLOGY) still merge.
+    name_ok = ((~df["npi"].isin(pac)) & owner_key.isna() & (df["_name_key"] != "")
+               & df["_name_key"].map(distinctive_name_key))
 
     df["company_id"] = np.where(
         pac_key.notna(), "pac:" + pac_key.astype(str),

@@ -110,7 +110,8 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
     log("Computing graph features …")
     org_features = compute_graph_features(
         org_nodes, owner_nodes, exclusion_nodes, member_edges,
-        owned_by_edges, excluded_in_edges, co_located_edges)
+        owned_by_edges, excluded_in_edges, co_located_edges,
+        max_colocation_cluster=max_colocation_cluster)
     require("features_one_per_org", len(org_features) == len(org_nodes),
             f"{len(org_features)} vs {len(org_nodes)}")
 

@@ -203,6 +203,24 @@ python -m src.model_a.medicare_export    --medicare-dir processed\medicare --pre
    banned-ownership, screens institutions, names owner, EXACT vs PROBABLE tier, computes
    $ billed after owner exclusion) built + delivered.
 
+## 10.5 Graph-methodology audit (2026-07-09, pre-Run-3)
+
+Two grouping defects found + FIXED (tests in `test_graph_grouping_audit.py`):
+1. **Generic-name mega-orgs**: tier-3 org resolution merged on any exact name key,
+   so "HOMECARE LLC"s nationwide fused into one fake org (corrupting
+   org_member_count, ring density, and within_2_hops via one excluded namesake).
+   Tier-3 now requires `distinctive_name_key`; generic-named NPIs stay single-NPI
+   orgs; real chains (SOUTHERNCARE) still merge. Multi-state name merges stay
+   flagged low-confidence.
+2. **Proximity through mail drops**: `compute_graph_features` built its BFS graph
+   WITHOUT the mega-address prune (only the embeddings path had it), so
+   `within_2_hops_of_exclusion` counted paths through registered-agent addresses.
+   Now pruned (default max_colocation_cluster=100); small shared suites still
+   count; `co_location_cluster_size` unaffected.
+BOTH fixes change the graph → Run 3 must rebuild the graph before the frozen test.
+64 GB embeddings decision: round-2 only, ~$10-40 spot/short-rental, NOT $500 —
+gate on the forward verdict.
+
 ## 11. Exact next steps (in order)
 
 1. **Run `pi_extract3.py`** → upload `pi_out.txt` → build the 3 PI case files (ring 9234041708;
