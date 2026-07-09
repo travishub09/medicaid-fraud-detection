@@ -103,6 +103,38 @@ def test_real_win_below_ceiling_is_kept():
     assert _verdict(out).startswith("KEEP")
 
 
+def test_in_time_leak_flag_judged_on_structural(tmp_path=None):
+    # within_2_hops == label exactly (pure leak); structural feature is noise.
+    # In-time verdict must be judged on structural (NOT KEEP), and the flag listed.
+    n = 240
+    rng = np.random.default_rng(1)
+    label = np.array([1] * (n // 2) + [0] * (n // 2))
+    df = pd.DataFrame({
+        "npi": [f"{2000000000 + i}" for i in range(n)],
+        "provider_on_exclusion": label,
+        "confirmed_clean": np.where(label == 0, 1, 0),
+        "primary_taxonomy": rng.choice(["251E00000X", "251G00000X"], n),
+        "practice_state": rng.choice(["TN", "OH"], n),
+        "net_paid": rng.uniform(5e5, 5e6, n),
+        "billing_noise": rng.normal(0, 1, n),
+        "within_2_hops_of_exclusion": label,          # PURE label leak
+        "shell_score": rng.normal(0, 1, n),           # structural noise
+    })
+    man = {"label": "provider_on_exclusion", "raw_feature_cols": ["billing_noise", "net_paid"],
+           "peerpct_cols": [], "subscore_cols": [],
+           "leakage_adjacent": ["within_2_hops_of_exclusion", "shell_score"],
+           "leakage_hard": []}
+    out = run_network_ab(df, man, n_boot=60, realistic_controls=True)
+    # the split is deterministic: the leaky flag and the structural feature separate
+    assert "within_2_hops_of_exclusion" in out["label_adjacent_net"]
+    assert "shell_score" in out["structural_net"]
+    # a separate structural-only block was computed
+    assert "matched_structural" in out
+    # in-time run with a label-adjacent flag -> verdict judged on STRUCTURAL, note attached
+    assert "structural" in out["verdict"].lower()
+    assert "label-adjacent" in out["verdict"] and "frozen" in out["verdict"].lower()
+
+
 def test_no_network_features_is_handled():
     m = _matrix().drop(columns=["graph_fraud_proximity", "within_2_hops_of_exclusion",
                                 "subscore_ownership_integrity"])

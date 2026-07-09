@@ -48,6 +48,16 @@ CEILING_AUC = 0.98
 # KEEP also requires the matched ROC-AUC delta to clear this, not just clear zero:
 # a +0.0001 win at the ceiling is noise, not signal.
 MIN_KEEP_DELTA = 0.005
+# Network features that are near-copies of the exclusion LABEL: an excluded
+# provider is trivially within 2 hops of its own exclusion node, so these win
+# on an in-time matrix by reading off the answer, not by learning structure.
+# On an in-time (non-forward) run they are LEAKAGE; the trustworthy verdict comes
+# from the STRUCTURAL features with these removed. On a forward run they are fair.
+LABEL_ADJACENT_NET = {
+    "within_2_hops_of_exclusion", "has_excluded_owner", "graph_fraud_proximity",
+    "facility_has_excluded_owner_high", "facility_has_excluded_owner_probable",
+    "subscore_ownership_integrity",
+}
 NETWORK_NAMED = {
     "within_2_hops_of_exclusion", "shell_score", "related_party_density",
     "related_party_density_norm", "has_excluded_owner",
@@ -176,8 +186,13 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
                    realistic_controls: bool = False) -> dict:
     label = manifest.get("label") or "provider_on_exclusion"
     without, with_net, net = feature_sets(matrix, manifest)
+    label_adjacent = [c for c in net if c in LABEL_ADJACENT_NET]
+    structural_net = [c for c in net if c not in LABEL_ADJACENT_NET]
+    with_structural = list(dict.fromkeys(without + structural_net))
     out = {"label": label, "n_network_features": len(net),
-           "network_features": net, "n_trainable": len(with_net)}
+           "network_features": net, "n_trainable": len(with_net),
+           "label_adjacent_net": label_adjacent, "structural_net": structural_net,
+           "is_forward": future_label is not None}
     if not net:
         out["error"] = "no network/graph features present — nothing to test."
         return out
@@ -222,6 +237,11 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
             gm = matched["match_id"].to_numpy() if "match_id" in matched.columns else None
             out["matched"] = _ab_once(matched, ym, with_net, without, gm, None, n_boot)
             out["matched_n"] = int(len(matched))
+            # structural-only: drops the label-adjacent flags so an in-time win
+            # can't come from within_2_hops reading off the label.
+            if structural_net:
+                out["matched_structural"] = _ab_once(
+                    matched, ym, with_structural, without, gm, None, n_boot)
         else:
             out["matched_error"] = "match_cohorts produced no matched set (need positives + confirmed_clean)."
     except Exception as e:  # pragma: no cover
@@ -232,36 +252,51 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
 
 
 def _verdict(out: dict) -> str:
-    mblk = out.get("matched", {})
-    matched = mblk.get("delta_ci", {}).get("roc_auc", {})
-    mwith = mblk.get("with", {}).get("roc_auc")
-    mwithout = mblk.get("without", {}).get("roc_auc")
+    def judge(blk):
+        if not blk:
+            return None
+        ci = blk.get("delta_ci", {}).get("roc_auc", {})
+        w, wo = blk.get("with", {}).get("roc_auc"), blk.get("without", {}).get("roc_auc")
+        if w == w and wo == wo and min(w or 0, wo or 0) >= CEILING_AUC:
+            return "SATURATED"
+        lo, delta = ci.get("lo"), ci.get("delta")
+        if lo == lo and delta == delta and lo > 0 and delta >= MIN_KEEP_DELTA:
+            return ("KEEP", delta)
+        return "NONE"
 
-    # Ceiling guard: if BOTH models are near-perfect on the matched set, the test
-    # saturated (controls too easy or the matrix leaks). No headroom -> inconclusive.
-    if (mwith == mwith and mwithout == mwithout
-            and min(mwith or 0, mwithout or 0) >= CEILING_AUC):
+    la = out.get("label_adjacent_net", [])
+    in_time = not out.get("is_forward")
+    leak_note = ""
+    if in_time and la:
+        leak_note = (f" NOTE: on this in-time matrix the full-network number is inflated "
+                     f"by label-adjacent flags ({', '.join(la)}) — a provider is trivially "
+                     f"near its own exclusion — so the verdict below is judged on the "
+                     f"STRUCTURAL features only. The full-network figure only becomes "
+                     f"trustworthy on the frozen (forward-label) matrix.")
+
+    # in-time → judge structural-only; forward → judge full network
+    blk = out.get("matched_structural") if (in_time and out.get("matched_structural")) \
+        else out.get("matched", {})
+    scope = "structural graph features" if (in_time and out.get("matched_structural")) \
+        else "network family"
+    verdict = judge(blk)
+
+    if verdict == "SATURATED":
         return ("SATURATED / INCONCLUSIVE: both models score near-perfect on the matched "
-                f"set (ROC-AUC >= {CEILING_AUC} with AND without the network family), so "
-                "there is no headroom to measure the network contribution. The controls "
-                "are too easy or the matrix leaks. Rerun with realistic controls "
-                "(--realistic-controls) and the frozen (as-of) matrix before trusting a "
-                "verdict.")
-
-    lo, delta = matched.get("lo"), matched.get("delta")
-    if (lo == lo and delta == delta and lo > 0 and delta >= MIN_KEEP_DELTA):
-        return ("KEEP (size-independent): the network family lifts discrimination against "
-                f"size/taxonomy-matched controls by a real margin (delta {delta:+.3f}, CI "
-                "clear of zero). Use it under the out-of-time split.")
-
+                f"set (ROC-AUC >= {CEILING_AUC}); no headroom to measure the contribution. "
+                "Controls too easy or the matrix leaks." + leak_note)
+    if isinstance(verdict, tuple):
+        return (f"KEEP (size-independent): the {scope} lift discrimination against size/"
+                f"taxonomy-matched controls by a real margin (delta {verdict[1]:+.3f}, CI "
+                f"clear of zero). Use under the out-of-time split." + leak_note)
     full = out.get("full", {}).get("delta_ci", {}).get("lift10", {})
     if (full and full.get("lo", float("nan")) == full.get("lo") and full["lo"] > 0
             and out.get("matched")):
-        return ("SIZE ARTIFACT: the network family lifts on the full population but the "
-                "advantage does not survive size matching. Drop it or size-normalize "
-                "before trusting it.")
-    return ("NO MEASURABLE SIGNAL: the network family does not move the matched metric "
-            "beyond noise. Do not rely on it.")
+        return (f"SIZE / LEAK ARTIFACT: the {scope} do not beat size-matched controls once "
+                "judged honestly. The full-population lift was size or label leakage, not "
+                "structure. Drop or size-normalize." + leak_note)
+    return (f"NO MEASURABLE SIGNAL: the {scope} do not move the matched metric beyond "
+            "noise. Do not rely on it." + leak_note)
 
 
 def _fmt(d):
@@ -275,15 +310,23 @@ def to_markdown(out: dict) -> str:
         return "\n".join(L + [f"**{out['error']}**"])
     L.append(f"- label: `{out['label']}`  |  network features tested: "
              f"**{out['n_network_features']}**  |  trainable columns: {out['n_trainable']}")
+    if out.get("label_adjacent_net"):
+        L.append(f"- label-adjacent (leaky in-time): {', '.join(out['label_adjacent_net'])}")
+    if out.get("structural_net"):
+        L.append(f"- structural (trustworthy): {', '.join(out['structural_net'])}")
     L.append(f"- **VERDICT: {out['verdict']}**\n")
-    for pop in ("full", "matched"):
+    for pop in ("full", "matched", "matched_structural"):
         blk = out.get(pop)
         if not blk:
             if out.get(f"{pop}_error"):
                 L.append(f"## {pop.upper()}  \n_{out[f'{pop}_error']}_\n")
             continue
-        lbl = out.get("full_label", "") if pop == "full" else \
-            f"case vs size-matched control [{out.get('control_kind', '?')}]"
+        if pop == "full":
+            lbl = out.get("full_label", "")
+        elif pop == "matched":
+            lbl = f"FULL network vs none, case vs matched control [{out.get('control_kind', '?')}]"
+        else:
+            lbl = "STRUCTURAL network only vs none, case vs matched control (label-adjacent flags removed)"
         L.append(f"## {pop.upper()} — {lbl}")
         L.append(f"n_test={blk['n_test']:,}  positives_test={blk['pos_test']:,}"
                  + (f"  matched_rows={out.get('matched_n'):,}" if pop == "matched" else ""))
