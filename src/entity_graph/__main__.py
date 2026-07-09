@@ -32,7 +32,7 @@ from .ring_detection import (
 )
 
 REQUIRED = ["provider_dim"]
-OPTIONAL = ["npi_xwalk", "owner_edges", "exclusions"]
+OPTIONAL = ["npi_xwalk", "owner_edges", "exclusions", "reassignment"]
 
 
 def log(m: str) -> None:
@@ -67,6 +67,18 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
             frames.append(pd.read_parquet(p))
             log(f"    + merged exclusion source {p.name}")
         tables["exclusions"] = pd.concat(frames, ignore_index=True)
+    # Reassignment (the CMS Revalidation Clinic Group Practice Reassignment file →
+    # provider→group affiliation edges). Accept the raw CSV straight from
+    # preclean/reassignment/ when no prebuilt parquet exists — the edge builder
+    # resolves the raw CMS headers itself. This table was consumed by run() but
+    # never listed in OPTIONAL, so it was silently None on every real build.
+    if tables.get("reassignment") is None:
+        raw = sorted((input_dir.parent / "preclean" / "reassignment").glob("*.csv"))
+        if raw:
+            from src.attempt_2.clean_data import read_csv_text
+            tables["reassignment"] = read_csv_text(raw[0])
+            log(f"    + reassignment raw csv {raw[0].name} "
+                f"({len(tables['reassignment']):,} rows)")
     return tables
 
 

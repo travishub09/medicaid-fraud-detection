@@ -91,7 +91,19 @@ worthless-services checks. Small but cheap.
 2. Download the latest quarterly CSV.
 3. Save as: `C:\Users\treyr\OneDrive\Desktop\data\preclean\pos\pos.csv`
 
-### Priority 4 (optional): more opioid years (15 minutes)
+### Priority 4: CMS Revalidation Reassignment file (10 minutes)
+**Why:** adds provider-to-group affiliation edges to the graph (who bills through
+which group practice). This complements ownership: fraud crews often share a
+group practice without sharing owners. Found missing during the full registry
+sweep - the adapter existed but the loader never picked the file up (fixed).
+
+1. Go to: https://data.cms.gov and search
+   "Revalidation Clinic Group Practice Reassignment".
+2. Download the latest monthly CSV.
+3. Save as: `C:\Users\treyr\OneDrive\Desktop\data\preclean\reassignment\reassignment.csv`
+   (create the folder).
+
+### Priority 5 (optional): more opioid years (15 minutes)
 **Why:** you only have 2024. Adding 2021 to 2023 gives the pill-mill signal a
 trend dimension. Same page style as Part D:
 https://data.cms.gov/summary-statistics-on-use-and-payments/medicare-medicaid-opioid-prescribing-rates
