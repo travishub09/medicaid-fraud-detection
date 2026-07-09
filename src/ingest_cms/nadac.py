@@ -46,7 +46,8 @@ def compute_nadac_reference(raw: pd.DataFrame,
     df["ndc"] = df["ndc"].fillna("").astype(str).str.strip()
     df["per_unit"] = pd.to_numeric(df["per_unit"], errors="coerce")
     df["classification"] = (df["classification"] if "classification" in df.columns
-                            else "").fillna("").astype(str).str.upper().str[:1]  # B/G
+                            else pd.Series("", index=df.index)
+                            ).fillna("").astype(str).str.upper().str[:1]  # B/G
     df = df[(df["ndc"] != "") & df["per_unit"].notna()]
     g = df.groupby("ndc", as_index=False).agg(
         nadac_per_unit=("per_unit", "median"),

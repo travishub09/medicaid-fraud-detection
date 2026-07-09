@@ -94,7 +94,7 @@ def test_saturation_maps_dme_and_ambulance():
     org_nodes = pd.DataFrame({
         "org_node_id": ["org:dme", "org:amb"],
         "primary_taxonomy": ["332B00000X", "3416A0800X"],
-        "addr_state": ["ALABAMA", "ALABAMA"],
+        "addr_state": ["AL", "AL"],
     })
     out = attach_market_saturation(features, org_nodes, county).set_index("org_node_id")
     assert pd.notna(out.loc["org:dme", "market_saturation_index"])

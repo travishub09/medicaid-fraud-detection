@@ -422,8 +422,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                   "weak_label_score", "weak_label", "weak_label_votes",
                                   "billing_implied_taxonomy"]
                       if c in out.columns]
+    evidence_cols = [c for c in out.columns if c.startswith("evidence_n_")]
     raw_feature_cols = [c for c in raw_feature_cols
-                        if c not in leakage_hard and c not in label_metadata]
+                        if c not in leakage_hard and c not in label_metadata
+                        and c not in evidence_cols]
 
     manifest = {
         "grain": "npi",
@@ -498,6 +500,49 @@ def _read_any(path: Path) -> pd.DataFrame | None:
         return pd.read_parquet(path)
     from src.attempt_2.clean_data import read_csv_text
     return read_csv_text(path)
+
+
+# Leads columns derived from the FULL billing history that cannot be recomputed
+# point-in-time here (the v3 pipeline built them over all months). In an as-of
+# run they would leak post-cutoff billing into the frozen matrix — a 2024-banned
+# provider's billing cessation is visible in `temporal` — so they are DROPPED
+# (the NULL-aware subscore engine tolerates their absence; absent beats leaked).
+_ASOF_UNCOMPUTABLE = ["concentration", "payment_intensity", "service_intensity",
+                      "specialty_mismatch", "temporal", "anomaly_score",
+                      "anomaly_pct", "n_concept_signals", "signals_tripped",
+                      "log_max_single_month", "provider_hhi", "growth_slope"]
+
+
+def _apply_asof_freeze(leads: pd.DataFrame, asof_spend_p: Path, cutoff: str,
+                       log) -> pd.DataFrame:
+    """Make the BASE leads frame point-in-time correct for a feature-freeze run.
+
+    The as-of filter on the spending fact only freezes the enrichment adapters;
+    the base frame's PROVIDER_STATS (paid totals, volume, breadth, tenure) and
+    the v3 concept percentiles come from the full-history leads file. This
+    (1) recomputes the stats strictly pre-cutoff via ``asof_provider_stats`` and
+    (2) drops the uncomputable full-history columns. Without this the "frozen"
+    matrix carried post-cutoff billing in its strongest features and the forward
+    network A/B measured leakage.
+    """
+    from .asof_billing import asof_provider_stats
+    out = leads.copy()
+    out["npi"] = out["npi"].astype(str)
+    pit = asof_provider_stats(str(asof_spend_p), cutoff)
+    pit["npi"] = pit["npi"].astype(str)
+    stat_cols = [c for c in PROVIDER_STATS if c != "org_member_count"]
+    replaced = [c for c in stat_cols if c in out.columns]
+    out = out.drop(columns=replaced, errors="ignore")
+    keep = ["npi"] + [c for c in pit.columns
+                      if c in stat_cols or c in ("first_service_month",
+                                                 "last_service_month")]
+    out = out.merge(pit[[c for c in keep if c in pit.columns]], on="npi", how="left")
+    dropped = [c for c in _ASOF_UNCOMPUTABLE if c in out.columns]
+    out = out.drop(columns=dropped, errors="ignore")
+    log(f"  [asof] base features frozen: PROVIDER_STATS recomputed pre-cutoff for "
+        f"{len(pit):,} NPIs (replaced {replaced}); dropped full-history columns "
+        f"{dropped} (cannot be recomputed point-in-time — absent beats leaked)")
+    return out
 
 
 def _load_nucc_peer_groups(preclean: Path, processed: Path, log):
@@ -624,14 +669,17 @@ def _spending_for_npis(spending_path: Path, npis) -> pd.DataFrame:
     if not ids:
         return pd.DataFrame(columns=cols)
     import duckdb
-    vals = ", ".join("'" + i.replace("'", "") + "'" for i in ids)
     con = duckdb.connect()
+    # register-join, never a literal IN(...): the cumulative deactivation report
+    # runs to hundreds of thousands of NPIs, and a multi-MB SQL string can stall
+    # or fail the parser. Path quotes are ESCAPED (''), not stripped.
+    con.register("_npi_filter", pd.DataFrame({"npi": ids}))
     df = con.execute(
-        f"SELECT CAST(billing_npi AS VARCHAR) billing_npi, "
-        f"CAST(service_month AS VARCHAR) service_month, "
-        f"CAST(total_paid AS DOUBLE) total_paid "
-        f"FROM read_parquet('{str(spending_path).replace(chr(39), '')}') "
-        f"WHERE CAST(billing_npi AS VARCHAR) IN ({vals})").df()
+        f"SELECT CAST(s.billing_npi AS VARCHAR) billing_npi, "
+        f"CAST(s.service_month AS VARCHAR) service_month, "
+        f"CAST(s.total_paid AS DOUBLE) total_paid "
+        f"FROM read_parquet('{str(spending_path).replace(chr(39), chr(39) * 2)}') s "
+        f"JOIN _npi_filter f ON CAST(s.billing_npi AS VARCHAR) = f.npi").df()
     con.close()
     return df
 
@@ -766,6 +814,12 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str,
                 frames[name] = df
                 log(f"    [{name}] {len(df):,} providers from {src_file.name}, "
                     f"cols: {', '.join(c for c in df.columns if c != 'npi')}")
+            else:
+                # never let a source VANISH from the audit: a present file whose
+                # adapter returns empty/npi-less output is a skip with a reason.
+                log(f"    [{name}] skipped: adapter returned "
+                    f"{'no rows' if df is None or not len(df) else 'no npi column'} "
+                    f"from {src_file.name} — check the file layout")
         except Exception as e:               # one bad source must never sink the run
             log(f"    [{name}] skipped: {e}")
 
@@ -865,6 +919,10 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         if fr is not None and len(fr) and "org_node_id" in fr.columns:
             frames[name] = fr
             log(f"    [{name}] {len(fr):,} orgs, cols: {', '.join(feature_cols)}")
+        else:
+            log(f"    [{name}] skipped: adapter returned "
+                f"{'no rows' if fr is None or not len(fr) else 'no org_node_id'} "
+                f"— source present but produced nothing usable")
 
     # --- post-deactivation billing (spending + deactivated NPIs + npi_to_org) ---
     try:
@@ -957,8 +1015,23 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         sat_p = _first_existing(pc / "saturation", "saturation.csv", "*.csv")
         if sat_p and org_nodes is not None:
             county = sat.compute_saturation_metrics(_read_any(sat_p))
+            # HUD ZIP->county crosswalk: upgrades the attach from state grain to
+            # county grain. The loader existed but was never passed here, so a
+            # downloaded crosswalk was dead weight. Accept both save locations.
+            z2c = None
+            z2c_p = _first_existing(pc / "hud", "zip_county.csv", "*.csv") or \
+                _first_existing(pc / "zip_county", "zip_county.csv", "*.csv")
+            if z2c_p:
+                try:
+                    from src.ingest_cms.census_population import zip_to_county
+                    z2c = zip_to_county(_read_any(z2c_p))
+                    log(f"    [saturation] county-grain attach via {z2c_p.name} "
+                        f"({len(z2c):,} ZIP rows)")
+                except Exception as ze:
+                    log(f"    [saturation] zip_county unusable ({ze}); state grain")
             base = org_nodes[["org_node_id"]].copy()
-            out = sat.attach_market_saturation(base, org_nodes, county)
+            out = sat.attach_market_saturation(base, org_nodes, county,
+                                               zip_to_county=z2c)
             _emit("saturation", out[["org_node_id", "market_saturation_index"]],
                   ["market_saturation_index"])
         else:
@@ -998,22 +1071,37 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
     """Facility / HCRIS / POS adapters: CCN-grain features rolled to org via the
     PECOS CCN↔NPI crosswalk, then (by the caller) broadcast to NPI."""
     from src.ingest_cms import facility as fac, hcris as hc, pos
-    # facility: build whichever CCN metrics are available, percentile, roll to org
+    # facility: INDEPENDENT try per metric — one bad file (e.g. an oddly encoded
+    # PBJ) must not take hospice + deficiencies down with it.
+    ccn_feats = []
     try:
-        ccn_feats = []
-        pbj_p = _first_existing(pc / "facility", "pbj.csv", "*.csv")
-        if pbj_p:
-            m, _ = fac.compute_pbj_metrics(_read_any(pbj_p))
+        pbj_files = sorted((pc / "facility").glob("pbj*.csv"))
+        if pbj_files:
+            parts = []
+            for pf in pbj_files:            # multi-quarter: read them all, concat
+                parts.append(fac.compute_pbj_metrics(_read_any(pf))[0])
+                log(f"    [facility/pbj] read {pf.name}")
+            m = pd.concat(parts, ignore_index=True).groupby(
+                "ccn", as_index=False).mean(numeric_only=True)
             ccn_feats.append(fac.facility_peer_percentiles(m, ["pbj_understaffing"]))
-        hos_p = _first_existing(pc / "facility", "hospice.csv")
+    except Exception as e:
+        log(f"    [facility/pbj] skipped: {e}")
+    try:
+        hos_p = _first_existing(pc / "facility", "hospice.csv", "hospice*.csv")
         if hos_p:
             m, _ = fac.compute_hospice_metrics(_read_any(hos_p))
             ccn_feats.append(fac.facility_peer_percentiles(m, ["hospice_live_discharge_rate"]))
-        defp = _first_existing(pc / "facility", "deficiencies.csv")
+    except Exception as e:
+        log(f"    [facility/hospice] skipped: {e}")
+    try:
+        defp = _first_existing(pc / "facility", "deficiencies.csv", "*deficienc*.csv")
         if defp:
             m, _ = fac.compute_deficiency_counts(_read_any(defp))
             ccn_feats.append(fac.facility_peer_percentiles(
                 m, ["deficiency_count", "deficiency_severity_weighted"]))
+    except Exception as e:
+        log(f"    [facility/deficiencies] skipped: {e}")
+    try:
         if ccn_feats:
             merged = ccn_feats[0]
             for extra in ccn_feats[1:]:
@@ -1022,11 +1110,14 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
             _emit("facility", org, [c for c in org.columns if c != "org_node_id"])
     except Exception as e:
         log(f"    [facility] skipped: {e}")
-    # HCRIS cost-report anomaly
+    # HCRIS cost-report anomaly — ALL vintage files (hospital/HHA/SNF), not just
+    # the alphabetically first one: load_hcris resolves each layout separately.
     try:
-        hp = _first_existing(pc / "hcris", "hcris.csv", "*.csv")
-        if hp:
-            m, _ = hc.compute_hcris_metrics(_read_any(hp))
+        hcris_files = sorted((pc / "hcris").glob("*.csv"))
+        if hcris_files:
+            m, h_dropped = hc.load_hcris(hcris_files)
+            log(f"    [hcris] {len(hcris_files)} files -> {len(m):,} CCN rows "
+                f"({h_dropped} dropped)")
             anom = hc.hcris_anomaly(m)[["ccn", "hcris_cost_anomaly"]]
             org = fac.rollup_ccn_to_org(anom, ccn_to_npi, npi_to_org)
             _emit("hcris", org, ["hcris_cost_anomaly"])
@@ -1045,8 +1136,13 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
         if pos_files:
             caps = []
             for pf in pos_files:
-                caps.append(pos.compute_pos_capacity(_read_any(pf)))
-                log(f"    [pos] read {pf.name}")
+                try:                      # per-file: a stray reference/layout csv
+                    caps.append(pos.compute_pos_capacity(_read_any(pf)))
+                    log(f"    [pos] read {pf.name}")
+                except Exception as fe:   # inside the zip must not sink the rest
+                    log(f"    [pos] {pf.name} skipped: {fe}")
+            if not caps:
+                raise ValueError("no POS file parsed")
             cap = pd.concat(caps, ignore_index=True)
             cap = cap.groupby("ccn", as_index=False).agg(
                 bed_count=("bed_count", "max"),
@@ -1182,6 +1278,9 @@ def main() -> None:
                                                     str(asof_spend_p))
                 print(f"  [asof] feature-freeze {args.asof_cutoff}: billing features "
                       f"see {kept:,} pre-cutoff rows ({dropped:,} dropped)")
+                # CRITICAL: freeze the BASE frame too, not just the adapters — the
+                # leads file carries full-history stats + concept percentiles.
+                leads = _apply_asof_freeze(leads, asof_spend_p, args.asof_cutoff, print)
             else:
                 print("  [asof] skipped: no processed/spending_fact.parquet")
 

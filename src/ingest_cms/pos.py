@@ -61,7 +61,10 @@ def compute_pos_capacity(raw: pd.DataFrame) -> pd.DataFrame:
         df["bed_count"] = pd.to_numeric(df.get("bed_count"), errors="coerce")
     df = df[df["ccn"].notna()].copy()
     for c in ("facility_type", "state"):
-        df[c] = (df[c] if c in df.columns else "").fillna("").astype(str).str.strip().str.upper()
+        # pd.Series, never a bare "" — the operator's real POS layout resolves no
+        # facility_type column and str.fillna crashes, silently skipping the source.
+        df[c] = (df[c] if c in df.columns
+                 else pd.Series("", index=df.index)).fillna("").astype(str).str.strip().str.upper()
     g = df.groupby("ccn", as_index=False).agg(
         bed_count=("bed_count", "max"),
         facility_type=("facility_type", lambda s: s.mode().iat[0] if len(s) else ""),

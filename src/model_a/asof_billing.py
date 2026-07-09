@@ -86,12 +86,16 @@ def asof_provider_stats(spending_path: str | Path, cutoff: str,
     con = con or duckdb.connect()
     p = str(spending_path).replace("'", "''")
     cut = _ym(cutoff).replace("'", "''")
+    cols = [c[0] for c in con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet('{p}')").fetchall()]
+    lines_sel = (", CAST(total_claim_lines AS DOUBLE) AS lines"
+                 if "total_claim_lines" in cols else ", NULL AS lines")
     out = con.execute(f"""
         WITH s AS (
             SELECT CAST(billing_npi AS VARCHAR) npi,
                    UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs,
                    substr(CAST(service_month AS VARCHAR), 1, 7) ym,
-                   CAST(total_paid AS DOUBLE) paid
+                   CAST(total_paid AS DOUBLE) paid{lines_sel}
             FROM read_parquet('{p}')
             WHERE substr(CAST(service_month AS VARCHAR), 1, 7) < '{cut}'
         )
@@ -99,6 +103,7 @@ def asof_provider_stats(spending_path: str | Path, cutoff: str,
                SUM(paid) AS gross_paid,
                SUM(paid) AS net_paid,
                COUNT(*) AS service_volume,
+               SUM(lines) AS total_claim_lines,
                COUNT(DISTINCT hcpcs) AS n_distinct_hcpcs,
                COUNT(DISTINCT ym) AS n_active_months,
                MIN(ym) AS first_service_month,

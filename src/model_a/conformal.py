@@ -52,11 +52,17 @@ def conformal_interval(cal_residuals, preds, alpha: float = 0.1) -> pd.DataFrame
     p = pd.to_numeric(pd.Series(preds), errors="coerce").to_numpy(dtype=float)
     n = len(r)
     if n == 0:
-        q = 0.0
+        q = float("inf")                 # no calibration data → no finite guarantee
     else:
         # finite-sample conformal quantile: ceil((n+1)(1-alpha))/n
         k = int(np.ceil((n + 1) * (1 - alpha)))
-        q = float(r[min(k, n) - 1])
+        if k > n:
+            # the guarantee at this alpha needs more calibration points than we
+            # have; the honest band is infinite, not the max residual (which
+            # under-covers). Callers see inf and know to widen alpha or add data.
+            q = float("inf")
+        else:
+            q = float(r[k - 1])
     return pd.DataFrame({"pred": p, "lower": p - q, "upper": p + q, "halfwidth": q})
 
 

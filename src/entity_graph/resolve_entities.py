@@ -80,12 +80,21 @@ def resolve_organizations(provider_dim: pd.DataFrame,
             pac = xw.groupby("npi")["pac_id"].min().astype(str).to_dict()
 
     # --- tier 2: shared owner (facility → owner key), non-PAC NPIs only ---
+    # HARD KEYS ONLY for merging: owner NPI, else the owner's PECOS ASSOCIATE ID
+    # (present on every CMS All-Owners row). A bare person-NAME key must never
+    # merge organizations — two different "JOHN SMITH"s are different people, and
+    # at national scale name-keyed tier-2 fused unrelated facilities into one org
+    # (corrupting org_member_count / related_party_density and letting one
+    # excluded namesake contaminate every other). Name-keyed owners still exist
+    # as graph owner NODES; they just don't drive canonical-org merges.
     owner = {}
     if owner_edges is not None and len(owner_edges):
         oe = owner_edges.copy()
         oe["facility_npi"] = oe.get("facility_npi", "").astype("string")
         okey = oe.get("owner_npi", pd.Series("", index=oe.index)).astype("string").fillna("")
-        okey = okey.where(okey != "", oe.get("owner_name_key", "").astype("string").fillna(""))
+        opac = oe.get("owner_pac_id", pd.Series("", index=oe.index)).astype("string").fillna("")
+        okey = okey.where(okey != "", "pac" + opac.where(opac != "", ""))
+        okey = okey.where(okey != "pac", "")          # neither NPI nor PAC → no key
         oe = oe[(oe["facility_npi"].fillna("") != "") & (okey.fillna("") != "")]
         if len(oe):
             owner = (pd.DataFrame({"npi": oe["facility_npi"].astype(str),

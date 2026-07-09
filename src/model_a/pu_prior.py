@@ -38,8 +38,12 @@ def estimate_label_frequency(g_scores, s, holdout_mask=None) -> float:
     pos = si == 1
     if holdout_mask is not None:
         pos = pos & np.asarray(holdout_mask, dtype=bool)
-    if not pos.any():                       # no held-out positives → use all positives
-        pos = si == 1
+        if not pos.any():
+            # hard-fail, never silently fall back to in-sample positives: an
+            # overfit classifier gives g~1 on TRAINING positives, c~1, and the
+            # whole PU correction quietly vanishes.
+            raise ValueError("estimate_label_frequency: holdout_mask contains no "
+                             "positives — supply a split with held-out positives")
     if not pos.any():
         return 1.0
     return float(np.clip(g[pos].mean(), 1e-6, 1.0))
@@ -52,7 +56,8 @@ def estimate_class_prior(s, c: float) -> float:
     return float(np.clip(labeled_rate / max(c, 1e-6), labeled_rate, 1.0))
 
 
-def corrected_lift(scores, s, c: float, k_frac: float = 0.1) -> dict:
+def corrected_lift(scores, s, c: float, k_frac: float = 0.1,
+                   independent_prior: float | None = None) -> dict:
     """Contamination-corrected top-k lift.
 
     Rank by ``scores`` descending, take the top ``k_frac``. The labeled positives
@@ -81,5 +86,15 @@ def corrected_lift(scores, s, c: float, k_frac: float = 0.1) -> dict:
         "naive_precision_at_k": float(naive_prec),
         "corrected_precision_at_k": float(corrected_prec),
         "naive_lift": float(naive_prec / labeled_rate) if labeled_rate > 0 else float("nan"),
-        "corrected_lift": float(corrected_prec / pi) if pi > 0 else float("nan"),
+        # HONESTY NOTE: under SCAR the c-corrections cancel — corrected_prec/pi
+        # == naive_prec/labeled_rate wherever the clips don't bind, so a
+        # "corrected lift" computed this way is NOT new information. It is only
+        # meaningful against an INDEPENDENT prior estimate; without one we
+        # report NaN rather than dress the naive lift up as corrected.
+        "corrected_lift": (float(corrected_prec / independent_prior)
+                           if independent_prior and independent_prior > 0
+                           else float("nan")),
+        "corrected_lift_note": ("supply independent_prior= (e.g. a KM2/TIcE "
+                                "estimate); the Elkan-Noto c cancels out of a "
+                                "self-referential lift ratio"),
     }

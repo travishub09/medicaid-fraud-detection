@@ -237,8 +237,20 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
     ``co_location_cluster_size`` feature is computed from the full edge table and
     is unaffected.
     """
+    # For the PROXIMITY walk, a PROBABLE (name-only) owner→exclusion match to a
+    # no-longer-active exclusion is too weak to count the same as a hard NPI hit
+    # — it put orgs "within 2 hops of a banned party" via a reinstated namesake.
+    # Exact-NPI matches always count; probable matches count only while active.
+    exin = excluded_in_edges
+    if exin is not None and len(exin) and "match_tier" in exin.columns:
+        tier = exin["match_tier"].astype(str)
+        if "currently_active" in exin.columns:
+            act = exin["currently_active"].fillna(True).astype(bool)
+        else:
+            act = pd.Series(True, index=exin.index)
+        exin = exin[(tier == "exact") | act]
     G = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
-                    owned_by_edges, excluded_in_edges, co_located_edges,
+                    owned_by_edges, exin, co_located_edges,
                     max_colocation_cluster=max_colocation_cluster)
 
     excl_ids = set(exclusion_nodes["node_id"].astype(str)) if exclusion_nodes is not None and len(exclusion_nodes) else set()
@@ -287,12 +299,21 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
         cluster = coloc.get(nid, 0)
         related = org_related.get(nid, 0)
         thin = int(getattr(r, "n_constituent_npis", 1)) <= 1
-        name_only = getattr(r, "merge_basis", "") in ("name", "single")
-        # shell_score: thin/name-only org physically clustered at a shared address,
-        # scaled by how many co-tenants and how close an exclusion sits.
+        # "single" is NOT shell evidence — it is the default state of ~millions of
+        # solo orgs; counting it floored every singleton at 0.2 and destroyed the
+        # score's discrimination. Only a genuine name-basis merge counts.
+        name_only = getattr(r, "merge_basis", "") == "name"
+        # shell_score: thin/name-merged org physically clustered at a shared
+        # address, scaled by co-tenants and exclusion proximity. The cluster term
+        # ignores MEGA-addresses (registered agents / office towers, cluster
+        # size > max_colocation_cluster): a solo practitioner in a 3,000-tenant
+        # building is context, not a shell pattern.
+        small_cluster = (cluster >= 3
+                         and (max_colocation_cluster is None
+                              or cluster <= max_colocation_cluster))
         ex_dist = dist.get(nid)
         prox = 0.0 if ex_dist is None else max(0.0, (3 - ex_dist) / 3.0)
-        shell = round(min(1.0, 0.4 * (cluster >= 3) + 0.3 * thin + 0.2 * name_only + 0.3 * prox), 3)
+        shell = round(min(1.0, 0.4 * small_cluster + 0.3 * thin + 0.2 * name_only + 0.3 * prox), 3)
         # name the nearest excluded party (within a sane radius) for the dossier.
         ident = excl_identity.get(nearest.get(nid, ""), {}) if ex_dist is not None and ex_dist <= 3 else {}
         rows.append({

@@ -75,10 +75,17 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     if tables.get("reassignment") is None:
         raw = sorted((input_dir.parent / "preclean" / "reassignment").glob("*.csv"))
         if raw:
-            from src.attempt_2.clean_data import read_csv_text
-            tables["reassignment"] = read_csv_text(raw[0])
+            from src.attempt_2.clean_data import read_csv_text, _resolve_columns
+            from .build_edges import _REASSIGN_COLS
+            # usecols: the raw file is millions of rows × ~20 columns; loading
+            # only the 4 columns the edge builder resolves keeps a 16 GB box safe.
+            header = list(read_csv_text(raw[0], nrows=0).columns)
+            resolved = _resolve_columns(header, _REASSIGN_COLS)
+            use = list(dict.fromkeys(resolved.values())) or None
+            tables["reassignment"] = read_csv_text(raw[0], usecols=use)
             log(f"    + reassignment raw csv {raw[0].name} "
-                f"({len(tables['reassignment']):,} rows)")
+                f"({len(tables['reassignment']):,} rows, "
+                f"{len(tables['reassignment'].columns)} cols projected)")
     return tables
 
 
@@ -152,19 +159,26 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         log(f"    referral edges: {len(refers_to_edges):,} org→org refers_to "
             f"(from {len(docgraph):,} shared-patient pairs)")
     elif docgraph_path is not None:
-        from src.ingest_cms.docgraph import build_referral_edges_duckdb
-        log(f"    building referral edges from {Path(docgraph_path).name} "
-            f"(min_patients={docgraph_min_patients}, streamed)…")
-        refers_to_edges = build_referral_edges_duckdb(
-            docgraph_path, npi_to_org, min_patients=docgraph_min_patients,
-            max_edges=docgraph_max_edges)
-        if refers_to_edges is None:
-            log("    docgraph SKIPPED: file lacks from/to NPI columns")
-        else:
-            n_tot = refers_to_edges.attrs.get("n_org_pairs_total", len(refers_to_edges))
-            log(f"    referral edges: kept {len(refers_to_edges):,} of {n_tot:,} "
-                f"org→org pairs (top by shared-patient volume; threshold "
-                f">={docgraph_min_patients} patients per NPI pair)")
+        # referral edges are an OPTIONAL enrichment: a parse failure on the 8 GB
+        # scan must never kill a multi-hour graph build — log and continue.
+        try:
+            from src.ingest_cms.docgraph import build_referral_edges_duckdb
+            log(f"    building referral edges from {Path(docgraph_path).name} "
+                f"(min_patients={docgraph_min_patients}, streamed)…")
+            refers_to_edges = build_referral_edges_duckdb(
+                docgraph_path, npi_to_org, min_patients=docgraph_min_patients,
+                max_edges=docgraph_max_edges)
+            if refers_to_edges is None:
+                log("    docgraph SKIPPED: file lacks from/to NPI columns")
+            else:
+                n_tot = refers_to_edges.attrs.get("n_org_pairs_total",
+                                                  len(refers_to_edges))
+                log(f"    referral edges: kept {len(refers_to_edges):,} of {n_tot:,} "
+                    f"org→org pairs (top by shared-patient volume; threshold "
+                    f">={docgraph_min_patients} patients per NPI pair)")
+        except Exception as e:
+            refers_to_edges = None
+            log(f"    docgraph SKIPPED (build error, graph continues): {e}")
 
     log("Computing graph features …")
     org_features = compute_graph_features(
@@ -200,7 +214,8 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
 
     log("Running ring detection …")
     shells = shared_address_shell_clusters(org_nodes)
-    common_owners = common_owner_clusters(owned_by_edges, owner_nodes, excluded_in_edges)
+    common_owners = common_owner_clusters(owned_by_edges, owner_nodes,
+                                          excluded_in_edges, npi_to_org=npi_to_org)
     proximity = excluded_party_proximity(
         org_nodes, owner_nodes, exclusion_nodes, member_edges,
         owned_by_edges, excluded_in_edges, co_located_edges)

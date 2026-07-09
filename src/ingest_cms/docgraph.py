@@ -82,15 +82,18 @@ def build_referral_edges_duckdb(csv_path, npi_to_org: pd.DataFrame,
     n2o = npi_to_org[["npi", "org_node_id"]].copy()
     n2o["npi"] = n2o["npi"].astype(str)
     con.register("n2o", n2o)
+    # TRY_CAST + ignore_errors: one suppressed '*' count or stray byte past the
+    # sniff sample must not kill a multi-hour graph build.
+    vol = vol.replace("CAST(", "TRY_CAST(")
     con.execute(f"""
         CREATE TEMP TABLE org_pairs AS
         SELECT a.org_node_id AS src_id, b.org_node_id AS dst_id,
                SUM({vol}) AS shared_patient_volume
-        FROM read_csv_auto('{p}') d
+        FROM read_csv_auto('{p}', ignore_errors=true) d
         JOIN n2o a ON CAST(d."{f}" AS VARCHAR) = a.npi
         JOIN n2o b ON CAST(d."{t}" AS VARCHAR) = b.npi
         WHERE a.org_node_id <> b.org_node_id
-          AND {vol} >= {float(min_patients)}
+          AND COALESCE({vol}, 0) >= {float(min_patients)}
         GROUP BY 1, 2""")
     n_total = con.execute("SELECT COUNT(*) FROM org_pairs").fetchone()[0]
     df = con.execute(f"""

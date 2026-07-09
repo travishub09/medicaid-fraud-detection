@@ -63,13 +63,28 @@ def apply_labeling_functions(matrix: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# LFs whose predicates OVERLAP the anchor definitions (confirmed_clean is
+# selected to be far from exclusions / low fraud-proximity; the label IS the
+# exclusion list). Learning their accuracy on the anchors is circular — they pin
+# at the clip and the label model re-encodes the anchor rule with manufactured
+# confidence. They get a FIXED modest prior weight instead.
+CIRCULAR_WITH_ANCHORS = {"lf_near_exclusion", "lf_high_fraud_proximity",
+                         "lf_confirmed_clean", "lf_ownership_integrity"}
+_FIXED_PRIOR_ACC = 0.70
+
+
 def fit_label_model(votes: pd.DataFrame, y: pd.Series,
                     min_votes: int = MIN_VOTES) -> tuple[dict, dict]:
     """Per-LF weight + coverage, estimated where the LF votes and an anchor label
-    exists. ``y``: 1/0/NaN aligned to votes (NaN = unlabeled)."""
+    exists. ``y``: 1/0/NaN aligned to votes (NaN = unlabeled). LFs listed in
+    CIRCULAR_WITH_ANCHORS are never accuracy-estimated on the anchors."""
     weights, cov = {}, {}
     for lf in votes.columns:
         v = votes[lf]
+        if lf in CIRCULAR_WITH_ANCHORS:
+            cov[lf] = int((v != 0).sum())
+            weights[lf] = float(np.log(_FIXED_PRIOR_ACC / (1 - _FIXED_PRIOR_ACC)))
+            continue
         mask = (v != 0) & y.notna()
         n = int(mask.sum())
         cov[lf] = n

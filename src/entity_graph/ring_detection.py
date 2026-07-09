@@ -49,7 +49,8 @@ def shared_address_shell_clusters(org_nodes: pd.DataFrame,
 
 def common_owner_clusters(owned_by_edges: pd.DataFrame, owner_nodes: pd.DataFrame,
                           excluded_in_edges: pd.DataFrame | None = None,
-                          min_orgs: int = 4) -> pd.DataFrame:
+                          min_orgs: int = 4,
+                          npi_to_org: pd.DataFrame | None = None) -> pd.DataFrame:
     """Owners controlling >= ``min_orgs`` organizations, flagged up when an
     exclusion sits anywhere in the owner's network. One row per owner."""
     cols = ["owner_node_id", "owner_name", "n_orgs", "excluded_in_network", "org_node_ids"]
@@ -59,10 +60,18 @@ def common_owner_clusters(owned_by_edges: pd.DataFrame, owner_nodes: pd.DataFram
     excluded_owner_ids: set[str] = set()
     excluded_org_ids: set[str] = set()
     if excluded_in_edges is not None and len(excluded_in_edges):
+        src = excluded_in_edges["src_id"].astype(str)
         excluded_owner_ids = set(excluded_in_edges.loc[
-            excluded_in_edges["src_id"].astype(str).str.startswith("owner:"), "src_id"].astype(str))
-        excluded_org_ids = set(excluded_in_edges.loc[
-            excluded_in_edges["src_id"].astype(str).str.startswith("org:"), "src_id"].astype(str))
+            src.str.startswith("owner:"), "src_id"].astype(str))
+        # excluded_in edges are emitted with provider:/owner: sources only — the
+        # old org: filter matched NOTHING, so an exclusion on a member provider
+        # never lit excluded_in_network. Map provider NPIs → their canonical org.
+        prov_npis = set(src[src.str.startswith("provider:")]
+                        .str.removeprefix("provider:"))
+        if prov_npis and npi_to_org is not None and len(npi_to_org):
+            n2o = npi_to_org
+            m = n2o[n2o["npi"].astype(str).isin(prov_npis)]
+            excluded_org_ids = set(m["org_node_id"].astype(str))
 
     name_by_id = {}
     if owner_nodes is not None and len(owner_nodes):
@@ -117,7 +126,8 @@ def excluded_party_proximity(org_nodes, owner_nodes, exclusion_nodes, member_edg
 
 
 def referral_rings(referral_edges: pd.DataFrame | None = None,
-                   max_cycle: int = 4, min_volume: float = 0.0) -> pd.DataFrame:
+                   max_cycle: int = 4, min_volume: float = 0.0,
+                   max_cycles: int = 50_000) -> pd.DataFrame:
     """Closed high-value referral loops (self-referral / kickback shape).
 
     Consumes the org→org ``refers_to`` edges built from DocGraph shared-patient
@@ -143,6 +153,7 @@ def referral_rings(referral_edges: pd.DataFrame | None = None,
     # length_bound caps the SEARCH (networkx ≥3.1), so we never enumerate the
     # exponential set of long cycles just to discard them — the referral graph
     # can be large and dense (the betweenness/co-location blow-up lesson).
+    truncated = False
     for cycle in nx.simple_cycles(g, length_bound=max_cycle):
         if len(cycle) < 2:
             continue
@@ -150,6 +161,14 @@ def referral_rings(referral_edges: pd.DataFrame | None = None,
                 for i in range(len(cycle))]
         rows.append({"cycle_node_ids": ";".join(cycle), "cycle_len": len(cycle),
                      "shared_patient_volume": float(min(vols))})
-    return (pd.DataFrame(rows, columns=cols)
-            .sort_values("shared_patient_volume", ascending=False)
-            .reset_index(drop=True))
+        if len(rows) >= max_cycles:
+            # combinatorial blow-up guard: a dense high-volume core can hold
+            # millions of length-<=4 cycles. Capped, NOT silent — flagged in the
+            # output so a truncated table can't read as exhaustive.
+            truncated = True
+            break
+    out = (pd.DataFrame(rows, columns=cols)
+           .sort_values("shared_patient_volume", ascending=False)
+           .reset_index(drop=True))
+    out.attrs["truncated_at_max_cycles"] = truncated
+    return out

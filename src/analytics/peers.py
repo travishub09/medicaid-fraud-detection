@@ -136,7 +136,13 @@ def one_sided_percentiles(df: pd.DataFrame, metric_cols: list[str]) -> pd.DataFr
             at_level = df["peer_level"] == i
             if not at_level.any():
                 continue
-            pct = vals.groupby(df[keycol]).rank(method="average", pct=True)
+            # mid-rank percentile (r-0.5)/n, not r/n: plain pct=True hands the
+            # top row of a 30-provider cell exactly 1.0 — identical to the top of
+            # a 50,000-provider cell — so extreme-tail cuts admit the top 1/n of
+            # every small cell. Mid-rank caps a small cell's max percentile at
+            # 1 - 0.5/n, restoring cross-cell comparability.
+            grp = vals.groupby(df[keycol])
+            pct = (grp.rank(method="average") - 0.5) / grp.transform("count")
             nun = vals.groupby(df[keycol]).transform("nunique")
             result[at_level] = pct[at_level]
             deg = at_level & vals.notna() & (nun <= 1)

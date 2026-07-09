@@ -60,7 +60,7 @@ def test_state_saturation_is_bene_weighted_not_max():
          "Number of Providers": "100", "Number of Fee-for-Service Beneficiaries": "1000"},
     ]))
     s = state_saturation_index(counties)
-    rate = s.loc[(s["state"] == "TEXAS"), "providers_per_1k_benes"].iloc[0]
+    rate = s.loc[(s["state"] == "TX"), "providers_per_1k_benes"].iloc[0]
     assert rate == pytest.approx(110 * 1000 / 100000)        # 1.1, nowhere near 100
 
 
@@ -68,7 +68,7 @@ def test_attach_only_for_mapped_sectors():
     org_nodes = pd.DataFrame({
         "org_node_id": ["org:hh", "org:office"],
         "primary_taxonomy": ["251E00000X", "207Q00000X"],     # home health vs FP
-        "addr_state": ["TEXAS", "TEXAS"],
+        "addr_state": ["TX", "TX"],
     })
     features = pd.DataFrame({"org_node_id": ["org:hh", "org:office"]})
     out = attach_market_saturation(features, org_nodes,

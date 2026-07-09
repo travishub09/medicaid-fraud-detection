@@ -30,10 +30,32 @@ import numpy as np
 import pandas as pd
 
 
+def null_from_unlabeled(scores, labels, n: int = 50_000, seed: int = 0) -> np.ndarray:
+    """A VALID empirical null: a random sample of UNLABELED providers' scores.
+
+    Never build the null from the manufactured confirmed_clean anchors — they are
+    selected to be below-median on the same inputs that drive the score, so their
+    score distribution sits left of the true clean distribution and the resulting
+    p-values are anti-conservative (BH then does NOT control FDR). A random
+    unlabeled draw is contaminated by the ~pi undetected offenders, which biases
+    the p-values CONSERVATIVE — the safe direction for a lead list."""
+    s = pd.to_numeric(pd.Series(scores), errors="coerce")
+    lab = pd.Series(labels).fillna(0).astype(int)
+    pool = s[(lab == 0) & s.notna()]
+    if not len(pool):
+        return np.array([])
+    rng = np.random.default_rng(seed)
+    take = min(n, len(pool))
+    return pool.sample(take, random_state=seed).to_numpy(dtype=float)
+
+
 def empirical_pvalues(scores, null_scores) -> np.ndarray:
     """Right-tail empirical p-value per score against a null cohort: p_i =
     (1 + #{null >= score_i}) / (n_null + 1) (the conservative +1 is the standard
-    finite-sample correction so no p-value is exactly zero)."""
+    finite-sample correction so no p-value is exactly zero).
+
+    Build ``null_scores`` with :func:`null_from_unlabeled` — NOT from the
+    confirmed_clean anchors (see that function's docstring for why)."""
     s = pd.to_numeric(pd.Series(scores), errors="coerce").fillna(-np.inf).to_numpy(dtype=float)
     null = np.sort(pd.to_numeric(pd.Series(null_scores), errors="coerce")
                    .dropna().to_numpy(dtype=float))

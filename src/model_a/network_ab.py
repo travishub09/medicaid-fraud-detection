@@ -124,66 +124,100 @@ def roc_auc(y_true, scores) -> float:
     return float(roc_auc_score(y, scores))
 
 
-def _fit_predict(Xtr, ytr, Xte, n_estimators=200):
+def _fit_predict(Xtr, ytr, Xte, n_estimators=200, seed=RANDOM_STATE):
     from lightgbm import LGBMClassifier
     clf = LGBMClassifier(n_estimators=n_estimators, num_leaves=15,
-                         random_state=RANDOM_STATE, verbose=-1)
+                         random_state=seed, verbose=-1)
     clf.fit(Xtr, ytr)
     return clf.predict_proba(Xte)[:, 1]
 
 
-def _grouped_split(n, groups, test_size=0.3):
+def _grouped_split(n, groups, test_size=0.3, seed=RANDOM_STATE):
     from sklearn.model_selection import GroupShuffleSplit, ShuffleSplit
     if groups is not None and pd.Series(groups).nunique() > 3:
-        gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=RANDOM_STATE)
+        gss = GroupShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
         return next(gss.split(np.zeros(n), groups=groups))
-    ss = ShuffleSplit(n_splits=1, test_size=test_size, random_state=RANDOM_STATE)
+    ss = ShuffleSplit(n_splits=1, test_size=test_size, random_state=seed)
     return next(ss.split(np.zeros(n)))
 
 
-def _ab_once(frame, y, with_net, without, groups, test_groups_for_boot, n_boot=200):
-    """Train with vs without network on a grouped split; return metrics + delta CI."""
-    n = len(frame)
-    tr, te = _grouped_split(n, groups)
+_METRICS = (("pr_auc", pr_auc), ("roc_auc", roc_auc), ("lift10", top_decile_lift))
+
+
+def _ab_once(frame, y, with_net, without, groups, test_groups_for_boot,
+             n_boot=200, n_splits=5):
+    """Train with vs without network across SEVERAL grouped splits; pool the
+    delta distribution. A single split + i.i.d. row bootstrap understated the
+    variance two ways (no split-to-split/model-stochasticity term, and rows
+    within a matched cluster are dependent) and made KEEP anti-conservative —
+    so: multiple seeded splits, and the within-split bootstrap resamples GROUPS
+    (a case moves with its matched controls), not rows."""
     yv = _to_num(y)
-    res = {}
-    scores = {}
-    for tag, cols in (("with", with_net), ("without", without)):
-        Xtr = frame.iloc[tr][cols].fillna(0.0).to_numpy()
-        Xte = frame.iloc[te][cols].fillna(0.0).to_numpy()
-        s = _fit_predict(Xtr, yv[tr], Xte)
-        scores[tag] = s
-        res[tag] = {"pr_auc": pr_auc(yv[te], s), "roc_auc": roc_auc(yv[te], s),
-                    "lift10": top_decile_lift(yv[te], s)}
-    yte = yv[te]
-    # bootstrap delta (with - without) on the test rows
-    rng = np.random.default_rng(RANDOM_STATE)
-    deltas = {"pr_auc": [], "roc_auc": [], "lift10": []}
-    m = len(yte)
-    for _ in range(n_boot):
-        idx = rng.integers(0, m, m)
-        yb = yte[idx]
-        if yb.sum() == 0 or yb.sum() == len(yb):
-            continue
-        deltas["pr_auc"].append(pr_auc(yb, scores["with"][idx]) - pr_auc(yb, scores["without"][idx]))
-        deltas["roc_auc"].append(roc_auc(yb, scores["with"][idx]) - roc_auc(yb, scores["without"][idx]))
-        deltas["lift10"].append(top_decile_lift(yb, scores["with"][idx]) - top_decile_lift(yb, scores["without"][idx]))
+    per_split = {"with": [], "without": []}
+    deltas = {k: [] for k, _ in _METRICS}
+    n_te_all, pos_te_all = [], []
+    boot_per_split = max(20, n_boot // max(n_splits, 1))
+    for s in range(max(1, n_splits)):
+        tr, te = _grouped_split(len(frame), groups, seed=RANDOM_STATE + s)
+        scores = {}
+        for tag, cols in (("with", with_net), ("without", without)):
+            Xtr = frame.iloc[tr][cols].fillna(0.0).to_numpy()
+            Xte = frame.iloc[te][cols].fillna(0.0).to_numpy()
+            scores[tag] = _fit_predict(Xtr, yv[tr], Xte, seed=RANDOM_STATE + s)
+        yte = yv[te]
+        n_te_all.append(len(te))
+        pos_te_all.append(int(yte.sum()))
+        for tag in ("with", "without"):
+            per_split[tag].append({k: f(yte, scores[tag]) for k, f in _METRICS})
+        # split-level delta contributes the between-split variance term
+        for k, f in _METRICS:
+            d = f(yte, scores["with"]) - f(yte, scores["without"])
+            if d == d:
+                deltas[k].append(d)
+        # cluster bootstrap: resample GROUPS in the test set, not rows
+        rng = np.random.default_rng(RANDOM_STATE + 1000 + s)
+        gte = (pd.Series(groups).iloc[te].to_numpy()
+               if groups is not None else None)
+        if gte is not None and pd.Series(gte).nunique() > 3:
+            uniq = pd.unique(gte)
+            gidx = {u: np.flatnonzero(gte == u) for u in uniq}
+
+            def _draw():
+                pick = rng.choice(uniq, size=len(uniq), replace=True)
+                return np.concatenate([gidx[u] for u in pick])
+        else:
+            m = len(yte)
+
+            def _draw():
+                return rng.integers(0, m, m)
+        for _ in range(boot_per_split):
+            idx = _draw()
+            yb = yte[idx]
+            if yb.sum() == 0 or yb.sum() == len(yb):
+                continue
+            for k, f in _METRICS:
+                d = f(yb, scores["with"][idx]) - f(yb, scores["without"][idx])
+                if d == d:
+                    deltas[k].append(d)
+    res = {tag: {k: float(np.nanmean([r[k] for r in per_split[tag]]))
+                 for k, _ in _METRICS} for tag in ("with", "without")}
     ci = {}
     for k, v in deltas.items():
-        v = [x for x in v if x == x]  # drop nan
+        v = [x for x in v if x == x]
         if v:
             ci[k] = {"delta": float(np.mean(v)),
                      "lo": float(np.percentile(v, 2.5)),
                      "hi": float(np.percentile(v, 97.5))}
         else:
             ci[k] = {"delta": float("nan"), "lo": float("nan"), "hi": float("nan")}
-    return {"n_test": int(m), "pos_test": int(yte.sum()), "with": res["with"],
-            "without": res["without"], "delta_ci": ci}
+    return {"n_test": int(np.mean(n_te_all)), "pos_test": int(np.mean(pos_te_all)),
+            "n_splits": int(max(1, n_splits)),
+            "with": res["with"], "without": res["without"], "delta_ci": ci}
 
 
 def run_network_ab(matrix: pd.DataFrame, manifest: dict,
                    future_label: pd.DataFrame | None = None, n_boot: int = 200,
-                   realistic_controls: bool = False) -> dict:
+                   realistic_controls: bool = False, n_splits: int = 5) -> dict:
     label = manifest.get("label") or "provider_on_exclusion"
     without, with_net, net = feature_sets(matrix, manifest)
     label_adjacent = [c for c in net if c in LABEL_ADJACENT_NET]
@@ -212,12 +246,17 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
                                         errors="coerce").fillna(0) == 1, "npi"])
         m = matrix[~matrix["npi"].astype(str).isin(drop)].copy()
         yfull = m["npi"].astype(str).isin(pos).astype(int)
+        if int(yfull.sum()) == 0:
+            out["error"] = ("forward label has ZERO positives among the matrix NPIs "
+                            "— stale exclusion file or an as-of graph was used to "
+                            "build the label. No verdict can be computed.")
+            return out
         gfull = m["group_id"].to_numpy() if "group_id" in m.columns else None
         out["full_label"] = "forward (future bans)"
-        out["full"] = _ab_once(m, yfull, with_net, without, gfull, None, n_boot)
+        out["full"] = _ab_once(m, yfull, with_net, without, gfull, None, n_boot, n_splits)
     else:
         out["full_label"] = label
-        out["full"] = _ab_once(matrix, matrix[label], with_net, without, groups, None, n_boot)
+        out["full"] = _ab_once(matrix, matrix[label], with_net, without, groups, None, n_boot, n_splits)
 
     # ----- MATCHED set (size-controlled) -----
     try:
@@ -252,13 +291,13 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
         if len(matched) and "cohort" in matched.columns:
             ym = (matched["cohort"] == "case").astype(int)
             gm = matched["match_id"].to_numpy() if "match_id" in matched.columns else None
-            out["matched"] = _ab_once(matched, ym, with_net, without, gm, None, n_boot)
+            out["matched"] = _ab_once(matched, ym, with_net, without, gm, None, n_boot, n_splits)
             out["matched_n"] = int(len(matched))
             # structural-only: drops the label-adjacent flags so an in-time win
             # can't come from within_2_hops reading off the label.
             if structural_net:
                 out["matched_structural"] = _ab_once(
-                    matched, ym, with_structural, without, gm, None, n_boot)
+                    matched, ym, with_structural, without, gm, None, n_boot, n_splits)
         else:
             out["matched_error"] = "match_cohorts produced no matched set (need positives + confirmed_clean)."
     except Exception as e:  # pragma: no cover
@@ -346,8 +385,13 @@ def to_markdown(out: dict) -> str:
         else:
             lbl = "STRUCTURAL network only vs none, case vs matched control (label-adjacent flags removed)"
         L.append(f"## {pop.upper()} — {lbl}")
+        base = blk["pos_test"] / max(blk["n_test"], 1)
         L.append(f"n_test={blk['n_test']:,}  positives_test={blk['pos_test']:,}"
+                 f"  (splits={blk.get('n_splits', 1)})"
                  + (f"  matched_rows={out.get('matched_n'):,}" if pop == "matched" else ""))
+        if pop != "full":
+            L.append(f"_matched base rate ~{base:.0%}: absolute PR-AUC here is NOT "
+                     f"comparable to deployment prevalence — read the DELTA column._")
         L.append("| metric | with network | without | delta (with-without) [95% CI] |")
         L.append("|---|---|---|---|")
         for m, nm in (("lift10", "top-decile lift"), ("pr_auc", "PR-AUC"), ("roc_auc", "ROC-AUC")):
@@ -370,6 +414,9 @@ def main() -> None:
                          "was_excluded_pre_cutoff) for a forward evaluation.")
     ap.add_argument("--out", default="NETWORK_AB_REPORT.md")
     ap.add_argument("--n-boot", type=int, default=200)
+    ap.add_argument("--n-splits", type=int, default=5,
+                    help="grouped train/test splits to average over (the delta CI "
+                         "pools split-level + cluster-bootstrap variation)")
     ap.add_argument("--realistic-controls", action="store_true",
                     help="match cases to ORDINARY same-size/specialty providers instead "
                          "of the manufactured-clean anchors — a harder, headroom-having "
@@ -380,7 +427,8 @@ def main() -> None:
     manifest = json.loads(Path(args.manifest).read_text())
     fut = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
     out = run_network_ab(matrix, manifest, future_label=fut, n_boot=args.n_boot,
-                         realistic_controls=args.realistic_controls)
+                         realistic_controls=args.realistic_controls,
+                         n_splits=args.n_splits)
     report = to_markdown(out)
     Path(args.out).write_text(report)
     print(report)

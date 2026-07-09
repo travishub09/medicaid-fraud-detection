@@ -133,10 +133,18 @@ def main() -> None:
     print(f"  forward positives (first ban after {args.cutoff}): {pos:,}  <- the held-out label")
     print(f"  excluded at/before cutoff (drop from the test):    {pre:,}")
     print(f"  undated exclusions (not counted as positive):  {und:,}")
-    if pos == 0:
-        print("  WARNING: zero forward positives — is the cutoff after your latest "
-              "exclusion vintage? The test needs post-cutoff bans to score against.")
     print("  Modelling label from public integrity events — leads for review, not accusations.")
+    if pos == 0:
+        # Fail LOUD and NONZERO: a zero-positive forward label means the exclusion
+        # file was stale or (worse) an as-of-filtered graph was passed by mistake —
+        # every date <= cutoff. Downstream the A/B would train on an all-zero label
+        # and print a confident garbage verdict, so stop the batch here instead.
+        print("  ERROR: zero forward positives. Causes: (a) --exclusion-nodes points "
+              "at an AS-OF graph (all dates <= cutoff) — pass the FULL graph's "
+              "exclusion_nodes.parquet; (b) the exclusion download is older than the "
+              "cutoff — refresh LEIE/OpenSanctions. Aborting so the frozen test "
+              "cannot silently run on an empty label.")
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -94,7 +94,7 @@ def test_saturation_county_grain_with_crosswalk():
     org_nodes = pd.DataFrame({
         "org_node_id": ["org:hot", "org:cool"],
         "primary_taxonomy": ["251E00000X", "251E00000X"],
-        "addr_state": ["ALABAMA", "ALABAMA"],
+        "addr_state": ["AL", "AL"],
         "addr_zip": ["36067", "36507"],
     })
     xw = pd.DataFrame({"zip": ["36067", "36507"], "county_fips": ["01001", "01003"]})

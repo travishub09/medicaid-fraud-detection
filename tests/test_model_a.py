@@ -66,7 +66,10 @@ def test_badco_ring_gets_graph_boost(scored):
     # an equal-anomaly org with no boost: the PAC subpart org (mid features too)
     subpart = _org_of(outputs, "1003000308")
     sub_row = result[result["org_node_id"] == subpart].iloc[0]
-    assert row["adjusted_prob"] > sub_row["adjusted_prob"]
+    # the boost mechanism: badco is boosted, the control is not, and the
+    # boost never lowers the ranking (both may saturate at the prob cap).
+    assert row["graph_risk_boost"] > sub_row["graph_risk_boost"]
+    assert row["adjusted_prob"] >= sub_row["adjusted_prob"]
 
 
 def test_noisy_or_properties():

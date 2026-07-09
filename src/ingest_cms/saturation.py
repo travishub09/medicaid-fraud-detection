@@ -49,6 +49,24 @@ SECTOR_TO_SERVICE: dict[str, str] = {
     "ambulance": "ambulance",
 }
 
+# Some vintages carry full state names; org addresses carry 2-letter codes.
+# Without this map every state lookup silently NaNs on those vintages.
+_STATE_NAME_TO_CODE = {
+    "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+    "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+    "DISTRICT OF COLUMBIA": "DC", "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI",
+    "IDAHO": "ID", "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+    "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+    "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS",
+    "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV",
+    "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY",
+    "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK",
+    "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI",
+    "SOUTH CAROLINA": "SC", "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX",
+    "UTAH": "UT", "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA",
+    "WEST VIRGINIA": "WV", "WISCONSIN": "WI", "WYOMING": "WY", "PUERTO RICO": "PR",
+}
+
 
 def compute_saturation_metrics(raw: pd.DataFrame) -> pd.DataFrame:
     """County-grain saturation: providers_per_1k_benes + market_saturation_index.
@@ -65,12 +83,26 @@ def compute_saturation_metrics(raw: pd.DataFrame) -> pd.DataFrame:
                          f"{missing}; saw {list(raw.columns)[:12]}")
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
 
+    # The state-county file STACKS reference periods; summing/ranking across them
+    # double-counts providers and mixes vintages. Keep only the latest period.
+    rp_col = next((c for c in raw.columns
+                   if c.strip().lower().replace(" ", "_") == "reference_period"), None)
+    if rp_col is not None:
+        rp = df[rp_col].fillna("").astype(str)
+        latest = rp[rp != ""].max()
+        if latest:
+            n0 = len(df)
+            df = df[rp == latest].copy()
+            if len(df) < n0:
+                pass  # multiple periods present; latest retained
+
     for c in ("fips", "county"):
         if c not in df.columns:
             df[c] = ""
     df["fips"] = df["fips"].fillna("").astype(str).str.strip()      # string: zeros
     df["service_type"] = df["service"].fillna("").astype(str).str.strip()
     df["state"] = df["state"].fillna("").astype(str).str.strip().str.upper()
+    df["state"] = df["state"].map(lambda s: _STATE_NAME_TO_CODE.get(s, s))
     df["county"] = df["county"].fillna("").astype(str).str.strip()
     for c in ("n_providers", "n_benes"):
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)

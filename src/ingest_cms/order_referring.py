@@ -48,7 +48,8 @@ def eligible_referrers(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     df = df.assign(npi=npi)[npi.notna()].copy()
     out = pd.DataFrame({"npi": df["npi"]})
     for c in ("partb", "dme", "hha", "pmd"):
-        vals = (df[c] if c in df.columns else "").fillna("").astype(str).str.upper()
+        vals = (df[c] if c in df.columns
+                else pd.Series("", index=df.index)).fillna("").astype(str).str.upper()
         out[c] = vals.isin(_YES).astype(int)
     return out.groupby("npi", as_index=False).max(), quarantined
 

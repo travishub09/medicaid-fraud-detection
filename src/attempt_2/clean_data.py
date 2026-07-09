@@ -193,9 +193,23 @@ def read_csv_text(path, **kwargs) -> pd.DataFrame:
     (NPIs/CCNs/ZIPs); only cosmetic bytes in free-text name fields differ. THE
     shared raw-CSV reader; route new readers through it."""
     kwargs.setdefault("dtype", str)
+    if "encoding" not in kwargs:
+        # BOM sniff: a UTF-16 file "succeeds" under Latin-1 but yields
+        # NUL-interleaved garbage headers (killing the adapter downstream), and a
+        # UTF-8 BOM leaves \ufeff glued to the first column name. Detect both.
+        try:
+            with open(path, "rb") as fh:
+                head = fh.read(4)
+            if head.startswith(b"\xff\xfe") or head.startswith(b"\xfe\xff"):
+                kwargs["encoding"] = "utf-16"
+            elif head.startswith(b"\xef\xbb\xbf"):
+                kwargs["encoding"] = "utf-8-sig"
+        except (OSError, TypeError):
+            pass
     try:
         return pd.read_csv(path, **kwargs)
     except UnicodeDecodeError:
+        kwargs.pop("encoding", None)
         return pd.read_csv(path, encoding="latin-1", **kwargs)
 
 
@@ -295,6 +309,15 @@ GENERIC_NAME_TOKENS = frozenset({
     "PROFESSIONAL", "PROVIDER", "PROVIDERS", "SYSTEMS", "SYSTEM", "NETWORK",
     "PHYSICIAN", "PHYSICIANS", "PRACTICE", "ASSOCIATION", "REGIONAL", "NATIONAL",
     "AMERICAN", "AMERICA", "USA", "THE", "OF", "AND", "FOR",
+    # second sweep (graph-methodology audit): common clinic-name filler that let
+    # "MAIN STREET CLINIC"-class names pass as distinctive
+    "MAIN", "STREET", "AVENUE", "PLAZA", "PARK", "VALLEY", "RIVER", "LAKE",
+    "PRIMARY", "URGENT", "GENERAL", "ADVANCED", "PREMIER", "FIRST", "TOTAL",
+    "UNITED", "QUALITY", "DENTAL", "SURGICAL", "SURGERY", "IMAGING", "PEDIATRIC",
+    "ORTHOPEDIC", "PAIN", "SPINE", "SUPPLY", "SUPPLIES", "EQUIPMENT", "DME",
+    "PHARMACIES", "DRUG", "DRUGS", "MEDICINES", "VISITING", "MOBILE", "EXPRESS",
+    "ELITE", "SELECT", "CHOICE", "OPTIMAL", "INTEGRATED", "COMPREHENSIVE",
+    "CONSULTING", "CONSULTANTS", "SPECIALISTS", "SPECIALTY", "THERAPEUTIC",
 })
 
 

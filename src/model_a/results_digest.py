@@ -110,7 +110,8 @@ def build_digest(dirp: Path | None = None, manifest_p=None, signal_p=None,
             skipped = [r for r in audit if r.get("status") == "skipped"]
             L.append(f"- Data sources: **{len(used)} used, {len(skipped)} skipped.**")
             for r in skipped[:12]:
-                L.append(f"    - skipped `{r.get('source', '?')}` - {r.get('reason', '')}")
+                why = r.get("detail") or r.get("reason") or ""
+                L.append(f"    - skipped `{r.get('source', '?')}` - {why}")
             if len(skipped) > 12:
                 L.append(f"    - ...and {len(skipped) - 12} more (see SOURCES_REPORT.md)")
     else:

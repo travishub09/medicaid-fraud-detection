@@ -160,7 +160,13 @@ def test_to_peer_percentiles_uses_ladder_and_keeps_old_contract():
     out = to_peer_percentiles(u, ["metric"], provider_dim=pdim,
                               min_peer_count=30, include_diagnostics=True)
     by = out.set_index("npi")
-    assert by.loc["WHALE", "metric"] == 1.0           # top of ITS OWN cell
+    # mid-rank: the top of a finite cell is (n-0.5)/n, NOT exactly 1.0 as plain
+    # pct=True gave — so the top 1/n of a small cell no longer masquerades as a
+    # 1% tail and cross-cell tails are comparable. WHALE is the extreme of its
+    # own cell, at precisely the mid-rank ceiling.
+    n = int(by.loc["WHALE", "peer_n"])
+    assert by.loc["WHALE", "metric"] == pytest.approx((n - 0.5) / n)
+    assert 0.9 < by.loc["WHALE", "metric"] < 1.0
     assert by.loc["L000", "peer_basis"] == "peer_group_too_small"
     assert np.isnan(by.loc["L000", "metric"])         # loner: unscored
     # old contract preserved: no context → one global pool, values produced

@@ -38,6 +38,18 @@ OP_COLS = {
     "product": ["Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
                 "Name_of_Associated_Covered_Drug_or_Biological1",
                 "Product_Category_or_Therapeutic_Area_1"],
+    # Fields 2-5 exist here ONLY so column-projecting readers (the export's
+    # usecols path) keep them: kickback_co_occurrence scans the RAW header names
+    # via _PRODUCT_COL_RE, so projecting them away at read time silently rebuilt
+    # the "only field 1" bug this module documents fixing.
+    "product_2": ["Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+                  "Name_of_Associated_Covered_Drug_or_Biological2"],
+    "product_3": ["Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+                  "Name_of_Associated_Covered_Drug_or_Biological3"],
+    "product_4": ["Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+                  "Name_of_Associated_Covered_Drug_or_Biological4"],
+    "product_5": ["Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+                  "Name_of_Associated_Covered_Drug_or_Biological5"],
 }
 
 
@@ -135,8 +147,11 @@ def kickback_co_occurrence(op_raw: pd.DataFrame, partd_raw: pd.DataFrame) -> pd.
     op = op_raw.rename(columns={v: k for k, v in op_resolved.items()})
     op = op.assign(npi=canonicalize_series(op["npi"]))
     op = op[op["npi"].notna()]
+    # include the canonicalized product_2..5 names too — OP_COLS now resolves
+    # them (so the export's usecols read keeps them on disk), which renames those
+    # columns to "product_N", out of _PRODUCT_COL_RE's range. Match both.
     product_cols = [c for c in op.columns
-                    if c == "product" or _PRODUCT_COL_RE.search(str(c))]
+                    if str(c).startswith("product") or _PRODUCT_COL_RE.search(str(c))]
     if not product_cols:
         # no product columns at all → the whole feature is silently zero; say so
         import logging

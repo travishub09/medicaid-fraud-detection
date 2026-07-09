@@ -148,5 +148,12 @@ def compute_subscores(features: pd.DataFrame,
         den = sum(feats[c].notna() * w for c, w in present.items())
         x = num / den.where(den > 0)
         out[f"subscore_{scheme}"] = _sigmoid(STEEPNESS * (x - THRESHOLD))
+        # evidence count: the NULL-aware mean's variance shrinks with the number
+        # of observed inputs, so a one-input extreme is easier to reach than a
+        # five-input one. Extreme-threshold consumers should require >= 2. Name
+        # deliberately avoids the "subscore_" prefix so the noisy-OR scorers and
+        # the manifest feature families never mistake it for a scheme score.
+        out[f"evidence_n_{scheme}"] = sum(
+            feats[c].notna().astype(int) for c in present)
         coverage[scheme] = sorted(present)
     return out, coverage
