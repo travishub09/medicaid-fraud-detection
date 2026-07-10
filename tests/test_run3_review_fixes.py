@@ -238,6 +238,27 @@ def test_yoy_trend_refuses_year_gap(tmp_path):
     assert any("no 2022 file" in ln and "2019" in ln for ln in logs)
 
 
+def test_multi_year_slope_separates_sustained_ramp_from_blip(tmp_path):
+    """--trend-years 4: a provider whose DME price concentration climbed four
+    straight years gets a positive slope; default (2) emits no slope columns."""
+    from src.model_a.provider_features_export import _run_npi_adapters
+    d = tmp_path / "dmepos"
+    d.mkdir()
+    for y, price in [(2020, 100.0), (2021, 200.0), (2022, 300.0), (2023, 400.0)]:
+        pd.DataFrame({"Rfrg_NPI": ["1000000004", "1000000012"],
+                      "HCPCS_Cd": ["E0601", "E0601"],
+                      "Tot_Suplr_Srvcs": [10, 10],
+                      "Avg_Suplr_Mdcr_Alowd_Amt": [price, 50.0]},
+                     ).to_csv(d / f"dmepos_{y}.csv", index=False)
+    skip = {"partb", "partd", "opioid", "open_payments", "kickback"}
+    frames = _run_npi_adapters(tmp_path, lambda m: None, skip=skip, trend_years=4)
+    tr = frames["dmepos_trend"].set_index("npi")
+    assert "dme_high_cost_item_share_slope" in tr.columns
+    # default window emits yoy only
+    frames2 = _run_npi_adapters(tmp_path, lambda m: None, skip=skip)
+    assert not any(c.endswith("_slope") for c in frames2["dmepos_trend"].columns)
+
+
 def test_yoy_trend_respects_no_trends_flag(tmp_path):
     from src.model_a.provider_features_export import _run_npi_adapters
     d = tmp_path / "dmepos"

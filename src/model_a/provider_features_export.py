@@ -441,7 +441,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                   "billing_implied_taxonomy"]
                       if c in out.columns]
     evidence_cols = [c for c in out.columns if c.startswith("evidence_n_")]
-    yoy_cols = [c for c in out.columns if c.endswith("_yoy")]
+    yoy_cols = [c for c in out.columns
+                if c.endswith("_yoy") or c.endswith("_slope")]
     raw_feature_cols = sorted(set(raw_feature_cols) | set(yoy_cols))
     raw_feature_cols = [c for c in raw_feature_cols
                         if c not in leakage_hard and c not in label_metadata
@@ -877,7 +878,8 @@ class _SourceAudit:
 
 def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                       max_year: int | None = None,
-                      no_trends: bool = False) -> dict[str, pd.DataFrame]:
+                      no_trends: bool = False,
+                      trend_years: int = 2) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
     Each entry is (source_name, subdir/filenames, callable(raw)->npi-keyed frame).
@@ -1026,6 +1028,62 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                     tr[f"{c}_yoy"] = (pd.to_numeric(merged[c], errors="coerce")
                                       - pd.to_numeric(merged[f"{c}__prev"],
                                                       errors="coerce"))
+                # Multi-year slope (--trend-years N > 2): the operator's deeper
+                # history separates a one-year blip from a SUSTAINED trajectory.
+                # Extra years within the window are read (each is a full PUF
+                # read — that is why it is opt-in) and a per-provider per-year
+                # slope is fit over >=3 consecutive-ish points.
+                if trend_years > 2:
+                    year_frames = {cur_year: cur_df, cur_year - 1: prev_df}
+                    lo = cur_year - (trend_years - 1)
+                    for p in older:
+                        y = _file_year(p)
+                        if y in year_frames or y < lo:
+                            continue
+                        try:
+                            raw = _read_one(p, _cmaps[name])
+                            if raw is None or not len(raw):
+                                continue
+                            res = _fns[name](raw)
+                            yf = res[0] if isinstance(res, tuple) else res
+                            if yf is not None and "npi" in yf.columns:
+                                year_frames[y] = yf
+                        except ValueError:
+                            continue
+                    if len(year_frames) >= 3:
+                        import numpy as np
+                        years = sorted(year_frames)
+                        wide = None
+                        for y in years:
+                            f = year_frames[y][["npi"] + [c for c in share
+                                                          if c in year_frames[y].columns]]
+                            f = f.drop_duplicates("npi").set_index("npi")
+                            f.columns = [f"{c}@{y}" for c in f.columns]
+                            wide = f if wide is None else wide.join(f, how="outer")
+                        t = np.array(years, dtype=float)
+                        for c in share:
+                            cols_y = [f"{c}@{y}" for y in years if f"{c}@{y}" in wide.columns]
+                            if len(cols_y) < 3:
+                                continue
+                            x = wide[cols_y].apply(pd.to_numeric, errors="coerce").to_numpy()
+                            ty = np.array([float(cy.split("@")[1]) for cy in cols_y])
+                            mask = ~np.isnan(x)
+                            n = mask.sum(axis=1)
+                            tm = np.where(mask, ty, np.nan)
+                            tbar = np.nanmean(tm, axis=1, keepdims=True)
+                            xbar = np.nanmean(np.where(mask, x, np.nan), axis=1,
+                                              keepdims=True)
+                            num = np.nansum((tm - tbar) * (x - xbar), axis=1)
+                            den = np.nansum((tm - tbar) ** 2, axis=1)
+                            with np.errstate(invalid="ignore", divide="ignore"):
+                                slope = np.where((n >= 3) & (den > 0), num / den, np.nan)
+                            tr = tr.merge(pd.DataFrame(
+                                {"npi": wide.index, f"{c}_slope": slope}),
+                                on="npi", how="outer")
+                        log(f"    [{name}_trend] multi-year slope over "
+                            f"{', '.join(map(str, years))} "
+                            f"({sum(1 for c in tr.columns if c.endswith('_slope'))} "
+                            "slope columns)")
                 frames[f"{name}_trend"] = tr
                 log(f"    [{name}_trend] {len(tr):,} providers: {prev_file.name} "
                     f"→ {cur_file.name} year-over-year deltas "
@@ -1436,6 +1494,11 @@ def main() -> None:
                          "leakage-correct out-of-time training matrix)")
     ap.add_argument("--snapshot-dir", default=None,
                     help="feature-snapshot store dir (default <data-root>/feature_snapshots)")
+    ap.add_argument("--trend-years", type=int, default=2,
+                    help="years of PUF history for trends: 2 = the one-step "
+                         "year-over-year delta (default); 3+ ALSO fits a "
+                         "per-provider multi-year slope (<col>_slope) — each "
+                         "extra year is another full PUF read")
     ap.add_argument("--no-trends", action="store_true",
                     help="skip the year-over-year PUF trend features (saves one "
                          "extra prior-year read per multi-year source)")
@@ -1504,7 +1567,8 @@ def main() -> None:
             print(f"  [vintage] annual-PUF cap for the frozen run: {vintage_cap} or older")
         adapter_frames = _run_npi_adapters(preclean, audit, skip=skip,
                                            max_year=vintage_cap,
-                                           no_trends=args.no_trends)
+                                           no_trends=args.no_trends,
+                                           trend_years=args.trend_years)
         # order_referring referrer-grain fallback: the public DMEPOS detail file
         # has no supplier NPI (org-grain ineligible_referral_share stays gated),
         # but the REFERRER's own standing is checkable today — DME dollars billed
