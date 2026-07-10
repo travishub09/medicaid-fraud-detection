@@ -70,7 +70,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "behavioral_health": {"bh_paid_share": 0.4, "bh_lines_per_patient": 0.6},
     "drug_outlier": {"controlled_substance_share": 0.4, "high_cost_drug_share": 0.4,
                      # NADAC markup/spread anomaly (B4); absent until NDC claims load
-                     "drug_spread_anomaly": 0.3},
+                     "drug_spread_anomaly": 0.3,
+                     # the J-code peer-relative markup from the spending fact —
+                     # the drug-spread essence with no NDC slice needed
+                     "drug_markup_anomaly": 0.4},
     # dme_ordering_md_concentration needs supplier×ordering-MD pairs (not in the
     # by-referring-provider PUF) — dormant by data; the other two are produced.
     "dme_ring": {"dme_high_cost_item_share": 0.4, "dme_ordering_md_concentration": 0.4,

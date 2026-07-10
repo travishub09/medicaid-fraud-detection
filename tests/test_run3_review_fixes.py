@@ -247,6 +247,52 @@ def test_yoy_trend_respects_no_trends_flag(tmp_path):
     assert "dmepos_trend" not in frames
 
 
+# --------------------------------------------- J-code drug markup
+
+def test_drug_markup_flags_priced_above_same_code_peers(tmp_path):
+    """22 providers bill the same J-code; one prices 10x per line. Peer-relative
+    one-sided markup flags the outlier and leaves the pack near zero — the
+    drug-spread essence with no NDC slice or NADAC required."""
+    pytest.importorskip("duckdb")
+    from src.analytics.drug_markup import drug_markup_from_parquet
+    rows = []
+    for i in range(21):
+        rows.append({"billing_npi": f"norm{i:04d}", "hcpcs_code": "J1885",
+                     "service_month": "2023-01",
+                     "total_paid": 100.0, "total_claim_lines": 10})
+    rows.append({"billing_npi": "outlier01", "hcpcs_code": "J1885",
+                 "service_month": "2023-01",
+                 "total_paid": 1000.0, "total_claim_lines": 10})
+    rows.append({"billing_npi": "outlier01", "hcpcs_code": "99213",  # not a J-code
+                 "service_month": "2023-01",
+                 "total_paid": 50.0, "total_claim_lines": 1})
+    p = tmp_path / "spending_fact.parquet"
+    pd.DataFrame(rows).to_parquet(p, index=False)
+    out = drug_markup_from_parquet(str(p)).set_index("npi")
+    assert out.loc["outlier01", "drug_markup_anomaly"] > 0.5
+    assert out.loc["norm0000", "drug_markup_anomaly"] < 0.1
+    assert "99213" not in ""  # non-J rows excluded by construction:
+    assert out.loc["outlier01", "n_jcodes"] == 1
+
+
+def test_drug_markup_skips_thin_codes_and_missing_lines(tmp_path):
+    pytest.importorskip("duckdb")
+    from src.analytics.drug_markup import drug_markup_from_parquet
+    # only 3 billers on the code -> below MIN_CODE_BILLERS -> nobody scored
+    rows = [{"billing_npi": f"n{i}", "hcpcs_code": "J9999",
+             "service_month": "2023-01", "total_paid": 100.0 * (i + 1),
+             "total_claim_lines": 10} for i in range(3)]
+    p = tmp_path / "spending_fact.parquet"
+    pd.DataFrame(rows).to_parquet(p, index=False)
+    assert len(drug_markup_from_parquet(str(p))) == 0
+    # no total_claim_lines column -> graceful empty, not a crash
+    p2 = tmp_path / "no_lines.parquet"
+    pd.DataFrame([{"billing_npi": "n1", "hcpcs_code": "J1885",
+                   "service_month": "2023-01", "total_paid": 5.0}]
+                 ).to_parquet(p2, index=False)
+    assert len(drug_markup_from_parquet(str(p2))) == 0
+
+
 # --------------------------------------------- saturation period cap
 
 def test_saturation_period_cap_uses_pre_cutoff_period():

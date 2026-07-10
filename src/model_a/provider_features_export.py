@@ -451,6 +451,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     _SRC_VINTAGE = {
         "label": "point_in_time", "smoking_gun_timeline": "point_in_time",
         "nppes_deactivation": "point_in_time", "sector_schemes": "point_in_time",
+        "drug_markup": "point_in_time",
         "growth": "point_in_time", "plausibility": "point_in_time",
         "billing_lm": "point_in_time", "death_master": "point_in_time",
         "partb": "annual_capped", "partd": "annual_capped",
@@ -1614,6 +1615,26 @@ def main() -> None:
                 audit("    [sector_schemes] skipped: needs processed/spending_fact.parquet")
         except Exception as e:
             audit(f"    [sector_schemes] skipped: {e}")
+
+        # J-code drug markup: the drug-spread essence (priced far above same-drug
+        # peers) straight from the spending fact — no NDC slice, no NADAC needed.
+        # Runs on the as-of file under a freeze, so it is point_in_time.
+        try:
+            spend_dm = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            if spend_dm:
+                from src.analytics.drug_markup import drug_markup_from_parquet
+                dm = drug_markup_from_parquet(str(spend_dm))
+                if len(dm):
+                    adapter_frames["drug_markup"] = dm
+                    audit(f"    [drug_markup] {len(dm):,} J-code billers scored "
+                          f"vs same-drug peers (from {Path(spend_dm).name})")
+                else:
+                    audit("    [drug_markup] skipped: no J-code rows (or no "
+                          "total_claim_lines column) in the spending fact")
+            else:
+                audit("    [drug_markup] skipped: needs processed/spending_fact.parquet")
+        except Exception as e:
+            audit(f"    [drug_markup] skipped: {e}")
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
