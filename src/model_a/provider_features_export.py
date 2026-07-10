@@ -1318,6 +1318,27 @@ def main() -> None:
             print(f"  [vintage] annual-PUF cap for the frozen run: {vintage_cap} or older")
         adapter_frames = _run_npi_adapters(preclean, audit, skip=skip,
                                            max_year=vintage_cap)
+        # order_referring referrer-grain fallback: the public DMEPOS detail file
+        # has no supplier NPI (org-grain ineligible_referral_share stays gated),
+        # but the REFERRER's own standing is checkable today — DME dollars billed
+        # off an NPI's orders while that NPI is not DME-eligible on the O&R list.
+        try:
+            if "dmepos" in adapter_frames:
+                from src.ingest_cms import order_referring as _orr
+                elig_p = _first_existing(preclean / "order_referring",
+                                         "order_referring.csv", "*.csv")
+                if elig_p:
+                    elig, _q = _orr.eligible_referrers(_read_any(elig_p))
+                    fb = _orr.referrer_ineligible_dme(adapter_frames["dmepos"], elig)
+                    if len(fb):
+                        adapter_frames["order_referring_referrer"] = fb
+                        n_bad = int(fb["dme_ineligible_referrer"].sum())
+                        audit(f"    [order_referring] referrer-grain check from "
+                              f"DMEPOS + {elig_p.name}: {len(fb):,} referrers, "
+                              f"{n_bad:,} not DME-eligible (org-grain share "
+                              "still needs referred_claims)")
+        except Exception as e:
+            audit(f"    [order_referring] referrer-grain check skipped: {e}")
         ne_p = g / "node_embeddings.parquet"
         if ne_p.exists():
             from src.entity_graph.graph_embeddings import to_provider_grain

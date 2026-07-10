@@ -75,7 +75,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # by-referring-provider PUF) — dormant by data; the other two are produced.
     "dme_ring": {"dme_high_cost_item_share": 0.4, "dme_ordering_md_concentration": 0.4,
                  # orders from referrers not eligible to order DME (sweep 2.6)
-                 "ineligible_referral_share": 0.4},
+                 "ineligible_referral_share": 0.4,
+                 # referrer-grain fallback from the public DMEPOS detail file:
+                 # THIS NPI ordered DME while not on the O&R DME-eligible list
+                 # (the org-grain share above still needs referred_claims)
+                 "dme_ineligible_referred_dollars": 0.4},
     # future (B1/B2 facility + saturation adapters: ingest_cms/facility.py,
     # ingest_cms/saturation.py — percentile features at the org grain)
     # severity-weighted deficiencies carry the gravity (immediate jeopardy = 8×);

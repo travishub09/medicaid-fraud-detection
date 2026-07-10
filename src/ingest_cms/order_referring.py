@@ -54,6 +54,31 @@ def eligible_referrers(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     return out.groupby("npi", as_index=False).max(), quarantined
 
 
+def referrer_ineligible_dme(dme_metrics: pd.DataFrame,
+                            eligible: pd.DataFrame) -> pd.DataFrame:
+    """Referrer-grain eligibility check from the PUBLIC DMEPOS detail file.
+
+    The public DMEPOS by-referring file carries no supplier NPI, so the
+    org-grain ``ineligible_referral_share`` stays gated on a claims extract with
+    both NPIs. But the REFERRER's own standing is checkable today: DME dollars
+    were billed off this NPI's orders while the NPI is not on the Order &
+    Referring DME-eligible list. ``dme_metrics`` is the dmepos adapter output
+    (npi + total_allowed). Returns npi, ``dme_ineligible_referrer`` (0/1) and
+    ``dme_ineligible_referred_dollars`` (the referrer's DME-order dollars when
+    ineligible, else 0)."""
+    m = dme_metrics.copy()
+    m["npi"] = m["npi"].astype(str)
+    elig_dme = set(eligible.loc[pd.to_numeric(eligible.get("dme"), errors="coerce")
+                                .fillna(0) == 1, "npi"].astype(str))
+    flag = ~m["npi"].isin(elig_dme)
+    dollars = pd.to_numeric(m.get("total_allowed"), errors="coerce").fillna(0.0)
+    return pd.DataFrame({
+        "npi": m["npi"],
+        "dme_ineligible_referrer": flag.astype(int),
+        "dme_ineligible_referred_dollars": dollars.where(flag, 0.0),
+    }).reset_index(drop=True)
+
+
 def ineligible_referral_share(referred_claims: pd.DataFrame,
                               eligible: pd.DataFrame,
                               npi_to_org: pd.DataFrame,

@@ -76,12 +76,15 @@ def check_dmepos(root: Path) -> None:
         say(f"   {d} does not exist — create it and download the file (see PDF #1)")
         say()
         return
+    from src.attempt_2.clean_data import _resolve_columns
+    from src.ingest_cms.dmepos import DMEPOS_COLS
     good = []
     for p in sorted(d.glob("*.csv")):
-        cols = _headers(p)
-        has_hcpcs = any("hcpcs" in c.lower() for c in cols)
-        say(f"   {p.name}: {'HCPCS ok (usable)' if has_hcpcs else 'no HCPCS column (summary layout)'}")
-        if has_hcpcs:
+        resolved = _resolve_columns(_headers(p), DMEPOS_COLS)
+        missing = [c for c in ("npi", "hcpcs", "services") if c not in resolved]
+        say(f"   {p.name}: "
+            f"{'usable (adapter columns resolve)' if not missing else 'BAD LAYOUT — missing ' + str(missing)}")
+        if not missing:
             good.append(p.name)
     if good:
         say(f"   ACTION: works now (falls back to {sorted(good)[-1]}). For current-year "
@@ -170,10 +173,6 @@ def check_death_master(root: Path) -> None:
     say()
 
 
-_NDC_TOKENS = ("ndc",)
-_REF_TOKENS = ("referring", "rfrg", "ordering")
-
-
 def scan_claim_slices(root: Path) -> None:
     say("5) nadac + order_referring  (each needs a reference file + a claim slice)")
     nref = root / "preclean" / "nadac"
@@ -187,6 +186,10 @@ def scan_claim_slices(root: Path) -> None:
         say(f"   processed/{slc}: {'FOUND' if p.exists() else 'not built yet'}")
 
     say("   scanning your files for columns that could BUILD the two slices ...")
+    say("   (a candidate must satisfy the REAL slice builder: distinct columns "
+        "for every required field, not just look-alike names)")
+    from src.attempt_2.clean_data import _resolve_columns
+    from src.ingest_cms.claim_slices import _NDC_WANTED, _REFERRAL_WANTED
     ndc_cands, ref_cands = [], []
     roots = [root / "preclean", root / "processed", root / "interim"]
     seen = 0
@@ -199,11 +202,14 @@ def scan_claim_slices(root: Path) -> None:
             seen += 1
             if seen > 400:      # safety valve on a huge tree
                 break
-            cols = [c.lower() for c in _headers(p)]
-            has_npi = any("npi" in c for c in cols)
-            if has_npi and any(t in c for c in cols for t in _NDC_TOKENS):
+            hdr = _headers(p)
+            ndc_r = _resolve_columns(hdr, _NDC_WANTED)
+            if (len(ndc_r) == len(_NDC_WANTED)
+                    and len(set(ndc_r.values())) == len(_NDC_WANTED)):
                 ndc_cands.append(str(p.relative_to(root)))
-            if has_npi and any(t in c for c in cols for t in _REF_TOKENS):
+            ref_r = _resolve_columns(hdr, _REFERRAL_WANTED)
+            if (len(ref_r) == len(_REFERRAL_WANTED)
+                    and len(set(ref_r.values())) == len(_REFERRAL_WANTED)):
                 ref_cands.append(str(p.relative_to(root)))
     say(f"   NDC-claims candidates (npi + ndc columns): "
         f"{', '.join(ndc_cands[:6]) if ndc_cands else 'NONE found'}")

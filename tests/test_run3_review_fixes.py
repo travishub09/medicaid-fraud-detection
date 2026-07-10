@@ -163,6 +163,31 @@ def test_adapter_still_skips_when_no_layout_matches(tmp_path):
     assert any("missing required columns" in ln for ln in logs)
 
 
+# ------------------------------------- order_referring referrer-grain fallback
+
+def test_referrer_ineligible_dme_flags_off_list_referrers():
+    """The public DMEPOS detail file has no supplier NPI, but the referrer's own
+    O&R standing is checkable: DME dollars ordered by an NPI not on the
+    DME-eligible list get flagged at the referrer grain."""
+    from src.ingest_cms.order_referring import referrer_ineligible_dme
+    dme = pd.DataFrame({"npi": ["1000000004", "1000000012"],
+                        "total_allowed": [5000.0, 800.0]})
+    elig = pd.DataFrame({"npi": ["1000000004"], "dme": [1], "partb": [1],
+                         "hha": [0], "pmd": [0]})
+    out = referrer_ineligible_dme(dme, elig).set_index("npi")
+    assert out.loc["1000000004", "dme_ineligible_referrer"] == 0
+    assert out.loc["1000000004", "dme_ineligible_referred_dollars"] == 0.0
+    assert out.loc["1000000012", "dme_ineligible_referrer"] == 1
+    assert out.loc["1000000012", "dme_ineligible_referred_dollars"] == 800.0
+
+
+def test_dme_ineligible_dollars_feeds_dme_ring_scheme():
+    from src.model_a.provider_features_export import ADAPTER_FEATURE_COLS
+    from src.model_a.scheme_subscores import DEFAULT_SCHEME_WEIGHTS
+    assert "dme_ineligible_referred_dollars" in DEFAULT_SCHEME_WEIGHTS["dme_ring"]
+    assert "dme_ineligible_referred_dollars" in ADAPTER_FEATURE_COLS
+
+
 # ------------------------------------------------------------- OPAIS header
 
 def test_opais_header_sniff_handles_taller_banner(tmp_path):
