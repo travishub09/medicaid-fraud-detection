@@ -81,21 +81,32 @@ def _minmax(p: Path, cols: list[str]) -> dict[str, tuple[str, str]]:
     con = duckdb.connect()
     con.execute("PRAGMA memory_limit='4GB'")
     esc = str(p).replace("'", "''")
-    src = (f"read_parquet('{esc}')" if p.suffix.lower() == ".parquet"
-           else f"read_csv_auto('{esc}', ALL_VARCHAR=TRUE, ignore_errors=true, "
-                "encoding='latin-1')")
+    if p.suffix.lower() == ".parquet":
+        srcs = [f"read_parquet('{esc}')"]
+    else:
+        # UTF-8 first (the DuckDB default; most CMS files), Latin-1 fallback —
+        # forcing latin-1 alone made valid-UTF-8 files fail the first census.
+        srcs = [f"read_csv_auto('{esc}', ALL_VARCHAR=TRUE, ignore_errors=true)",
+                f"read_csv_auto('{esc}', ALL_VARCHAR=TRUE, ignore_errors=true, "
+                "encoding='latin-1')"]
     out: dict[str, tuple[str, str]] = {}
     for c in cols:
-        try:
-            qc = c.replace('"', '""')
-            lo, hi = con.execute(
-                f'SELECT MIN("{qc}"), MAX("{qc}") FROM {src} '
-                f'WHERE "{qc}" IS NOT NULL AND TRIM(CAST("{qc}" AS VARCHAR)) <> \'\''
-            ).fetchone()
-            if lo is not None:
-                out[c] = (str(lo)[:10], str(hi)[:10])
-        except Exception as e:
-            out[c] = (f"<scan failed: {e}>", "")
+        qc = c.replace('"', '""')
+        err = None
+        for src in srcs:
+            try:
+                lo, hi = con.execute(
+                    f'SELECT MIN("{qc}"), MAX("{qc}") FROM {src} '
+                    f'WHERE "{qc}" IS NOT NULL AND TRIM(CAST("{qc}" AS VARCHAR)) <> \'\''
+                ).fetchone()
+                if lo is not None:
+                    out[c] = (str(lo)[:10], str(hi)[:10])
+                err = None
+                break
+            except Exception as e:
+                err = e
+        if err is not None:
+            out[c] = (f"<scan failed: {err}>", "")
     con.close()
     return out
 
@@ -180,6 +191,8 @@ def main() -> None:
     say()
     say("=" * 70)
     say("HOW TO READ THIS")
+    say("- CAVEAT: for MM/DD/YYYY-style columns the min/max is alphabetical,")
+    say("  not chronological — read the YEAR off both ends, not the order.")
     say("- DATED ROWS files are safe for every analytic: the pipeline (and any")
     say("  future analytic) filters them by the dates you see above. If a max")
     say("  date surprises you (older than expected), that is a re-download cue.")

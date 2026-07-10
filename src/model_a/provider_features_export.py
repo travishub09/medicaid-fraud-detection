@@ -1030,7 +1030,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                             with_analytics: bool = False,
                             snapshots_dir: Path | None = None,
                             asof_spending: Path | None = None,
-                            skip: set | None = None
+                            skip: set | None = None,
+                            asof_cutoff: str | None = None
                             ) -> dict[str, pd.DataFrame]:
     """Run the adapters that resolve at ORG or CCN grain and return org-keyed frames
     (build_provider_matrix broadcasts them down to each member NPI).
@@ -1183,7 +1184,12 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         from src.ingest_cms import saturation as sat
         sat_p = _first_existing(pc / "saturation", "saturation.csv", "*.csv")
         if sat_p and org_nodes is not None:
-            county = sat.compute_saturation_metrics(_read_any(sat_p))
+            county = sat.compute_saturation_metrics(_read_any(sat_p),
+                                                    max_period=asof_cutoff)
+            rp = county.attrs.get("reference_period") if hasattr(county, "attrs") else None
+            if rp:
+                log(f"    [saturation] reference period {rp}"
+                    + (f" (capped at cutoff {asof_cutoff})" if asof_cutoff else ""))
             # HUD ZIP->county crosswalk: upgrades the attach from state grain to
             # county grain. The loader existed but was never passed here, so a
             # downloaded crosswalk was dead weight. Accept both save locations.
@@ -1522,7 +1528,8 @@ def main() -> None:
                                             org_nodes, ccn_to_npi, audit,
                                             with_analytics=args.with_analytics,
                                             snapshots_dir=snapshots_dir,
-                                            asof_spending=asof_spend_p, skip=skip)
+                                            asof_spending=asof_spend_p, skip=skip,
+                                            asof_cutoff=args.asof_cutoff)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, audit)
         widened = _widened_label_from_graph(g, audit)
 

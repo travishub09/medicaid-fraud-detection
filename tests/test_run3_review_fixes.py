@@ -229,6 +229,30 @@ def test_yoy_trend_respects_no_trends_flag(tmp_path):
     assert "dmepos_trend" not in frames
 
 
+# --------------------------------------------- saturation period cap
+
+def test_saturation_period_cap_uses_pre_cutoff_period():
+    """The saturation file stacks reference periods (2020..2025 in the
+    operator's file); a frozen run must use the latest period AT OR BEFORE the
+    cutoff, not the latest overall."""
+    from src.ingest_cms.saturation import compute_saturation_metrics
+    raw = pd.DataFrame({
+        "reference_period": ["2022-01-01", "2023-01-01", "2025-01-01"] * 2,
+        "type_of_service": ["Home Health"] * 6,
+        "state_name": ["TEXAS"] * 6,
+        "county_name": ["Bexar", "Bexar", "Bexar", "Travis", "Travis", "Travis"],
+        "number_of_providers": [10, 20, 90, 5, 6, 7],
+        "number_of_fee_for_service_beneficiaries": [1000] * 6,
+    })
+    frozen = compute_saturation_metrics(raw, max_period="2023-12")
+    assert frozen.attrs["reference_period"] == "2023-01-01"
+    assert set(frozen["n_providers"]) == {20, 6}          # the 2023 rows only
+    current = compute_saturation_metrics(raw)
+    assert current.attrs["reference_period"] == "2025-01-01"
+    with pytest.raises(ValueError):
+        compute_saturation_metrics(raw, max_period="2019-12")
+
+
 # ------------------------------------------------ feature vintage classes
 
 def test_manifest_classifies_feature_vintage(tmp_path):

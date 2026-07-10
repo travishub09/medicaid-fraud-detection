@@ -68,12 +68,19 @@ _STATE_NAME_TO_CODE = {
 }
 
 
-def compute_saturation_metrics(raw: pd.DataFrame) -> pd.DataFrame:
+def compute_saturation_metrics(raw: pd.DataFrame,
+                               max_period: str | None = None) -> pd.DataFrame:
     """County-grain saturation: providers_per_1k_benes + market_saturation_index.
 
     One row per (fips/state/county, service_type); the index is the one-sided
     percentile of providers-per-1k within the service type. Counties with no
     beneficiaries are NaN (degenerate, never force-ranked).
+
+    ``max_period`` (frozen runs): the file STACKS reference periods (the
+    cutoff-census found 2020..2025 in one file), so a freeze must use the
+    latest period AT OR BEFORE the cutoff, not the latest overall — otherwise
+    a 2025 market snapshot leaks into a 2023-12 matrix. YYYY-MM or longer;
+    compared on the first 7 characters.
     """
     resolved = _resolve_columns(list(raw.columns), SATURATION_COLS)
     missing = [c for c in ["service", "state", "n_providers", "n_benes"]
@@ -84,17 +91,24 @@ def compute_saturation_metrics(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
 
     # The state-county file STACKS reference periods; summing/ranking across them
-    # double-counts providers and mixes vintages. Keep only the latest period.
+    # double-counts providers and mixes vintages. Keep only the latest period
+    # (at or before max_period when a freeze cutoff is in force).
     rp_col = next((c for c in raw.columns
                    if c.strip().lower().replace(" ", "_") == "reference_period"), None)
     if rp_col is not None:
         rp = df[rp_col].fillna("").astype(str)
-        latest = rp[rp != ""].max()
+        pool = rp[rp != ""]
+        if max_period:
+            cut = str(max_period)[:7]
+            pool = pool[pool.str.slice(0, 7) <= cut]
+            if not len(pool):
+                raise ValueError(
+                    f"Market Saturation file has no reference period at or "
+                    f"before {max_period} — the frozen run cannot use it")
+        latest = pool.max() if len(pool) else ""
         if latest:
-            n0 = len(df)
             df = df[rp == latest].copy()
-            if len(df) < n0:
-                pass  # multiple periods present; latest retained
+            df.attrs["reference_period"] = str(latest)
 
     for c in ("fips", "county"):
         if c not in df.columns:
@@ -114,6 +128,7 @@ def compute_saturation_metrics(raw: pd.DataFrame) -> pd.DataFrame:
     out["market_saturation_index"] = (
         out.groupby("service_type")["providers_per_1k_benes"]
            .rank(method="average", pct=True))
+    out.attrs["reference_period"] = df.attrs.get("reference_period", "")
     return out
 
 
