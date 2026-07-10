@@ -54,6 +54,40 @@ def _headers(p: Path) -> list[str]:
         return [f"<unreadable: {e}>"]
 
 
+def _sniff_data_year(p: Path, sample_rows: int = 4000) -> tuple[int | None, str]:
+    """Best-effort data year from file CONTENTS, for files with no year in the
+    name (a single download of 'the latest' — the operator can't know the
+    vintage from the filename). Looks for year/date-shaped columns in a small
+    sample and returns (max_year_seen, evidence). Open Payments carries
+    Program_Year and payment dates; date-less PUFs return (None, why)."""
+    import re
+    try:
+        if p.suffix.lower() == ".parquet":
+            import pyarrow.parquet as pq
+            pf = pq.ParquetFile(p)
+            cand = [c for c in pf.schema_arrow.names
+                    if re.search(r"year|date|_dt\b", str(c), re.I)]
+            if not cand:
+                return None, "no year/date-shaped column in the schema"
+            df = next(pf.iter_batches(batch_size=sample_rows, columns=cand)).to_pandas()
+        else:
+            from src.attempt_2.clean_data import read_csv_text
+            hdr = list(read_csv_text(p, nrows=0).columns)
+            cand = [c for c in hdr if re.search(r"year|date|_dt\b", str(c), re.I)]
+            if not cand:
+                return None, "no year/date-shaped column in the header"
+            df = read_csv_text(p, nrows=sample_rows, usecols=cand)
+    except Exception as e:
+        return None, f"could not sample: {e}"
+    years: list[int] = []
+    for c in df.columns:
+        for v in df[c].astype(str).head(sample_rows):
+            years += [int(y) for y in re.findall(r"(20\d{2})", v)]
+    if not years:
+        return None, f"sampled {', '.join(map(str, df.columns[:4]))} but found no year values"
+    return max(years), f"max year in {', '.join(map(str, df.columns[:4]))}"
+
+
 def _annual_sources():
     """name -> (subfolder, COLS dict, required canonicals, where to download,
     save-name pattern). Required lists mirror each adapter's own hard check."""
@@ -112,12 +146,27 @@ def audit_annual(root: Path, cutoff_year: int) -> None:
             if missing:
                 say(f"   BAD LAYOUT: {tag} — missing {missing}")
                 invalid.append(p.name)
-            else:
+                continue
+            if yr > 0:
                 say(f"   ok: {tag}")
-                if yr > 0:
-                    valid_years.append(yr)
-                else:
-                    unknown_year_valid.append(p.name)
+                valid_years.append(yr)
+                continue
+            # no year in the name (a single 'latest available' download) —
+            # try to read the vintage out of the file CONTENTS
+            sniffed, evidence = _sniff_data_year(p)
+            if sniffed:
+                say(f"   ok: {p.name} — content-dated {sniffed} ({evidence})")
+                say(f"      rename it {pattern.replace('<YEAR>', str(sniffed))} so "
+                    "the vintage cap can judge it by name.")
+                valid_years.append(sniffed)
+            else:
+                import datetime as _dt
+                mtime = _dt.date.fromtimestamp(p.stat().st_mtime)
+                say(f"   ok: {p.name} — VINTAGE UNKNOWN ({evidence}; file saved "
+                    f"{mtime}). The dataset page states the data year — check "
+                    "which year you picked at download and rename the file with "
+                    "it. Until then the frozen run cannot trust this file.")
+                unknown_year_valid.append(p.name)
         newest = max(valid_years) if valid_years else None
         frozen_ok = [y for y in valid_years if y <= cutoff_year]
         # current-day run
@@ -143,10 +192,10 @@ def audit_annual(root: Path, cutoff_year: int) -> None:
                                      f"— the {cutoff_year} year is closer to the cutoff",
                               "where": where, "save_as": f"preclean/{sub}/{pattern}"})
         if unknown_year_valid:
-            say(f"   NOTE: {', '.join(unknown_year_valid)} has no year in the "
-                "filename — the frozen vintage cap cannot judge it. Rename it "
-                "with its data year (e.g. "
-                f"{pattern.replace('<YEAR>', '2023')}) so both runs pick correctly.")
+            say(f"   NOTE: {', '.join(unknown_year_valid)}: neither filename nor "
+                "contents reveal the data year, so the frozen run treats it as "
+                "untrusted (the download list below asks for an explicit "
+                f"{cutoff_year} file). The current-day run still uses it.")
         say()
 
 
