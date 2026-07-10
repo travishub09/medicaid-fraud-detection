@@ -34,6 +34,7 @@ import pandas as pd  # noqa: E402
 
 LINES: list[str] = []
 DOWNLOADS: list[dict] = []
+CHECK_YEAR: list[dict] = []      # year-less filenames the operator must date
 
 
 def say(msg: str = "") -> None:
@@ -52,55 +53,6 @@ def _headers(p: Path) -> list[str]:
         return [str(c) for c in read_csv_text(p, nrows=0).columns]
     except Exception as e:
         return [f"<unreadable: {e}>"]
-
-
-def _sniff_data_year(p: Path, sample_rows: int = 4000) -> tuple[int | None, str]:
-    """Best-effort data year from file CONTENTS, for files with no year in the
-    name (a single download of 'the latest' — the operator can't know the
-    vintage from the filename). Looks for year/date-shaped columns in a small
-    sample and returns (max_year_seen, evidence). Open Payments carries
-    Program_Year and payment dates; date-less PUFs return (None, why)."""
-    import re
-
-    def _pick(cols) -> tuple[list[str], str]:
-        """Prefer an explicit program/data-year column; else event dates —
-        NEVER publication/record dates (Payment_Publication_Date dated a PY2024
-        Open Payments file '2026' on the first pass of this checker)."""
-        cols = [str(c) for c in cols]
-        year_cols = [c for c in cols if re.search(r"program.?year|data.?year|^year$",
-                                                  c, re.I)]
-        if year_cols:
-            return year_cols, "program-year column"
-        date_cols = [c for c in cols
-                     if re.search(r"year|date|_dt\b", c, re.I)
-                     and not re.search(r"publica|record|created|updated|release",
-                                       c, re.I)]
-        return date_cols, "event-date column(s)"
-
-    try:
-        if p.suffix.lower() == ".parquet":
-            import pyarrow.parquet as pq
-            pf = pq.ParquetFile(p)
-            cand, kind = _pick(pf.schema_arrow.names)
-            if not cand:
-                return None, "no year/date-shaped column in the schema"
-            df = next(pf.iter_batches(batch_size=sample_rows, columns=cand)).to_pandas()
-        else:
-            from src.attempt_2.clean_data import read_csv_text
-            hdr = list(read_csv_text(p, nrows=0).columns)
-            cand, kind = _pick(hdr)
-            if not cand:
-                return None, "no year/date-shaped column in the header"
-            df = read_csv_text(p, nrows=sample_rows, usecols=cand)
-    except Exception as e:
-        return None, f"could not sample: {e}"
-    years: list[int] = []
-    for c in df.columns:
-        for v in df[c].astype(str).head(sample_rows):
-            years += [int(y) for y in re.findall(r"(20\d{2})", v)]
-    if not years:
-        return None, f"sampled {', '.join(map(str, df.columns[:4]))} but found no year values"
-    return max(years), f"max year in {kind}: {', '.join(map(str, df.columns[:4]))}"
 
 
 def _annual_sources():
@@ -166,22 +118,16 @@ def audit_annual(root: Path, cutoff_year: int) -> None:
                 say(f"   ok: {tag}")
                 valid_years.append(yr)
                 continue
-            # no year in the name (a single 'latest available' download) —
-            # try to read the vintage out of the file CONTENTS
-            sniffed, evidence = _sniff_data_year(p)
-            if sniffed:
-                say(f"   ok: {p.name} — content-dated {sniffed} ({evidence})")
-                say(f"      rename it {pattern.replace('<YEAR>', str(sniffed))} so "
-                    "the vintage cap can judge it by name.")
-                valid_years.append(sniffed)
-            else:
-                import datetime as _dt
-                mtime = _dt.date.fromtimestamp(p.stat().st_mtime)
-                say(f"   ok: {p.name} — VINTAGE UNKNOWN ({evidence}; file saved "
-                    f"{mtime}). The dataset page states the data year — check "
-                    "which year you picked at download and rename the file with "
-                    "it. Until then the frozen run cannot trust this file.")
-                unknown_year_valid.append(p.name)
+            # No year in the filename. Policy (operator's rule): the script does
+            # NOT try to diagnose the data year itself — the source website
+            # states it. List the file for the operator to check and rename.
+            say(f"   ok layout, NO YEAR IN FILENAME: {p.name} — check the data "
+                "year on the dataset page (see the check-list below) and rename "
+                f"it like {pattern}.")
+            unknown_year_valid.append(p.name)
+            CHECK_YEAR.append({"dataset": name, "file": f"preclean/{sub}/{p.name}",
+                               "where": where,
+                               "rename_like": f"preclean/{sub}/{pattern}"})
         newest = max(valid_years) if valid_years else None
         frozen_ok = [y for y in valid_years if y <= cutoff_year]
         # current-day run
@@ -207,10 +153,10 @@ def audit_annual(root: Path, cutoff_year: int) -> None:
                                      f"— the {cutoff_year} year is closer to the cutoff",
                               "where": where, "save_as": f"preclean/{sub}/{pattern}"})
         if unknown_year_valid:
-            say(f"   NOTE: {', '.join(unknown_year_valid)}: neither filename nor "
-                "contents reveal the data year, so the frozen run treats it as "
-                "untrusted (the download list below asks for an explicit "
-                f"{cutoff_year} file). The current-day run still uses it.")
+            say(f"   NOTE: {', '.join(unknown_year_valid)}: no year in the "
+                "filename, so this script does not judge its vintage. It is on "
+                "the CHECK-THE-YEAR list below; the frozen run does not trust "
+                "it until it is renamed with its data year.")
         say()
 
 
@@ -323,6 +269,17 @@ def main() -> None:
     check_fresh_reference_files(root)
 
     say("=" * 70)
+    if CHECK_YEAR:
+        say(f"CHECK-THE-YEAR LIST — {len(CHECK_YEAR)} file(s) with no year in the "
+            "filename. This script does not guess data years; the dataset page "
+            "states the year — check it there, then rename the file:")
+        say()
+        for i, c in enumerate(CHECK_YEAR, 1):
+            say(f"{i}. {c['file']}")
+            say(f"   check the year at: {c['where']}")
+            say(f"   then rename like: {c['rename_like']}")
+            say()
+        say("=" * 70)
     if DOWNLOADS:
         say(f"DOWNLOAD LIST — {len(DOWNLOADS)} item(s), in this order:")
         say()
