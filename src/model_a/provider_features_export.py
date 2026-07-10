@@ -972,9 +972,22 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 cur_file, cur_year = chosen[name]
                 if cur_year <= 0:
                     continue
+                # A year-over-year delta must span EXACTLY one year: with a gap
+                # (2019 -> 2023) the change would be silently mislabeled as
+                # one year of drift. Require the adjacent prior year; if it is
+                # missing, say so loudly — that IS the download cue.
+                older = [p for p in _year_files(pc / name, max_year)
+                         if 0 < _file_year(p) < cur_year]
+                adjacent = [p for p in older if _file_year(p) == cur_year - 1]
+                if not adjacent:
+                    have = sorted({_file_year(p) for p in older}, reverse=True)
+                    log(f"    [{name}_trend] skipped: no {cur_year - 1} file "
+                        f"(newest is {cur_year}; older on disk: "
+                        f"{', '.join(map(str, have)) if have else 'none'}) — "
+                        f"download the {cur_year - 1} year to enable the trend")
+                    continue
                 prev_df, prev_file = None, None
-                for p in [p for p in _year_files(pc / name, max_year)
-                          if 0 < _file_year(p) < cur_year]:
+                for p in adjacent:
                     try:
                         raw = _read_one(p, _cmaps[name])
                         if raw is None or not len(raw):
@@ -983,8 +996,11 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                         prev_df = res[0] if isinstance(res, tuple) else res
                         prev_file = p
                         break
-                    except ValueError:
-                        continue
+                    except ValueError as ve:
+                        log(f"    [{name}_trend] skipped: {p.name} has the right "
+                            f"year but the wrong layout ({ve}) — re-download the "
+                            f"{cur_year - 1} detail file")
+                        break
                 if prev_df is None or "npi" not in prev_df.columns:
                     continue
                 cur_df = frames[name]

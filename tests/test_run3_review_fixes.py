@@ -215,6 +215,24 @@ def test_yoy_trend_from_two_dmepos_years(tmp_path):
     assert any("dmepos_2022.csv" in ln and "dmepos_2023.csv" in ln for ln in logs)
 
 
+def test_yoy_trend_refuses_year_gap(tmp_path):
+    """2019 + 2023 on disk must NOT produce a 'year-over-year' delta spanning
+    four years — the trend skips and names the missing adjacent year."""
+    from src.model_a.provider_features_export import _run_npi_adapters
+    d = tmp_path / "dmepos"
+    d.mkdir()
+    df = pd.DataFrame({"Rfrg_NPI": ["1000000004"], "HCPCS_Cd": ["E0601"],
+                       "Tot_Suplr_Srvcs": [10],
+                       "Avg_Suplr_Mdcr_Alowd_Amt": [100.0]})
+    df.to_csv(d / "dmepos_2019.csv", index=False)
+    df.to_csv(d / "dmepos_2023.csv", index=False)
+    logs = []
+    frames = _run_npi_adapters(tmp_path, logs.append, skip={
+        "partb", "partd", "opioid", "open_payments", "kickback"})
+    assert "dmepos_trend" not in frames
+    assert any("no 2022 file" in ln and "2019" in ln for ln in logs)
+
+
 def test_yoy_trend_respects_no_trends_flag(tmp_path):
     from src.model_a.provider_features_export import _run_npi_adapters
     d = tmp_path / "dmepos"
