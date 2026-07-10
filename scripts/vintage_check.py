@@ -61,19 +61,34 @@ def _sniff_data_year(p: Path, sample_rows: int = 4000) -> tuple[int | None, str]
     sample and returns (max_year_seen, evidence). Open Payments carries
     Program_Year and payment dates; date-less PUFs return (None, why)."""
     import re
+
+    def _pick(cols) -> tuple[list[str], str]:
+        """Prefer an explicit program/data-year column; else event dates —
+        NEVER publication/record dates (Payment_Publication_Date dated a PY2024
+        Open Payments file '2026' on the first pass of this checker)."""
+        cols = [str(c) for c in cols]
+        year_cols = [c for c in cols if re.search(r"program.?year|data.?year|^year$",
+                                                  c, re.I)]
+        if year_cols:
+            return year_cols, "program-year column"
+        date_cols = [c for c in cols
+                     if re.search(r"year|date|_dt\b", c, re.I)
+                     and not re.search(r"publica|record|created|updated|release",
+                                       c, re.I)]
+        return date_cols, "event-date column(s)"
+
     try:
         if p.suffix.lower() == ".parquet":
             import pyarrow.parquet as pq
             pf = pq.ParquetFile(p)
-            cand = [c for c in pf.schema_arrow.names
-                    if re.search(r"year|date|_dt\b", str(c), re.I)]
+            cand, kind = _pick(pf.schema_arrow.names)
             if not cand:
                 return None, "no year/date-shaped column in the schema"
             df = next(pf.iter_batches(batch_size=sample_rows, columns=cand)).to_pandas()
         else:
             from src.attempt_2.clean_data import read_csv_text
             hdr = list(read_csv_text(p, nrows=0).columns)
-            cand = [c for c in hdr if re.search(r"year|date|_dt\b", str(c), re.I)]
+            cand, kind = _pick(hdr)
             if not cand:
                 return None, "no year/date-shaped column in the header"
             df = read_csv_text(p, nrows=sample_rows, usecols=cand)
@@ -85,7 +100,7 @@ def _sniff_data_year(p: Path, sample_rows: int = 4000) -> tuple[int | None, str]
             years += [int(y) for y in re.findall(r"(20\d{2})", v)]
     if not years:
         return None, f"sampled {', '.join(map(str, df.columns[:4]))} but found no year values"
-    return max(years), f"max year in {', '.join(map(str, df.columns[:4]))}"
+    return max(years), f"max year in {kind}: {', '.join(map(str, df.columns[:4]))}"
 
 
 def _annual_sources():
@@ -234,22 +249,55 @@ def check_fresh_reference_files(root: Path) -> None:
         say("[order_referring] no file yet (PDF #4)")
     say()
 
-    # 340B OPAIS via the full loader
+    # 340B OPAIS — HEADER PROBE ONLY. The daily export is a huge multi-sheet
+    # xlsx; a full parse here made the diagnostic look hung for many minutes.
+    # openpyxl read-only streaming of the first rows per sheet answers the only
+    # diagnostic question (can the loader find the real header + name columns?)
+    # in seconds. The full parse happens once, during the actual export run.
     d = root / "preclean" / "hrsa_340b"
     hits = (sorted(d.glob("opais.*")) + sorted(d.glob("*.xlsx"))
             + sorted(d.glob("*.csv"))) if d.is_dir() else []
     if hits:
+        p = hits[0]
+        say(f"[hrsa_340b] probing {p.name} (headers only — the full parse "
+            "happens during the run) ...")
         try:
-            from src.ingest_cms.hrsa_340b import load_opais, covered_entities
-            ents = covered_entities(load_opais(hits[0]))
-            say(f"[hrsa_340b] {hits[0].name}: VALID — {len(ents):,} covered entities")
+            marks = ("340b id", "id_340b", "entity name", "covered entity name")
+            found = []
+            if p.suffix.lower() in (".xlsx", ".xls"):
+                from openpyxl import load_workbook
+                wb = load_workbook(p, read_only=True)
+                for ws in wb.worksheets:
+                    for i, row in enumerate(ws.iter_rows(max_row=10,
+                                                         values_only=True)):
+                        cells = [str(x).strip().lower() for x in row if x is not None]
+                        if any(c in marks for c in cells):
+                            found.append(f"{ws.title} (header row {i + 1})")
+                            break
+                wb.close()
+            else:
+                from src.attempt_2.clean_data import read_csv_text
+                head = read_csv_text(p, nrows=10)
+                rows = [[str(c) for c in head.columns]] + head.astype(str).values.tolist()
+                for i, row in enumerate(rows):
+                    if any(str(x).strip().lower() in marks for x in row):
+                        found.append(f"csv (header row {i + 1})")
+                        break
+            if found:
+                say(f"   VALID: real header located in {', '.join(found)} — the "
+                    "loader's header sniff will find it. Heads-up: this file is "
+                    "large, so the export run spends a few minutes on it.")
+            else:
+                say("   BAD: no 340B ID / Entity Name header found in the first "
+                    "10 rows of any sheet.")
+                DOWNLOADS.append({"dataset": "hrsa_340b",
+                                  "year": "today's daily report",
+                                  "why": "no recognizable header in the file",
+                                  "where": "340bopais.hrsa.gov/reports > Covered "
+                                           "Entity Daily Export",
+                                  "save_as": "preclean/hrsa_340b/opais.xlsx"})
         except Exception as e:
-            say(f"[hrsa_340b] {hits[0].name}: STILL FAILING — {e}")
-            DOWNLOADS.append({"dataset": "hrsa_340b", "year": "today's daily report",
-                              "why": "file on disk does not parse",
-                              "where": "340bopais.hrsa.gov/reports > Covered Entity "
-                                       "Daily Export",
-                              "save_as": "preclean/hrsa_340b/opais.xlsx"})
+            say(f"   probe failed: {e} — send me this error text")
     else:
         say("[hrsa_340b] no file yet (PDF #2)")
     say()

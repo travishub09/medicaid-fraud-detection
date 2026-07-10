@@ -102,18 +102,40 @@ def check_340b(root: Path) -> None:
         say()
         return
     p = hits[0]
-    say(f"   testing {p.name} with the fixed loader ...")
+    say(f"   probing {p.name} headers (the full parse is slow on this big file "
+        "and happens during the run instead) ...")
     try:
-        from src.ingest_cms.hrsa_340b import load_opais, covered_entities
-        raw = load_opais(p)
-        ents = covered_entities(raw)
-        say(f"   SUCCESS: {len(ents):,} covered entities parsed "
-            f"(max contract pharmacies: {int(ents['n_contract_pharmacies'].max())})")
-        say("   ACTION: none — this source lights up on the next run.")
+        marks = ("340b id", "id_340b", "entity name", "covered entity name")
+        found = []
+        if p.suffix.lower() in (".xlsx", ".xls"):
+            from openpyxl import load_workbook
+            wb = load_workbook(p, read_only=True)
+            for ws in wb.worksheets:
+                for i, row in enumerate(ws.iter_rows(max_row=10, values_only=True)):
+                    cells = [str(x).strip().lower() for x in row if x is not None]
+                    if any(c in marks for c in cells):
+                        found.append(f"{ws.title} (header row {i + 1})")
+                        break
+            wb.close()
+        else:
+            from src.attempt_2.clean_data import read_csv_text
+            head = read_csv_text(p, nrows=10)
+            rows = [[str(c) for c in head.columns]] + head.astype(str).values.tolist()
+            for i, row in enumerate(rows):
+                if any(str(x).strip().lower() in marks for x in row):
+                    found.append(f"csv (header row {i + 1})")
+                    break
+        if found:
+            say(f"   SUCCESS: real header located in {', '.join(found)} — the "
+                "fixed loader will parse it during the run.")
+            say("   ACTION: none — this source lights up on the next run.")
+        else:
+            say("   STILL FAILING: no 340B ID / Entity Name header in the first "
+                "10 rows of any sheet.")
+            say("   ACTION: re-download a fresh Daily Report export (PDF #2).")
     except Exception as e:
-        say(f"   STILL FAILING: {e}")
-        say("   ACTION: re-download a fresh Daily Report export (PDF #2) and send "
-            "me this error text.")
+        say(f"   probe failed: {e}")
+        say("   ACTION: send me this error text.")
     say()
 
 
