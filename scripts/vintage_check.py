@@ -42,6 +42,37 @@ def say(msg: str = "") -> None:
     LINES.append(msg)
 
 
+def _xlsx_has_marker_strings(p: Path, marks: tuple[str, ...],
+                             per_member_cap: int = 8 << 20) -> list[str]:
+    """Stream an xlsx's raw zip members (no workbook open — even read-only,
+    openpyxl loads the entire shared-string table, which takes minutes on the
+    OPAIS export) and report whether any marker string appears. Header text
+    lives either in sharedStrings.xml (Excel-style exports) or inline in the
+    worksheet XML (openpyxl-style); both sit near the front of their member, so
+    a capped streaming scan returns in seconds."""
+    import zipfile
+    with zipfile.ZipFile(p) as z:
+        members = ([n for n in z.namelist() if n.endswith("sharedStrings.xml")]
+                   + [n for n in z.namelist()
+                      if n.startswith("xl/worksheets/") and n.endswith(".xml")])
+        targets = [m.encode() for m in marks]
+        for name in members:
+            residual = b""
+            read = 0
+            with z.open(name) as f:
+                while read < per_member_cap:
+                    chunk = f.read(1 << 20)
+                    if not chunk:
+                        break
+                    read += len(chunk)
+                    buf = (residual + chunk).lower()
+                    hit = next((t for t in targets if t in buf), None)
+                    if hit:
+                        return [f"'{hit.decode()}' found in {name}"]
+                    residual = chunk[-64:]
+    return []
+
+
 def _headers(p: Path) -> list[str]:
     try:
         if p.suffix.lower() == ".parquet":
@@ -211,16 +242,11 @@ def check_fresh_reference_files(root: Path) -> None:
             marks = ("340b id", "id_340b", "entity name", "covered entity name")
             found = []
             if p.suffix.lower() in (".xlsx", ".xls"):
-                from openpyxl import load_workbook
-                wb = load_workbook(p, read_only=True)
-                for ws in wb.worksheets:
-                    for i, row in enumerate(ws.iter_rows(max_row=10,
-                                                         values_only=True)):
-                        cells = [str(x).strip().lower() for x in row if x is not None]
-                        if any(c in marks for c in cells):
-                            found.append(f"{ws.title} (header row {i + 1})")
-                            break
-                wb.close()
+                # Do NOT open the workbook — even read-only, openpyxl loads the
+                # whole shared-string table first (minutes on the OPAIS export).
+                # The header strings live in sharedStrings.xml; streaming it and
+                # searching for the marker text answers the question in seconds.
+                found = _xlsx_has_marker_strings(p, marks)
             else:
                 from src.attempt_2.clean_data import read_csv_text
                 head = read_csv_text(p, nrows=10)
@@ -230,9 +256,9 @@ def check_fresh_reference_files(root: Path) -> None:
                         found.append(f"csv (header row {i + 1})")
                         break
             if found:
-                say(f"   VALID: real header located in {', '.join(found)} — the "
-                    "loader's header sniff will find it. Heads-up: this file is "
-                    "large, so the export run spends a few minutes on it.")
+                say(f"   VALID: {', '.join(found)} — the loader's header sniff "
+                    "will find it. Heads-up: this file is large, so the export "
+                    "run spends a few minutes on it.")
             else:
                 say("   BAD: no 340B ID / Entity Name header found in the first "
                     "10 rows of any sheet.")

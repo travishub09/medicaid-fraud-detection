@@ -108,15 +108,36 @@ def check_340b(root: Path) -> None:
         marks = ("340b id", "id_340b", "entity name", "covered entity name")
         found = []
         if p.suffix.lower() in (".xlsx", ".xls"):
-            from openpyxl import load_workbook
-            wb = load_workbook(p, read_only=True)
-            for ws in wb.worksheets:
-                for i, row in enumerate(ws.iter_rows(max_row=10, values_only=True)):
-                    cells = [str(x).strip().lower() for x in row if x is not None]
-                    if any(c in marks for c in cells):
-                        found.append(f"{ws.title} (header row {i + 1})")
+            # never open the workbook here: even read-only, openpyxl loads the
+            # full shared-string table (minutes on the OPAIS export). Stream the
+            # raw zip members instead — header text lives in sharedStrings.xml
+            # (Excel-style) or inline in worksheet XML (openpyxl-style), both
+            # near the front of their member.
+            import zipfile
+            with zipfile.ZipFile(p) as z:
+                members = ([n for n in z.namelist()
+                            if n.endswith("sharedStrings.xml")]
+                           + [n for n in z.namelist()
+                              if n.startswith("xl/worksheets/")
+                              and n.endswith(".xml")])
+                targets = [m.encode() for m in marks]
+                for name in members:
+                    residual = b""
+                    read = 0
+                    with z.open(name) as f:
+                        while read < (8 << 20):
+                            chunk = f.read(1 << 20)
+                            if not chunk:
+                                break
+                            read += len(chunk)
+                            buf = (residual + chunk).lower()
+                            hit = next((t for t in targets if t in buf), None)
+                            if hit:
+                                found = [f"'{hit.decode()}' found in {name}"]
+                                break
+                            residual = chunk[-64:]
+                    if found:
                         break
-            wb.close()
         else:
             from src.attempt_2.clean_data import read_csv_text
             head = read_csv_text(p, nrows=10)
