@@ -430,7 +430,7 @@ def main() -> None:
                          realistic_controls=args.realistic_controls,
                          n_splits=args.n_splits)
     report = to_markdown(out)
-    Path(args.out).write_text(report)
+    Path(args.out).write_text(report, encoding="utf-8")
     print(report)
     print(f"\nwrote {args.out}")
 

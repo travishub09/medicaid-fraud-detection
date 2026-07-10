@@ -186,7 +186,7 @@ def main() -> None:
     ap.add_argument("--out", default="RESULTS_DIGEST.md")
     args = ap.parse_args()
     text = build_digest(args.dir, args.manifest, args.signal_ranking, args.network_ab)
-    Path(args.out).write_text(text)
+    Path(args.out).write_text(text, encoding="utf-8")
     print(text)
     print(f"\nwrote {args.out}")
 
