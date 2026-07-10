@@ -1231,21 +1231,58 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
       except Exception as e:
         log(f"    [saturation] skipped: {e}")
 
-    # --- ownership churn (CHOW): diff accumulated owner snapshots → turnover ----
+    # --- ownership churn (CHOW): two paths, dated-edition diff preferred ------
+    # 1) VINTAGE DIFF: preclean/owners_prior (an older All-Owners edition from
+    #    the dataset's version history) vs preclean/owners — real churn today,
+    #    no waiting for monthly snapshots. Post-cutoff window by nature, so it
+    #    is a CURRENT-DAY feature (current_state class), never frozen.
+    # 2) SNAPSHOT DIFF: the monthly graph-snapshot cadence (>=2 to fire).
+    churn_done = False
     try:
-        from src.entity_graph.ownership_snapshot import (compute_ownership_turnover,
-                                                         load_snapshots)
-        if snapshots_dir and len(load_snapshots(snapshots_dir)) >= 2:
-            turn = compute_ownership_turnover(snapshots_dir)
-            if len(turn):
-                _emit("ownership_churn", turn[["org_node_id", "ownership_turnover"]],
-                      ["ownership_turnover"])
-        else:
-            n = len(load_snapshots(snapshots_dir)) if snapshots_dir else 0
-            log(f"    [ownership_churn] skipped: {n} owner snapshot(s) — needs ≥2 "
-                "(archive monthly with src.entity_graph.ownership_snapshot)")
+        from src.entity_graph.owners_vintage import (load_owner_pairs,
+                                                     vintage_ownership_turnover,
+                                                     org_grain_turnover)
+        prior_dir = preclean / "owners_prior"
+        cur_dir = preclean / "owners"
+        if asof_cutoff:
+            log("    [ownership_churn] vintage diff not used on a frozen run "
+                "(the edition window is post-cutoff); snapshot path only")
+        elif prior_dir.is_dir() and cur_dir.is_dir():
+            prior, pdate = load_owner_pairs(prior_dir)
+            cur, cdate = load_owner_pairs(cur_dir)
+            if len(prior) and len(cur):
+                xw_p = _first_existing(processed, "npi_xwalk.parquet")
+                turn = vintage_ownership_turnover(prior, cur)
+                if xw_p is not None and len(turn):
+                    org_t = org_grain_turnover(turn, pd.read_parquet(xw_p),
+                                               npi_to_org)
+                    if len(org_t):
+                        _emit("ownership_churn", org_t,
+                              ["ownership_turnover", "n_owner_entries",
+                               "n_owner_exits"])
+                        n_ch = int((org_t["ownership_turnover"] > 0).sum())
+                        log(f"    [ownership_churn] vintage diff {pdate or '?'} → "
+                            f"{cdate or '?'}: {len(org_t):,} orgs mapped, "
+                            f"{n_ch:,} with owner changes")
+                        churn_done = True
     except Exception as e:
-        log(f"    [ownership_churn] skipped: {e}")
+        log(f"    [ownership_churn] vintage diff failed ({e}); trying snapshots")
+    if not churn_done:
+        try:
+            from src.entity_graph.ownership_snapshot import (compute_ownership_turnover,
+                                                             load_snapshots)
+            if snapshots_dir and len(load_snapshots(snapshots_dir)) >= 2:
+                turn = compute_ownership_turnover(snapshots_dir)
+                if len(turn):
+                    _emit("ownership_churn", turn[["org_node_id", "ownership_turnover"]],
+                          ["ownership_turnover"])
+            else:
+                n = len(load_snapshots(snapshots_dir)) if snapshots_dir else 0
+                log(f"    [ownership_churn] skipped: {n} owner snapshot(s) — needs ≥2 "
+                    "(snapshot cadence, or drop an older All-Owners edition in "
+                    "preclean/owners_prior/ for the vintage diff)")
+        except Exception as e:
+            log(f"    [ownership_churn] skipped: {e}")
 
     # --- facility (PBJ/hospice/deficiency) + HCRIS + POS: CCN-grain → org via ccn_to_npi ---
     if _skipped("facility"):

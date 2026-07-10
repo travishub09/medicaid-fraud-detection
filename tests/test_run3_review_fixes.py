@@ -247,6 +247,43 @@ def test_yoy_trend_respects_no_trends_flag(tmp_path):
     assert "dmepos_trend" not in frames
 
 
+# --------------------------------------------- owners vintage diff
+
+def test_owners_vintage_diff_counts_entries_and_exits(tmp_path):
+    """Two dated All-Owners editions -> per-facility owner churn, mapped to org
+    grain. New facilities (absent from the old edition) are excluded so they
+    can't fake 100% turnover."""
+    from src.entity_graph.owners_vintage import (load_owner_pairs,
+                                                 vintage_ownership_turnover,
+                                                 org_grain_turnover)
+    prior_d = tmp_path / "owners_prior"
+    cur_d = tmp_path / "owners"
+    prior_d.mkdir(), cur_d.mkdir()
+    pd.DataFrame({"ENROLLMENT ID": ["O111", "O111", "O222", "O333"],
+                  "ASSOCIATE ID - OWNER": ["P1", "P2", "P9", "P5"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2025.10.01.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["O111", "O111", "O222", "O444"],
+                  "ASSOCIATE ID - OWNER": ["P1", "P3", "P9", "P7"]}
+                 ).to_csv(cur_d / "SNF_All_Owners_2026.05.01.csv", index=False)
+    prior, pdate = load_owner_pairs(prior_d)
+    cur, cdate = load_owner_pairs(cur_d)
+    assert (pdate, cdate) == ("2025-10-01", "2026-05-01")
+    turn = vintage_ownership_turnover(prior, cur).set_index("facility_enrollment_id")
+    # O111: P2 exited, P3 entered; O222 unchanged; O333/O444 not in both editions
+    assert turn.loc["O111", "n_owner_entries"] == 1
+    assert turn.loc["O111", "n_owner_exits"] == 1
+    assert turn.loc["O222", "ownership_turnover"] == 0.0
+    assert "O444" not in turn.index and "O333" not in turn.index
+
+    xw = pd.DataFrame({"npi": ["1000000004", "1000000012"],
+                       "pac_id": ["", ""], "enrollment_id": ["O111", "O222"]})
+    n2o = pd.DataFrame({"npi": ["1000000004", "1000000012"],
+                        "org_node_id": ["org:a", "org:b"]})
+    org_t = org_grain_turnover(turn.reset_index(), xw, n2o).set_index("org_node_id")
+    assert org_t.loc["org:a", "ownership_turnover"] > 0
+    assert org_t.loc["org:b", "ownership_turnover"] == 0.0
+
+
 # --------------------------------------------- J-code drug markup
 
 def test_drug_markup_flags_priced_above_same_code_peers(tmp_path):
