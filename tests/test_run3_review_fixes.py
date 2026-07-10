@@ -287,8 +287,7 @@ def test_owners_vintage_diff_counts_entries_and_exits(tmp_path):
 def test_multi_edition_chain_sees_between_edition_churn(tmp_path):
     """Owner P2 arrives in 2024 and leaves by 2025: invisible to a single
     2023-vs-current diff, visible to the consecutive-edition chain."""
-    from src.entity_graph.owners_vintage import (load_editions, load_owner_pairs,
-                                                 multi_edition_turnover)
+    from src.entity_graph.owners_vintage import load_editions, multi_edition_turnover
     prior_d = tmp_path / "owners_prior"
     cur_d = tmp_path / "owners"
     prior_d.mkdir(), cur_d.mkdir()
@@ -301,13 +300,48 @@ def test_multi_edition_chain_sees_between_edition_churn(tmp_path):
                  ).to_csv(prior_d / "SNF_All_Owners_2025-06.csv", index=False)
     pd.DataFrame({"ENROLLMENT ID": ["O111"], "ASSOCIATE ID - OWNER": ["P1"]}
                  ).to_csv(cur_d / "SNF_All_Owners_2026.05.01.csv", index=False)
-    editions = load_editions(prior_d)
-    assert [d for d, _ in editions] == ["2023-06", "2024-06", "2025-06"]
-    cur, _ = load_owner_pairs(cur_d)
-    turn = multi_edition_turnover(editions, cur).set_index("facility_enrollment_id")
+    prior_ds = load_editions(prior_d)
+    assert [d for d, _ in prior_ds["SNF"]] == ["2023-06", "2024-06", "2025-06"]
+    turn, chains = multi_edition_turnover(prior_ds, load_editions(cur_d))
+    turn = turn.set_index("facility_enrollment_id")
     # P2: one entry (2023->2024) + one exit (2024->2025) = 2 events
     assert turn.loc["O111", "n_owner_entries"] == 1
     assert turn.loc["O111", "n_owner_exits"] == 1
+    assert any(c.startswith("SNF:") for c in chains)
+
+
+def test_mixed_cadence_datasets_chain_independently(tmp_path):
+    """The operator's real shape: FQHC editions are December-dated, SNF June-
+    dated. A global date chain would interleave them and the both-endpoints
+    guard would erase SNF churn at the FQHC-only steps; per-dataset chains
+    keep both. Also: a 'prior' FQHC edition NEWER than FQHC's current file is
+    dropped, never diffed backwards."""
+    from src.entity_graph.owners_vintage import load_editions, multi_edition_turnover
+    prior_d = tmp_path / "owners_prior"
+    cur_d = tmp_path / "owners"
+    prior_d.mkdir(), cur_d.mkdir()
+    # SNF: owner change between 2023-06 and current
+    pd.DataFrame({"ENROLLMENT ID": ["S1"], "ASSOCIATE ID - OWNER": ["A"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2023-06.csv", index=False)
+    # FQHC editions: Dec-dated, interleaving the SNF chain if chained globally,
+    # plus one NEWER than FQHC's current (2026-06 > 2026-04) -> must be dropped
+    for name in ["FQHC_All_Owners_2023-12.csv", "FQHC_All_Owners_2026-06.csv"]:
+        pd.DataFrame({"ENROLLMENT ID": ["F1"], "ASSOCIATE ID - OWNER": ["X"]}
+                     ).to_csv(prior_d / name, index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["S1"], "ASSOCIATE ID - OWNER": ["B"]}
+                 ).to_csv(cur_d / "SNF_All_Owners_2026.05.01.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["F1"], "ASSOCIATE ID - OWNER": ["X"]}
+                 ).to_csv(cur_d / "FQHC_All_Owners_2026.04.01.csv", index=False)
+    turn, chains = multi_edition_turnover(load_editions(prior_d),
+                                          load_editions(cur_d))
+    turn = turn.set_index("facility_enrollment_id")
+    # SNF churn survives the FQHC interleaving (A out, B in)
+    assert turn.loc["S1", "n_owner_entries"] == 1
+    assert turn.loc["S1", "n_owner_exits"] == 1
+    # FQHC unchanged, and the 2026-06 edition was excluded from its chain
+    assert turn.loc["F1", "ownership_turnover"] == 0.0
+    fq = next(c for c in chains if c.startswith("FQHC:"))
+    assert "2026-06" not in fq and "2023-12" in fq
 
 
 # --------------------------------------------- J-code drug markup

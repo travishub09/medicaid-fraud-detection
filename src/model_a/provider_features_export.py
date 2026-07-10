@@ -1239,8 +1239,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # 2) SNAPSHOT DIFF: the monthly graph-snapshot cadence (>=2 to fire).
     churn_done = False
     try:
-        from src.entity_graph.owners_vintage import (load_owner_pairs,
-                                                     load_editions,
+        from src.entity_graph.owners_vintage import (load_editions,
                                                      multi_edition_turnover,
                                                      org_grain_turnover)
         prior_dir = preclean / "owners_prior"
@@ -1249,19 +1248,11 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             log("    [ownership_churn] vintage diff not used on a frozen run "
                 "(the edition window is post-cutoff); snapshot path only")
         elif prior_dir.is_dir() and cur_dir.is_dir():
-            editions = load_editions(prior_dir)
-            cur, cdate = load_owner_pairs(cur_dir)
-            # a 'prior' edition dated at/after the current one would make the
-            # chain's last diff run BACKWARDS in time (entries/exits inverted)
-            if cdate:
-                dropped = [d for d, _ in editions if d[:7] >= cdate[:7]]
-                if dropped:
-                    log(f"    [ownership_churn] ignoring edition(s) not older "
-                        f"than the current file ({cdate}): {', '.join(dropped)}")
-                editions = [(d, p) for d, p in editions if d[:7] < cdate[:7]]
-            if editions and len(cur):
+            prior_ds = load_editions(prior_dir)
+            cur_ds = load_editions(cur_dir)
+            if prior_ds and cur_ds:
                 xw_p = _first_existing(processed, "npi_xwalk.parquet")
-                turn = multi_edition_turnover(editions, cur)
+                turn, chains = multi_edition_turnover(prior_ds, cur_ds)
                 if xw_p is not None and len(turn):
                     org_t = org_grain_turnover(turn, pd.read_parquet(xw_p),
                                                npi_to_org)
@@ -1270,9 +1261,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                               ["ownership_turnover", "n_owner_entries",
                                "n_owner_exits"])
                         n_ch = int((org_t["ownership_turnover"] > 0).sum())
-                        eds = " → ".join(d for d, _ in editions)
-                        log(f"    [ownership_churn] edition chain {eds} → "
-                            f"{cdate or 'current'}: {len(org_t):,} orgs mapped, "
+                        log(f"    [ownership_churn] per-dataset edition chains "
+                            f"({'; '.join(chains)}): {len(org_t):,} orgs mapped, "
                             f"{n_ch:,} with owner changes")
                         churn_done = True
     except Exception as e:

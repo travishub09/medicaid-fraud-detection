@@ -81,61 +81,93 @@ def load_owner_pairs(folder: str | Path) -> tuple[pd.DataFrame, str]:
             .reset_index(drop=True), max(dates) if dates else "")
 
 
-def load_editions(folder: str | Path) -> list[tuple[str, pd.DataFrame]]:
-    """All-Owners CSVs grouped BY EDITION DATE (parsed per filename) -> a sorted
-    list of (edition_date, pairs). Lets the operator stage several historical
-    editions (2023, 2024, 2025) and get churn from CONSECUTIVE diffs — an owner
-    who arrived and left between editions is invisible to a single two-point
-    diff but visible here."""
+_DATASET_RE = re.compile(r"([A-Za-z]+)_All_Owners", re.I)
+
+
+def _dataset_of(name: str) -> str:
+    m = _DATASET_RE.search(name)
+    return m.group(1).upper() if m else "OWNERS"
+
+
+def _read_pairs(p: Path) -> pd.DataFrame | None:
+    raw = read_csv_text(p)
+    resolved = _resolve_columns(list(raw.columns), OWNER_VINTAGE_COLS)
+    if len(resolved) < 2:
+        return None
+    f = raw.rename(columns={v: k for k, v in resolved.items()})
+    f = f[["facility_enrollment_id", "owner_pac_id"]].astype(str)
+    f = f[(f["facility_enrollment_id"].str.strip() != "")
+          & (f["owner_pac_id"].str.strip() != "")].copy()
+    f["owner_key"] = "pac" + f["owner_pac_id"].str.strip()
+    return (f[["facility_enrollment_id", "owner_key"]]
+            .drop_duplicates().reset_index(drop=True))
+
+
+def load_editions(folder: str | Path) -> dict[str, list[tuple[str, pd.DataFrame]]]:
+    """All-Owners CSVs grouped PER DATASET, then by edition date -> a dict
+    {dataset: sorted [(edition_date, pairs), ...]}.
+
+    Per-dataset matters: the operator's editions have MIXED cadences (FQHC is
+    December-dated, SNF/HHA/etc are June-dated). A single global date chain
+    would insert an FQHC-only edition between two SNF editions, and the
+    both-endpoints guard would silently drop every SNF facility's churn at
+    that step. Each dataset chains through its own editions only."""
     d = Path(folder)
-    by_ed: dict[str, list[pd.DataFrame]] = {}
+    by_ds: dict[str, dict[str, list[pd.DataFrame]]] = {}
     for p in sorted(d.glob("*.csv")) if d.is_dir() else []:
         ed = _edition_date(p.name)
         if not ed:
             continue
-        raw = read_csv_text(p)
-        resolved = _resolve_columns(list(raw.columns), OWNER_VINTAGE_COLS)
-        if len(resolved) < 2:
+        pairs = _read_pairs(p)
+        if pairs is None:
             continue
-        f = raw.rename(columns={v: k for k, v in resolved.items()})
-        f = f[["facility_enrollment_id", "owner_pac_id"]].astype(str)
-        f = f[(f["facility_enrollment_id"].str.strip() != "")
-              & (f["owner_pac_id"].str.strip() != "")]
-        by_ed.setdefault(ed, []).append(f)
-    out = []
-    for ed in sorted(by_ed):
-        pairs = pd.concat(by_ed[ed], ignore_index=True)
-        pairs["owner_key"] = "pac" + pairs["owner_pac_id"].str.strip()
-        out.append((ed, pairs[["facility_enrollment_id", "owner_key"]]
-                    .drop_duplicates().reset_index(drop=True)))
+        by_ds.setdefault(_dataset_of(p.name), {}).setdefault(ed, []).append(pairs)
+    out: dict[str, list[tuple[str, pd.DataFrame]]] = {}
+    for ds, by_ed in by_ds.items():
+        out[ds] = [(ed, pd.concat(frames, ignore_index=True).drop_duplicates()
+                    .reset_index(drop=True))
+                   for ed, frames in sorted(by_ed.items())]
     return out
 
 
-def multi_edition_turnover(editions: list[tuple[str, pd.DataFrame]],
-                           current: pd.DataFrame) -> pd.DataFrame:
-    """Sum entries/exits across CONSECUTIVE edition diffs (oldest -> ... ->
-    current), each diff restricted to facilities present in both of its
-    endpoints. Returns the same shape as ``vintage_ownership_turnover``."""
+def multi_edition_turnover(prior_by_dataset: dict[str, list[tuple[str, pd.DataFrame]]],
+                           current_by_dataset: dict[str, list[tuple[str, pd.DataFrame]]],
+                           ) -> tuple[pd.DataFrame, list[str]]:
+    """Per-DATASET consecutive edition chains -> summed entries/exits per
+    facility. Each dataset chains its own prior editions (dropping any not
+    strictly older than its current edition — a newer 'prior' would diff
+    backwards in time) and ends at its current edition. Facilities are
+    disjoint across datasets, so results concatenate. Returns (per-facility
+    frame, human-readable chain descriptions)."""
     cols = ["facility_enrollment_id", "n_owner_entries", "n_owner_exits",
             "ownership_turnover"]
-    chain = [p for _, p in sorted(editions, key=lambda kv: kv[0])] + [current]
-    if len(chain) < 2:
-        return pd.DataFrame(columns=cols)
     totals: dict[str, list[int]] = {}
-    for older, newer in zip(chain, chain[1:]):
-        step = vintage_ownership_turnover(older, newer)
-        for r in step.itertuples(index=False):
-            t = totals.setdefault(r.facility_enrollment_id, [0, 0])
-            t[0] += int(r.n_owner_entries)
-            t[1] += int(r.n_owner_exits)
+    chains: list[str] = []
+    for ds, cur_eds in current_by_dataset.items():
+        if ds not in prior_by_dataset or not cur_eds:
+            continue
+        cur_date, cur_pairs = sorted(cur_eds)[-1]        # the dataset's current
+        eds = [(d, p) for d, p in prior_by_dataset[ds]
+               if not cur_date or d[:7] < cur_date[:7]]
+        if not eds:
+            continue
+        chain = [p for _, p in sorted(eds, key=lambda kv: kv[0])] + [cur_pairs]
+        chains.append(f"{ds}: {' → '.join(d for d, _ in sorted(eds))}"
+                      f" → {cur_date or 'current'}")
+        for older, newer in zip(chain, chain[1:]):
+            step = vintage_ownership_turnover(older, newer)
+            for r in step.itertuples(index=False):
+                t = totals.setdefault(r.facility_enrollment_id, [0, 0])
+                t[0] += int(r.n_owner_entries)
+                t[1] += int(r.n_owner_exits)
     if not totals:
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=cols), chains
     out = pd.DataFrame([(fid, e, x) for fid, (e, x) in sorted(totals.items())],
                        columns=["facility_enrollment_id", "n_owner_entries",
                                 "n_owner_exits"])
     out["ownership_turnover"] = ((out["n_owner_entries"] + out["n_owner_exits"])
                                  / TURNOVER_SATURATION).clip(0, 1.0)
-    return out[cols]
+    return out[cols], chains
 
 
 def vintage_ownership_turnover(prior: pd.DataFrame,
