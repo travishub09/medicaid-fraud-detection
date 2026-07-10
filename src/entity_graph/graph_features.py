@@ -221,6 +221,44 @@ def _distance_to_exclusions(G: nx.Graph, exclusion_ids: set[str]) -> tuple[dict,
     return seen, nearest
 
 
+# Above this many org nodes, building a pure-Python NetworkX graph over the whole
+# provider base needs tens of GB and swap-thrashes a 16 GB box. The only feature
+# that needs a traversal is the exclusion-distance walk; everything else
+# (related_party_density, co_location_cluster_size, shell_score) is computed from
+# the edge tables directly. So at scale we run the walk on the SciPy-sparse
+# adjacency (the same memory-light structure the embeddings use) and skip the
+# NetworkX object entirely — community/betweenness default to their at-scale
+# values (connected-component-free / 0), exactly as the NetworkX guards already do.
+NETWORKX_MAX_NODES = 400_000
+
+
+def _distance_to_exclusions_sparse(nodes, A, exclusion_ids: set[str],
+                                   max_hops: int = 3) -> dict:
+    """Memory-light multi-source BFS to ``max_hops`` on a CSR adjacency. Returns
+    ``dist[node_id]`` = hop count to the nearest exclusion (only nodes within
+    max_hops are present). No ``nearest`` map at scale — within_2_hops doesn't
+    need the named party, and naming 9.6M orgs' nearest exclusion is the pandas
+    blow-up we are avoiding."""
+    import numpy as np
+    pos = {nid: i for i, nid in enumerate(nodes)}
+    seed = [pos[x] for x in exclusion_ids if x in pos]
+    if not seed:
+        return {}
+    dist_arr = np.full(len(nodes), -1, dtype=np.int32)
+    dist_arr[seed] = 0
+    frontier = np.array(seed, dtype=np.int64)
+    for d in range(1, max_hops + 1):
+        if not len(frontier):
+            break
+        nbr = np.unique(A[frontier].indices)
+        new = nbr[dist_arr[nbr] == -1]
+        if not len(new):
+            break
+        dist_arr[new] = d
+        frontier = new
+    return {nodes[i]: int(dist_arr[i]) for i in np.flatnonzero(dist_arr >= 0)}
+
+
 def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                            exclusion_nodes: pd.DataFrame, member_edges: pd.DataFrame,
                            owned_by_edges: pd.DataFrame, excluded_in_edges: pd.DataFrame,
@@ -249,12 +287,30 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
         else:
             act = pd.Series(True, index=exin.index)
         exin = exin[(tier == "exact") | act]
-    G = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
-                    owned_by_edges, exin, co_located_edges,
-                    max_colocation_cluster=max_colocation_cluster)
 
     excl_ids = set(exclusion_nodes["node_id"].astype(str)) if exclusion_nodes is not None and len(exclusion_nodes) else set()
-    dist, nearest = _distance_to_exclusions(G, excl_ids)
+
+    n_orgs = len(org_nodes) if org_nodes is not None else 0
+    if n_orgs > NETWORKX_MAX_NODES:
+        # SCALE PATH: never build the NetworkX graph (tens of GB at 9.6M nodes).
+        # Exclusion distance on the sparse adjacency; other features come from the
+        # edge tables below. community/betweenness take their at-scale defaults.
+        print(f"    [graph-features] {n_orgs:,} orgs > {NETWORKX_MAX_NODES:,}: "
+              f"memory-light sparse path (no NetworkX build)", flush=True)
+        nodes, A = build_sparse_adjacency(
+            org_nodes, owner_nodes, exclusion_nodes, member_edges,
+            owned_by_edges, exin, co_located_edges,
+            max_colocation_cluster=max_colocation_cluster)
+        dist = _distance_to_exclusions_sparse(nodes, A, excl_ids, max_hops=3)
+        nearest = {}
+        community, betweenness = {}, {}
+    else:
+        G = build_graph(org_nodes, owner_nodes, exclusion_nodes, member_edges,
+                        owned_by_edges, exin, co_located_edges,
+                        max_colocation_cluster=max_colocation_cluster)
+        dist, nearest = _distance_to_exclusions(G, excl_ids)
+        community = _community_partition(G) if G.number_of_edges() else {}
+        betweenness = _betweenness(G)
 
     # identity of each exclusion node, so the org's nearest excluded party can be
     # named (entity / type / date) in the dossier rather than left anonymous.
@@ -266,8 +322,7 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                 "type": str(getattr(r, "excl_type", "") or ""),
                 "date": str(getattr(r, "excl_date", "") or ""),
             }
-    community = _community_partition(G) if G.number_of_edges() else {}
-    betweenness = _betweenness(G)
+    # community / betweenness were computed above (per scale path).
 
     # related_party_density: orgs sharing an owner with this org.
     owner_to_orgs: dict[str, set] = {}
