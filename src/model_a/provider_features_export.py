@@ -111,7 +111,16 @@ LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "shell_score",
                     # precedes future exclusion) — the definition of adjacent.
                     "billing_after_deactivation__peerpct",
                     "billed_after_death__peerpct",
-                    "subscore_invalid_identity"]
+                    "subscore_invalid_identity",
+                    # O&R eligibility is CURRENT-STATE and exclusion strips it,
+                    # so "referrer ineligible today" partially encodes the label
+                    # (run-4 in-time AUC 0.96 — too good to be honest) and leaks
+                    # post-cutoff bans into frozen matrices. Real lead signal,
+                    # but out-of-time-only; the dme_ring subscore inherits it.
+                    "dme_ineligible_referrer",
+                    "dme_ineligible_referred_dollars",
+                    "dme_ineligible_referred_dollars__peerpct",
+                    "subscore_dme_ring"]
 
 # Provider stats worth carrying as plain features (whatever the base leads has).
 # org_member_count lets the model discount a broadcast org signal in a giant

@@ -91,6 +91,11 @@ def test_invalid_identity_transforms_are_leakage_adjacent():
     assert "billing_after_deactivation__peerpct" in LEAKAGE_ADJACENT
     assert "subscore_invalid_identity" in LEAKAGE_ADJACENT
     assert "billed_after_death__peerpct" in LEAKAGE_ADJACENT
+    # run-4 catch: exclusion strips O&R eligibility, so the current-state
+    # ineligible-referrer features partially encode the label (AUC 0.96 in-time)
+    for c in ("dme_ineligible_referrer", "dme_ineligible_referred_dollars",
+              "dme_ineligible_referred_dollars__peerpct", "subscore_dme_ring"):
+        assert c in LEAKAGE_ADJACENT
 
 
 # --------------------------------------------------- layout-aware year files
