@@ -342,7 +342,7 @@ def _verdict(out: dict) -> str:
                 f"set (ROC-AUC >= {CEILING_AUC}); no headroom to measure the contribution. "
                 "Controls too easy or the matrix leaks." + leak_note)
     if isinstance(verdict, tuple):
-        return (f"KEEP (size-independent): the {scope} lift discrimination against size/"
+        return (f"KEEP (size-independent): the {scope} lifts discrimination against size/"
                 f"taxonomy-matched controls by a real margin (delta {verdict[1]:+.3f}, CI "
                 f"clear of zero). Use under the out-of-time split." + leak_note)
     full = out.get("full", {}).get("delta_ci", {}).get("lift10", {})

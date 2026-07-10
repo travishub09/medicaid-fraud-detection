@@ -30,6 +30,26 @@ from src.entity_graph.resolve_entities import norm_org_name
 PHARMACY_SATURATION = 25        # contract pharmacies at/above this → concentration 1.0
 
 
+def _promote_header(df: pd.DataFrame) -> pd.DataFrame:
+    """Find the real header row and promote it. OPAIS exports carry a title +
+    "Exported On" banner of varying height above the header, so a fixed
+    ``header=N`` read yields all-"Unnamed" columns (the run-3 skip). If the
+    columns already look real, the frame is returned untouched; otherwise the
+    first row containing a 340B-ID / entity-name header cell becomes the header."""
+    cols = [str(c) for c in df.columns]
+    if not all(c.startswith("Unnamed") or c == "nan" or "report" in c.lower()
+               for c in cols[1:] or cols):
+        return df
+    _MARKS = ("340b id", "id_340b", "entity name", "covered entity name")
+    for i in range(min(10, len(df))):
+        cells = [str(x).strip().lower() for x in df.iloc[i].tolist()]
+        if any(c in _MARKS for c in cells):
+            out = df.iloc[i + 1:].copy()
+            out.columns = [str(x).strip() for x in df.iloc[i].tolist()]
+            return out.reset_index(drop=True)
+    return df
+
+
 def load_opais(path: str | Path) -> pd.DataFrame:
     """Load the OPAIS daily report in whatever form HRSA hands you.
 
@@ -46,9 +66,10 @@ def load_opais(path: str | Path) -> pd.DataFrame:
         if p.suffix.lower() == ".parquet":
             return pd.read_parquet(p)
         from src.attempt_2.clean_data import read_csv_text
-        return read_csv_text(p)
+        return _promote_header(read_csv_text(p))
 
-    sheets = pd.read_excel(p, sheet_name=None, dtype=str, header=2)   # row 3 = headers
+    sheets = {name: _promote_header(df) for name, df in
+              pd.read_excel(p, sheet_name=None, dtype=str).items()}
     cp = next((df for name, df in sheets.items()
                if "contract" in name.lower() and "pharmac" in name.lower()), None)
     if cp is None:                               # single flat sheet — use it directly

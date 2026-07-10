@@ -29,6 +29,15 @@ import pandas as pd
 
 EMB_PREFIX = "billing_emb_"
 
+# The raw spending fact contains corrupt rows (negative adjustments and the
+# overflowed >$500M aggregates audit_corruption.py quarantines). A negative
+# code-dollar sum makes the smoothed probability negative and ln() throws
+# ("cannot take logarithm of a negative number" — run 3), so every dollar-
+# weighted query filters to plausible positive payments. Same bounds as
+# asof_billing's write_asof_spending guard.
+_PAID_GUARD = (" AND TRY_CAST(total_paid AS DOUBLE) > 0"
+               " AND TRY_CAST(total_paid AS DOUBLE) <= 500000000")
+
 
 def _ppmi_svd(cooc, dim: int):
     """PPMI over a code×code co-occurrence matrix → truncated SVD code vectors,
@@ -132,7 +141,8 @@ def provider_embeddings_duckdb(spending_path: str, codes: list, code_vecs: np.nd
             SELECT CAST(billing_npi AS VARCHAR) npi,
                    UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs,
                    SUM(CAST(total_paid AS DOUBLE)) + 1e-9 w
-            FROM read_parquet('{p}') WHERE hcpcs_code IS NOT NULL GROUP BY 1, 2
+            FROM read_parquet('{p}')
+            WHERE hcpcs_code IS NOT NULL{_PAID_GUARD} GROUP BY 1, 2
         )
         SELECT w.npi, {sums}
         FROM w JOIN vecs ON w.hcpcs = vecs.hcpcs GROUP BY w.npi
@@ -162,7 +172,7 @@ def billing_surprisal_duckdb(spending_path: str, provider_dim: pd.DataFrame,
                    UPPER(TRIM(CAST(s.hcpcs_code AS VARCHAR))) hcpcs,
                    SUM(CAST(s.total_paid AS DOUBLE)) w, pdim.taxonomy_code tax
             FROM read_parquet('{p}') s JOIN pdim ON CAST(s.billing_npi AS VARCHAR)=pdim.npi
-            WHERE s.hcpcs_code IS NOT NULL GROUP BY 1, 2, 4
+            WHERE s.hcpcs_code IS NOT NULL{_PAID_GUARD.replace('total_paid', 's.total_paid')} GROUP BY 1, 2, 4
         ),
         tax_code AS (SELECT tax, hcpcs, SUM(w) cw FROM base GROUP BY 1, 2),
         tax_tot AS (SELECT tax, SUM(cw) tot, COUNT(*) k FROM tax_code GROUP BY 1),

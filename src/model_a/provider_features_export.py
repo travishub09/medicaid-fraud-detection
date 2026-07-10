@@ -102,7 +102,16 @@ LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "shell_score",
                     "related_party_density", "related_party_density_norm",
                     "subscore_ownership_integrity", "has_excluded_owner",
                     "facility_has_excluded_owner_high",
-                    "facility_has_excluded_owner_probable"]
+                    "facility_has_excluded_owner_probable",
+                    # transforms of leakage_hard events: the peer percentile and
+                    # the invalid_identity subscore are built FROM
+                    # billing_after_deactivation / billed_after_death, so in-time
+                    # they nearly encode the label (run-3 signal ranking: AUC
+                    # 0.926). Legitimately predictive FORWARD (deactivation
+                    # precedes future exclusion) — the definition of adjacent.
+                    "billing_after_deactivation__peerpct",
+                    "billed_after_death__peerpct",
+                    "subscore_invalid_identity"]
 
 # Provider stats worth carrying as plain features (whatever the base leads has).
 # org_member_count lets the model discount a broadcast org signal in a giant
@@ -455,28 +464,32 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
 # CLI orchestration: discover source files under preclean/ and run each adapter
 # --------------------------------------------------------------------------- #
 
-def _latest_year_file(folder: Path) -> Path | None:
-    """The newest-year file in a multi-year source folder (partb_2024.csv over
-    partb_2016.csv). Year parsed from the filename; ties broken by name."""
+def _year_files(folder: Path) -> list[Path]:
+    """All candidate files in a multi-year source folder, NEWEST year first
+    (partb_2024.csv before partb_2016.csv). Year parsed from the filename;
+    ties broken by name."""
     import re
     if folder is None or not folder.is_dir():
-        return None
+        return []
     files = sorted(list(folder.glob("*.csv")) + list(folder.glob("*.xlsx"))
                    + list(folder.glob("*.parquet")))
-    if not files:
-        return None
 
     def _yr(p: Path) -> int:
         yrs = re.findall(r"(20\d{2})", p.stem)
         return max((int(y) for y in yrs), default=-1)
-    return max(files, key=lambda p: (_yr(p), p.name))
+    return sorted(files, key=lambda p: (_yr(p), p.name), reverse=True)
 
 
-def _read_latest(folder: Path, cols_dict: dict | None = None) -> pd.DataFrame | None:
-    """Load the latest-year file in ``folder`` reading ONLY the columns the adapter
-    resolves (memory-safe for multi-GB CMS PUFs on a 16 GB box). Falls back to all
+def _latest_year_file(folder: Path) -> Path | None:
+    """The newest-year file in a multi-year source folder."""
+    files = _year_files(folder)
+    return files[0] if files else None
+
+
+def _read_one(p: Path, cols_dict: dict | None = None) -> pd.DataFrame | None:
+    """Load one source file reading ONLY the columns the adapter resolves
+    (memory-safe for multi-GB CMS PUFs on a 16 GB box). Falls back to all
     columns if none resolve (so the adapter raises its own clear error)."""
-    p = _latest_year_file(folder)
     if p is None:
         return None
     if p.suffix == ".parquet":
@@ -490,6 +503,11 @@ def _read_latest(folder: Path, cols_dict: dict | None = None) -> pd.DataFrame | 
     resolved = _resolve_columns(header, cols_dict)
     use = list(dict.fromkeys(resolved.values()))
     return read_csv_text(p, usecols=use) if use else read_csv_text(p)
+
+
+def _read_latest(folder: Path, cols_dict: dict | None = None) -> pd.DataFrame | None:
+    """Load the latest-year file in ``folder`` (see ``_read_one``)."""
+    return _read_one(_latest_year_file(folder), cols_dict)
 
 
 def _read_any(path: Path) -> pd.DataFrame | None:
@@ -799,29 +817,42 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str,
         if name in skip:
             log(f"    [{name}] skipped: --skip-sources")
             return
-        try:
-            src_file = _latest_year_file(folder)     # the exact file we'll read (or None)
-            if src_file is None:
-                log(f"    [{name}] skipped: no source file in {folder.name}/")
-                return
-            raw = _read_latest(folder, cols)
-            if raw is None or not len(raw):
-                log(f"    [{name}] skipped: empty source file {src_file.name}")
-                return
-            res = fn(raw)
-            df = res[0] if isinstance(res, tuple) else res
-            if df is not None and len(df) and "npi" in df.columns:
-                frames[name] = df
-                log(f"    [{name}] {len(df):,} providers from {src_file.name}, "
-                    f"cols: {', '.join(c for c in df.columns if c != 'npi')}")
-            else:
+        candidates = _year_files(folder)
+        if not candidates:
+            log(f"    [{name}] skipped: no source file in {folder.name}/")
+            return
+        # Newest year first, but a layout mismatch (ValueError from the adapter's
+        # column resolver) falls back to the next-newest file instead of skipping
+        # the whole source — the dmepos-2022 class of bug: the newest download was
+        # a SUMMARY layout without HCPCS while older years had the right one.
+        last_err = None
+        for i, src_file in enumerate(candidates):
+            try:
+                raw = _read_one(src_file, cols)
+                if raw is None or not len(raw):
+                    last_err = f"empty source file {src_file.name}"
+                    continue
+                res = fn(raw)
+                df = res[0] if isinstance(res, tuple) else res
+                if df is not None and len(df) and "npi" in df.columns:
+                    frames[name] = df
+                    note = (f" ({i} newer file(s) had a different layout — "
+                            "re-download the current-year detail file)" if i else "")
+                    log(f"    [{name}] {len(df):,} providers from {src_file.name}, "
+                        f"cols: {', '.join(c for c in df.columns if c != 'npi')}{note}")
+                    return
                 # never let a source VANISH from the audit: a present file whose
                 # adapter returns empty/npi-less output is a skip with a reason.
-                log(f"    [{name}] skipped: adapter returned "
-                    f"{'no rows' if df is None or not len(df) else 'no npi column'} "
-                    f"from {src_file.name} — check the file layout")
-        except Exception as e:               # one bad source must never sink the run
-            log(f"    [{name}] skipped: {e}")
+                last_err = (f"adapter returned "
+                            f"{'no rows' if df is None or not len(df) else 'no npi column'} "
+                            f"from {src_file.name} — check the file layout")
+            except ValueError as e:          # layout mismatch — try the next year
+                last_err = f"{src_file.name}: {e}"
+                continue
+            except Exception as e:           # one bad source must never sink the run
+                log(f"    [{name}] skipped: {e}")
+                return
+        log(f"    [{name}] skipped: {last_err}")
 
     pc = preclean
     from src.ingest_cms import partb, partd, dmepos, opioid, openpayments
@@ -1283,6 +1314,34 @@ def main() -> None:
                 leads = _apply_asof_freeze(leads, asof_spend_p, args.asof_cutoff, print)
             else:
                 print("  [asof] skipped: no processed/spending_fact.parquet")
+        else:
+            # Full-run tenure backfill: the leads file carries dollars/volume but
+            # not tenure_months / n_active_months, and the instant-scale
+            # consistency check needs tenure — a missing column silently made
+            # incons_instant_scale constant-0 on run 3. Date-based stats only
+            # (immune to the corrupt-dollar rows); fills ONLY absent columns.
+            _TENURE_COLS = ["tenure_months", "n_active_months",
+                            "first_service_month", "last_service_month"]
+            if any(c not in leads.columns for c in _TENURE_COLS[:2]):
+                spend_full = _first_existing(processed, "spending_fact.parquet")
+                if spend_full:
+                    from .asof_billing import asof_provider_stats
+                    stats = asof_provider_stats(str(spend_full), "9999-12")
+                    stats["npi"] = stats["npi"].astype(str)
+                    fill = [c for c in _TENURE_COLS
+                            if c in stats.columns and c not in leads.columns]
+                    if fill:
+                        n0 = len(leads)
+                        leads = leads.merge(
+                            stats[["npi"] + fill].drop_duplicates("npi"),
+                            on="npi", how="left")
+                        assert len(leads) == n0, "tenure-backfill join fanned out"
+                        print(f"  [tenure] backfilled {', '.join(fill)} from the "
+                              f"spending fact ({stats['npi'].nunique():,} NPIs) — "
+                              "consistency checks need enrollment tenure")
+                else:
+                    print("  [tenure] backfill skipped: no processed/"
+                          "spending_fact.parquet (incons_instant_scale stays dark)")
 
         print("  running org/CCN-grain adapters …")
         snapshots_dir = (Path(args.owner_snapshots) if args.owner_snapshots
