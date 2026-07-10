@@ -1251,6 +1251,14 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         elif prior_dir.is_dir() and cur_dir.is_dir():
             editions = load_editions(prior_dir)
             cur, cdate = load_owner_pairs(cur_dir)
+            # a 'prior' edition dated at/after the current one would make the
+            # chain's last diff run BACKWARDS in time (entries/exits inverted)
+            if cdate:
+                dropped = [d for d, _ in editions if d[:7] >= cdate[:7]]
+                if dropped:
+                    log(f"    [ownership_churn] ignoring edition(s) not older "
+                        f"than the current file ({cdate}): {', '.join(dropped)}")
+                editions = [(d, p) for d, p in editions if d[:7] < cdate[:7]]
             if editions and len(cur):
                 xw_p = _first_existing(processed, "npi_xwalk.parquet")
                 turn = multi_edition_turnover(editions, cur)
