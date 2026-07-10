@@ -284,6 +284,32 @@ def test_owners_vintage_diff_counts_entries_and_exits(tmp_path):
     assert org_t.loc["org:b", "ownership_turnover"] == 0.0
 
 
+def test_multi_edition_chain_sees_between_edition_churn(tmp_path):
+    """Owner P2 arrives in 2024 and leaves by 2025: invisible to a single
+    2023-vs-current diff, visible to the consecutive-edition chain."""
+    from src.entity_graph.owners_vintage import (load_editions, load_owner_pairs,
+                                                 multi_edition_turnover)
+    prior_d = tmp_path / "owners_prior"
+    cur_d = tmp_path / "owners"
+    prior_d.mkdir(), cur_d.mkdir()
+    pd.DataFrame({"ENROLLMENT ID": ["O111"], "ASSOCIATE ID - OWNER": ["P1"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2023-06.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["O111", "O111"],
+                  "ASSOCIATE ID - OWNER": ["P1", "P2"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2024-06.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["O111"], "ASSOCIATE ID - OWNER": ["P1"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2025-06.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["O111"], "ASSOCIATE ID - OWNER": ["P1"]}
+                 ).to_csv(cur_d / "SNF_All_Owners_2026.05.01.csv", index=False)
+    editions = load_editions(prior_d)
+    assert [d for d, _ in editions] == ["2023-06", "2024-06", "2025-06"]
+    cur, _ = load_owner_pairs(cur_d)
+    turn = multi_edition_turnover(editions, cur).set_index("facility_enrollment_id")
+    # P2: one entry (2023->2024) + one exit (2024->2025) = 2 events
+    assert turn.loc["O111", "n_owner_entries"] == 1
+    assert turn.loc["O111", "n_owner_exits"] == 1
+
+
 # --------------------------------------------- J-code drug markup
 
 def test_drug_markup_flags_priced_above_same_code_peers(tmp_path):

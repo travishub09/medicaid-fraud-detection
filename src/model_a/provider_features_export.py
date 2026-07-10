@@ -1240,7 +1240,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     churn_done = False
     try:
         from src.entity_graph.owners_vintage import (load_owner_pairs,
-                                                     vintage_ownership_turnover,
+                                                     load_editions,
+                                                     multi_edition_turnover,
                                                      org_grain_turnover)
         prior_dir = preclean / "owners_prior"
         cur_dir = preclean / "owners"
@@ -1248,11 +1249,11 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             log("    [ownership_churn] vintage diff not used on a frozen run "
                 "(the edition window is post-cutoff); snapshot path only")
         elif prior_dir.is_dir() and cur_dir.is_dir():
-            prior, pdate = load_owner_pairs(prior_dir)
+            editions = load_editions(prior_dir)
             cur, cdate = load_owner_pairs(cur_dir)
-            if len(prior) and len(cur):
+            if editions and len(cur):
                 xw_p = _first_existing(processed, "npi_xwalk.parquet")
-                turn = vintage_ownership_turnover(prior, cur)
+                turn = multi_edition_turnover(editions, cur)
                 if xw_p is not None and len(turn):
                     org_t = org_grain_turnover(turn, pd.read_parquet(xw_p),
                                                npi_to_org)
@@ -1261,8 +1262,9 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                               ["ownership_turnover", "n_owner_entries",
                                "n_owner_exits"])
                         n_ch = int((org_t["ownership_turnover"] > 0).sum())
-                        log(f"    [ownership_churn] vintage diff {pdate or '?'} → "
-                            f"{cdate or '?'}: {len(org_t):,} orgs mapped, "
+                        eds = " → ".join(d for d, _ in editions)
+                        log(f"    [ownership_churn] edition chain {eds} → "
+                            f"{cdate or 'current'}: {len(org_t):,} orgs mapped, "
                             f"{n_ch:,} with owner changes")
                         churn_done = True
     except Exception as e:
