@@ -464,20 +464,31 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
 # CLI orchestration: discover source files under preclean/ and run each adapter
 # --------------------------------------------------------------------------- #
 
-def _year_files(folder: Path) -> list[Path]:
+def _file_year(p: Path) -> int:
+    """Data year parsed from a filename (partb_2024.csv → 2024; -1 if none)."""
+    import re
+    yrs = re.findall(r"(20\d{2})", p.stem)
+    return max((int(y) for y in yrs), default=-1)
+
+
+def _year_files(folder: Path, max_year: int | None = None) -> list[Path]:
     """All candidate files in a multi-year source folder, NEWEST year first
     (partb_2024.csv before partb_2016.csv). Year parsed from the filename;
-    ties broken by name."""
-    import re
+    ties broken by name.
+
+    ``max_year`` (the frozen-run vintage cap): a file whose filename year is
+    AFTER the freeze cutoff is excluded — an annual PUF for calendar 2024
+    contains post-cutoff behavior and would leak it into a 2023-12 frozen
+    matrix. Files with no year in the name pass the cap (their vintage is
+    unknowable from the name; the SOURCES_REPORT names the file used so the
+    operator can judge)."""
     if folder is None or not folder.is_dir():
         return []
     files = sorted(list(folder.glob("*.csv")) + list(folder.glob("*.xlsx"))
                    + list(folder.glob("*.parquet")))
-
-    def _yr(p: Path) -> int:
-        yrs = re.findall(r"(20\d{2})", p.stem)
-        return max((int(y) for y in yrs), default=-1)
-    return sorted(files, key=lambda p: (_yr(p), p.name), reverse=True)
+    if max_year is not None:
+        files = [p for p in files if _file_year(p) <= max_year]
+    return sorted(files, key=lambda p: (_file_year(p), p.name), reverse=True)
 
 
 def _latest_year_file(folder: Path) -> Path | None:
@@ -505,9 +516,12 @@ def _read_one(p: Path, cols_dict: dict | None = None) -> pd.DataFrame | None:
     return read_csv_text(p, usecols=use) if use else read_csv_text(p)
 
 
-def _read_latest(folder: Path, cols_dict: dict | None = None) -> pd.DataFrame | None:
-    """Load the latest-year file in ``folder`` (see ``_read_one``)."""
-    return _read_one(_latest_year_file(folder), cols_dict)
+def _read_latest(folder: Path, cols_dict: dict | None = None,
+                 max_year: int | None = None) -> pd.DataFrame | None:
+    """Load the latest-year file in ``folder`` (see ``_read_one``), honoring the
+    frozen-run vintage cap."""
+    files = _year_files(folder, max_year)
+    return _read_one(files[0], cols_dict) if files else None
 
 
 def _read_any(path: Path) -> pd.DataFrame | None:
@@ -801,14 +815,17 @@ class _SourceAudit:
         return rows
 
 
-def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str, pd.DataFrame]:
+def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
+                      max_year: int | None = None) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
     Each entry is (source_name, subdir/filenames, callable(raw)->npi-keyed frame).
     Missing files are skipped silently — a source landing later just lights up its
     columns on the next run (the skip-missing philosophy of the subscore engine).
     ``skip`` (lower-cased source names) force-skips an adapter — a safety valve for a
-    memory-heavy source on a tight box.
+    memory-heavy source on a tight box. ``max_year`` (set on frozen/as-of runs) caps
+    the annual-PUF vintage so a post-cutoff calendar year can't leak into a frozen
+    matrix.
     """
     frames: dict[str, pd.DataFrame] = {}
     skip = skip or set()
@@ -817,9 +834,14 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str,
         if name in skip:
             log(f"    [{name}] skipped: --skip-sources")
             return
-        candidates = _year_files(folder)
+        candidates = _year_files(folder, max_year)
         if not candidates:
-            log(f"    [{name}] skipped: no source file in {folder.name}/")
+            if max_year is not None and _year_files(folder):
+                log(f"    [{name}] skipped: only post-{max_year} vintages in "
+                    f"{folder.name}/ — a frozen run refuses annual files newer "
+                    f"than the cutoff (download the {max_year} year)")
+            else:
+                log(f"    [{name}] skipped: no source file in {folder.name}/")
             return
         # Newest year first, but a layout mismatch (ValueError from the adapter's
         # column resolver) falls back to the next-newest file instead of skipping
@@ -838,6 +860,8 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str,
                     frames[name] = df
                     note = (f" ({i} newer file(s) had a different layout — "
                             "re-download the current-year detail file)" if i else "")
+                    if max_year is not None:
+                        note += f" [vintage cap: {max_year} or older]"
                     log(f"    [{name}] {len(df):,} providers from {src_file.name}, "
                         f"cols: {', '.join(c for c in df.columns if c != 'npi')}{note}")
                     return
@@ -874,8 +898,8 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None) -> dict[str,
         log("    [kickback] skipped: --skip-sources")
         return frames
     try:
-        op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS)
-        pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS)
+        op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS, max_year)
+        pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS, max_year)
         if op_raw is not None and pd_raw is not None:
             kb = openpayments.kickback_co_occurrence(op_raw, pd_raw)
             if kb is not None and len(kb) and "npi" in kb.columns:
@@ -1284,7 +1308,16 @@ def main() -> None:
         ccn_xw = Path(args.ccn_to_npi) if args.ccn_to_npi else processed / "ccn_to_npi.parquet"
         ccn_to_npi = _read_any(ccn_xw)
         print("  running per-NPI adapters …")
-        adapter_frames = _run_npi_adapters(preclean, audit, skip=skip)
+        # Frozen-run vintage cap: an annual PUF for a calendar year AFTER the
+        # cutoff carries post-cutoff behavior. Cap at the cutoff YEAR — for a
+        # 2023-12 cutoff the CY2023 files still include one post-cutoff month
+        # (December); that residue is accepted rather than discarding eleven
+        # good months by capping a whole year earlier.
+        vintage_cap = int(str(args.asof_cutoff)[:4]) if args.asof_cutoff else None
+        if vintage_cap:
+            print(f"  [vintage] annual-PUF cap for the frozen run: {vintage_cap} or older")
+        adapter_frames = _run_npi_adapters(preclean, audit, skip=skip,
+                                           max_year=vintage_cap)
         ne_p = g / "node_embeddings.parquet"
         if ne_p.exists():
             from src.entity_graph.graph_embeddings import to_provider_grain

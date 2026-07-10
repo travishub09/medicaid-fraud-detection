@@ -120,6 +120,36 @@ def test_adapter_falls_back_when_newest_year_has_wrong_layout(tmp_path):
     assert "different layout" in joined
 
 
+def test_frozen_vintage_cap_refuses_post_cutoff_annual_files(tmp_path):
+    """A 2023-12 frozen run must not read a CY2024 annual PUF: the cap picks the
+    2023 file when present, and refuses (with a say-why skip) when only post-
+    cutoff vintages exist."""
+    from src.model_a.provider_features_export import _run_npi_adapters
+    d = tmp_path / "dmepos"
+    d.mkdir()
+    detail = {"Rfrg_NPI": ["1000000004"], "HCPCS_Cd": ["E0601"],
+              "Tot_Suplr_Srvcs": [10], "Avg_Suplr_Mdcr_Alowd_Amt": [500.0]}
+    pd.DataFrame(detail).to_csv(d / "dmepos_2024.csv", index=False)
+    pd.DataFrame(detail).to_csv(d / "dmepos_2023.csv", index=False)
+    logs = []
+    frames = _run_npi_adapters(tmp_path, logs.append, skip={
+        "partb", "partd", "opioid", "open_payments", "kickback"}, max_year=2023)
+    assert "dmepos" in frames
+    joined = "\n".join(logs)
+    assert "dmepos_2023.csv" in joined and "dmepos_2024.csv" not in joined
+    assert "vintage cap" in joined
+
+    # only a post-cutoff vintage on disk -> explicit skip naming the needed year
+    d2024only = tmp_path / "only24" / "dmepos"
+    d2024only.mkdir(parents=True)
+    pd.DataFrame(detail).to_csv(d2024only / "dmepos_2024.csv", index=False)
+    logs2 = []
+    frames2 = _run_npi_adapters(tmp_path / "only24", logs2.append, skip={
+        "partb", "partd", "opioid", "open_payments", "kickback"}, max_year=2023)
+    assert "dmepos" not in frames2
+    assert any("post-2023" in ln and "2023" in ln for ln in logs2)
+
+
 def test_adapter_still_skips_when_no_layout_matches(tmp_path):
     from src.model_a.provider_features_export import _run_npi_adapters
     d = tmp_path / "dmepos"
