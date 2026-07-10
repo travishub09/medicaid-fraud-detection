@@ -432,9 +432,57 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                   "billing_implied_taxonomy"]
                       if c in out.columns]
     evidence_cols = [c for c in out.columns if c.startswith("evidence_n_")]
+    yoy_cols = [c for c in out.columns if c.endswith("_yoy")]
+    raw_feature_cols = sorted(set(raw_feature_cols) | set(yoy_cols))
     raw_feature_cols = [c for c in raw_feature_cols
                         if c not in leakage_hard and c not in label_metadata
                         and c not in evidence_cols]
+
+    # --- temporal vintage of every trainable feature (the cutoff question) ---
+    # point_in_time: dated rows inside the data — truly frozen under --asof-cutoff.
+    # annual_capped: annual PUFs — frozen by the filename-year vintage cap.
+    # reference:     timeless lookups (taxonomy crosswalks, geography).
+    # current_state: single-snapshot structure (NPPES, PECOS ownership, facility,
+    #                addresses, eligibility) — NO historical edition exists;
+    #                today's file proxies the cutoff-date world. A strict frozen
+    #                model can drop this class to bound its effect; the network
+    #                A/B delta is immune because both arms share these inputs.
+    _VINTAGE_RANK = ["point_in_time", "annual_capped", "reference", "current_state"]
+    _SRC_VINTAGE = {
+        "label": "point_in_time", "smoking_gun_timeline": "point_in_time",
+        "nppes_deactivation": "point_in_time", "sector_schemes": "point_in_time",
+        "growth": "point_in_time", "plausibility": "point_in_time",
+        "billing_lm": "point_in_time", "death_master": "point_in_time",
+        "partb": "annual_capped", "partd": "annual_capped",
+        "dmepos": "annual_capped", "opioid": "annual_capped",
+        "open_payments": "annual_capped", "kickback": "annual_capped",
+        "partb_trend": "annual_capped", "partd_trend": "annual_capped",
+        "dmepos_trend": "annual_capped", "opioid_trend": "annual_capped",
+        "nucc_taxonomy": "reference",
+    }  # every unlisted source (entity_graph, address, facility, pos, hcris,
+    #    saturation, ownership, graph_embeddings, order_referring_referrer, …)
+    #    is current_state — the safe default direction.
+    col_vintage: dict[str, str] = {}
+    for src, src_cols in sources_used.items():
+        v = _SRC_VINTAGE.get(src, "current_state")
+        for c in src_cols:
+            col_vintage[c] = v
+    for c in PROVIDER_STATS + pillar4 + V3_CONCEPTS + ANALYTICS_FEATURES:
+        if c in out.columns:
+            # billing-fact derived: recomputed on the as-of spending file (or
+            # dropped as asof-uncomputable) — point-in-time under a freeze
+            col_vintage[c] = "point_in_time"
+    for c in peerpct_cols:
+        col_vintage[c] = col_vintage.get(c[: -len("__peerpct")], "current_state")
+    for scheme, scheme_cols in coverage.items():
+        worst = max((_VINTAGE_RANK.index(col_vintage.get(c, "current_state"))
+                     for c in scheme_cols), default=0)
+        col_vintage[f"subscore_{scheme}"] = _VINTAGE_RANK[worst]
+    trainable = set(raw_feature_cols) | set(peerpct_cols) | set(subscore_cols)
+    feature_vintage = {v: sorted(c for c in trainable
+                                 if col_vintage.get(c, "current_state") == v)
+                       for v in _VINTAGE_RANK}
+    scheme_vintage = {s: col_vintage[f"subscore_{s}"] for s in coverage}
 
     manifest = {
         "grain": "npi",
@@ -456,6 +504,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "embedding_cols": embedding_cols,
         "scheme_coverage": coverage,
         "sources_used": sources_used,
+        "feature_vintage": feature_vintage,
+        "scheme_vintage": scheme_vintage,
     }
     return out, manifest
 
@@ -816,7 +866,8 @@ class _SourceAudit:
 
 
 def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
-                      max_year: int | None = None) -> dict[str, pd.DataFrame]:
+                      max_year: int | None = None,
+                      no_trends: bool = False) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
     Each entry is (source_name, subdir/filenames, callable(raw)->npi-keyed frame).
@@ -829,6 +880,7 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
     """
     frames: dict[str, pd.DataFrame] = {}
     skip = skip or set()
+    chosen: dict[str, tuple[Path, int]] = {}     # source -> (file used, its year)
 
     def _try(name: str, folder: Path, cols: dict | None, fn):
         if name in skip:
@@ -858,6 +910,7 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 df = res[0] if isinstance(res, tuple) else res
                 if df is not None and len(df) and "npi" in df.columns:
                     frames[name] = df
+                    chosen[name] = (src_file, _file_year(src_file))
                     note = (f" ({i} newer file(s) had a different layout — "
                             "re-download the current-year detail file)" if i else "")
                     if max_year is not None:
@@ -892,6 +945,67 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
          lambda r: opioid.compute_opioid_metrics(r))
     _try("open_payments", pc / "open_payments", openpayments.OP_COLS,
          lambda r: openpayments.compute_openpayments_metrics(r))
+
+    # Year-over-year trends: the operator holds multi-year PUF runs (Part B/D
+    # 2016-2024). A share that JUMPED between the two newest usable years is
+    # ramp signal the single-year snapshot can't see (upcoding creep, opioid
+    # share escalation). The previous-year lookup goes through the same
+    # vintage-capped candidate list, so a frozen run only trends PRE-cutoff
+    # years — the trend itself is leakage-correct by construction.
+    _TREND_COLS = {
+        "partb": ["em_high_level_share", "em_level_mean"],
+        "partd": ["high_cost_drug_share", "brand_generic_cost_ratio"],
+        "opioid": ["opioid_claim_share", "opioid_long_acting_share"],
+        "dmepos": ["dme_high_cost_item_share", "dme_code_concentration"],
+    }
+    _fns = {"partb": partb.compute_partb_metrics,
+            "partd": partd.compute_partd_metrics,
+            "dmepos": dmepos.compute_dmepos_metrics,
+            "opioid": opioid.compute_opioid_metrics}
+    _cmaps = {"partb": partb.PARTB_COLS, "partd": partd.PARTD_COLS,
+              "dmepos": dmepos.DMEPOS_COLS, "opioid": opioid.OPIOID_COLS}
+    if not no_trends:
+        for name, tcols in _TREND_COLS.items():
+            try:
+                if name not in frames or name not in chosen:
+                    continue
+                cur_file, cur_year = chosen[name]
+                if cur_year <= 0:
+                    continue
+                prev_df, prev_file = None, None
+                for p in [p for p in _year_files(pc / name, max_year)
+                          if 0 < _file_year(p) < cur_year]:
+                    try:
+                        raw = _read_one(p, _cmaps[name])
+                        if raw is None or not len(raw):
+                            continue
+                        res = _fns[name](raw)
+                        prev_df = res[0] if isinstance(res, tuple) else res
+                        prev_file = p
+                        break
+                    except ValueError:
+                        continue
+                if prev_df is None or "npi" not in prev_df.columns:
+                    continue
+                cur_df = frames[name]
+                share = [c for c in tcols
+                         if c in cur_df.columns and c in prev_df.columns]
+                if not share:
+                    continue
+                merged = cur_df[["npi"] + share].merge(
+                    prev_df[["npi"] + share].drop_duplicates("npi"),
+                    on="npi", suffixes=("", "__prev"))
+                tr = pd.DataFrame({"npi": merged["npi"]})
+                for c in share:
+                    tr[f"{c}_yoy"] = (pd.to_numeric(merged[c], errors="coerce")
+                                      - pd.to_numeric(merged[f"{c}__prev"],
+                                                      errors="coerce"))
+                frames[f"{name}_trend"] = tr
+                log(f"    [{name}_trend] {len(tr):,} providers: {prev_file.name} "
+                    f"→ {cur_file.name} year-over-year deltas "
+                    f"({', '.join(f'{c}_yoy' for c in share)})")
+            except Exception as e:
+                log(f"    [{name}_trend] skipped: {e}")
 
     # Part D × Open Payments kickback co-occurrence (per-NPI) needs BOTH raws.
     if "kickback" in skip:
@@ -1253,6 +1367,9 @@ def main() -> None:
                          "leakage-correct out-of-time training matrix)")
     ap.add_argument("--snapshot-dir", default=None,
                     help="feature-snapshot store dir (default <data-root>/feature_snapshots)")
+    ap.add_argument("--no-trends", action="store_true",
+                    help="skip the year-over-year PUF trend features (saves one "
+                         "extra prior-year read per multi-year source)")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
     ap.add_argument("--skip-sources", default=None,
@@ -1317,7 +1434,8 @@ def main() -> None:
         if vintage_cap:
             print(f"  [vintage] annual-PUF cap for the frozen run: {vintage_cap} or older")
         adapter_frames = _run_npi_adapters(preclean, audit, skip=skip,
-                                           max_year=vintage_cap)
+                                           max_year=vintage_cap,
+                                           no_trends=args.no_trends)
         # order_referring referrer-grain fallback: the public DMEPOS detail file
         # has no supplier NPI (org-grain ineligible_referral_share stays gated),
         # but the REFERRER's own standing is checkable today — DME dollars billed

@@ -188,6 +188,80 @@ def test_dme_ineligible_dollars_feeds_dme_ring_scheme():
     assert "dme_ineligible_referred_dollars" in ADAPTER_FEATURE_COLS
 
 
+# --------------------------------------------- year-over-year PUF trends
+
+def test_yoy_trend_from_two_dmepos_years(tmp_path):
+    """With two valid years on disk, the adapter runner emits a <source>_trend
+    frame whose *_yoy columns are (newest year minus prior year), and the
+    prior-year lookup honors the frozen vintage cap."""
+    from src.model_a.provider_features_export import _run_npi_adapters
+    d = tmp_path / "dmepos"
+    d.mkdir()
+    mk = lambda price: pd.DataFrame(
+        {"Rfrg_NPI": ["1000000004", "1000000004"],
+         "HCPCS_Cd": ["E0601", "K0001"],
+         "Tot_Suplr_Srvcs": [10, 10],
+         "Avg_Suplr_Mdcr_Alowd_Amt": [price, 1.0]})
+    mk(100.0).to_csv(d / "dmepos_2022.csv", index=False)
+    mk(400.0).to_csv(d / "dmepos_2023.csv", index=False)
+    logs = []
+    frames = _run_npi_adapters(tmp_path, logs.append, skip={
+        "partb", "partd", "opioid", "open_payments", "kickback"})
+    assert "dmepos_trend" in frames
+    tr = frames["dmepos_trend"].set_index("npi")
+    assert "dme_code_concentration_yoy" in tr.columns
+    # higher price concentration in 2023 than 2022 -> positive delta
+    assert tr.loc["1000000004", "dme_code_concentration_yoy"] > 0
+    assert any("dmepos_2022.csv" in ln and "dmepos_2023.csv" in ln for ln in logs)
+
+
+def test_yoy_trend_respects_no_trends_flag(tmp_path):
+    from src.model_a.provider_features_export import _run_npi_adapters
+    d = tmp_path / "dmepos"
+    d.mkdir()
+    df = pd.DataFrame({"Rfrg_NPI": ["1000000004"], "HCPCS_Cd": ["E0601"],
+                       "Tot_Suplr_Srvcs": [10],
+                       "Avg_Suplr_Mdcr_Alowd_Amt": [100.0]})
+    df.to_csv(d / "dmepos_2022.csv", index=False)
+    df.to_csv(d / "dmepos_2023.csv", index=False)
+    frames = _run_npi_adapters(tmp_path, lambda m: None, skip={
+        "partb", "partd", "opioid", "open_payments", "kickback"}, no_trends=True)
+    assert "dmepos_trend" not in frames
+
+
+# ------------------------------------------------ feature vintage classes
+
+def test_manifest_classifies_feature_vintage(tmp_path):
+    """Every trainable feature and scheme declares its temporal class, so a
+    strict frozen model can drop current_state structure and bound its effect."""
+    from src.entity_graph.__main__ import run as run_graph
+    from src.model_a.provider_features_export import build_provider_matrix
+    from tests.fixtures.synthetic import (build_synthetic_inputs,
+                                          build_provider_leads,
+                                          build_npi_adapter_frames)
+    inputs = build_synthetic_inputs()
+    outputs = run_graph(inputs, tmp_path / "graph")
+    leads = build_provider_leads(inputs["provider_dim"])
+    adapter_frames = build_npi_adapter_frames(leads["npi"].tolist())
+    _, manifest = build_provider_matrix(
+        leads, outputs["npi_to_org"],
+        org_graph_features=outputs["org_graph_features"],
+        adapter_npi_frames=adapter_frames, min_peer=5)
+    fv = manifest["feature_vintage"]
+    assert set(fv) == {"point_in_time", "annual_capped", "reference",
+                       "current_state"}
+    # graph structure can never be frozen; annual PUF metrics are capped
+    assert "shell_score" in fv["current_state"]
+    assert "em_high_level_share" in fv["annual_capped"]
+    # subscores inherit the WORST class of their inputs
+    sv = manifest["scheme_vintage"]
+    assert sv["ownership_integrity"] == "current_state"
+    assert sv["upcoding"] == "annual_capped"
+    # every trainable column is classified exactly once
+    all_classed = [c for cols in fv.values() for c in cols]
+    assert len(all_classed) == len(set(all_classed))
+
+
 # ------------------------------------------------------------- OPAIS header
 
 def test_opais_header_sniff_handles_taller_banner(tmp_path):
