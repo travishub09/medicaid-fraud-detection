@@ -510,3 +510,29 @@ def test_opais_csv_with_banner_promotes_header(tmp_path):
     raw = load_opais(str(p))
     assert "Entity Name" in raw.columns
     assert list(raw["340B ID"]) == ["CAH01-00"]
+
+
+# ---------------------------------------------- signed-delta bounds check
+
+def test_expectations_allow_signed_deltas_but_catch_broken_ones():
+    """Run-4 false-alarm class: a share's yoy/slope legitimately lives in
+    [-1,1]; the [0,1] share check must not fire on it — but a delta outside
+    [-1,1] is still structurally wrong and must FAIL."""
+    import numpy as np
+    from src.model_a.expectations import run_expectations
+    m = pd.DataFrame({
+        "npi": [str(1000000004 + i) for i in range(50)],
+        "opioid_claim_share_yoy": np.linspace(-0.9, 0.9, 50),
+        "opioid_claim_share_slope": np.linspace(-0.4, 0.4, 50),
+        "bad_share_yoy": np.linspace(-3, 3, 50),
+        "opioid_claim_share": np.linspace(0, 1, 50),
+    })
+    manifest = {"raw_feature_cols": list(m.columns[1:]), "peerpct_cols": [],
+                "subscore_cols": [], "leakage_hard": [], "leakage_adjacent": [],
+                "scheme_coverage": {}}
+    f = run_expectations(m, manifest)
+    flagged = set(f["scope"])
+    assert "opioid_claim_share_yoy" not in flagged
+    assert "opioid_claim_share_slope" not in flagged
+    assert "bad_share_yoy" in flagged
+    assert (f.loc[f["scope"] == "bad_share_yoy", "check"] == "delta_out_of_bounds").all()

@@ -36,6 +36,8 @@ import numpy as np
 import pandas as pd
 
 SEV_ORDER = {"FAIL": 0, "WARN": 1, "PASS": 2}
+# derived CHANGES of bounded quantities are signed — [-1, 1], not [0, 1]
+_SIGNED_SUFFIXES = ("_yoy", "_slope", "_delta")
 # families whose values are shares/scores bounded to [0, 1]
 _BOUNDED_HINTS = ("_share", "subscore_", "__peerpct", "_pct", "_index",
                   "_residual", "concentration", "_corr")
@@ -94,7 +96,7 @@ def run_expectations(matrix: pd.DataFrame, manifest: dict,
                      f"{int(np.isinf(covered).sum())} ±inf",
                      "no infinities (guard the zero denominators)",
                      "a ratio divided by an unguarded zero — find the division")
-        if any(h in c for h in _BOUNDED_HINTS):
+        if any(h in c for h in _BOUNDED_HINTS) and not c.endswith(_SIGNED_SUFFIXES):
             bad = int(((covered < -1e-9) | (covered > 1 + 1e-9)).sum())
             if bad:
                 _finding(f, "FAIL", c, "share_out_of_bounds",
@@ -103,6 +105,16 @@ def run_expectations(matrix: pd.DataFrame, manifest: dict,
                          "shares/scores/percentiles live in [0,1]",
                          "the calculation's numerator/denominator pairing is "
                          "wrong for some rows")
+        elif c.endswith(_SIGNED_SUFFIXES) and any(h in c for h in _BOUNDED_HINTS):
+            # a CHANGE of a share is signed: yoy lives in [-1, 1], a slope in
+            # [-1, 1] per year — the run-4 false-alarm class (12 spurious FAILs)
+            bad = int(((covered < -1 - 1e-9) | (covered > 1 + 1e-9)).sum())
+            if bad:
+                _finding(f, "FAIL", c, "delta_out_of_bounds",
+                         f"{bad} values outside [-1,1] "
+                         f"(min {covered.min():.3g}, max {covered.max():.3g})",
+                         "a share's change lives in [-1,1]",
+                         "the delta was computed on something that is not a share")
 
         if n_cov < min_covered:
             continue                      # distribution checks below need mass
