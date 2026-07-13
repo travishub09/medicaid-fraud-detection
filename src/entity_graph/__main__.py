@@ -290,6 +290,11 @@ def main() -> None:
                     help="build a POINT-IN-TIME graph: keep only exclusions/owner "
                          "relationships known before this date (YYYY-MM-DD) so the "
                          "embeddings/proximity/label are leakage-correct as-of then")
+    ap.add_argument("--asof-nppes", default=None,
+                    help="historical NPPES edition (~cutoff month) to FREEZE the "
+                         "co-location address layer, closing the shell_score leak. "
+                         "Without it the address edges use today's NPPES. NBER "
+                         "archives monthly editions.")
     ap.add_argument("--no-embeddings", action="store_true",
                     help="skip the DeepWalk node embeddings entirely; core graph "
                          "features are still computed")
@@ -326,7 +331,18 @@ def main() -> None:
         from src.model_a.temporal_sources import point_in_time_tables
         _ex = tables.get("exclusions")
         n0 = len(_ex) if _ex is not None else 0
-        tables = point_in_time_tables(tables, args.asof)
+        asof_addr = None
+        if args.asof_nppes:
+            from src.entity_graph.asof_nppes import build_asof_addresses
+            asof_addr = build_asof_addresses(args.asof_nppes, args.asof)
+            log(f"    co-location FROZEN: {len(asof_addr):,} addresses from the "
+                f"{args.asof} NPPES edition ({Path(args.asof_nppes).name})")
+        else:
+            log("    [WARN] co-location layer NOT frozen: address edges use "
+                "TODAY's NPPES, which leaks post-cutoff structure into "
+                "shell_score. Pass --asof-nppes <historical NPPES edition> to "
+                "close it (NBER archives monthly editions).")
+        tables = point_in_time_tables(tables, args.asof, asof_addresses=asof_addr)
         _ex2 = tables.get("exclusions")
         log(f"    point-in-time as-of {args.asof}: "
             f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")

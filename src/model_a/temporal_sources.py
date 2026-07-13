@@ -48,14 +48,29 @@ def asof_filter(frame: pd.DataFrame, asof, valid_col: str,
     return frame[keep.fillna(False)].copy()
 
 
-def point_in_time_tables(tables: dict[str, pd.DataFrame], asof) -> dict[str, pd.DataFrame]:
-    """Filter the entity-graph input tables to an as-of date (exclusions by
-    excl_date, owner edges by association_date). Other tables pass through —
-    NPPES/PECOS identity is treated as slowly-varying. Returns a new dict."""
+def point_in_time_tables(tables: dict[str, pd.DataFrame], asof,
+                         asof_addresses: pd.DataFrame | None = None
+                         ) -> dict[str, pd.DataFrame]:
+    """Filter the entity-graph input tables to an as-of date: exclusions by
+    excl_date, owner edges by association_date.
+
+    ``asof_addresses`` (npi, addr_key, addr_state from a historical NPPES
+    edition) freezes the CO-LOCATION substrate too. Without it, provider_dim
+    passed through with today's addresses, which leaks post-cutoff address
+    structure into shell_score (the one feature carrying the network edge, and
+    the one that sits in only the with-network arm of the A/B). Build it with
+    ``entity_graph.asof_nppes.build_asof_addresses`` and pass a Dec-cutoff NPPES
+    edition. When it is None the old behavior stands, but the graph logs the
+    address layer as un-frozen so the leak is visible, not silent.
+    """
     out = dict(tables)
     if "exclusions" in out and out["exclusions"] is not None:
         out["exclusions"] = asof_filter(out["exclusions"], asof, "excl_date")
     if "owner_edges" in out and out["owner_edges"] is not None:
         out["owner_edges"] = asof_filter(out["owner_edges"], asof, "association_date",
                                          keep_undated=True)
+    if asof_addresses is not None and out.get("provider_dim") is not None:
+        from src.entity_graph.asof_nppes import apply_asof_addresses
+        out["provider_dim"] = apply_asof_addresses(out["provider_dim"], asof_addresses)
+        out["_addr_frozen"] = True
     return out

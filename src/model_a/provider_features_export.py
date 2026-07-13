@@ -494,6 +494,18 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                  if col_vintage.get(c, "current_state") == v)
                        for v in _VINTAGE_RANK}
     scheme_vintage = {s: col_vintage[f"subscore_{s}"] for s in coverage}
+    # Every column gets a class in the contract, not just the trainable ones.
+    # Travis's GATE-0: the parquet carried 52 columns the manifest classified
+    # nowhere (identifiers, evidence_n_* counts, raw aggregates, leftover
+    # pipeline columns). They are quarantined-by-construction, but a contract
+    # should say so out loud. "ignore" = present in the file, never a feature.
+    leakage_adjacent_cols = ([c for c in LEAKAGE_ADJACENT if c in out.columns]
+                             + graph_adjacent)
+    classified = (set(trainable) | set(leakage_hard) | set(label_metadata)
+                  | set(leakage_adjacent_cols) | ({label} if label else set())
+                  | set(IDENTIFIER_COLS) | set(evidence_cols))
+    column_class = {"ignore": sorted(c for c in out.columns
+                                     if c not in classified)}
 
     manifest = {
         "grain": "npi",
@@ -517,6 +529,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "sources_used": sources_used,
         "feature_vintage": feature_vintage,
         "scheme_vintage": scheme_vintage,
+        "column_class": column_class,
     }
     return out, manifest
 
