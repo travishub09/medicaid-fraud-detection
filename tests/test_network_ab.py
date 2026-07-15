@@ -168,3 +168,67 @@ def test_no_network_features_is_handled():
     man["subscore_cols"] = []
     out = run_network_ab(m, man, n_boot=10)
     assert "error" in out
+
+
+def _forward_label(matrix, gap_recent_frac=0.5):
+    """Build a forward-label frame from a matrix: positives are the label==1
+    rows; half of them dated 'recent' (2024-03), half 'later' (2024-10)."""
+    pos = matrix[matrix["provider_on_exclusion"] == 1]["npi"].tolist()
+    import numpy as np
+    rng = np.random.default_rng(1)
+    recent = set(rng.choice(pos, int(len(pos) * gap_recent_frac), replace=False))
+    rows = []
+    for _, r in matrix.iterrows():
+        p = r["provider_on_exclusion"] == 1
+        rows.append({
+            "npi": r["npi"],
+            "is_prospective_positive": 1 if p else 0,
+            "was_excluded_pre_cutoff": 0,
+            "first_excl_date": ("2024-03-01" if r["npi"] in recent else "2024-10-01")
+            if p else "",
+        })
+    return pd.DataFrame(rows)
+
+
+def _matrix_with_structural(n=320, seed=3):
+    """Matrix whose real separator is shell_score (a STRUCTURAL network feature),
+    so structural_net is non-empty and the robustness attacks trigger."""
+    m = _matrix(n=n, seed=seed)
+    rng = np.random.default_rng(seed + 1)
+    label = m["provider_on_exclusion"].to_numpy()
+    m["shell_score"] = np.where(label == 1, rng.uniform(0.6, 1.0, n),
+                                rng.uniform(0.0, 0.4, n))
+    return m
+
+
+def test_robustness_attacks_run_and_render():
+    m = _matrix_with_structural(n=340)
+    man = _manifest()
+    man["raw_feature_cols"] = man["raw_feature_cols"] + ["shell_score"]
+    man["asof_cutoff"] = "2023-12-01"
+    fut = _forward_label(m)
+    out = run_network_ab(m, man, future_label=fut, n_boot=60, robustness=True,
+                         gap_months=6)
+    rob = out.get("robustness")
+    assert rob is not None
+    # in-flight attack dropped the 'recent' positives and still ran on the rest
+    assert "in_flight_dropped" in rob
+    assert rob["in_flight_dropped_n_pos"] < int(fut["is_prospective_positive"].sum())
+    # proximity residualization ran
+    assert "proximity_residualized" in rob
+    from src.model_a.network_ab import to_markdown
+    md = to_markdown(out)
+    assert "ROBUSTNESS" in md and "in flight" in md.lower()
+
+
+def test_substrate_section_renders_frozen_and_unfrozen():
+    from src.model_a.network_ab import to_markdown
+    base = {"label": "provider_on_exclusion", "n_network_features": 1,
+            "network_features": ["shell_score"], "n_trainable": 3,
+            "label_adjacent_net": [], "structural_net": ["shell_score"],
+            "is_forward": True}
+    frozen = dict(base, graph_substrate={"address_layer_frozen": True,
+                                         "asof_nppes_edition": "npidata_2023-12.csv"})
+    assert "SUBSTRATE — FROZEN" in to_markdown(frozen)
+    unfrozen = dict(base, graph_substrate={"address_layer_frozen": False})
+    assert "SUBSTRATE — NOT frozen" in to_markdown(unfrozen)

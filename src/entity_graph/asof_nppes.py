@@ -73,9 +73,16 @@ def build_asof_addresses(nppes_path: str | Path, cutoff: str) -> pd.DataFrame:
     are present). Uses the shared address normalizer so the key matches the one
     the live graph builds."""
     p = Path(nppes_path)
-    header = list(read_csv_text(p, nrows=0).columns) if p.suffix.lower() != ".parquet" \
-        else list(pd.read_parquet(p, columns=None).columns[:0]) or \
-        list(pd.read_parquet(p).columns)
+    if p.suffix.lower() == ".zip":
+        raise ValueError(
+            "pass the extracted npidata_pfile_*.csv, not the NPPES zip — the "
+            "dissemination zip holds several files and the main one is the "
+            "npidata csv (extract it first; it is large, that is expected)")
+    if p.suffix.lower() == ".parquet":
+        import pyarrow.parquet as pq                     # schema only, no data
+        header = [str(c) for c in pq.ParquetFile(p).schema_arrow.names]
+    else:
+        header = list(read_csv_text(p, nrows=0).columns)
     resolved = {k: _pick(v, header) for k, v in _NPPES_COLS.items()}
     if not resolved.get("npi"):
         raise ValueError(f"NPPES edition missing an NPI column; saw {header[:8]}")
@@ -83,7 +90,8 @@ def build_asof_addresses(nppes_path: str | Path, cutoff: str) -> pd.DataFrame:
     if p.suffix.lower() == ".parquet":
         raw = pd.read_parquet(p, columns=use)
     else:
-        raw = read_csv_text(p, usecols=use)
+        raw = read_csv_text(p, usecols=use)              # ~10 GB file: usecols keeps
+                                                         # the read laptop-sized
     df = raw.rename(columns={v: k for k, v in resolved.items() if v})
     df["npi"] = df["npi"].astype(str).str.strip()
     cut = _ym(cutoff)

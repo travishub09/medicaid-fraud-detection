@@ -182,6 +182,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           widened_label: pd.DataFrame | None = None,
                           case_labels: pd.DataFrame | None = None,
                           min_peer: int = 30,
+                          graph_substrate: dict | None = None,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
 
@@ -474,8 +475,17 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     #    saturation, ownership, graph_embeddings, order_referring_referrer, …)
     #    is current_state — the safe default direction.
     col_vintage: dict[str, str] = {}
+    # Travis's leak, closed at the source of truth: when the graph itself was
+    # built from a frozen NPPES edition (graph_build_info.json says so), its
+    # address-derived features ARE point-in-time — reclassify from facts, not
+    # from the old "no historical editions exist" assumption (which was wrong;
+    # NBER archives monthly NPPES editions).
+    _src_vintage = dict(_SRC_VINTAGE)
+    if graph_substrate and graph_substrate.get("address_layer_frozen"):
+        _src_vintage["entity_graph"] = "point_in_time"
+        _src_vintage["graph_embeddings"] = "point_in_time"
     for src, src_cols in sources_used.items():
-        v = _SRC_VINTAGE.get(src, "current_state")
+        v = _src_vintage.get(src, "current_state")
         for c in src_cols:
             col_vintage[c] = v
     for c in PROVIDER_STATS + pillar4 + V3_CONCEPTS + ANALYTICS_FEATURES:
@@ -530,6 +540,11 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "feature_vintage": feature_vintage,
         "scheme_vintage": scheme_vintage,
         "column_class": column_class,
+        "n_trainable": len(trainable),
+        "n_trainable_after_fence": len(trainable - set(leakage_adjacent_cols)),
+        "graph_substrate": graph_substrate or {"address_layer_frozen": False,
+                                               "asof": None,
+                                               "asof_nppes_edition": None},
     }
     return out, manifest
 
@@ -1823,10 +1838,27 @@ def main() -> None:
             audit("    [billing_lm] skipped: pass --with-analytics")
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
+    # substrate provenance from the graph build (frozen address layer or not)
+    graph_substrate = None
+    try:
+        gb = g / "graph_build_info.json"
+        if gb.exists():
+            graph_substrate = json.loads(gb.read_text(encoding="utf-8"))
+            if graph_substrate.get("address_layer_frozen"):
+                print(f"  [graph] substrate FROZEN (NPPES edition "
+                      f"{graph_substrate.get('asof_nppes_edition')}) — "
+                      "entity_graph features classed point_in_time")
+            elif args.asof_cutoff:
+                print("  [graph] WARNING: frozen run on an UNFROZEN address "
+                      "substrate — shell_score carries the co-location leak. "
+                      "Rebuild the graph with --asof-nppes to close it.")
+    except Exception as e:
+        print(f"  [graph] build-info unreadable ({e}); substrate assumed unfrozen")
     matrix, manifest = build_provider_matrix(
         leads, npi_to_org, org_graph_features=gf,
         adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
-        nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls)
+        nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls,
+        graph_substrate=graph_substrate)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

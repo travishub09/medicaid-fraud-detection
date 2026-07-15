@@ -346,6 +346,17 @@ def main() -> None:
         _ex2 = tables.get("exclusions")
         log(f"    point-in-time as-of {args.asof}: "
             f"{len(_ex2) if _ex2 is not None else 0} of {n0} exclusions retained")
+    # Substrate provenance: the graph SAYS how it was built, so downstream (the
+    # export's vintage classes, Travis's GATE-0) reads facts, not assumptions.
+    addr_frozen = bool(tables.pop("_addr_frozen", False))
+    import json as _json
+    Path(args.out).mkdir(parents=True, exist_ok=True)
+    (Path(args.out) / "graph_build_info.json").write_text(_json.dumps({
+        "asof": args.asof,
+        "address_layer_frozen": addr_frozen,
+        "asof_nppes_edition": (Path(args.asof_nppes).name
+                               if getattr(args, "asof_nppes", None) else None),
+    }, indent=2), encoding="utf-8")
     run(tables, Path(args.out), embeddings=not args.no_embeddings,
         max_component_size=args.max_component_size,
         max_colocation_cluster=args.max_colocation_cluster,

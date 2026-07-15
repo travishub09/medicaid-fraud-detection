@@ -215,9 +215,88 @@ def _ab_once(frame, y, with_net, without, groups, test_groups_for_boot,
             "with": res["with"], "without": res["without"], "delta_ci": ci}
 
 
+def _robustness_attacks(matrix, manifest, future_label, with_structural, without,
+                        groups_col, n_boot, n_splits, gap_months) -> dict:
+    """Travis's two adversarial checks, run on the size-matched structural set so
+    a survivor is trustworthy:
+
+      in_flight_dropped  drop forward positives banned within ``gap_months`` of
+                         the cutoff (bans that were likely investigations already
+                         in flight, i.e. the easy ones). Edge should survive on
+                         the harder remainder.
+      proximity_residualized  regress the within_2_hops proximity channel out of
+                         the structural features, so any surviving edge cannot be
+                         shell_score merely echoing 'near an already-excluded
+                         provider'.
+    """
+    import numpy as np
+    from .case_control import match_cohorts
+    res = {"gap_months": gap_months}
+    if future_label is None:
+        return res
+    fl = future_label.copy(); fl["npi"] = fl["npi"].astype(str)
+    pos = set(fl.loc[pd.to_numeric(fl.get("is_prospective_positive", 1),
+                                   errors="coerce").fillna(0) == 1, "npi"])
+    drop = set(fl.loc[pd.to_numeric(fl.get("was_excluded_pre_cutoff", 0),
+                                    errors="coerce").fillna(0) == 1, "npi"])
+
+    # --- attack 1: drop in-flight bans within gap_months of the cutoff ---
+    try:
+        cutoff = pd.to_datetime(manifest.get("asof_cutoff") or "2023-12-01")
+        d = fl.copy()
+        d["_dt"] = pd.to_datetime(d.get("first_excl_date"), errors="coerce")
+        soon = set(d.loc[d["_dt"].notna()
+                         & (d["_dt"] <= cutoff + pd.DateOffset(months=gap_months))
+                         & d["npi"].isin(pos), "npi"])
+        m = matrix[~matrix["npi"].astype(str).isin(drop | soon)].copy()
+        y = m["npi"].astype(str).isin(pos - soon).astype(int)
+        if int(y.sum()) >= 20:
+            mi = m.copy(); mi["_forward_positive"] = y.to_numpy()
+            if "confirmed_clean" in mi.columns:
+                mi = mi.drop(columns=["confirmed_clean"])
+            matched = match_cohorts(mi, label_col="_forward_positive")
+            if len(matched) and "cohort" in matched.columns:
+                ym = (matched["cohort"] == "case").astype(int)
+                gm = matched["match_id"].to_numpy() if "match_id" in matched.columns else None
+                res["in_flight_dropped"] = _ab_once(matched, ym, with_structural,
+                                                    without, gm, None, n_boot, n_splits)
+                res["in_flight_dropped_n_pos"] = int(y.sum())
+    except Exception as e:                                    # pragma: no cover
+        res["in_flight_error"] = str(e)
+
+    # --- attack 2: residualize shell/structural on the proximity channel ---
+    try:
+        prox = "within_2_hops_of_exclusion"
+        if prox in matrix.columns:
+            fl2 = matrix.copy()
+            fl2["_forward_positive"] = fl2["npi"].astype(str).isin(pos).astype(int)
+            fl2 = fl2[~fl2["npi"].astype(str).isin(drop)]
+            if "confirmed_clean" in fl2.columns:
+                fl2 = fl2.drop(columns=["confirmed_clean"])
+            matched = match_cohorts(fl2, label_col="_forward_positive")
+            if len(matched) and "cohort" in matched.columns:
+                pvec = pd.to_numeric(matched[prox], errors="coerce").fillna(0).to_numpy()
+                resid = matched.copy()
+                for c in with_structural:
+                    if c in resid.columns and c != prox:
+                        x = pd.to_numeric(resid[c], errors="coerce").fillna(0).to_numpy(float)
+                        denom = float((pvec * pvec).sum()) or 1.0
+                        beta = float((x * pvec).sum()) / denom
+                        resid[c] = x - beta * pvec        # remove the prox-aligned part
+                struct_no_prox = [c for c in with_structural if c != prox]
+                ym = (resid["cohort"] == "case").astype(int)
+                gm = resid["match_id"].to_numpy() if "match_id" in resid.columns else None
+                res["proximity_residualized"] = _ab_once(
+                    resid, ym, struct_no_prox, without, gm, None, n_boot, n_splits)
+    except Exception as e:                                    # pragma: no cover
+        res["proximity_error"] = str(e)
+    return res
+
+
 def run_network_ab(matrix: pd.DataFrame, manifest: dict,
                    future_label: pd.DataFrame | None = None, n_boot: int = 200,
-                   realistic_controls: bool = False, n_splits: int = 5) -> dict:
+                   realistic_controls: bool = False, n_splits: int = 5,
+                   robustness: bool = False, gap_months: int = 6) -> dict:
     label = manifest.get("label") or "provider_on_exclusion"
     without, with_net, net = feature_sets(matrix, manifest)
     label_adjacent = [c for c in net if c in LABEL_ADJACENT_NET]
@@ -226,7 +305,8 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
     out = {"label": label, "n_network_features": len(net),
            "network_features": net, "n_trainable": len(with_net),
            "label_adjacent_net": label_adjacent, "structural_net": structural_net,
-           "is_forward": future_label is not None}
+           "is_forward": future_label is not None,
+           "graph_substrate": manifest.get("graph_substrate")}
     if not net:
         out["error"] = "no network/graph features present — nothing to test."
         return out
@@ -303,6 +383,12 @@ def run_network_ab(matrix: pd.DataFrame, manifest: dict,
     except Exception as e:  # pragma: no cover
         out["matched_error"] = f"matched A/B failed: {e}"
 
+    # ----- robustness attacks (Travis) — structural set, forward only -----
+    if robustness and future_label is not None and structural_net:
+        out["robustness"] = _robustness_attacks(
+            matrix, manifest, future_label, with_structural, without,
+            groups, n_boot, n_splits, gap_months)
+
     out["verdict"] = _verdict(out)
     return out
 
@@ -370,7 +456,8 @@ def to_markdown(out: dict) -> str:
         L.append(f"- label-adjacent (leaky in-time): {', '.join(out['label_adjacent_net'])}")
     if out.get("structural_net"):
         L.append(f"- structural (trustworthy): {', '.join(out['structural_net'])}")
-    L.append(f"- **VERDICT: {out['verdict']}**\n")
+    if out.get("verdict"):
+        L.append(f"- **VERDICT: {out['verdict']}**\n")
     for pop in ("full", "matched", "matched_structural"):
         blk = out.get(pop)
         if not blk:
@@ -399,9 +486,56 @@ def to_markdown(out: dict) -> str:
             wo = blk["without"].get(m, float("nan"))
             L.append(f"| {nm} | {w:.4f} | {wo:.4f} | {_fmt(blk['delta_ci'].get(m, {}))} |")
         L.append("")
+    rob = out.get("robustness")
+    if rob:
+        L.append("")
+        L.append("## ROBUSTNESS — the structural edge under two attacks")
+        gm = rob.get("gap_months", 6)
+        for key, title in (
+            ("in_flight_dropped",
+             f"Drop forward bans within {gm} months of the cutoff (investigations "
+             "likely already in flight)"),
+            ("proximity_residualized",
+             "Residualize the within_2_hops proximity channel out of the "
+             "structural features"),
+        ):
+            blk = rob.get(key)
+            if not blk:
+                continue
+            npos = rob.get("in_flight_dropped_n_pos")
+            note = f" (positives left: {npos})" if key == "in_flight_dropped" and npos else ""
+            L.append(f"\n**{title}{note}**")
+            L.append("| metric | with network | without | delta [95% CI] |")
+            L.append("|---|---|---|---|")
+            for m, nm in (("lift10", "top-decile lift"), ("pr_auc", "PR-AUC"),
+                          ("roc_auc", "ROC-AUC")):
+                w = blk["with"].get(m, float("nan"))
+                wo = blk["without"].get(m, float("nan"))
+                L.append(f"| {nm} | {w:.4f} | {wo:.4f} | {_fmt(blk['delta_ci'].get(m, {}))} |")
+        L.append("\n_An edge that holds under both attacks is not the model reading "
+                 "the answer off proximity or off easy in-flight bans._")
+    sub = out.get("graph_substrate") or manifest_substrate(out)
+    if sub is not None:
+        frozen = sub.get("address_layer_frozen")
+        L.append("")
+        L.append(f"## SUBSTRATE — {'FROZEN' if frozen else 'NOT frozen'}")
+        if frozen:
+            L.append(f"- Co-location addresses frozen to the "
+                     f"{sub.get('asof_nppes_edition')} NPPES edition. shell_score "
+                     "carries no post-cutoff address leak. Clean.")
+        else:
+            L.append("- Co-location addresses use TODAY's NPPES, so shell_score "
+                     "still carries a post-cutoff leak. Rebuild the graph with "
+                     "--asof-nppes for a clean read (see run6).")
+    L.append("")
     L.append("_Matched-set delta is decisive: a network advantage that survives size/"
              "taxonomy matching is real; one that only shows on the full population was size._")
     return "\n".join(L)
+
+
+def manifest_substrate(out: dict):
+    """Substrate info if the A/B was handed it (via manifest); else None."""
+    return out.get("graph_substrate")
 
 
 def main() -> None:
@@ -421,6 +555,13 @@ def main() -> None:
                     help="match cases to ORDINARY same-size/specialty providers instead "
                          "of the manufactured-clean anchors — a harder, headroom-having "
                          "test. Use this when the confirmed_clean run saturates at AUC 1.")
+    ap.add_argument("--robustness", action="store_true",
+                    help="run the two adversarial checks (Travis): drop in-flight "
+                         "bans near the cutoff, and residualize the proximity "
+                         "channel. Forward runs only.")
+    ap.add_argument("--gap-months", type=int, default=6,
+                    help="in-flight window for --robustness: drop forward positives "
+                         "banned within this many months of the cutoff.")
     args = ap.parse_args()
 
     matrix = pd.read_parquet(args.matrix)
@@ -428,7 +569,8 @@ def main() -> None:
     fut = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
     out = run_network_ab(matrix, manifest, future_label=fut, n_boot=args.n_boot,
                          realistic_controls=args.realistic_controls,
-                         n_splits=args.n_splits)
+                         n_splits=args.n_splits, robustness=args.robustness,
+                         gap_months=args.gap_months)
     report = to_markdown(out)
     Path(args.out).write_text(report, encoding="utf-8")
     print(report)
