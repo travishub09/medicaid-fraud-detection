@@ -90,7 +90,9 @@ def test_invalid_identity_transforms_are_leakage_adjacent():
     assert "billing_after_deactivation" in LEAKAGE_HARD
     assert "billing_after_deactivation__peerpct" in LEAKAGE_ADJACENT
     assert "subscore_invalid_identity" in LEAKAGE_ADJACENT
-    assert "billed_after_death__peerpct" in LEAKAGE_ADJACENT
+    # the death feature is billing_after_death (matches the death_master producer);
+    # the old billed_after_death spelling was a fence-escaping name bug, now fixed
+    assert "billing_after_death__peerpct" in LEAKAGE_ADJACENT
     # run-4 catch: exclusion strips O&R eligibility, so the current-state
     # ineligible-referrer features partially encode the label (AUC 0.96 in-time)
     for c in ("dme_ineligible_referrer", "dme_ineligible_referred_dollars",

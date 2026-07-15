@@ -78,3 +78,25 @@ def test_write_health_roundtrip_and_baseline(tmp_path):
                                               "em_level_mean__peerpct"]),
                       manifest, tmp_path)
     assert any(r["scheme"] == "upcoding" for r in s2["regressions"])
+
+
+def test_check_direction_flags_inverted_subscore():
+    """A subscore that fires on the CLEAN (label==0) not the fraud should be
+    flagged CHECK_DIRECTION when there are enough known positives."""
+    import numpy as np, pandas as pd
+    from src.model_a.scheme_health import audit_scheme_health
+    n = 400
+    rng = np.random.default_rng(5)
+    y = np.array([1] * 60 + [0] * (n - 60))
+    # upcoding subscore is INVERTED: high for the clean, low for the fraud
+    up = np.where(y == 1, rng.uniform(0.0, 0.3, n), rng.uniform(0.6, 1.0, n))
+    m = pd.DataFrame({
+        "npi": [f"{1000000000+i}" for i in range(n)],
+        "provider_on_exclusion": y,
+        "em_high_level_share__peerpct": rng.uniform(0, 1, n),
+        "em_level_mean__peerpct": rng.uniform(0, 1, n),
+        "subscore_upcoding": up,
+    })
+    df = audit_scheme_health(m, {"label": "provider_on_exclusion"}).set_index("scheme")
+    assert df.loc["upcoding", "status"] == "CHECK_DIRECTION"
+    assert df.loc["upcoding", "label_auc"] < 0.42

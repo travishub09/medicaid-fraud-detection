@@ -93,7 +93,7 @@ LEAKAGE_HARD = ["billed_after_exclusion", "excluded_after_billing",
                   for c in ("months_after", "paid_after", "first_after", "last_after")],
                 # §E label widening: once these definitional flags feed the label,
                 # they are label-derived and must never also be features
-                "billing_after_deactivation", "billed_after_death"]
+                "billing_after_deactivation", "billing_after_death"]
 
 # Exclusion-PROXIMITY features: predictive (rings get caught together) but
 # correlated with the label — use only under a strict out-of-time split. Includes
@@ -105,12 +105,12 @@ LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "shell_score",
                     "facility_has_excluded_owner_probable",
                     # transforms of leakage_hard events: the peer percentile and
                     # the invalid_identity subscore are built FROM
-                    # billing_after_deactivation / billed_after_death, so in-time
+                    # billing_after_deactivation / billing_after_death, so in-time
                     # they nearly encode the label (run-3 signal ranking: AUC
                     # 0.926). Legitimately predictive FORWARD (deactivation
                     # precedes future exclusion) — the definition of adjacent.
                     "billing_after_deactivation__peerpct",
-                    "billed_after_death__peerpct",
+                    "billing_after_death__peerpct",
                     "subscore_invalid_identity",
                     # O&R eligibility is CURRENT-STATE and exclusion strips it,
                     # so "referrer ineligible today" partially encodes the label
@@ -322,7 +322,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         if "exclusion_label_sources" not in out.columns:
             out["exclusion_label_sources"] = ""
         for flag, tag in (("billing_after_deactivation", "deactivation"),
-                          ("billed_after_death", "death")):
+                          ("billing_after_death", "death")):
             if flag not in out.columns:
                 continue
             pos = pd.to_numeric(out[flag], errors="coerce").fillna(0) > 0
