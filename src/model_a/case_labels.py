@@ -86,10 +86,17 @@ def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
 def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       npi_to_org: pd.DataFrame,
                       fuzzy_threshold: float | None = 0.92,
-                      medicaid_only: bool = False) -> pd.DataFrame:
+                      medicaid_only: bool = False,
+                      asof_cutoff: str | None = None) -> pd.DataFrame:
     """Per-NPI DOJ-case labels: npi, fraud_label, fraud_scheme, conduct_start,
     conduct_end, case_ids, amount_usd, label_source. One row per NPI (a provider in
     multiple cases takes the union of schemes, the widest window, summed dollars).
+
+    ``asof_cutoff`` (YYYY-MM, frozen runs): a case is a leakage-safe positive only
+    when its conduct STARTED on/before the cutoff year. Cases whose fraud began
+    after the freeze, or whose conduct window is unknown, are dropped from a
+    frozen label — otherwise the model would be graded on conduct it could not
+    have seen. Current-day runs pass None and keep every resolved case.
 
     ``fuzzy_threshold`` adds a conservative difflib second pass for defendants the
     exact name-key join missed (None disables — Run 2 §F). ``medicaid_only`` keeps
@@ -140,6 +147,14 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     if not rows:
         return pd.DataFrame(columns=cols)
     df = pd.DataFrame(rows)
+
+    if asof_cutoff:
+        cut_year = int(str(asof_cutoff)[:4])
+        n_before = len(df)
+        df = df[df["conduct_start"].notna()
+                & (pd.to_numeric(df["conduct_start"], errors="coerce") <= cut_year)]
+        if not len(df):
+            return pd.DataFrame(columns=cols)
 
     out_rows = []
     for npi, g in df.groupby("npi"):

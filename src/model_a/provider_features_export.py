@@ -1778,9 +1778,13 @@ def main() -> None:
             from .case_labels import build_case_labels
             cdb = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
                    else pd.read_parquet(args.case_db))
-            case_lbls = build_case_labels(cdb, org_nodes, npi_to_org)
+            # frozen runs box case positives to conduct that STARTED pre-cutoff
+            case_lbls = build_case_labels(cdb, org_nodes, npi_to_org,
+                                          asof_cutoff=args.asof_cutoff)
             audit(f"    [doj_case] {len(case_lbls):,} NPIs labeled from "
-                  f"{Path(args.case_db).name} (scheme-typed + conduct windows)")
+                  f"{Path(args.case_db).name} (scheme-typed + conduct windows"
+                  + (f", boxed to <= {str(args.asof_cutoff)[:4]}" if args.asof_cutoff
+                     else "") + ")")
 
         # external grounding (address) + temporal-graph velocity + billing LM
         pdim_p = _first_existing(processed, "provider_dim.parquet")
@@ -1897,6 +1901,21 @@ def main() -> None:
     _write_dictionary(matrix, manifest, out_dir)
     _write_report(matrix, manifest, out_dir)
     _write_sources_report(manifest["sources_audit"], out_dir)
+    # scheme-vs-proven-cases validation: the ruler that fits the billing schemes
+    if case_lbls is not None and len(case_lbls):
+        try:
+            from .case_validation import validate_schemes, to_markdown as _cv_md
+            res = validate_schemes(matrix, case_lbls)
+            n_case = int(matrix["npi"].astype(str).isin(
+                set(case_lbls["npi"].astype(str))).sum())
+            (out_dir / "CASE_VALIDATION.md").write_text(
+                _cv_md(res, n_case), encoding="utf-8")
+            val = res[res["verdict"] == "VALIDATED"]["scheme"].tolist() if len(res) else []
+            print(f"  [case_validation] {n_case:,} DOJ-case NPIs; validated "
+                  f"schemes: {', '.join(val) if val else 'none yet'} "
+                  f"→ {out_dir / 'CASE_VALIDATION.md'}")
+        except Exception as e:                                # reporter, not a gate
+            print(f"  [case_validation] skipped: {e}")
     # the standing calc-integrity feedback loop: file findings, never kill the run
     try:
         from .expectations import run_expectations, write_report as _write_exp
