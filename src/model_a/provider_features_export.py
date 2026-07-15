@@ -1901,6 +1901,22 @@ def main() -> None:
     _write_dictionary(matrix, manifest, out_dir)
     _write_report(matrix, manifest, out_dir)
     _write_sources_report(manifest["sources_audit"], out_dir)
+    # per-scheme calc integrity + run-to-run regression alarm (the silent-
+    # degradation feedback loop): compares against the LAST run's baseline in
+    # this out_dir, so a source that quietly stopped feeding a scheme is caught
+    # before the matrix ships.
+    try:
+        from .scheme_health import write_health
+        sh = write_health(matrix, manifest, out_dir)
+        msg = (f"  [scheme_health] {sh['n_broken']} BROKEN / {sh['n_degraded']} "
+               f"DEGRADED → {out_dir / 'SCHEME_HEALTH.md'}")
+        if sh["regressions"]:
+            msg += (f"\n  *** {len(sh['regressions'])} SCHEME REGRESSION(S) vs the "
+                    "last run — a source may have silently dropped. Check "
+                    "SCHEME_HEALTH.md before trusting this matrix. ***")
+        print(msg)
+    except Exception as e:                                    # reporter, not a gate
+        print(f"  [scheme_health] skipped: {e}")
     # scheme-vs-proven-cases validation: the ruler that fits the billing schemes
     if case_lbls is not None and len(case_lbls):
         try:
