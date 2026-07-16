@@ -101,8 +101,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     ``fuzzy_threshold`` adds a conservative difflib second pass for defendants the
     exact name-key join missed (None disables — Run 2 §F). ``medicaid_only`` keeps
     only cases whose text mentions Medicaid (the §F filter for the Medicaid label)."""
-    cols = ["npi", "fraud_label", "fraud_scheme", "conduct_start", "conduct_end",
-            "case_ids", "amount_usd", "label_source"]
+    cols = ["npi", "fraud_label", "fraud_scheme", "case_sector", "conduct_start",
+            "conduct_end", "case_ids", "amount_usd", "label_source"]
     if case_db is None or not len(case_db) or org_nodes is None or not len(org_nodes):
         return pd.DataFrame(columns=cols)
     if medicaid_only:
@@ -138,11 +138,12 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             continue
         c = cases.loc[cid]
         scheme = str(c.get("scheme") or "unknown")
+        sector = str(c.get("sector") or "")
         start, end = extract_conduct_window(c.get("summary", ""), str(c.get("announced_date", "")))
         amt = pd.to_numeric(pd.Series([c.get("amount_usd")]), errors="coerce").iloc[0]
         for npi in org_to_npis.get(str(s.org_node_id), []):
-            rows.append({"npi": npi, "fraud_scheme": scheme, "conduct_start": start,
-                         "conduct_end": end, "case_ids": cid,
+            rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
+                         "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": float(amt) if pd.notna(amt) else 0.0})
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -156,13 +157,20 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         if not len(df):
             return pd.DataFrame(columns=cols)
 
+    def _tag_union(vals) -> str:
+        tags = set()
+        for v in vals:
+            tags.update(t.strip() for t in str(v or "").split(";") if t.strip())
+        return ";".join(sorted(tags))
+
     out_rows = []
     for npi, g in df.groupby("npi"):
         starts = g["conduct_start"].dropna()
         ends = g["conduct_end"].dropna()
         out_rows.append({
             "npi": npi, "fraud_label": 1,
-            "fraud_scheme": ";".join(sorted(set(g["fraud_scheme"]))),
+            "fraud_scheme": _tag_union(g["fraud_scheme"]) or "unknown",
+            "case_sector": _tag_union(g["case_sector"]),
             "conduct_start": int(starts.min()) if len(starts) else None,
             "conduct_end": int(ends.max()) if len(ends) else None,
             "case_ids": ";".join(sorted(set(g["case_ids"]))),

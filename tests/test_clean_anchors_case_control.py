@@ -44,6 +44,36 @@ def test_manufacture_negatives_anchors_and_exclusions():
     assert neg.loc["F", "confirmed_clean"] == 0      # no institutional/tenure anchor → stays unlabeled
 
 
+def test_manufacture_negatives_asof_fallback():
+    """Frozen (as-of) matrices drop the v3 concepts; the benign check must fall
+    back to the point-in-time-safe residual/consistency criteria instead of
+    zeroing out confirmed_clean (the run-6 frozen matrix had 0 negatives)."""
+    def row(**kw):
+        base = dict(provider_on_exclusion=0, within_2_hops_of_exclusion=0,
+                    graph_fraud_proximity=0.1, tenure_months=200,
+                    primary_taxonomy="207Q00000X", org_legal_name="X",
+                    billing_residual=-0.5, volume_residual=-0.2,
+                    consistency_flags=0)
+        base.update(kw)
+        return base
+    m = pd.DataFrame([
+        row(npi="A"),                                    # long tenure + benign residuals → clean
+        row(npi="B", billing_residual=2.5),              # unexplained excess → NOT clean
+        row(npi="C", consistency_flags=2),               # incoherent record → NOT clean
+        row(npi="D", tenure_months=24),                  # benign but no anchor → unlabeled
+        row(npi="E", billing_residual=float("nan")),     # thin evidence → never forced negative
+    ])
+    assert not any(c in m.columns for c in
+                   ("concentration", "payment_intensity", "service_intensity"))
+    neg = manufacture_negatives(m).set_index("npi")
+    assert neg.loc["A", "confirmed_clean"] == 1
+    assert "benign_residuals" in neg.loc["A", "clean_basis"]
+    assert neg.loc["B", "confirmed_clean"] == 0
+    assert neg.loc["C", "confirmed_clean"] == 0
+    assert neg.loc["D", "confirmed_clean"] == 0
+    assert neg.loc["E", "confirmed_clean"] == 0
+
+
 def test_match_cohorts_pairs_case_with_clean_controls():
     rows = [{"npi": "case1", "provider_on_exclusion": 1, "confirmed_clean": 0,
              "primary_taxonomy": "T", "practice_state": "TX", "net_paid": 100.0}]

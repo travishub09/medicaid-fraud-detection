@@ -35,7 +35,8 @@ import numpy as np
 import pandas as pd
 
 # DOJ conduct vocabulary (case_db._SCHEME_KEYWORDS) -> our subscore scheme names.
-# A DOJ scheme can map to more than one of ours; each mapped subscore is scored.
+# A DOJ scheme can map to more than one of ours; a subscore scored under several
+# DOJ conduct types takes the UNION of their proven NPIs (one row per subscore).
 DOJ_TO_SUBSCHEME = {
     "kickback": ["pharma_kickback", "dme_ring"],
     "upcoding": ["upcoding"],
@@ -44,6 +45,21 @@ DOJ_TO_SUBSCHEME = {
     "phantom_billing": ["single_service_mill", "nemt_fraud", "behavioral_health"],
     "eligibility": ["invalid_identity", "dme_ring"],
     "worthless_services": ["worthless_services"],
+    "pill_mill": ["pill_mill", "drug_outlier"],
+}
+
+# DOJ case SECTOR -> subscore. The sector classifier ("hospice", "dme", …) is a
+# far more reliable read of a press release than conduct keywords, and a hospice
+# settlement is evidence for the hospice scheme regardless of which conduct
+# phrase the release used. Conservative: only sectors with a clean scheme analog.
+SECTOR_TO_SUBSCHEME = {
+    "hospice": ["hospice_ineligibility"],
+    "dme": ["dme_ring"],
+    "behavioral": ["behavioral_health"],
+    "snf": ["worthless_services"],
+    "pharmacy": ["drug_outlier", "contract_pharmacy"],
+    "telehealth": ["dme_ring"],          # telefraud cases are DME/testing-driven
+    "managed_care": ["upcoding"],        # risk-adjustment fraud IS upcoding
 }
 
 MIN_PROVEN = 5             # fewer known cases in coverage than this = THIN
@@ -81,65 +97,86 @@ def _top_decile_lift(y: np.ndarray, s: np.ndarray) -> float:
 
 def validate_schemes(matrix: pd.DataFrame, case_labels: pd.DataFrame,
                      min_proven: int = MIN_PROVEN) -> pd.DataFrame:
-    """One row per scheme: AUC/lift/specificity of subscore_<scheme> against the
-    DOJ cases of that conduct type. ``case_labels`` carries npi + fraud_scheme
-    (from build_case_labels; ';'-joined scheme tags)."""
-    cols = ["scheme", "subscore", "n_proven", "auc", "top_decile_lift",
-            "specificity_auc", "verdict"]
+    """ONE row per subscore scheme: AUC/lift/specificity of subscore_<scheme>
+    against the union of DOJ cases whose conduct type (fraud_scheme tags) or case
+    sector (case_sector tags) maps to it. ``case_labels`` comes from
+    build_case_labels; both tag columns are ';'-joined."""
+    cols = ["scheme", "subscore", "doj_conduct", "n_proven", "auc",
+            "top_decile_lift", "specificity_auc", "verdict"]
     if not len(matrix) or case_labels is None or not len(case_labels):
         return pd.DataFrame(columns=cols)
     m = matrix.copy()
     m["npi"] = m["npi"].astype(str)
     cl = case_labels.copy()
     cl["npi"] = cl["npi"].astype(str)
-    cl["fraud_scheme"] = cl.get("fraud_scheme", "").fillna("").astype(str)
 
-    # explode DOJ scheme tags -> the set of NPIs proven for each DOJ scheme
-    doj_npis: dict[str, set] = {}
-    for r in cl.itertuples():
-        for tag in str(r.fraud_scheme).split(";"):
-            tag = tag.strip().lower()
-            if tag:
-                doj_npis.setdefault(tag, set()).add(r.npi)
+    # explode ';'-joined tags -> the set of NPIs proven under each tag
+    def _tag_npis(col: str) -> dict[str, set]:
+        tags: dict[str, set] = {}
+        if col not in cl.columns:
+            return tags
+        for npi, val in zip(cl["npi"], cl[col].fillna("").astype(str)):
+            for tag in val.split(";"):
+                tag = tag.strip().lower()
+                if tag:
+                    tags.setdefault(tag, set()).add(npi)
+        return tags
+
+    conduct_npis = _tag_npis("fraud_scheme")
+    sector_npis = _tag_npis("case_sector")
     all_case_npis = set(cl["npi"])
 
-    rows = []
-    for doj_scheme, subs in DOJ_TO_SUBSCHEME.items():
-        proven = doj_npis.get(doj_scheme, set())
-        if not proven:
-            continue
-        for sub in subs:
-            col = f"subscore_{sub}"
-            if col not in m.columns:
+    # union proven NPIs per SUBSCORE across both crosswalks (one row per
+    # subscore — the old per-(DOJ-tag × subscore) loop emitted duplicate rows
+    # for schemes reachable from two tags, e.g. dme_ring)
+    sub_proven: dict[str, set] = {}
+    sub_tags: dict[str, list[str]] = {}
+    for crosswalk, tag_npis in ((DOJ_TO_SUBSCHEME, conduct_npis),
+                                (SECTOR_TO_SUBSCHEME, sector_npis)):
+        for tag, subs in crosswalk.items():
+            proven = tag_npis.get(tag, set())
+            if not proven:
                 continue
-            s = pd.to_numeric(m[col], errors="coerce").to_numpy(float)
-            y = m["npi"].isin(proven).to_numpy().astype(int)
-            n_cov_pos = int(((~np.isnan(s)) & (y == 1)).sum())
-            auc = _auc(y, s)
-            lift = _top_decile_lift(y, s)
-            # specificity: on the case NPIs only, does subscore_sub rank the
-            # THIS-scheme cases above OTHER-scheme cases? (guards against a
-            # subscore that just fires on any excluded provider)
-            spec = float("nan")
-            case_mask = m["npi"].isin(all_case_npis).to_numpy()
-            if case_mask.sum() > 10:
-                ys = m.loc[case_mask, "npi"].isin(proven).to_numpy().astype(int)
-                ss = pd.to_numeric(m.loc[case_mask, col], errors="coerce").to_numpy(float)
-                if ys.sum() >= 3 and (ys == 0).sum() >= 3:
-                    spec = _auc(ys, ss)
-            if n_cov_pos < min_proven:
-                verdict = f"THIN ({n_cov_pos} proven in coverage)"
-            elif not np.isnan(auc) and auc >= 0.62:
-                verdict = "VALIDATED"
-            elif not np.isnan(auc) and auc >= 0.55:
-                verdict = "PARTIAL"
-            else:
-                verdict = "WEAK"
-            rows.append({"scheme": sub, "subscore": col, "n_proven": n_cov_pos,
-                         "auc": round(auc, 3) if not np.isnan(auc) else None,
-                         "top_decile_lift": round(lift, 2) if not np.isnan(lift) else None,
-                         "specificity_auc": round(spec, 3) if not np.isnan(spec) else None,
-                         "verdict": verdict})
+            for sub in subs:
+                sub_proven.setdefault(sub, set()).update(proven)
+                sub_tags.setdefault(sub, []).append(f"{tag}:{len(proven)}")
+
+    rows = []
+    for sub in sorted(sub_proven):
+        proven = sub_proven[sub]
+        col = f"subscore_{sub}"
+        if col not in m.columns:
+            continue
+        s = pd.to_numeric(m[col], errors="coerce").to_numpy(float)
+        y = m["npi"].isin(proven).to_numpy().astype(int)
+        n_cov_pos = int(((~np.isnan(s)) & (y == 1)).sum())
+        auc = _auc(y, s)
+        lift = _top_decile_lift(y, s)
+        # specificity: on the case NPIs only, does subscore_sub rank the
+        # THIS-scheme cases above OTHER-scheme cases? (guards against a
+        # subscore that just fires on any excluded provider)
+        spec = float("nan")
+        case_mask = m["npi"].isin(all_case_npis).to_numpy()
+        if case_mask.sum() > 10:
+            ys = m.loc[case_mask, "npi"].isin(proven).to_numpy().astype(int)
+            ss = pd.to_numeric(m.loc[case_mask, col], errors="coerce").to_numpy(float)
+            if ys.sum() >= 3 and (ys == 0).sum() >= 3:
+                spec = _auc(ys, ss)
+        if n_cov_pos < min_proven:
+            verdict = f"THIN ({n_cov_pos} proven in coverage)"
+        elif not np.isnan(auc) and auc >= 0.62:
+            verdict = "VALIDATED"
+        elif not np.isnan(auc) and auc >= 0.55:
+            verdict = "PARTIAL"
+        else:
+            verdict = "WEAK"
+        rows.append({"scheme": sub, "subscore": col,
+                     "doj_conduct": ";".join(sub_tags.get(sub, [])),
+                     "n_proven": n_cov_pos,
+                     "auc": round(auc, 3) if not np.isnan(auc) else None,
+                     "top_decile_lift": round(lift, 2) if not np.isnan(lift) else None,
+                     "specificity_auc": round(spec, 3) if not np.isnan(spec) else None,
+                     "verdict": verdict})
     out = pd.DataFrame(rows, columns=cols)
     return out.sort_values(["verdict", "auc"], ascending=[True, False]).reset_index(drop=True)
 
@@ -158,10 +195,10 @@ def to_markdown(res: pd.DataFrame, n_case_npis: int) -> str:
                  "(empty case DB, or no resolved NPIs).**")
         return "\n".join(L)
     L.append("")
-    L.append("| scheme | proven cases | AUC | top-decile lift | specificity | verdict |")
-    L.append("|---|--:|--:|--:|--:|---|")
+    L.append("| scheme | DOJ evidence (tag:cases) | proven cases | AUC | top-decile lift | specificity | verdict |")
+    L.append("|---|---|--:|--:|--:|--:|---|")
     for r in res.itertuples():
-        L.append(f"| {r.scheme} | {r.n_proven} | "
+        L.append(f"| {r.scheme} | {getattr(r, 'doj_conduct', '') or '-'} | {r.n_proven} | "
                  f"{r.auc if r.auc is not None else '-'} | "
                  f"{r.top_decile_lift if r.top_decile_lift is not None else '-'} | "
                  f"{r.specificity_auc if r.specificity_auc is not None else '-'} | "

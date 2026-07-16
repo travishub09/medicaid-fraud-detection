@@ -10,7 +10,10 @@ one conservatively from institutional priors + benign behavior + graph distance:
      * an INSTITUTIONAL anchor (FQHC/RHC taxonomy, or a name like VA / university /
        government / community health center — types with institutional audit and a
        near-zero fraud base rate) OR LONG continuous tenure;
-     * BENIGN billing — below the peer median on every anomaly concept;
+     * BENIGN billing — below the peer median on every anomaly concept; on as-of
+       (frozen) matrices, which drop the v3 concepts as non-recomputable, the
+       fallback is point-in-time-safe: billing/volume residuals at or below
+       expectation and zero cross-source consistency flags;
      * NO fraud signal — not on any exclusion/case list, not within two hops of an
        exclusion, low graph fraud-proximity.
 
@@ -67,8 +70,26 @@ def manufacture_negatives(matrix: pd.DataFrame) -> pd.DataFrame:
     long_tenure = _num(df, "tenure_months", 0) >= LONG_TENURE_MONTHS
 
     present = [c for c in _CONCEPTS if c in df.columns]
-    benign = (pd.concat([_num(df, c) for c in present], axis=1) < BENIGN_THRESHOLD).all(axis=1) \
-        if present else pd.Series(False, index=idx)
+    if present:
+        benign = (pd.concat([_num(df, c) for c in present], axis=1)
+                  < BENIGN_THRESHOLD).all(axis=1)
+        benign_tag = "benign_billing"
+    else:
+        # As-of (frozen) matrices drop the v3 concepts (not recomputable
+        # point-in-time), which used to zero out confirmed_clean on frozen runs.
+        # Fall back to point-in-time-safe benign criteria: billing/volume at or
+        # below the expected-billing twin, and zero cross-source consistency
+        # flags. NaN comparisons stay False, so thin-evidence providers are never
+        # forced negative.
+        checks = [pd.to_numeric(df[c], errors="coerce") <= 0
+                  for c in ("billing_residual", "volume_residual")
+                  if c in df.columns]
+        if "consistency_flags" in df.columns:
+            checks.append(pd.to_numeric(df["consistency_flags"],
+                                        errors="coerce") == 0)
+        benign = (pd.concat(checks, axis=1).all(axis=1) if checks
+                  else pd.Series(False, index=idx))
+        benign_tag = "benign_residuals"
 
     on_list = _num(df, "provider_on_exclusion",
                    default=None).fillna(_num(df, "provider_on_leie", 0)) == 1
@@ -81,7 +102,7 @@ def manufacture_negatives(matrix: pd.DataFrame) -> pd.DataFrame:
 
     basis = pd.Series("", index=idx, dtype=object)
     for mask, tag in [(institutional, "institutional"), (long_tenure, "long_tenure"),
-                      (benign, "benign_billing")]:
+                      (benign, benign_tag)]:
         basis = basis.where(~(mask & (confirmed == 1)),
                             (basis + ";" + tag).str.strip(";"))
     return pd.DataFrame({"npi": df["npi"].astype(str).values,

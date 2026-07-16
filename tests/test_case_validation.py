@@ -54,6 +54,50 @@ def test_thin_when_too_few_proven():
     assert up["verdict"].startswith("THIN")
 
 
+def test_one_row_per_scheme_with_unioned_evidence():
+    """dme_ring is reachable from two conduct tags (kickback + eligibility) and a
+    sector tag (dme). It must appear ONCE, with the union of proven NPIs."""
+    m = _matrix()
+    m["subscore_dme_ring"] = np.linspace(0, 1, len(m))
+    npis = m["npi"].tolist()
+    cl = pd.DataFrame([
+        {"npi": npis[-1], "fraud_scheme": "kickback", "case_sector": ""},
+        {"npi": npis[-2], "fraud_scheme": "eligibility", "case_sector": ""},
+        {"npi": npis[-3], "fraud_scheme": "", "case_sector": "dme"},
+        # same NPI under two routes still counts once
+        {"npi": npis[-1], "fraud_scheme": "eligibility", "case_sector": "dme"},
+    ])
+    res = validate_schemes(m, cl)
+    dme = res[res["scheme"] == "dme_ring"]
+    assert len(dme) == 1                       # the old loop emitted duplicates
+    assert dme.iloc[0]["n_proven"] == 3        # union of both crosswalks, deduped
+    assert "kickback" in dme.iloc[0]["doj_conduct"]
+    assert "dme" in dme.iloc[0]["doj_conduct"]
+
+
+def test_sector_crosswalk_reaches_schemes_conduct_missed():
+    """A hospice-sector settlement with a generic conduct tag must still count as
+    evidence for hospice_ineligibility."""
+    m = _matrix()
+    m["subscore_hospice_ineligibility"] = np.linspace(0, 1, len(m))
+    npis = m["npi"].tolist()
+    cl = pd.DataFrame([{"npi": n, "fraud_scheme": "medical_necessity",
+                        "case_sector": "hospice"} for n in npis[-6:]])
+    res = validate_schemes(m, cl).set_index("scheme")
+    assert res.loc["hospice_ineligibility", "n_proven"] == 6
+    # sector evidence is recorded in the provenance column
+    assert "hospice" in res.loc["hospice_ineligibility", "doj_conduct"]
+
+
+def test_multilabel_scheme_classification():
+    from src.enforcement.case_db import _classify_all, _SCHEME_KEYWORDS
+    text = ("The company paid kickbacks to physicians who prescribed medically "
+            "unnecessary opioid medications.")
+    tags = _classify_all(text, _SCHEME_KEYWORDS).split(";")
+    assert "kickback" in tags and "medical_necessity" in tags and "pill_mill" in tags
+    assert _classify_all("nothing relevant here", _SCHEME_KEYWORDS) == ""
+
+
 def test_conduct_window_cutoff_boxes_the_label():
     from src.model_a.case_labels import build_case_labels
     from src.entity_graph.resolve_entities import norm_org_name

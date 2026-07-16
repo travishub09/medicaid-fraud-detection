@@ -66,6 +66,8 @@ _SCHEME_KEYWORDS: dict[str, list[str]] = {
                         "services that were not provided", "phantom"],
     "eligibility": ["not eligible", "ineligible", "eligibility"],
     "worthless_services": ["worthless services", "grossly substandard"],
+    "pill_mill": ["opioid", "controlled substance", "oxycodone", "pill mill",
+                  "overprescri", "unlawful prescri"],
 }
 
 
@@ -90,6 +92,21 @@ def _classify(text: str, keyword_map: dict[str, list[str]]) -> str:
     return best if scores[best] > 0 else ""
 
 
+def _classify_all(text: str, keyword_map: dict[str, list[str]]) -> str:
+    """EVERY matching label, ';'-joined, strongest first.
+
+    A settlement usually names several conduct types at once ("kickbacks for
+    medically unnecessary braces"); single-best classification silently drops
+    all but one, which starves the per-scheme case validation. Downstream
+    (case_labels -> case_validation) already splits scheme tags on ';'."""
+    low = text.lower()
+    scores = {label: sum(low.count(k) for k in kws)
+              for label, kws in keyword_map.items()}
+    hits = sorted(((n, label) for label, n in scores.items() if n > 0),
+                  key=lambda t: (-t[0], t[1]))
+    return ";".join(label for _, label in hits)
+
+
 def parse_press_release(text: str, source_url: str = "",
                         announced_date: str = "",
                         defendant_name: str = "") -> dict:
@@ -112,8 +129,8 @@ def parse_press_release(text: str, source_url: str = "",
         "announced_date": announced_date,
         "defendant_name": defendant_name,
         "defendant_name_key": norm_org_name(defendant_name),
-        "sector": _classify(text, _SECTOR_KEYWORDS),
-        "scheme": _classify(text, _SCHEME_KEYWORDS),
+        "sector": _classify(text, _SECTOR_KEYWORDS),      # single: priors groupby
+        "scheme": _classify_all(text, _SCHEME_KEYWORDS),  # multi: split on ';'
         "amount_usd": _extract_amount(text),
         "qui_tam": qui_tam,
         "intervened": intervened,

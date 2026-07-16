@@ -333,13 +333,6 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             out.loc[pos, "exclusion_label_sources"] = (
                 src.where(src == "", src + ";") + tag)
 
-    # Manufacture high-confidence NEGATIVES (known non-offenders) so a model can
-    # contrast fraud actors against a real clean cohort, not just the unlabeled mass.
-    from .clean_anchors import manufacture_negatives
-    neg = manufacture_negatives(out)
-    out["confirmed_clean"] = neg["confirmed_clean"].to_numpy()
-    out["clean_basis"] = neg["clean_basis"].to_numpy()
-
     # Pillar 4: the expected-billing "digital twin" residual — unexplained billing
     # after conditioning on specialty/size/breadth (doesn't punish the legitimately
     # large the way a raw peer percentile does). A clean, size-adjusted feature.
@@ -360,6 +353,18 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     for c in ["incons_solo_scale", "incons_instant_scale", "incons_breadth",
               "incons_lone_org_scale", "consistency_flags"]:
         out[c] = cons[c].to_numpy()
+
+    # Manufacture high-confidence NEGATIVES (known non-offenders) so a model can
+    # contrast fraud actors against a real clean cohort, not just the unlabeled
+    # mass. Runs AFTER the residual/consistency blocks on purpose: as-of (frozen)
+    # matrices drop the v3 concept columns, and the clean-anchor benign check then
+    # falls back to billing_residual / volume_residual / consistency_flags — which
+    # must already be on `out` (and BEFORE weak_supervision, whose
+    # lf_confirmed_clean labeling function reads confirmed_clean).
+    from .clean_anchors import manufacture_negatives
+    neg = manufacture_negatives(out)
+    out["confirmed_clean"] = neg["confirmed_clean"].to_numpy()
+    out["clean_basis"] = neg["clean_basis"].to_numpy()
 
     # Pillar 2: weak-supervision label model — many noisy labeling functions fused
     # via accuracies learned from the anchors into a soft probabilistic label for
