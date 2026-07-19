@@ -47,7 +47,9 @@ def lookup_npi(npi: str, fetch_json=default_fetch_json) -> dict | None:
         "status": str(basic.get("status", "")),
         "taxonomy_code": str(primary_tax.get("code", "")),
         "taxonomy_desc": str(primary_tax.get("desc", "")),
+        "addr_line1": str(primary.get("address_1", "")),
         "city": str(primary.get("city", "")),
         "state": str(primary.get("state", "")),
+        "enumeration_date": str(basic.get("enumeration_date", "")),
         "last_updated": str(basic.get("last_updated", "")),
     }
