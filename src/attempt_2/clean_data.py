@@ -498,6 +498,37 @@ _NPPES_ALIASES = {
     "reactivation":   ["NPI Reactivation Date", "npi_reactivation_date"],
 }
 
+# NPPES lists up to 15 taxonomy slots; the TRUE primary is the slot whose
+# "Primary Taxonomy Switch" is Y, which is often NOT slot 1 (slot order is
+# enrollment history, not primacy — a 2012 student code can sit in slot 1 while
+# the flagged primary, e.g. Internal Medicine, sits in slot 2; found live on a
+# dossier target). Slot 1 stays the fallback when no switch column/flag exists.
+_N_TAXONOMY_SLOTS = 15
+
+
+def _primary_taxonomy_from_slots(df: pd.DataFrame, header: list[str],
+                                 nppes_path: str) -> pd.Series | None:
+    """Return the switch-flagged primary taxonomy per row, or None when the
+    file carries no primary-switch columns (trimmed exports)."""
+    slots = []
+    for i in range(1, _N_TAXONOMY_SLOTS + 1):
+        code_c = f"Healthcare Provider Taxonomy Code_{i}"
+        switch_c = f"Healthcare Provider Primary Taxonomy Switch_{i}"
+        if code_c in header and switch_c in header:
+            slots.append((code_c, switch_c))
+    if not slots:
+        return None
+    cols = [c for pair in slots for c in pair]
+    raw = _read_table_df(nppes_path, columns=["NPI"] + cols)
+    raw["NPI"] = canonicalize_series(raw["NPI"])
+    raw = raw[raw["NPI"].notna()].drop_duplicates("NPI").set_index("NPI")
+    primary = pd.Series("", index=raw.index, dtype=object)
+    for code_c, switch_c in slots:                    # first Y-flagged slot wins
+        flag = raw[switch_c].fillna("").astype(str).str.strip().str.upper() == "Y"
+        code = raw[code_c].fillna("").astype(str).str.strip()
+        primary = primary.where(~(flag & (primary == "")), code)
+    return primary
+
 # NUCC taxonomy → readable specialty. A tiny seed crosswalk; in production this
 # is loaded from the published NUCC table in data/reference/.
 _TAXONOMY_SEED = {
@@ -552,8 +583,16 @@ def clean_nppes(nppes_path: str, interim_dir: Path,
     df["is_individual"] = (et == "1").astype(int)
     df["is_organization"] = (et == "2").astype(int)
 
-    # single primary taxonomy → readable specialty
+    # single primary taxonomy → readable specialty. Prefer the switch-flagged
+    # primary across all 15 NPPES slots; slot 1 is only the fallback.
     tax = df.get("taxonomy_code", pd.Series("", index=df.index)).fillna("").str.strip()
+    flagged = _primary_taxonomy_from_slots(df, header, nppes_path)
+    if flagged is not None:
+        mapped = df["npi"].map(flagged).fillna("")
+        n_fix = int(((mapped != "") & (mapped != tax)).sum())
+        tax = mapped.where(mapped != "", tax)
+        print(f"  nppes: primary-taxonomy switch honored — {n_fix:,} NPIs whose "
+              f"flagged primary was not slot 1 (slot-1 fallback for the rest)")
     df["taxonomy_code"] = tax
     df["specialty"] = tax.map(taxonomy_xwalk).fillna("Unknown / not in crosswalk")
 
