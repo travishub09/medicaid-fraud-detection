@@ -141,3 +141,23 @@ def test_peer_percentile_companion_columns(tmp_path):
     assert "opioid_claim_share__peerpct" in matrix.columns
     assert all(c.endswith("__peerpct") for c in manifest["peerpct_cols"])
     assert "em_high_level_share" in ADAPTER_FEATURE_COLS          # registry sanity
+
+
+def test_constant_graph_feature_is_dropped(tmp_path):
+    """Sparse-path graph builds emit skipped centralities as a constant default
+    (betweenness was the run-6 expectations FAIL). The export must drop the dead
+    column instead of shipping it as a trainable feature."""
+    inputs = build_synthetic_inputs()
+    outputs = run_graph(inputs, tmp_path / "graph")
+    leads = build_provider_leads(inputs["provider_dim"])
+    gf = outputs["org_graph_features"].copy()
+    gf["betweenness"] = 0.0                       # simulate the at-scale default
+    matrix, manifest = build_provider_matrix(
+        leads, outputs["npi_to_org"], org_graph_features=gf,
+        adapter_npi_frames=build_npi_adapter_frames(leads["npi"].tolist()),
+        min_peer=5)
+    assert "betweenness" not in matrix.columns
+    assert "betweenness" not in manifest["raw_feature_cols"]
+    assert "betweenness" not in manifest["sources_used"].get("entity_graph", [])
+    # live graph features still flow
+    assert "within_2_hops_of_exclusion" in matrix.columns

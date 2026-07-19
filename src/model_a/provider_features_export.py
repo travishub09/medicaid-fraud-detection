@@ -256,7 +256,23 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         if "npi" in gf.columns and len(gf.columns) > 1:
             m = m.merge(gf.drop_duplicates("npi"), on="npi", how="left")
             assert len(m) == n0, "graph-feature broadcast fanned out"
-            sources_used["entity_graph"] = [c for c in gf.columns if c != "npi"]
+            # At-scale graph builds (>400k orgs, the sparse path) skip the
+            # expensive centralities and emit them as a constant default —
+            # `betweenness` was the run-6 expectations FAIL. A constant column
+            # is dead weight a tree can't split on and noise in the manifest:
+            # drop it here rather than ship it.
+            live, dead = [], []
+            for c in (c for c in gf.columns if c != "npi"):
+                if pd.to_numeric(m[c], errors="coerce").dropna().nunique() <= 1:
+                    dead.append(c)
+                else:
+                    live.append(c)
+            if dead:
+                m = m.drop(columns=dead)
+                print(f"    [entity_graph] dropped constant graph feature(s): "
+                      f"{', '.join(dead)} (not computed on this graph's scale "
+                      f"path — a dead column, not a signal)")
+            sources_used["entity_graph"] = live
 
     for name, fr in (adapter_npi_frames or {}).items():
         if fr is None or not len(fr) or "npi" not in fr.columns:
