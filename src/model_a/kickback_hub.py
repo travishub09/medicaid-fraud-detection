@@ -198,7 +198,21 @@ def main() -> None:
     op = read_csv_text(args.open_payments)
     m = pd.read_parquet(args.matrix)
     m["npi"] = m["npi"].astype(str)
-    sub = pd.to_numeric(m.get("subscore_pharma_kickback"), errors="coerce").fillna(0)
+    if "subscore_pharma_kickback" not in m.columns:
+        # degrade with a named reason, not a crash: fall back to the raw
+        # co-occurrence if present, else there is no spoke signal to flip
+        fallback = "op_payment_utilization_corr"
+        if fallback in m.columns:
+            print(f"[kickback_hub] matrix has no subscore_pharma_kickback — "
+                  f"falling back to {fallback} >= {args.spoke_threshold}")
+            m["subscore_pharma_kickback"] = pd.to_numeric(
+                m[fallback], errors="coerce").fillna(0)
+        else:
+            print("[kickback_hub] matrix has neither subscore_pharma_kickback "
+                  "nor op_payment_utilization_corr — no spoke signal; writing "
+                  "an empty report")
+            m["subscore_pharma_kickback"] = 0.0
+    sub = pd.to_numeric(m["subscore_pharma_kickback"], errors="coerce").fillna(0)
     keep = ["npi"]
     for c in ("op_payment_utilization_corr", "suspect_dollars", "net_paid",
               "gross_paid", "expected_net_paid"):
