@@ -109,6 +109,49 @@ def test_enveloped_payloads_unwrap():
     assert out["result"] == "FINAL: hospice agencies only"
 
 
+def test_all_seven_task_builders_dispatch_and_stamp_query():
+    """Every named research task builds a prompt containing its key inputs,
+    passes the PHI guard, and stamps a query block for the dossier record."""
+    from src.feeds import manus_research as mr
+    cases = [
+        (lambda t: mr.state_billing_rule_memo("T2046", "ri", transport=t,
+                                              sleep=lambda s: None, cache=False),
+         "state_billing_rule_memo", ["T2046", "RI", "BILLING PROVIDER"]),
+        (lambda t: mr.state_exclusion_sweep("nm", transport=t,
+                                            sleep=lambda s: None, cache=False),
+         "state_exclusion_sweep", ["NM", "exclusion"]),
+        (lambda t: mr.mfcu_sweep("tn", months=12, transport=t,
+                                 sleep=lambda s: None, cache=False),
+         "mfcu_sweep", ["TN", "Fraud Control", "12 months"]),
+        (lambda t: mr.public_disclosure_screen(
+            "1255694451", "a Bronx internal-medicine biller of hospice codes",
+            transport=t, sleep=lambda s: None, cache=False),
+         "public_disclosure_screen", ["1255694451", "PUBLIC DISCLOSURE"]),
+        (lambda t: mr.innocent_explanation_audit(
+            "1588799746", "residential per-diem codes on a solo NPI",
+            transport=t, sleep=lambda s: None, cache=False),
+         "innocent_explanation_audit", ["1588799746", "INNOCENT"]),
+        (lambda t: mr.license_discipline_sweep(
+            "1457794422", "N. DASARI", "ri", transport=t,
+            sleep=lambda s: None, cache=False),
+         "license_discipline_sweep", ["1457794422", "RI", "discipline"]),
+        (lambda t: mr.address_ground_truth("333 Budlong Rd, Cranston, RI",
+                                           transport=t, sleep=lambda s: None,
+                                           cache=False),
+         "address_ground_truth", ["333 Budlong Rd", "residence"]),
+        (lambda t: mr.defendant_solvency("TruCare Inc", "ri", transport=t,
+                                         sleep=lambda s: None, cache=False),
+         "defendant_solvency", ["TruCare Inc", "bankruptcy"]),
+    ]
+    for call, task_name, needles in cases:
+        t = _FakeTransport(polls_until_done=1)
+        env = call(t)
+        assert env["ok"] is True, task_name
+        assert env["query"]["task"] == task_name
+        for n in needles:
+            assert n.lower() in t._prompt.lower(), (task_name, n)
+
+
 def test_missing_task_id_raises():
     class _NoId(ManusTransport):
         def create(self, prompt, mode="agent", **opts):
