@@ -120,6 +120,48 @@ def facility_code_rings(provider_code: pd.DataFrame,
                            ascending=False).reset_index(drop=True)
 
 
+def build_provider_code(spending_path: str, provider_dim_path: str,
+                        min_paid: float = 10_000.0) -> pd.DataFrame:
+    """Join the spending fact to provider_dim → the per-(npi, hcpcs) input this
+    detector needs, in one DuckDB scan (the provider x code matrix never enters
+    pandas). Emits npi, hcpcs, paid, entity_type, practice_state, addr_key.
+
+    Keeps only (npi, code) pairs above ``min_paid`` so the individual-biller
+    filter downstream is not swamped by de-minimis lines. Column names follow
+    the pipeline: spending fact = billing_npi / hcpcs_code / total_paid;
+    provider_dim = npi / entity_type / practice_state|addr_state / addr_key.
+    """
+    import duckdb
+    con = duckdb.connect()
+    dim = pd.read_parquet(provider_dim_path)
+    dim["npi"] = dim["npi"].astype(str)
+    state_col = next((c for c in ("practice_state", "addr_state", "state")
+                      if c in dim.columns), None)
+    keep = ["npi", "entity_type"] + ([state_col] if state_col else []) \
+        + (["addr_key"] if "addr_key" in dim.columns else [])
+    d = dim[keep].rename(columns={state_col: "practice_state"} if state_col else {})
+    if "practice_state" not in d.columns:
+        d["practice_state"] = ""
+    if "addr_key" not in d.columns:
+        d["addr_key"] = ""
+    con.register("dim", d)
+    out = con.execute(f"""
+        SELECT CAST(s.billing_npi AS VARCHAR)  AS npi,
+               CAST(s.hcpcs_code AS VARCHAR)   AS hcpcs,
+               SUM(CAST(s.total_paid AS DOUBLE)) AS paid,
+               ANY_VALUE(dim.entity_type)      AS entity_type,
+               ANY_VALUE(dim.practice_state)   AS practice_state,
+               ANY_VALUE(dim.addr_key)         AS addr_key
+        FROM read_parquet('{spending_path}') s
+        JOIN dim ON CAST(s.billing_npi AS VARCHAR) = dim.npi
+        GROUP BY 1, 2
+        HAVING SUM(CAST(s.total_paid AS DOUBLE)) >= {float(min_paid)}
+    """).df()
+    con.close()
+    out["entity_type"] = out["entity_type"].astype(str).str.strip()
+    return out
+
+
 def to_markdown(rings: pd.DataFrame) -> str:
     L = ["# FACILITY-CODE RINGS — individuals billing organization-only codes", ""]
     L.append("_A code billed almost entirely by organizations nationally, but "
@@ -149,15 +191,23 @@ def main() -> None:
     import argparse
     from pathlib import Path
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--provider-code", required=True,
+    ap.add_argument("--provider-code", default=None,
                     help="parquet: npi, hcpcs, paid, entity_type, practice_state "
-                         "(+ optional addr_key, phone)")
+                         "(+ optional addr_key, phone). If omitted, build it from "
+                         "--spending + --provider-dim.")
+    ap.add_argument("--spending", default=None, help="processed/spending_fact.parquet")
+    ap.add_argument("--provider-dim", default=None, help="processed/provider_dim.parquet")
     ap.add_argument("--org-share-min", type=float, default=0.90)
     ap.add_argument("--min-members", type=int, default=3)
     ap.add_argument("--out", default="FACILITY_CODE_RINGS.md")
     ap.add_argument("--results", default=None)
     args = ap.parse_args()
-    pc = pd.read_parquet(args.provider_code)
+    if args.provider_code:
+        pc = pd.read_parquet(args.provider_code)
+    elif args.spending and args.provider_dim:
+        pc = build_provider_code(args.spending, args.provider_dim)
+    else:
+        ap.error("give --provider-code, or both --spending and --provider-dim")
     rings = facility_code_rings(pc, org_share_min=args.org_share_min,
                                 min_members=args.min_members)
     Path(args.out).write_text(to_markdown(rings), encoding="utf-8")
