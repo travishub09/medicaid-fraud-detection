@@ -410,6 +410,36 @@ def defendant_solvency(org_name: str, state: str = "",
     return out
 
 
+def propose_code_legality_row(code: str, state: str,
+                              transport: ManusTransport | None = None,
+                              build_date: str = "", **kw) -> dict:
+    """Dispatch the rule memo AND shape a PROPOSED code_legality row from it.
+
+    Returns {code, state, individual_allowed, who_may_bill, authority_url,
+    build_date, reviewed} plus the full memo under 'memo'. ``reviewed`` is
+    ALWAYS 'N' — a human confirms the row before it can score anything (the
+    blast-radius gate). ``individual_allowed`` is left blank when the memo did
+    not clearly resolve it, so an unclear memo never silently becomes a rule."""
+    env = state_billing_rule_memo(code, state, transport=transport, **kw)
+    text = str(env.get("result") or "").lower()
+    allowed = ""
+    if env.get("ok") and text:
+        # conservative: only set N when the memo affirmatively bars individuals
+        bars = any(p in text for p in (
+            "not bill", "cannot bill", "may not bill", "no provision",
+            "only an enrolled", "facility", "agency", "program", "may only be billed"))
+        allows = any(p in text for p in (
+            "individual may bill", "personal npi may bill",
+            "type 1 npi may bill", "individual practitioner may"))
+        allowed = "N" if (bars and not allows) else ("Y" if allows else "")
+    return {
+        "code": str(code).upper(), "state": str(state).upper(),
+        "individual_allowed": allowed, "who_may_bill": "", "authority": "",
+        "authority_url": "", "build_date": build_date, "reviewed": "N",
+        "memo": env,
+    }
+
+
 def main() -> None:
     import argparse
     import json
