@@ -181,6 +181,87 @@ def build_provider_code(spending_path: str, provider_dim_path: str,
     return out
 
 
+def compute_facility_code_share(spending_path: str,
+                                provider_dim_path: str | None = None,
+                                org_share_min: float = 0.90,
+                                min_code_total: float = 1_000_000.0,
+                                min_paid: float = 1_000.0) -> pd.DataFrame:
+    """Per-NPI TRAINABLE feature: the share of an INDIVIDUAL's dollars sitting
+    on facility-type codes (codes >= ``org_share_min`` organization-billed
+    nationally). This is the Rhode Island lead-case shape as a model input —
+    computed purely from the billing fact + entity type, so unlike the
+    research-layer evidence it is point-in-time reproducible (runs on the
+    as-of fact under a freeze) and safe to train on.
+
+    Individuals only; organizations return no row (billing a facility code IS
+    their job), so the NULL-aware subscore engine leaves them unscored on this
+    scheme. Emits npi, facility_code_share (0-1), facility_code_paid,
+    n_facility_codes.
+    """
+    import duckdb
+    con = duckdb.connect()
+    fact_cols = con.execute(
+        f"SELECT * FROM read_parquet('{spending_path}') LIMIT 0").df().columns.tolist()
+    low = {c.lower(): c for c in fact_cols}
+
+    def _c(aliases: list[str]) -> str | None:
+        return next((low[a] for a in aliases if a in low), None)
+
+    npi_c = _c(["billing_npi", "npi"])
+    code_c = _c(["hcpcs_code", "hcpcs", "hcpcs_cd"])
+    paid_c = _c(["total_paid", "net_paid", "paid"])
+    ent_c = _c(["entity_type"])
+    if not (npi_c and code_c and paid_c):
+        raise ValueError(f"spending fact missing npi/code/paid columns; saw {fact_cols[:12]}")
+
+    if ent_c:
+        ent_expr = f'CAST(s."{ent_c}" AS VARCHAR)'
+        join = ""
+    else:
+        if not provider_dim_path:
+            raise ValueError("spending fact has no entity_type — pass provider_dim_path")
+        dim = pd.read_parquet(provider_dim_path)[["npi", "entity_type"]]
+        dim["npi"] = dim["npi"].astype(str)
+        con.register("dim", dim)
+        ent_expr = "CAST(dim.entity_type AS VARCHAR)"
+        join = f'JOIN dim ON CAST(s."{npi_c}" AS VARCHAR) = dim.npi'
+
+    out = con.execute(f"""
+        WITH pc AS (
+            SELECT CAST(s."{npi_c}" AS VARCHAR)  AS npi,
+                   CAST(s."{code_c}" AS VARCHAR) AS hcpcs,
+                   TRIM({ent_expr})              AS entity_type,
+                   SUM(CAST(s."{paid_c}" AS DOUBLE)) AS paid
+            FROM read_parquet('{spending_path}') s {join}
+            GROUP BY 1, 2, 3
+        ),
+        code_stat AS (
+            SELECT hcpcs, SUM(paid) AS code_total,
+                   SUM(CASE WHEN entity_type = '2' THEN paid ELSE 0 END) AS org_paid
+            FROM pc GROUP BY 1
+        ),
+        fac AS (
+            SELECT hcpcs FROM code_stat
+            WHERE code_total >= {float(min_code_total)}
+              AND org_paid / NULLIF(code_total, 0) >= {float(org_share_min)}
+        )
+        SELECT pc.npi,
+               SUM(CASE WHEN fac.hcpcs IS NOT NULL THEN pc.paid ELSE 0 END)
+                   / NULLIF(SUM(pc.paid), 0)                    AS facility_code_share,
+               SUM(CASE WHEN fac.hcpcs IS NOT NULL THEN pc.paid ELSE 0 END)
+                                                                AS facility_code_paid,
+               COUNT(DISTINCT CASE WHEN fac.hcpcs IS NOT NULL
+                                   THEN pc.hcpcs END)           AS n_facility_codes
+        FROM pc LEFT JOIN fac ON pc.hcpcs = fac.hcpcs
+        WHERE pc.entity_type = '1'
+        GROUP BY 1
+        HAVING SUM(pc.paid) >= {float(min_paid)}
+    """).df()
+    con.close()
+    out["npi"] = out["npi"].astype(str)
+    return out
+
+
 def to_markdown(rings: pd.DataFrame) -> str:
     L = ["# FACILITY-CODE RINGS — individuals billing organization-only codes", ""]
     L.append("_A code billed almost entirely by organizations nationally, but "

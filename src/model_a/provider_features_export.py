@@ -483,7 +483,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     _SRC_VINTAGE = {
         "label": "point_in_time", "smoking_gun_timeline": "point_in_time",
         "nppes_deactivation": "point_in_time", "sector_schemes": "point_in_time",
-        "drug_markup": "point_in_time",
+        "drug_markup": "point_in_time", "facility_code": "point_in_time",
         "growth": "point_in_time", "plausibility": "point_in_time",
         "billing_lm": "point_in_time", "death_master": "point_in_time",
         "partb": "annual_capped", "partd": "annual_capped",
@@ -1794,6 +1794,33 @@ def main() -> None:
                 audit("    [drug_markup] skipped: needs processed/spending_fact.parquet")
         except Exception as e:
             audit(f"    [drug_markup] skipped: {e}")
+
+        # facility-code billing: share of an INDIVIDUAL's dollars on codes that
+        # are organization-billed nationally (the RI lead-case shape as a model
+        # input). Pure billing-fact math; runs on the as-of file under a freeze.
+        try:
+            spend_fc = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            if spend_fc:
+                from src.entity_graph.code_rings import compute_facility_code_share
+                pdim_fc = _first_existing(processed, "provider_dim.parquet")
+                fc = compute_facility_code_share(
+                    str(spend_fc),
+                    provider_dim_path=str(pdim_fc) if pdim_fc else None)
+                if len(fc):
+                    adapter_frames["facility_code"] = fc[
+                        ["npi", "facility_code_share"]]
+                    n_hot = int((pd.to_numeric(fc["facility_code_share"],
+                                               errors="coerce") >= 0.5).sum())
+                    audit(f"    [facility_code] {len(fc):,} individuals scored; "
+                          f"{n_hot:,} with >=50% of dollars on facility-type "
+                          f"codes (from {Path(spend_fc).name})")
+                else:
+                    audit("    [facility_code] skipped: no individual billers "
+                          "resolved (entity_type missing from fact and dim?)")
+            else:
+                audit("    [facility_code] skipped: needs processed/spending_fact.parquet")
+        except Exception as e:
+            audit(f"    [facility_code] skipped: {e}")
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels

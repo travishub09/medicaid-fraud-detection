@@ -102,6 +102,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "invalid_identity": {"billing_after_deactivation": 0.6, "billing_after_death": 0.6},
     # HCRIS cost-report fraud (B5); absent until the flattened extract loads
     "cost_report_fraud": {"hcris_cost_anomaly": 1.0},
+    # an INDIVIDUAL NPI whose dollars sit on facility-type codes (codes >= 90%
+    # organization-billed nationally) — the Rhode Island T2046 lead-case shape
+    # as a model input (entity_graph/code_rings.compute_facility_code_share;
+    # individuals only, organizations stay unscored on this scheme)
+    "facility_code_billing": {"facility_code_share": 1.0},
 }
 
 

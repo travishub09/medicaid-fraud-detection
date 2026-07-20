@@ -111,6 +111,49 @@ def test_build_provider_code_tolerates_column_variants(tmp_path):
     assert pc.loc[("1457794422", "T2046"), "practice_state"] == "RI"   # provider_state alias
 
 
+def test_facility_code_share_feature(tmp_path):
+    """The trainable feature: an individual whose dollars sit on an
+    org-dominated code scores ~1.0; a normal-code individual ~0; orgs emit no
+    row (unscored, not zero)."""
+    from src.entity_graph.code_rings import compute_facility_code_share
+    rows = []
+    # T2046 nationally org-billed ($60M org vs $5M individual)
+    for i in range(2):
+        rows.append({"billing_npi": f"2{i:09d}", "hcpcs_code": "T2046",
+                     "total_paid": 30_000_000, "entity_type": "2"})
+    rows.append({"billing_npi": "1457794422", "hcpcs_code": "T2046",
+                 "total_paid": 5_000_000, "entity_type": "1"})   # ring member
+    # 99213: individual-billed everywhere (org share ~0)
+    for i in range(3):
+        rows.append({"billing_npi": f"3{i:09d}", "hcpcs_code": "99213",
+                     "total_paid": 2_000_000, "entity_type": "1"})
+    # a mixed individual: half facility-code, half normal
+    rows.append({"billing_npi": "1093079006", "hcpcs_code": "T2046",
+                 "total_paid": 1_000_000, "entity_type": "1"})
+    rows.append({"billing_npi": "1093079006", "hcpcs_code": "99213",
+                 "total_paid": 1_000_000, "entity_type": "1"})
+    sp = tmp_path / "fact.parquet"
+    pd.DataFrame(rows).to_parquet(sp)
+    fc = compute_facility_code_share(str(sp), min_code_total=1_000_000).set_index("npi")
+    assert abs(fc.loc["1457794422", "facility_code_share"] - 1.0) < 1e-9
+    assert abs(fc.loc["1093079006", "facility_code_share"] - 0.5) < 1e-9
+    assert fc.loc["300000000" + "0", "facility_code_share"] == 0.0
+    assert "200000000" + "0" not in fc.index                     # orgs: no row
+
+
+def test_facility_code_scheme_registered():
+    """The scheme is in the registry and the engine scores it from the share."""
+    from src.model_a.scheme_subscores import (DEFAULT_SCHEME_WEIGHTS,
+                                              compute_subscores)
+    assert DEFAULT_SCHEME_WEIGHTS["facility_code_billing"] == {
+        "facility_code_share": 1.0}
+    feats = pd.DataFrame({"facility_code_share": [1.0, 0.0, None]})
+    subs, cov = compute_subscores(feats)
+    assert cov["facility_code_billing"] == ["facility_code_share"]
+    s = subs["subscore_facility_code_billing"]
+    assert s.iloc[0] > 0.9 and s.iloc[1] < 0.1 and pd.isna(s.iloc[2])
+
+
 def test_build_provider_code_raises_on_missing_column(tmp_path):
     import pytest
     from src.entity_graph.code_rings import build_provider_code
