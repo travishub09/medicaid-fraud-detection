@@ -89,3 +89,34 @@ def test_build_provider_code_from_processed(tmp_path):
     assert pc.loc[("1457794422", "T2046"), "entity_type"] == "1"
     assert pc.loc[("1457794422", "T2046"), "practice_state"] == "RI"
     assert ("1457794422", "99213") not in pc.index                    # de-minimis dropped
+
+
+def test_build_provider_code_tolerates_column_variants(tmp_path):
+    from src.entity_graph.code_rings import build_provider_code
+    # a fact exported with variant names: net_paid / hcpcs / npi (no billing_npi)
+    spending = pd.DataFrame([
+        {"npi": "1457794422", "hcpcs": "T2046", "net_paid": 5_000_000},
+        {"npi": "2000000001", "hcpcs": "T2046", "net_paid": 30_000_000},
+    ])
+    dim = pd.DataFrame([
+        {"npi": "1457794422", "entity_type": "1", "provider_state": "RI",
+         "addr_key": "budlong"},
+        {"npi": "2000000001", "entity_type": "2", "provider_state": "OH",
+         "addr_key": "orgaddr"},
+    ])
+    sp, dp = tmp_path / "s2.parquet", tmp_path / "d2.parquet"
+    spending.to_parquet(sp); dim.to_parquet(dp)
+    pc = build_provider_code(str(sp), str(dp), min_paid=10_000).set_index(["npi", "hcpcs"])
+    assert pc.loc[("1457794422", "T2046"), "paid"] == 5_000_000
+    assert pc.loc[("1457794422", "T2046"), "practice_state"] == "RI"   # provider_state alias
+
+
+def test_build_provider_code_raises_on_missing_column(tmp_path):
+    import pytest
+    from src.entity_graph.code_rings import build_provider_code
+    bad = pd.DataFrame([{"npi": "1", "hcpcs": "T2046", "widgets": 5}])   # no paid col
+    dim = pd.DataFrame([{"npi": "1", "entity_type": "1", "practice_state": "RI"}])
+    sp, dp = tmp_path / "bad.parquet", tmp_path / "d3.parquet"
+    bad.to_parquet(sp); dim.to_parquet(dp)
+    with pytest.raises(ValueError, match="paid amount"):
+        build_provider_code(str(sp), str(dp))

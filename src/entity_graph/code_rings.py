@@ -133,10 +133,29 @@ def build_provider_code(spending_path: str, provider_dim_path: str,
     """
     import duckdb
     con = duckdb.connect()
+
+    # resolve the spending-fact columns defensively — the canonical fact uses
+    # billing_npi / hcpcs_code / total_paid, but an older or re-exported fact may
+    # use variants. Fail loudly with the actual header if none match.
+    fact_cols = con.execute(
+        f"SELECT * FROM read_parquet('{spending_path}') LIMIT 0").df().columns.tolist()
+
+    def _pick(aliases: list[str], what: str) -> str:
+        low = {c.lower(): c for c in fact_cols}
+        for a in aliases:
+            if a.lower() in low:
+                return low[a.lower()]
+        raise ValueError(f"spending fact has no {what} column (tried {aliases}); "
+                         f"saw {fact_cols[:12]}")
+
+    npi_c = _pick(["billing_npi", "npi", "billing_provider_npi_num"], "billing NPI")
+    code_c = _pick(["hcpcs_code", "hcpcs", "hcpcs_cd", "code"], "HCPCS")
+    paid_c = _pick(["total_paid", "net_paid", "paid", "paid_amt"], "paid amount")
+
     dim = pd.read_parquet(provider_dim_path)
     dim["npi"] = dim["npi"].astype(str)
-    state_col = next((c for c in ("practice_state", "addr_state", "state")
-                      if c in dim.columns), None)
+    state_col = next((c for c in ("practice_state", "addr_state", "provider_state",
+                                  "state") if c in dim.columns), None)
     keep = ["npi", "entity_type"] + ([state_col] if state_col else []) \
         + (["addr_key"] if "addr_key" in dim.columns else [])
     d = dim[keep].rename(columns={state_col: "practice_state"} if state_col else {})
@@ -146,16 +165,16 @@ def build_provider_code(spending_path: str, provider_dim_path: str,
         d["addr_key"] = ""
     con.register("dim", d)
     out = con.execute(f"""
-        SELECT CAST(s.billing_npi AS VARCHAR)  AS npi,
-               CAST(s.hcpcs_code AS VARCHAR)   AS hcpcs,
-               SUM(CAST(s.total_paid AS DOUBLE)) AS paid,
-               ANY_VALUE(dim.entity_type)      AS entity_type,
-               ANY_VALUE(dim.practice_state)   AS practice_state,
-               ANY_VALUE(dim.addr_key)         AS addr_key
+        SELECT CAST(s."{npi_c}" AS VARCHAR)      AS npi,
+               CAST(s."{code_c}" AS VARCHAR)     AS hcpcs,
+               SUM(CAST(s."{paid_c}" AS DOUBLE)) AS paid,
+               ANY_VALUE(dim.entity_type)        AS entity_type,
+               ANY_VALUE(dim.practice_state)     AS practice_state,
+               ANY_VALUE(dim.addr_key)           AS addr_key
         FROM read_parquet('{spending_path}') s
-        JOIN dim ON CAST(s.billing_npi AS VARCHAR) = dim.npi
+        JOIN dim ON CAST(s."{npi_c}" AS VARCHAR) = dim.npi
         GROUP BY 1, 2
-        HAVING SUM(CAST(s.total_paid AS DOUBLE)) >= {float(min_paid)}
+        HAVING SUM(CAST(s."{paid_c}" AS DOUBLE)) >= {float(min_paid)}
     """).df()
     con.close()
     out["entity_type"] = out["entity_type"].astype(str).str.strip()
