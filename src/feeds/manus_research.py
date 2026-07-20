@@ -84,11 +84,42 @@ class ManusTransport:
         return r.json()
 
     def get(self, task_id: str) -> dict:
+        """Poll one task. POST /task.get is the documented shape; on a 404/405
+        (an API that routes polling as a GET instead) fall back to the two GET
+        conventions before giving up."""
         import requests
         r = requests.post(f"{self.base}/task.get", json={"task_id": task_id},
                           headers=self._headers(), timeout=self.timeout)
+        if r.status_code in (404, 405):
+            r = requests.get(f"{self.base}/task.get",
+                             params={"task_id": task_id},
+                             headers=self._headers(), timeout=self.timeout)
+            if r.status_code in (404, 405):
+                r = requests.get(f"{self.base}/task/{task_id}",
+                                 headers=self._headers(), timeout=self.timeout)
         r.raise_for_status()
         return r.json()
+
+
+def _unwrap(payload: dict) -> dict:
+    """Peel common envelope nestings ({"data": {...}}, {"task": {...}}, and
+    double-wraps like {"data": {"task": {...}}}) so the field readers see the
+    task object itself regardless of wrapper style. Stops as soon as the
+    current dict already looks like a task."""
+    def _looks_like_task(d: dict) -> bool:
+        return any(k in d for k in ("status", "task_id", "taskId", "output",
+                                    "structured_output", "result"))
+    seen = 0
+    while isinstance(payload, dict) and seen < 4:
+        if _looks_like_task(payload):
+            return payload
+        inner = next((payload[w] for w in ("data", "task", "response")
+                      if isinstance(payload.get(w), dict)), None)
+        if inner is None:
+            return payload
+        payload = inner
+        seen += 1
+    return payload if isinstance(payload, dict) else {}
 
 
 def _field(d: dict, *names: str):
@@ -101,8 +132,20 @@ def _field(d: dict, *names: str):
 def _extract_result(payload: dict):
     for f in _RESULT_FIELDS:
         v = _field(payload, f)
-        if v is not None:
-            return v
+        if v is None:
+            continue
+        # a chat-style result: {"messages": [...]} or a bare list of messages —
+        # take the last message's content/text, which is the final answer
+        if isinstance(v, dict) and isinstance(v.get("messages"), list):
+            v = v["messages"]
+        if isinstance(v, list) and v:
+            last = v[-1]
+            if isinstance(last, dict):
+                got = _field(last, "content", "text", "message")
+                if got is not None:
+                    return got
+            return last
+        return v
     return payload
 
 
@@ -123,12 +166,13 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
             "inference — Manus receives public identifiers only")
     transport = transport or ManusTransport()
 
-    created = transport.create(prompt, mode=mode, **create_opts)
+    created_raw = transport.create(prompt, mode=mode, **create_opts)
+    created = _unwrap(created_raw)
     task_id = _field(created, "task_id", "id", "taskId")
     if not task_id:
-        raise RuntimeError(f"Manus task.create returned no task id: {created}")
+        raise RuntimeError(f"Manus task.create returned no task id: {created_raw}")
     if cache:
-        cache_raw("manus", f"{label}_create_{task_id}", created, root=cache_root)
+        cache_raw("manus", f"{label}_create_{task_id}", created_raw, root=cache_root)
 
     status = str(_field(created, "status") or "running").lower()
     payload = created
@@ -136,7 +180,7 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
     while status not in _DONE_OK and status not in _DONE_BAD and polls < max_polls:
         sleep(poll_seconds)
         polls += 1
-        payload = transport.get(task_id)
+        payload = _unwrap(transport.get(task_id))
         status = str(_field(payload, "status") or "running").lower()
     if cache:
         cache_raw("manus", f"{label}_final_{task_id}", payload, root=cache_root)

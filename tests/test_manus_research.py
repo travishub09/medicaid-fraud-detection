@@ -84,6 +84,31 @@ def test_rule_memo_builds_prompt_and_query_block():
     assert "BILLING PROVIDER" in t._prompt
 
 
+def test_enveloped_payloads_unwrap():
+    """A {"data": {"task": {...}}} wrapper style must still parse: id, status,
+    and a chat-style messages result."""
+    class _Enveloped(ManusTransport):
+        def __init__(self):
+            self.calls = 0
+        def create(self, prompt, mode="agent", **opts):
+            return {"data": {"task_id": "t-9", "status": "pending"}}
+        def get(self, task_id):
+            self.calls += 1
+            if self.calls < 2:
+                return {"data": {"task": {"task_id": task_id, "status": "running"}}}
+            return {"data": {"task": {
+                "task_id": task_id, "status": "finished",
+                "output": {"messages": [
+                    {"role": "assistant", "content": "interim note"},
+                    {"role": "assistant", "content": "FINAL: hospice agencies only"},
+                ]}}}}
+    out = run_research("public billing rules question", transport=_Enveloped(),
+                       sleep=lambda s: None, cache=False)
+    assert out["ok"] is True
+    assert out["task_id"] == "t-9"
+    assert out["result"] == "FINAL: hospice agencies only"
+
+
 def test_missing_task_id_raises():
     class _NoId(ManusTransport):
         def create(self, prompt, mode="agent", **opts):
