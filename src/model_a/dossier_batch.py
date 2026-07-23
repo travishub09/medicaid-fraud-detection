@@ -40,19 +40,29 @@ def _npis_from_rings(rings: pd.DataFrame) -> list[str]:
 def build_batch(npis: list[str], pack: pd.DataFrame, out_dir: str | Path,
                 monthly: pd.DataFrame | None = None,
                 codes: pd.DataFrame | None = None,
-                owners: pd.DataFrame | None = None) -> list[Path]:
-    """Write one dossier per NPI + an INDEX.md. Returns the written paths."""
+                owners: pd.DataFrame | None = None,
+                enrichment: dict | None = None) -> list[Path]:
+    """Write one dossier per NPI + an INDEX.md. Returns the written paths.
+
+    ``enrichment`` is an optional {npi: {task: envelope}} map from a research
+    sweep (research_sweep.run_sweep); when present, each NPI's reality /
+    disclosure / innocent results fill their dossier panels."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     pack = pack.copy()
     pack["npi"] = pack["npi"].astype(str)
     present = set(pack["npi"])
+    enrichment = enrichment or {}
 
     written: list[Path] = []
     index_rows = []
     for npi in npis:
         npi = str(npi)
-        md = build_npi_dossier(npi, pack, monthly, codes, owners)
+        e = enrichment.get(npi, {})
+        md = build_npi_dossier(npi, pack, monthly, codes, owners,
+                               reality=e.get("reality"),
+                               disclosure=e.get("disclosure"),
+                               innocent=e.get("innocent"))
         p = out / f"DOSSIER_{npi}.md"
         p.write_text(md, encoding="utf-8")
         written.append(p)
