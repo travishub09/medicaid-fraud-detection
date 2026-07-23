@@ -61,7 +61,12 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # and-service PUF does not carry (they need the line-level/BETOS or a timed
     # source). Skip-missing keeps the scheme silent (never mis-fires) until that
     # data lands; do not interpret its absence as "no impossible-day risk".
-    "impossible_day": {"bene_per_day_p95": 0.6, "time_minutes_per_day": 0.4},
+    "impossible_day": {"bene_per_day_p95": 0.6, "time_minutes_per_day": 0.4,
+                       # CMS MUE conservative bound (ingest_cms/mue.py): monthly
+                       # claim lines exceed the PUBLISHED daily unit maximum ×
+                       # days — a categorical, CMS-citable impossible-units flag
+                       # that finally wakes this scheme without per-day data
+                       "mue_violation_share": 0.8},
     # future (Part D / Open Payments / DMEPOS)
     "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3},
     # Medicaid-fact sector schemes (Run 2 I4/I5): transport + behavioral health,

@@ -538,6 +538,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "label": "point_in_time", "smoking_gun_timeline": "point_in_time",
         "nppes_deactivation": "point_in_time", "sector_schemes": "point_in_time",
         "drug_markup": "point_in_time", "facility_code": "point_in_time",
+        "mue": "point_in_time",
         "growth": "point_in_time", "plausibility": "point_in_time",
         "billing_lm": "point_in_time", "death_master": "point_in_time",
         "partb": "annual_capped", "partd": "annual_capped",
@@ -1885,6 +1886,32 @@ def main() -> None:
                 audit("    [facility_code] skipped: needs processed/spending_fact.parquet")
         except Exception as e:
             audit(f"    [facility_code] skipped: {e}")
+
+        # CMS MUE impossible-units: monthly lines exceed the published daily
+        # unit maximum × days (conservative pigeonhole bound; ingest_cms/mue.py).
+        # Wakes impossible_day. Table drop: preclean/reference/mue/mue.csv
+        try:
+            mue_p = _first_existing(preclean / "reference" / "mue",
+                                    "mue.csv", "*.csv", "*.parquet")
+            spend_mue = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            if mue_p and spend_mue:
+                from src.ingest_cms.mue import load_mue_table, compute_mue_violations
+                mue_tbl = load_mue_table(mue_p)
+                mv = compute_mue_violations(str(spend_mue), mue_tbl)
+                if len(mv):
+                    adapter_frames["mue"] = mv[["npi", "mue_violation_share"]]
+                    n_hot = int((pd.to_numeric(mv["mue_violation_share"],
+                                               errors="coerce") > 0).sum())
+                    audit(f"    [mue] {len(mue_tbl):,} MUE codes; {len(mv):,} NPIs "
+                          f"scored, {n_hot:,} with a violating (code, month) cell "
+                          f"(from {Path(mue_p).name})")
+                else:
+                    audit("    [mue] skipped: no fact rows matched the MUE codes")
+            else:
+                audit("    [mue] skipped: needs preclean/reference/mue/mue.csv "
+                      "(CMS practitioner MUE export) + spending fact")
+        except Exception as e:
+            audit(f"    [mue] skipped: {e}")
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
