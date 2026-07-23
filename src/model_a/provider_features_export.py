@@ -133,6 +133,60 @@ IDENTIFIER_COLS = ["npi", "org_node_id", "entity_type", "primary_taxonomy",
                    "practice_state", "org_legal_name"]
 
 
+def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
+    """Partition every column into exactly one meaningful class.
+
+    The caller passes the already-typed buckets (trainable_raw, ...,
+    evidence_count) as keyword lists; whatever is left is typed here by pattern
+    into diagnostic (anomaly/iforest scores), raw_aggregate (Part B/D/DMEPOS
+    totals that are NOT features), or operational (pipeline bookkeeping). A
+    final `unclassified` bucket must come back empty — it is the assertion that
+    the contract covers the whole file (Travis's GATE-0)."""
+    out: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    for cls, cols in typed.items():
+        keep = sorted(c for c in dict.fromkeys(cols) if c in all_cols and c not in seen)
+        if keep:
+            out[cls] = keep
+            seen.update(keep)
+
+    rest = [c for c in all_cols if c not in seen]
+    # diagnostic: model-internal scores/flags that are not trainable features
+    _diag = {"anomaly_score_v3", "anomaly_lead_v3", "n_concept_signals",
+             "anomaly_contributing_concepts", "iforest_score_secondary",
+             "not_scored", "not_scored_reason"}
+    # raw_aggregate: source totals/denominators kept for provenance, never fed
+    _agg = {"total_services", "total_benes", "total_allowed", "total_claims",
+            "total_cost", "total_paid", "post_deactivation_paid", "jcode_paid",
+            "n_jcodes", "n_manufacturers", "op_total_dollars", "opioid_claims",
+            "services_per_bene", "allowed_per_bene", "code_concentration_hhi",
+            "brand_generic_cost_ratio", "dme_code_concentration", "pos_bed_count",
+            "first_service_month", "last_service_month"}
+
+    def _bucket(c: str) -> str:
+        if c.startswith("evidence_n_"):
+            return "evidence_count"          # (usually passed in; belt+braces)
+        if c in _diag:
+            return "diagnostic"
+        if c in _agg:
+            return "raw_aggregate"
+        # operational: rollup/priority/peer bookkeeping + any residual owner cols
+        if (c in {"priority_rank", "priority_tier", "rule_reasons", "peer_basis",
+                  "peer_group_key", "nucc_grouping", "nucc_classification",
+                  "layer3_probable_owner", "excluded_owner_role",
+                  "facility_excluded_owner_n_probable", "clean_basis",
+                  "exclusion_label_sources", "weak_label_votes"}
+                or c.startswith("rule_") or c.endswith("_reason")):
+            return "operational"
+        return "unclassified"
+
+    for c in rest:
+        out.setdefault(_bucket(c), []).append(c)
+    for k in out:
+        out[k] = sorted(dict.fromkeys(out[k]))
+    return out
+
+
 def _broadcast_org_to_npi(npi_to_org: pd.DataFrame, org_frame: pd.DataFrame,
                           value_cols: list[str]) -> pd.DataFrame:
     """Map org-grain values down to every member NPI (each NPI inherits its org's
@@ -525,18 +579,28 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                  if col_vintage.get(c, "current_state") == v)
                        for v in _VINTAGE_RANK}
     scheme_vintage = {s: col_vintage[f"subscore_{s}"] for s in coverage}
-    # Every column gets a class in the contract, not just the trainable ones.
-    # Travis's GATE-0: the parquet carried 52 columns the manifest classified
-    # nowhere (identifiers, evidence_n_* counts, raw aggregates, leftover
-    # pipeline columns). They are quarantined-by-construction, but a contract
-    # should say so out loud. "ignore" = present in the file, never a feature.
+    # Every column gets a MEANINGFUL class, not one undifferentiated "ignore"
+    # blob (Travis's GATE-0: the ~52 operational columns should each carry a
+    # class a modeler can read, so an identifier is not confused with an
+    # evidence count or a raw aggregate). This is a complete partition: every
+    # column lands in exactly one bucket, and `unclassified` must be empty.
     leakage_adjacent_cols = ([c for c in LEAKAGE_ADJACENT if c in out.columns]
                              + graph_adjacent)
-    classified = (set(trainable) | set(leakage_hard) | set(label_metadata)
-                  | set(leakage_adjacent_cols) | ({label} if label else set())
-                  | set(IDENTIFIER_COLS) | set(evidence_cols))
-    column_class = {"ignore": sorted(c for c in out.columns
-                                     if c not in classified)}
+    column_class = _classify_all_columns(
+        list(out.columns),
+        trainable_raw=raw_feature_cols, trainable_peerpct=peerpct_cols,
+        trainable_subscore=subscore_cols,
+        leakage_hard=leakage_hard, leakage_adjacent=leakage_adjacent_cols,
+        label=[label] if label else [], label_metadata=label_metadata,
+        identifier=[c for c in IDENTIFIER_COLS if c in out.columns],
+        group=[c for c in ["group_id"] if c in out.columns],
+        assessability=[c for c in ["assessable"] if c in out.columns],
+        evidence_count=list(evidence_cols))
+    _n_unclassified = len(column_class.get("unclassified", []))
+    if _n_unclassified:
+        print(f"  [manifest] {_n_unclassified} columns fell through to "
+              f"'unclassified' — add a rule in _classify_all_columns: "
+              f"{column_class['unclassified'][:8]}")
 
     manifest = {
         "grain": "npi",
