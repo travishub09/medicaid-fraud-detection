@@ -487,6 +487,88 @@ def address_ground_truth(address: str, transport: ManusTransport | None = None,
     return out
 
 
+# ---- corporate-network mining: find the hidden ring the owners files miss ---
+
+_CORP_NETWORK_TEMPLATE = (
+    "Research task, public records only, neutral association mapping (not an "
+    "allegation). Starting from this seed: {seed}. Using state Secretary-of-State "
+    "business registries (all states as needed), map the network of healthcare-"
+    "related entities connected to it by SHARED INFRASTRUCTURE, the kind of link "
+    "that ownership-disclosure files miss:\n"
+    "  - entities at the same street address or suite;\n"
+    "  - entities sharing a registered agent;\n"
+    "  - entities sharing an officer, director, incorporator, or manager;\n"
+    "  - entities sharing a phone number, website, or website template;\n"
+    "  - clusters of entities incorporated within a short window of each other.\n"
+    "For each entity report: legal name, state entity id, incorporation date, "
+    "status (active/dissolved), registered agent, officers, address, and which "
+    "shared link ties it to the seed. Then identify any cluster of 3 or more "
+    "entities bound by a common agent, officer, address, or phone, and name the "
+    "shared node. Quote each record with its official URL. Report co-location or "
+    "a shared agent as exactly that, a shared link, not proof of common "
+    "ownership. Where a paid status report would be needed for officer detail, "
+    "say so rather than inferring."
+)
+
+CORP_NETWORK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "entities": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "legal_name": {"type": "string"},
+                    "state_entity_id": {"type": ["string", "null"]},
+                    "incorporation_date": {"type": ["string", "null"]},
+                    "status": {"type": "string"},
+                    "registered_agent": {"type": ["string", "null"]},
+                    "officers": {"type": "array", "items": {"type": "string"}},
+                    "address": {"type": ["string", "null"]},
+                    "phone": {"type": ["string", "null"]},
+                    "shared_link": {"type": "string"},
+                    "source_url": {"type": ["string", "null"]},
+                },
+                "required": ["legal_name", "shared_link"],
+            },
+        },
+        "shared_nodes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string",
+                             "enum": ["registered_agent", "officer", "address",
+                                      "phone", "website", "incorporation_window"]},
+                    "value": {"type": "string"},
+                    "n_entities": {"type": "integer"},
+                    "entity_names": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["kind", "value", "n_entities"],
+            },
+        },
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": ["entities", "shared_nodes"],
+}
+
+
+def corporate_network_map(seed: str, transport: ManusTransport | None = None,
+                          label: str = "seed", **kw) -> dict:
+    """Map the shared-infrastructure corporate network around a seed (an address,
+    a registered agent, an officer name, or an org). Surfaces the ring shape
+    that CMS ownership files cannot, because the ownership is hidden but the
+    agent/officer/address/phone plumbing is shared. Structured output so the
+    reviewed result can seed shared-node graph edges. Neutral association
+    mapping; a shared agent is a link, not proof of common ownership. Reviewed
+    before it ever becomes a graph edge."""
+    out = run_research(_CORP_NETWORK_TEMPLATE.format(seed=seed),
+                       transport=transport, schema=CORP_NETWORK_SCHEMA,
+                       label=f"corpnet_{label}", **kw)
+    out["query"] = {"task": "corporate_network_map", "seed": seed}
+    return out
+
+
 def defendant_solvency(org_name: str, state: str = "",
                        transport: ManusTransport | None = None, **kw) -> dict:
     """Public financial footprint of a target org (Model C: is a judgment

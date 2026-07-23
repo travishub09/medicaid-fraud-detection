@@ -181,3 +181,28 @@ def test_reality_score_dispatches_with_schema_and_query():
     assert env["query"] == {"task": "reality_score", "npi": "1588799746"}
     assert captured["opts"].get("schema") == REALITY_SCHEMA   # schema forwarded
     assert "1588799746" in captured["prompt"] and "ALBUQUERQUE" in captured["prompt"]
+
+
+def test_corporate_network_map_dispatches_with_schema():
+    from src.feeds.manus_research import corporate_network_map, CORP_NETWORK_SCHEMA
+    captured = {}
+    class _T(ManusTransport):
+        def create(self, prompt, mode="agent", **opts):
+            captured["prompt"] = prompt; captured["opts"] = opts
+            return {"task_id": "c-1", "status": "completed",
+                    "structured_output": {
+                        "entities": [{"legal_name": "TRUCARE INC",
+                                      "shared_link": "same office 725 Reservoir"}],
+                        "shared_nodes": [{"kind": "address",
+                                          "value": "725 Reservoir Ave Ste 103",
+                                          "n_entities": 3,
+                                          "entity_names": ["A", "B", "C"]}],
+                        "confidence": "medium"}}
+        def get(self, task_id): return {}
+    env = corporate_network_map("725 Reservoir Ave Ste 103, Cranston, RI",
+                                transport=_T(), sleep=lambda s: None, cache=False)
+    assert env["ok"] and env["query"]["task"] == "corporate_network_map"
+    assert env["result"]["shared_nodes"][0]["n_entities"] == 3
+    assert captured["opts"].get("schema") == CORP_NETWORK_SCHEMA
+    assert "registered agent" in captured["prompt"].lower()
+    assert "725 Reservoir" in captured["prompt"]
