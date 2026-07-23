@@ -161,3 +161,23 @@ def test_missing_task_id_raises():
     with pytest.raises(RuntimeError):
         run_research("public prompt", transport=_NoId(), sleep=lambda s: None,
                      cache=False)
+
+
+def test_reality_score_dispatches_with_schema_and_query():
+    from src.feeds.manus_research import reality_score, REALITY_SCHEMA
+    captured = {}
+    class _T(ManusTransport):
+        def __init__(self): self.calls = 0
+        def create(self, prompt, mode="agent", **opts):
+            captured["prompt"] = prompt; captured["opts"] = opts
+            return {"task_id": "r-1", "status": "completed",
+                    "structured_output": {"reality_score": 12,
+                                          "gaps": ["no website", "address is a house"],
+                                          "confidence": "high"}}
+        def get(self, task_id): return {}
+    env = reality_score("1588799746", "VEAL LAURA", "ALBUQUERQUE", "NM",
+                        transport=_T(), sleep=lambda s: None, cache=False)
+    assert env["ok"] and env["result"]["reality_score"] == 12
+    assert env["query"] == {"task": "reality_score", "npi": "1588799746"}
+    assert captured["opts"].get("schema") == REALITY_SCHEMA   # schema forwarded
+    assert "1588799746" in captured["prompt"] and "ALBUQUERQUE" in captured["prompt"]

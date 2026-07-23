@@ -73,3 +73,20 @@ def test_registry_and_innocent_fill_when_provided():
 def test_unknown_npi_is_graceful():
     md = build_npi_dossier("9999999999", _pack())
     assert "not found" in md.lower()
+
+
+def test_reality_panel_renders_when_provided():
+    reality = {"result": {"reality_score": 12, "has_website": "no",
+                          "address_kind": "house", "phone_connects": "no",
+                          "gaps": ["no website", "no employees on LinkedIn"],
+                          "confidence": "high"}}
+    md = build_npi_dossier("1588799746", _pack(), _monthly(), _codes(),
+                           reality=reality)
+    assert "Reality score: 12/100" in md
+    assert "no employees on LinkedIn" in md
+    assert "Absence of footprint is a lead, not a verdict" in md
+
+
+def test_reality_panel_pending_when_absent():
+    md = build_npi_dossier("1588799746", _pack(), _monthly(), _codes())
+    assert "Pending: run the reality-score check" in md

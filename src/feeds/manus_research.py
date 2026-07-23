@@ -52,11 +52,20 @@ _RESULT_FIELDS = ["structured_output", "output", "result", "final_output",
 # crude guards so we never ship PHI or the sensitive inference to an external
 # agent. These are a backstop for a caller mistake, not a substitute for passing
 # public identifiers only.
-# No trailing \b: the stem terms (diagnos, whistleblow) must match their
-# inflections (diagnosis, whistleblower), which a closing boundary would block.
+# The guard fires on PHI-shaped phrasings and the sensitive whistleblower
+# inference, NOT on the bare words "patient"/"beneficiary" (which appear in
+# legitimate aggregate contexts: "patients per day", "patient reviews", "per
+# beneficiary"). It blocks a patient/beneficiary paired with an IDENTIFIER
+# field, plus the record/id/whistleblower terms. No trailing \b so stem terms
+# (diagnos, whistleblow) match their inflections. Backstop for a caller
+# mistake, not a substitute for passing public identifiers only.
 _PHI_MARKERS = re.compile(
-    r"\b(patient|beneficiar|member id|medical record|mrn|diagnos|dob|"
-    r"date of birth|ssn|whistleblow|relator|likely.{0,20}witness)", re.IGNORECASE)
+    r"\b("
+    r"(patient|beneficiar\w*|member)['’]?s?\s+"
+    r"(name|names|record|records|chart|charts|roster|list|dob|date of birth|ssn|address|identifier)|"
+    r"member id|medical record|mrn|diagnos|dob|date of birth|ssn|"
+    r"whistleblow|relator|likely.{0,20}witness"
+    r")", re.IGNORECASE)
 
 
 class ManusTransport:
@@ -227,6 +236,88 @@ def state_billing_rule_memo(code: str, state: str,
                        label=f"rulememo_{code}_{state}", **kw)
     out["query"] = {"task": "state_billing_rule_memo",
                     "code": str(code).upper(), "state": str(state).upper()}
+    return out
+
+
+# ---- the reality score: does this operation exist at the scale it claims? ---
+
+_REALITY_TEMPLATE = (
+    "Research task, public sources only. A healthcare provider bills a very large "
+    "amount of government money. Verify whether a real operation exists at that "
+    "scale. Do NOT allege fraud; report only what public records show or do not "
+    "show. Subject: {label} (NPI {npi}), reported location {city} {state}.\n\n"
+    "Check each item and report a plain yes/no/unknown with the source URL:\n"
+    "1. Website: does the practice/organization have its own website? If so, when "
+    "was the domain first registered (WHOIS) and when did the site first appear "
+    "(Wayback Machine)?\n"
+    "2. Google Business / Maps listing: does it exist, is it marked open or "
+    "permanently closed, does it have patient reviews, and what does Street View "
+    "show at the address (a medical building, a house, a UPS-store/mailbox, a "
+    "vacant lot)?\n"
+    "3. Workforce: any employees on LinkedIn, any job postings ever "
+    "(Indeed/LinkedIn/Glassdoor)?\n"
+    "4. Phone: does the listed number connect / appear to be a real business line "
+    "vs a disconnected or VOIP number?\n"
+    "5. Corporate existence: state Secretary-of-State registration, incorporation "
+    "date, status (active/dissolved).\n"
+    "6. Licensure: is the entity on the relevant {state} licensed-facility list "
+    "for what it bills, and is the named provider's professional license active?\n"
+    "7. Reviews/news: any patient reviews or local news describing billing for "
+    "services not received, or an investigation/raid?\n\n"
+    "Then give a REALITY ASSESSMENT: on a 0-100 scale, how much real-world "
+    "corroboration exists that an operation of this scale actually exists at this "
+    "location (100 = fully corroborated: real building, website with history, "
+    "employees, active license; 0 = no footprint found anywhere). List the "
+    "specific gaps. Quote or link every source. If something cannot be found, say "
+    "'no record found' rather than guessing."
+)
+
+# structured output so the result is scoreable, not prose. Matches the fields
+# the dossier enrichment reads; run_research forces the agent to fill it.
+REALITY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "reality_score": {"type": "integer", "minimum": 0, "maximum": 100},
+        "has_website": {"type": "string", "enum": ["yes", "no", "unknown"]},
+        "domain_age_years": {"type": ["number", "null"]},
+        "has_maps_listing": {"type": "string", "enum": ["yes", "no", "unknown"]},
+        "address_kind": {"type": "string",
+                         "enum": ["medical_building", "house", "mailbox_store",
+                                  "vacant", "other", "unknown"]},
+        "has_reviews": {"type": "string", "enum": ["yes", "no", "unknown"]},
+        "has_employees_or_jobs": {"type": "string",
+                                  "enum": ["yes", "no", "unknown"]},
+        "phone_connects": {"type": "string", "enum": ["yes", "no", "unknown"]},
+        "corporate_status": {"type": "string",
+                             "enum": ["active", "dissolved", "none_found",
+                                      "unknown"]},
+        "incorporation_date": {"type": ["string", "null"]},
+        "licensed_for_billed_service": {"type": "string",
+                                        "enum": ["yes", "no", "unknown"]},
+        "adverse_news_or_reviews": {"type": "string",
+                                    "enum": ["yes", "no", "unknown"]},
+        "gaps": {"type": "array", "items": {"type": "string"}},
+        "citations": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+    },
+    "required": ["reality_score", "gaps", "confidence"],
+}
+
+
+def reality_score(npi: str, label: str, city: str, state: str,
+                  transport: ManusTransport | None = None, **kw) -> dict:
+    """Dispatch the existence-verification task for one high-value lead.
+
+    Returns the run_research envelope; when the transport honors the schema the
+    result is the structured REALITY_SCHEMA object. This is TOP-N dossier
+    enrichment and (with review) a label input — never a universe training
+    feature (a live web value is not reproducible point-in-time). Public
+    identifiers only; the subject is a provider number and a city, no PHI."""
+    prompt = _REALITY_TEMPLATE.format(npi=str(npi), label=str(label or "unknown"),
+                                      city=str(city or ""), state=str(state or ""))
+    out = run_research(prompt, transport=transport, schema=REALITY_SCHEMA,
+                       label=f"reality_{npi}", **kw)
+    out["query"] = {"task": "reality_score", "npi": str(npi)}
     return out
 
 

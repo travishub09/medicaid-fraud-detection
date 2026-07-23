@@ -108,13 +108,47 @@ def _owners(owners: pd.DataFrame | None, npi: str) -> list[str]:
     return sorted({str(x) for x in o[name_col] if str(x).strip()})[:12]
 
 
+def _reality_panel(reality: dict | None) -> list[str]:
+    """Render the 'does this operation exist' panel from a reality_score result."""
+    L = ["## Does this operation exist (web reality check)"]
+    r = (reality or {}).get("result") if reality else None
+    if not isinstance(r, dict):
+        L.append("- Pending: run the reality-score check on this NPI.")
+        return L
+    score = r.get("reality_score")
+    L.append(f"- **Reality score: {score}/100** "
+             f"(100 = fully corroborated real operation; 0 = no footprint found).")
+    facts = [
+        ("website", r.get("has_website"), "has a website"),
+        ("maps listing", r.get("has_maps_listing"), "has a Google Maps listing"),
+        ("address is", r.get("address_kind"), None),
+        ("employees/jobs", r.get("has_employees_or_jobs"), "has employees or job postings"),
+        ("phone connects", r.get("phone_connects"), "has a working phone"),
+        ("corporate status", r.get("corporate_status"), None),
+        ("licensed for what it bills", r.get("licensed_for_billed_service"), None),
+        ("adverse news/reviews", r.get("adverse_news_or_reviews"), None),
+    ]
+    for name, val, _ in facts:
+        if val not in (None, "", "unknown"):
+            L.append(f"    - {name}: {val}")
+    gaps = r.get("gaps") or []
+    if gaps:
+        L.append(f"- Gaps a real operation of this size would not have: "
+                 f"{'; '.join(str(g) for g in gaps[:6])}")
+    L.append("_Absence of footprint is a lead, not a verdict; the provider may "
+             "operate without a web presence. Confidence: "
+             f"{r.get('confidence', 'unknown')}._")
+    return L
+
+
 def build_npi_dossier(npi: str, pack: pd.DataFrame,
                       monthly: pd.DataFrame | None = None,
                       codes: pd.DataFrame | None = None,
                       owners: pd.DataFrame | None = None,
                       registry: dict | None = None,
                       disclosure: dict | None = None,
-                      innocent: dict | None = None) -> str:
+                      innocent: dict | None = None,
+                      reality: dict | None = None) -> str:
     """One NPI → a counsel-grade dossier (markdown). ``registry`` / ``disclosure``
     / ``innocent`` are optional research-evidence envelopes (from nppes_verify
     and the Manus screens); when present they fill their sections, else the
@@ -198,6 +232,10 @@ def build_npi_dossier(npi: str, pack: pd.DataFrame,
                     if flag != "OK" else " Identity matches the matrix."))
     else:
         L.append("- Pending: run `nppes_verify` on this NPI.")
+    L.append("")
+
+    # 4b. web reality check (does the operation exist at this scale?)
+    L.extend(_reality_panel(reality))
     L.append("")
 
     # 5. innocent explanations (mandatory)
