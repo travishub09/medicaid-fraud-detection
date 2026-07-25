@@ -54,3 +54,35 @@ def test_markdown_renders_decision_language():
     md = to_markdown(res)
     assert "Full minus core" in md and "leave-one-group-out" in md
     assert "open_payments" in md
+
+
+def test_prospective_label_read_correctly_not_zero_positives():
+    """The forward-label CSV is (npi, first_excl_date, ...,
+    is_prospective_positive, was_excluded_pre_cutoff). Reading the FIRST non-npi
+    column (a date) collapsed every provider to 0; the label must come from
+    is_prospective_positive, and pre-cutoff-excluded rows must be dropped."""
+    m = _matrix()
+    npis = list(m["npi"])
+    fl = pd.DataFrame({
+        "npi": npis[:10],
+        "first_excl_date": ["2024-03-01"] * 6 + [""] * 4,   # the decoy first column
+        "is_prospective_positive": [1, 1, 1, 1, 1, 1, 0, 0, 0, 0],
+        "was_excluded_pre_cutoff": [0, 0, 0, 0, 0, 0, 1, 1, 1, 1],
+    })
+    res = run_source_ablation(m, _manifest(), future_label=fl,
+                              splits=2, seeds=(0,))
+    # 6 forward positives (not 0), and the 4 pre-cutoff-excluded are dropped
+    assert res["positives"] == 6
+    assert res["n"] == len(m) - 4
+    assert res["label"] == "forward:is_prospective_positive"
+
+
+def test_zero_positive_label_raises():
+    import pytest
+    m = _matrix()
+    fl = pd.DataFrame({"npi": list(m["npi"])[:5],
+                       "first_excl_date": ["2024-01-01"] * 5,
+                       "is_prospective_positive": [0, 0, 0, 0, 0],
+                       "was_excluded_pre_cutoff": [0, 0, 0, 0, 0]})
+    with pytest.raises(ValueError):
+        run_source_ablation(m, _manifest(), future_label=fl, splits=2, seeds=(0,))

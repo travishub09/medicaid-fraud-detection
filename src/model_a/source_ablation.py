@@ -100,13 +100,33 @@ def run_source_ablation(matrix: pd.DataFrame, manifest: dict,
     if future_label is not None and len(future_label):
         fl = future_label.copy()
         fl["npi"] = fl["npi"].astype(str)
-        ycol = [c for c in fl.columns if c != "npi"][0]
-        m = m.merge(fl[["npi", ycol]].rename(columns={ycol: "_y"}), on="npi", how="left")
-        y = _to_num(m["_y"])
-        label_name = f"forward:{ycol}"
+        # The prospective_label CSV is (npi, first_excl_date, ...,
+        # is_prospective_positive, was_excluded_pre_cutoff, ...). Read the LABEL
+        # correctly (the old "first non-npi column" grabbed first_excl_date, a
+        # date string, and every provider collapsed to 0). Positives are
+        # is_prospective_positive==1; providers already excluded at/before the
+        # cutoff are DROPPED from the eval, not scored as negatives — the same
+        # construction the network A/B uses.
+        if "is_prospective_positive" in fl.columns:
+            pos = set(fl.loc[_to_num(fl["is_prospective_positive"]) == 1, "npi"])
+            drop = (set(fl.loc[_to_num(fl["was_excluded_pre_cutoff"]) == 1, "npi"])
+                    if "was_excluded_pre_cutoff" in fl.columns else set())
+            if drop:
+                m = m[~m["npi"].isin(drop)].reset_index(drop=True)
+            y = m["npi"].isin(pos).astype(int).to_numpy()
+            label_name = "forward:is_prospective_positive"
+        else:                                    # a plain (npi, 0/1) label file
+            ycol = [c for c in fl.columns if c != "npi"][0]
+            m = m.merge(fl[["npi", ycol]].rename(columns={ycol: "_y"}),
+                        on="npi", how="left")
+            y = _to_num(m["_y"])
+            label_name = f"forward:{ycol}"
     else:
         y = _to_num(m[label_col])
         label_name = label_col
+    if int(pd.Series(y).sum()) == 0:
+        raise ValueError("forward label resolved to 0 positives — check the "
+                         "future-label file columns (expected is_prospective_positive)")
     groups = (m["group_id"].to_numpy() if "group_id" in m.columns else None)
 
     part = partition_features(manifest)
