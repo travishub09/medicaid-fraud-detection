@@ -8,10 +8,18 @@ registries. Manus is that agent. This module wraps its API as one more feed:
 dispatch a task, poll to completion, cache the result with its citations and
 retrieval date, return structured evidence.
 
-CONTRACT (Manus v2, https://open.manus.ai/docs/v2): base https://api.manus.ai/v2,
-auth header ``x-manus-api-key``, ``POST /v2/task.create`` to dispatch and
-``POST /v2/task.get`` to poll. Field names beyond the documented ones are read
-defensively (several aliases tried) so a minor API rename does not break a run.
+CONTRACT (Manus v2, verified against the LIVE API 2026-07-25): base
+https://api.manus.ai/v2, auth header ``x-manus-api-key``.
+``POST /v2/task.create`` with body {"message": {"content": [{"type": "text",
+"text": <prompt>}]}} → {"ok", "task_id", "task_url", ...}. Poll with
+``GET /v2/task.listMessages?task_id=<id>`` → {"messages": [...]} where the
+newest ``status_update`` carries ``agent_status`` ("running" → keep polling,
+"stopped" → finished, "waiting" → the agent wants input we cannot give an
+unattended task, treated as failed) and the newest ``assistant_message``
+carries the result text. The API has NO structured-output field: a caller's
+``schema`` is folded into the prompt as a strict JSON instruction and the
+reply text is parsed back into an object. Field names beyond these are still
+read defensively so a minor API rename does not break a run.
 
 RULES this module enforces, matching the rest of the feeds layer:
   * TOP-N ONLY. Manus tasks are slow and paid; callers pass a handful of leads,
@@ -32,6 +40,7 @@ needed to exercise the logic.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import time
@@ -41,9 +50,14 @@ from src.feeds.client import cache_raw
 MANUS_BASE = "https://api.manus.ai/v2"
 API_KEY_ENV = "MANUS_API_KEY"
 
-# terminal task states (documented + defensive aliases)
+# terminal task states (live API + defensive aliases). The live v2 reports
+# agent_status "stopped" when FINISHED — the transport maps it to "completed"
+# before it gets here, so "stopped" in the raw sense (user-cancelled via app)
+# stays a bad-terminal alias. "waiting" = the agent wants human input that an
+# unattended batch task can never give: terminal, not ok.
 _DONE_OK = {"completed", "success", "succeeded", "finished", "done"}
-_DONE_BAD = {"failed", "error", "errored", "stopped", "cancelled", "canceled"}
+_DONE_BAD = {"failed", "error", "errored", "stopped", "cancelled", "canceled",
+             "waiting"}
 
 # result field aliases, tried in order
 _RESULT_FIELDS = ["structured_output", "output", "result", "final_output",
@@ -85,29 +99,53 @@ class ManusTransport:
                 "x-manus-api-key": self.api_key}
 
     def create(self, prompt: str, mode: str = "agent", **opts) -> dict:
+        """Dispatch a task. Live-verified body shape: the prompt rides as
+        message.content[0].text; anything else 400s with "message.content is
+        required". ``mode`` is accepted for signature compatibility but not
+        sent (the API has no such field). Extra ``opts`` (e.g. agent_profile)
+        pass through at the top level for forward compatibility."""
         import requests
-        body = {"prompt": prompt, "mode": mode, **opts}
+        body = {"message": {"content": [{"type": "text", "text": prompt}]},
+                **opts}
         r = requests.post(f"{self.base}/task.create", json=body,
                           headers=self._headers(), timeout=self.timeout)
         r.raise_for_status()
         return r.json()
 
     def get(self, task_id: str) -> dict:
-        """Poll one task. POST /task.get is the documented shape; on a 404/405
-        (an API that routes polling as a GET instead) fall back to the two GET
-        conventions before giving up."""
+        """Poll one task via GET /task.listMessages?task_id= (the only shape
+        the live API serves; task.get does not exist). Synthesizes the
+        {status, output} envelope the polling loop reads: the NEWEST
+        status_update's agent_status → status ("stopped" = finished →
+        "completed"), the NEWEST assistant_message's content → output."""
         import requests
-        r = requests.post(f"{self.base}/task.get", json={"task_id": task_id},
-                          headers=self._headers(), timeout=self.timeout)
-        if r.status_code in (404, 405):
-            r = requests.get(f"{self.base}/task.get",
-                             params={"task_id": task_id},
-                             headers=self._headers(), timeout=self.timeout)
-            if r.status_code in (404, 405):
-                r = requests.get(f"{self.base}/task/{task_id}",
-                                 headers=self._headers(), timeout=self.timeout)
+        r = requests.get(f"{self.base}/task.listMessages",
+                         params={"task_id": task_id},
+                         headers=self._headers(), timeout=self.timeout)
         r.raise_for_status()
-        return r.json()
+        payload = r.json()
+        msgs = payload.get("messages") or []
+
+        def _newest(kind):
+            best, best_ts = None, -1.0
+            for m in msgs:
+                if isinstance(m, dict) and m.get("type") == kind:
+                    try:
+                        ts = float(m.get("timestamp") or 0)
+                    except (TypeError, ValueError):
+                        ts = 0.0
+                    if ts >= best_ts:
+                        best, best_ts = m, ts
+            return best
+
+        status_msg = _newest("status_update")
+        agent_status = str(((status_msg or {}).get("status_update") or {})
+                           .get("agent_status") or "running").lower()
+        status = {"stopped": "completed"}.get(agent_status, agent_status)
+        answer_msg = _newest("assistant_message")
+        output = ((answer_msg or {}).get("assistant_message") or {}).get("content")
+        return {"task_id": str(payload.get("task_id") or task_id),
+                "status": status, "output": output, "messages": msgs}
 
 
 def _unwrap(payload: dict) -> dict:
@@ -175,6 +213,16 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
             "inference — Manus receives public identifiers only")
     transport = transport or ManusTransport()
 
+    # The live v2 API has no structured-output field, so a schema becomes a
+    # strict instruction appended to the prompt, and the reply text is parsed
+    # back into an object below.
+    schema = create_opts.pop("schema", None)
+    if schema is not None:
+        prompt = (f"{prompt}\n\nOUTPUT FORMAT (mandatory): respond with ONLY "
+                  "a single JSON object that matches this JSON schema exactly. "
+                  "No prose before or after it, no markdown code fences:\n"
+                  + json.dumps(schema))
+
     created_raw = transport.create(prompt, mode=mode, **create_opts)
     created = _unwrap(created_raw)
     task_id = _field(created, "task_id", "id", "taskId")
@@ -195,14 +243,38 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
         cache_raw("manus", f"{label}_final_{task_id}", payload, root=cache_root)
 
     ok = status in _DONE_OK
+    result = _extract_result(payload) if ok else None
+    if schema is not None and isinstance(result, str):
+        parsed = _parse_json_text(result)
+        if parsed is not None:
+            result = parsed
     return {
         "task_id": str(task_id),
         "status": status,
         "ok": ok,
         "timed_out": polls >= max_polls and status not in _DONE_OK | _DONE_BAD,
-        "result": _extract_result(payload) if ok else None,
+        "result": result,
         "raw": payload,
     }
+
+
+def _parse_json_text(text: str):
+    """Best-effort JSON object out of an agent reply: tolerates markdown fences
+    and prose around the object; None when nothing parseable is found."""
+    s = str(text or "").strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```[a-zA-Z]*\s*", "", s)
+        s = re.sub(r"\s*```$", "", s).strip()
+    for candidate in (s, s[s.find("{"): s.rfind("}") + 1]
+                      if "{" in s and "}" in s else ""):
+        if not candidate:
+            continue
+        try:
+            out = json.loads(candidate)
+            return out if isinstance(out, dict) else None
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return None
 
 
 # ---- a first concrete research task: the state billing-rule memo -----------
@@ -521,7 +593,11 @@ def harvest_case_rows(result: dict) -> tuple:
     """
     import pandas as pd
 
-    cases = (result or {}).get("cases") or []
+    if isinstance(result, str):                      # reply that didn't parse
+        result = _parse_json_text(result) or {}
+    if not isinstance(result, dict):
+        result = {}
+    cases = result.get("cases") or []
     rows, cands = [], []
     for c in cases:
         if not isinstance(c, dict):

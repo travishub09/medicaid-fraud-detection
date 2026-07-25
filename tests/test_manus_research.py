@@ -179,7 +179,11 @@ def test_reality_score_dispatches_with_schema_and_query():
                         transport=_T(), sleep=lambda s: None, cache=False)
     assert env["ok"] and env["result"]["reality_score"] == 12
     assert env["query"] == {"task": "reality_score", "npi": "1588799746"}
-    assert captured["opts"].get("schema") == REALITY_SCHEMA   # schema forwarded
+    # the live API has no schema field: it must be EMBEDDED in the prompt,
+    # never forwarded as a create option
+    assert "schema" not in captured["opts"]
+    assert "reality_score" in captured["prompt"]      # schema text in prompt
+    assert "ONLY a single JSON object" in captured["prompt"]
     assert "1588799746" in captured["prompt"] and "ALBUQUERQUE" in captured["prompt"]
 
 
@@ -203,7 +207,8 @@ def test_corporate_network_map_dispatches_with_schema():
                                 transport=_T(), sleep=lambda s: None, cache=False)
     assert env["ok"] and env["query"]["task"] == "corporate_network_map"
     assert env["result"]["shared_nodes"][0]["n_entities"] == 3
-    assert captured["opts"].get("schema") == CORP_NETWORK_SCHEMA
+    assert "schema" not in captured["opts"]           # embedded, not forwarded
+    assert "shared_nodes" in captured["prompt"]       # schema text in prompt
     assert "registered agent" in captured["prompt"].lower()
     assert "725 Reservoir" in captured["prompt"]
 
@@ -248,3 +253,94 @@ def test_case_label_harvest_dispatches_and_converts_rows():
     from src.model_a.case_labels import extract_conduct_window
     start, end = extract_conduct_window(r["summary"], r["announced_date"])
     assert (start, end) == (2018, 2021)
+
+
+# ---- live-verified transport shapes (probed against api.manus.ai 2026-07-25) --
+
+def test_live_create_sends_message_content_list(monkeypatch):
+    """task.create must send {"message": {"content": [{"type","text"}]}} —
+    every other shape 400s with 'message.content is required' on the live API.
+    mode/schema must never ride in the body."""
+    captured = {}
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return {"ok": True, "task_id": "t-1"}
+
+    def fake_post(url, json=None, headers=None, timeout=None):
+        captured["url"], captured["body"], captured["headers"] = url, json, headers
+        return _R()
+
+    monkeypatch.setattr("requests.post", fake_post)
+    t = ManusTransport(api_key="k")
+    out = t.create("do the research", mode="agent")
+    assert out["task_id"] == "t-1"
+    assert captured["url"].endswith("/task.create")
+    assert captured["body"] == {
+        "message": {"content": [{"type": "text", "text": "do the research"}]}}
+    assert captured["headers"]["x-manus-api-key"] == "k"
+
+
+def test_live_get_polls_listmessages_and_synthesizes(monkeypatch):
+    """Polling is GET /task.listMessages?task_id=. The newest status_update's
+    agent_status 'stopped' maps to completed; the newest assistant_message's
+    content is the output. (Payload copied from the live probe.)"""
+    payload = {"ok": True, "task_id": "JPEB", "has_more": False, "messages": [
+        {"id": "n1", "type": "status_update", "timestamp": "1785003616335",
+         "status_update": {"agent_status": "stopped",
+                           "brief": "Manus finished working"}},
+        {"id": "a1", "type": "assistant_message", "timestamp": "1785003616160",
+         "assistant_message": {"content": "ok"}},
+        {"id": "s1", "type": "status_update", "timestamp": "1785003614188",
+         "status_update": {"agent_status": "running"}},
+        {"id": "u1", "type": "user_message", "timestamp": "1785003613597",
+         "user_message": {"content": "Reply with exactly the single word: ok"}},
+    ]}
+    captured = {}
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return payload
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        captured["url"], captured["params"] = url, params
+        return _R()
+
+    monkeypatch.setattr("requests.get", fake_get)
+    t = ManusTransport(api_key="k")
+    out = t.get("JPEB")
+    assert captured["url"].endswith("/task.listMessages")
+    assert captured["params"] == {"task_id": "JPEB"}
+    assert out["status"] == "completed" and out["output"] == "ok"
+
+    # still running: newest status_update says running, no answer yet
+    payload["messages"] = payload["messages"][2:]
+    out = t.get("JPEB")
+    assert out["status"] == "running" and out["output"] is None
+
+
+def test_schema_embedded_and_json_reply_parsed():
+    """With the API lacking a structured-output field, run_research must fold
+    the schema into the prompt and parse the JSON reply text, including a
+    fenced reply."""
+    t = _FakeTransport(polls_until_done=1)
+    t._result = '```json\n{"cases": [{"defendant_name": "X"}]}\n```'
+    out = run_research("public prompt", transport=t, sleep=lambda s: None,
+                       cache=False, schema={"type": "object",
+                                            "properties": {"cases": {}}})
+    assert "ONLY a single JSON object" in t._prompt
+    assert '"cases"' in t._prompt                      # schema text embedded
+    assert out["result"] == {"cases": [{"defendant_name": "X"}]}
+
+
+def test_waiting_agent_is_terminal_not_ok():
+    """agent_status 'waiting' means the agent wants human input an unattended
+    task can never give — the poll loop must stop and report not-ok, not spin
+    for 30 minutes."""
+    t = _FakeTransport(polls_until_done=1, status="waiting")
+    out = run_research("public prompt", transport=t, sleep=lambda s: None,
+                       cache=False)
+    assert out["ok"] is False and out["status"] == "waiting"
+    assert t.calls["get"] <= 2                         # stopped immediately
