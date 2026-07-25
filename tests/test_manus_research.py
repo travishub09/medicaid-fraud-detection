@@ -206,3 +206,45 @@ def test_corporate_network_map_dispatches_with_schema():
     assert captured["opts"].get("schema") == CORP_NETWORK_SCHEMA
     assert "registered agent" in captured["prompt"].lower()
     assert "725 Reservoir" in captured["prompt"]
+
+
+def test_case_label_harvest_dispatches_and_converts_rows():
+    """The harvest task must dispatch with its schema, and harvest_case_rows must
+    (a) map rows into case_db.CASE_COLUMNS shape with case_id = source URL,
+    (b) fold the conduct period into the summary so extract_conduct_window can
+    recover it, (c) DROP rows without a source URL, and (d) route NPI candidates
+    to the review frame, never into the case rows."""
+    from src.feeds.manus_research import case_label_harvest, harvest_case_rows
+
+    result = {"cases": [
+        {"announced_date": "2023-05-01", "defendant_name": "Acme Home Health LLC",
+         "sector": "home_health", "scheme": "billing_fraud", "amount_usd": 2500000,
+         "qui_tam": True, "intervened": None, "jurisdiction": "D.R.I.",
+         "conduct_period": "from 2018 through 2021",
+         "summary": "Settled FCA allegations of billing for visits not made.",
+         "source_url": "https://www.justice.gov/usao-ri/pr/acme",
+         "outcome_type": "settlement",
+         "npi_candidates": [{"npi": "1234567893", "registry_name": "ACME HOME HEALTH",
+                             "match_basis": "exact name + state"}]},
+        {"announced_date": "2023-06-01", "defendant_name": "No Url Corp",
+         "summary": "Missing link.", "source_url": "", "outcome_type": "conviction"},
+    ]}
+    t = _FakeTransport(polls_until_done=1, result=result)
+    out = case_label_harvest("RI", 2015, 2025, transport=t,
+                             sleep=lambda s: None, cache=False)
+    assert out["ok"] and out["query"]["task"] == "case_label_harvest"
+    assert "RESOLVED" in t._prompt and "indictments" in t._prompt
+
+    rows, cands = harvest_case_rows(out["result"])
+    assert len(rows) == 1                                  # the no-URL row dropped
+    r = rows.iloc[0]
+    assert r["case_id"] == "https://www.justice.gov/usao-ri/pr/acme"
+    assert r["qui_tam"] == 1
+    assert "from 2018 through 2021" in r["summary"]        # window recoverable
+    assert "npi" not in rows.columns                       # candidates never in rows
+    assert list(cands["npi"]) == ["1234567893"]
+
+    # the folded window is recoverable by the downstream extractor
+    from src.model_a.case_labels import extract_conduct_window
+    start, end = extract_conduct_window(r["summary"], r["announced_date"])
+    assert (start, end) == (2018, 2021)

@@ -397,6 +397,172 @@ def mfcu_sweep(state: str, months: int = 24,
     return out
 
 
+# ---- case-label harvest: the DOJ/MFCU backfill as structured label rows -----
+#
+# The single binding constraint on the whole modelling program is the LABEL:
+# exclusions are binary, untyped, and blind to the billing/kickback/quality
+# schemes the broad data was procured to detect. The chain that fixes this is
+# already built (case_db.CASE_COLUMNS -> case_labels -> widened PU label with
+# scheme + conduct window); the missing input is the multi-year backfill of
+# resolved enforcement outcomes. That is browser work, so it is Manus work.
+#
+# Discipline (docs/platform/01): OUTCOMES only (settlement, civil judgment,
+# guilty plea, conviction, CIA) — never indictments or complaints, which are
+# allegations. Every row must carry its source URL. NPIs are never asserted:
+# NPPES lookups produce CANDIDATES with a stated basis, for human review.
+# Harvested rows land in a review file; only operator-reviewed rows may be
+# appended to enforcement/doj_cases.csv. Frozen, versioned, reviewed — never a
+# live call in the scoring path.
+
+_CASE_HARVEST_TEMPLATE = (
+    "Research task, public sources only. Build a structured list of RESOLVED "
+    "healthcare-fraud enforcement outcomes involving {state} providers announced "
+    "between {start_year} and {end_year} where Medicaid or Medicare money was at "
+    "issue.\n\n"
+    "Sources to sweep, in order: (1) DOJ press releases (justice.gov, including "
+    "the {state} U.S. Attorney's office); (2) HHS-OIG enforcement actions and "
+    "corporate integrity agreements (oig.hhs.gov); (3) the {state} Medicaid "
+    "Fraud Control Unit and state Attorney General press releases; (4) NAMFCU "
+    "case summaries.\n\n"
+    "STRICT inclusion rule: only RESOLVED outcomes — a settlement, civil "
+    "judgment, guilty plea, conviction, or corporate integrity agreement. Do "
+    "NOT include indictments, complaints, or charges: those are allegations, "
+    "not outcomes, and must be left out entirely.\n\n"
+    "For each case record: the announcement date; every named defendant "
+    "(person or organization, exactly as written); the healthcare sector "
+    "(home_health, hospice, dme, lab, behavioral, snf, pharmacy, physician, "
+    "hospital, other); the scheme type (kickback, upcoding, "
+    "medical_necessity, billing_fraud, services_not_rendered, other); the "
+    "dollar amount; whether it was a qui tam case and whether the government "
+    "intervened (leave unknown if not stated); the court/district; the conduct "
+    "period as stated in the release (e.g. 'from 2016 through 2020'); a 2-4 "
+    "sentence factual summary INCLUDING the conduct-period years verbatim; and "
+    "the source URL. The source URL is mandatory — no URL, no row.\n\n"
+    "Then, for each defendant, look up NPI CANDIDATES in the NPPES registry "
+    "(npiregistry.cms.hhs.gov) by name and state. Report candidates only: the "
+    "NPI, the registry name, and the match basis (exact name + state, name "
+    "variant, practice address matches the release, etc.). Never assert that a "
+    "candidate IS the defendant — these are for human review.\n\n"
+    "Report facts from the cited public record only; no characterization "
+    "beyond what the release states."
+)
+
+# structured output: rows land directly in enforcement/case_db.CASE_COLUMNS
+# shape after harvest_case_rows(); npi candidates ride separately for review.
+CASE_HARVEST_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "announced_date": {"type": "string"},
+                    "defendant_name": {"type": "string"},
+                    "sector": {"type": "string"},
+                    "scheme": {"type": "string"},
+                    "amount_usd": {"type": ["number", "null"]},
+                    "qui_tam": {"type": ["boolean", "null"]},
+                    "intervened": {"type": ["boolean", "null"]},
+                    "jurisdiction": {"type": "string"},
+                    "conduct_period": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "source_url": {"type": "string"},
+                    "outcome_type": {
+                        "type": "string",
+                        "enum": ["settlement", "civil_judgment", "guilty_plea",
+                                 "conviction", "cia"]},
+                    "npi_candidates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "npi": {"type": "string"},
+                                "registry_name": {"type": "string"},
+                                "match_basis": {"type": "string"},
+                            },
+                            "required": ["npi", "registry_name", "match_basis"],
+                        }},
+                },
+                "required": ["announced_date", "defendant_name", "summary",
+                             "source_url", "outcome_type"],
+            }},
+    },
+    "required": ["cases"],
+}
+
+
+def case_label_harvest(state: str, start_year: int, end_year: int,
+                       transport: ManusTransport | None = None, **kw) -> dict:
+    """One state × window sweep of resolved enforcement outcomes → label rows.
+
+    Batch over states/windows with research_sweep; feed the reviewed output to
+    ``harvest_case_rows`` and append accepted rows to enforcement/doj_cases.csv.
+    """
+    prompt = _CASE_HARVEST_TEMPLATE.format(state=str(state).upper(),
+                                           start_year=int(start_year),
+                                           end_year=int(end_year))
+    out = run_research(prompt, transport=transport, schema=CASE_HARVEST_SCHEMA,
+                       label=f"caseharvest_{state}_{start_year}_{end_year}", **kw)
+    out["query"] = {"task": "case_label_harvest", "state": str(state).upper(),
+                    "start_year": int(start_year), "end_year": int(end_year)}
+    return out
+
+
+def harvest_case_rows(result: dict) -> tuple:
+    """Manus harvest result → (case_rows, npi_candidates) for HUMAN REVIEW.
+
+    ``case_rows`` matches enforcement/case_db.CASE_COLUMNS (case_id = source
+    URL; the stated conduct period is folded into the summary text so
+    ``case_labels.extract_conduct_window`` recovers it downstream — no schema
+    change). Rows without a source URL are dropped: unverifiable, so never a
+    label. ``npi_candidates`` carries (case_id, defendant_name, npi,
+    registry_name, match_basis) — review evidence only, NEVER auto-joined.
+    """
+    import pandas as pd
+
+    cases = (result or {}).get("cases") or []
+    rows, cands = [], []
+    for c in cases:
+        if not isinstance(c, dict):
+            continue
+        url = str(c.get("source_url") or "").strip()
+        if not url.lower().startswith("http"):
+            continue                       # no URL, no row — unverifiable
+        summary = str(c.get("summary") or "").strip()
+        period = str(c.get("conduct_period") or "").strip()
+        if period and period not in summary:
+            summary = f"{summary} Conduct period: {period}.".strip()
+        rows.append({
+            "case_id": url,
+            "announced_date": str(c.get("announced_date") or ""),
+            "defendant_name": str(c.get("defendant_name") or ""),
+            "sector": str(c.get("sector") or ""),
+            "scheme": str(c.get("scheme") or ""),
+            "amount_usd": c.get("amount_usd"),
+            "qui_tam": ({True: 1, False: 0}.get(c.get("qui_tam"))
+                        if c.get("qui_tam") is not None else None),
+            "intervened": ({True: 1, False: 0}.get(c.get("intervened"))
+                           if c.get("intervened") is not None else None),
+            "jurisdiction": str(c.get("jurisdiction") or ""),
+            "source_url": url,
+            "summary": summary,
+            "outcome_type": str(c.get("outcome_type") or ""),
+        })
+        for cand in (c.get("npi_candidates") or []):
+            if isinstance(cand, dict) and str(cand.get("npi") or "").strip():
+                cands.append({
+                    "case_id": url,
+                    "defendant_name": str(c.get("defendant_name") or ""),
+                    "npi": str(cand.get("npi")).strip(),
+                    "registry_name": str(cand.get("registry_name") or ""),
+                    "match_basis": str(cand.get("match_basis") or ""),
+                })
+    return pd.DataFrame(rows), pd.DataFrame(
+        cands, columns=["case_id", "defendant_name", "npi", "registry_name",
+                        "match_basis"])
+
+
 def public_disclosure_screen(npi: str, descriptor: str,
                              transport: ManusTransport | None = None,
                              **kw) -> dict:

@@ -115,3 +115,52 @@ def test_zero_positive_label_raises():
                        "was_excluded_pre_cutoff": [0, 0, 0, 0, 0]})
     with pytest.raises(ValueError):
         run_source_ablation(m, _manifest(), future_label=fl, splits=2, seeds=(0,))
+
+
+def test_oof_every_row_scored_and_full_beats_core():
+    """The powered harness must score EVERY row out-of-fold (that is the point —
+    all positives reach the metric, not the ~30% of one holdout) and must report
+    CIs for lift and PR-AUC, not just ROC."""
+    from src.model_a.source_ablation import run_oof_ablation, oof_to_markdown
+
+    res = run_oof_ablation(_matrix(), _manifest(), n_splits=4, n_boot=50)
+    assert res["n_scored"] == res["n"]                       # nothing left unscored
+    assert res["positives_scored"] == res["positives"]       # every positive counts
+    assert res["full"]["roc_auc"] > res["core"]["roc_auc"]   # strong extra feature
+    for k in ("roc_auc", "pr_auc", "lift10"):                # CI on all 3 metrics
+        d = res["full_vs_core"][k]
+        assert d["lo"] <= d["delta"] <= d["hi"]
+    md = oof_to_markdown(res)
+    assert "out-of-fold" in md and "top-decile lift" in md
+
+
+def test_unique_catches_partitions_positives():
+    """The four buckets must partition the positives exactly, and a model that
+    ranks a positive high while the other buries it must land in the *_only
+    bucket."""
+    from src.model_a.source_ablation import unique_catches
+
+    y = np.zeros(100, dtype=int)
+    y[[0, 1, 2]] = 1
+    p_full = np.linspace(0, 1, 100)
+    p_core = p_full.copy()
+    p_full[0] = 0.99   # full surfaces positive 0 ...
+    p_core[0] = 0.01   # ... core buries it
+    p_full[1] = 0.98
+    p_core[1] = 0.97   # both surface positive 1
+    p_full[2] = 0.01
+    p_core[2] = 0.02   # neither surfaces positive 2
+    c = unique_catches(y, p_full, p_core, frac=0.10)
+    assert c["positives"] == 3
+    assert c["both"] + c["full_only"] + c["core_only"] + c["neither"] == 3
+    assert c["full_only"] >= 1 and c["neither"] >= 1
+    assert 0.0 <= c["jaccard_topk"] <= 1.0
+
+
+def test_oof_per_group_marginal():
+    from src.model_a.source_ablation import run_oof_ablation
+
+    res = run_oof_ablation(_matrix(), _manifest(), n_splits=4, n_boot=50,
+                           per_group=True)
+    # dropping the strong extra feature must cost lift → positive marginal
+    assert res["per_group"]["open_payments"]["marginal"]["lift10"]["delta"] > 0
