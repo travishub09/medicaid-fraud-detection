@@ -77,6 +77,35 @@ def test_prospective_label_read_correctly_not_zero_positives():
     assert res["label"] == "forward:is_prospective_positive"
 
 
+def test_cluster_draw_keeps_groups_whole_and_counts_duplicates():
+    """The bootstrap must resample GROUPS, not rows, and a group drawn twice must
+    contribute its rows TWICE. The old np.isin/set-membership version dropped the
+    duplicate, which is not a cluster bootstrap."""
+    from src.model_a.source_ablation import _group_index, _draw_cluster
+
+    g = np.array(["a", "a", "a", "b", "c", "c"])          # text ids, ragged sizes
+    order, starts, counts = _group_index(g)
+    assert sorted(counts.tolist()) == [1, 2, 3]
+
+    # draw the 3-row group twice and the 1-row group once
+    code_of = {g[order[starts[i]]]: i for i in range(len(counts))}
+    pick = np.array([code_of["a"], code_of["a"], code_of["b"]])
+    idx = _draw_cluster(order, starts, counts, pick)
+    got = g[idx]
+    assert len(idx) == 7                                   # 3 + 3 + 1, duplicates kept
+    assert (got == "a").sum() == 6 and (got == "b").sum() == 1
+    # rows of a group always travel together (never split)
+    assert sorted(idx[:3].tolist()) == sorted(idx[3:6].tolist())
+
+
+def test_cluster_draw_empty_pick_is_safe():
+    from src.model_a.source_ablation import _group_index, _draw_cluster
+
+    order, starts, counts = _group_index(np.array(["a", "b"]))
+    idx = _draw_cluster(order, starts, counts, np.array([], dtype=int))
+    assert len(idx) == 0
+
+
 def test_zero_positive_label_raises():
     import pytest
     m = _matrix()

@@ -59,6 +59,42 @@ def _eval_set(matrix, y, cols, groups, splits, seeds):
     return {"top_decile_lift": _m(lifts), "pr_auc": _m(prs), "roc_auc": _m(rocs)}
 
 
+def _group_index(g_te):
+    """Group array → (order, starts, counts) for O(1) cluster resampling.
+
+    ``np.isin(g_te, sample)`` on the raw (text) group ids was the bottleneck: a
+    200-iteration loop each matching ~10^5 strings against ~10^5 strings, single
+    threaded, turned a minutes-long CI into an hours-long one. Factorizing to
+    integer codes once and slicing a presorted index makes every draw pure
+    integer arithmetic. It also FIXES the resampling: set-membership silently
+    dropped duplicate draws (a group picked twice contributed once), which is
+    not a cluster bootstrap and understates the variance. Here a group drawn
+    twice contributes its rows twice — matching ``network_ab._ab_once``.
+    """
+    codes, uniq = pd.factorize(pd.Series(g_te))
+    order = np.argsort(codes, kind="stable")
+    sorted_codes = codes[order]
+    ids = np.arange(len(uniq))
+    starts = np.searchsorted(sorted_codes, ids, side="left")
+    counts = np.searchsorted(sorted_codes, ids, side="right") - starts
+    return order, starts, counts
+
+
+def _draw_cluster(order, starts, counts, pick):
+    """Row indices for a bootstrap draw of groups ``pick`` (vectorized).
+
+    Expands the ragged per-group slices without a Python loop: repeat each
+    picked group's start offset by its size, then add a within-group counter.
+    """
+    sel = counts[pick]
+    total = int(sel.sum())
+    if total == 0:
+        return np.empty(0, dtype=int)
+    base = np.repeat(starts[pick], sel)
+    within = np.arange(total) - np.repeat(np.cumsum(sel) - sel, sel)
+    return order[base + within]
+
+
 def _delta_ci(matrix, y, cols_a, cols_b, groups, splits, seeds, n_boot=200):
     """ROC delta (A minus B) with a cluster-bootstrap CI over test groups."""
     Xa, Xb = _numeric_frame(matrix, cols_a), _numeric_frame(matrix, cols_b)
@@ -70,14 +106,15 @@ def _delta_ci(matrix, y, cols_a, cols_b, groups, splits, seeds, n_boot=200):
         yte = y[te]
         g_te = (np.asarray(groups)[te] if groups is not None
                 else np.arange(len(te)))
-        ug = np.unique(g_te)
+        order, starts, counts = _group_index(g_te)
+        n_groups = len(counts)
         rng = np.random.RandomState(RANDOM_STATE + s)
         for _ in range(n_boot):
-            samp = rng.choice(ug, size=len(ug), replace=True)
-            mask = np.isin(g_te, samp)
-            if _to_num(yte[mask]).sum() == 0:
+            pick = rng.randint(0, n_groups, size=n_groups)
+            idx = _draw_cluster(order, starts, counts, pick)
+            if len(idx) == 0 or _to_num(yte[idx]).sum() == 0:
                 continue
-            deltas.append(roc_auc(yte[mask], pa[mask]) - roc_auc(yte[mask], pb[mask]))
+            deltas.append(roc_auc(yte[idx], pa[idx]) - roc_auc(yte[idx], pb[idx]))
     deltas = [d for d in deltas if d == d]
     if not deltas:
         return {"delta": float("nan"), "lo": float("nan"), "hi": float("nan")}
