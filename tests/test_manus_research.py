@@ -238,13 +238,17 @@ def test_case_label_harvest_dispatches_and_converts_rows():
     out = case_label_harvest("RI", 2015, 2025, transport=t,
                              sleep=lambda s: None, cache=False)
     assert out["ok"] and out["query"]["task"] == "case_label_harvest"
-    assert "RESOLVED" in t._prompt and "indictments" in t._prompt
+    # wide net, tiered: BOTH tiers captured, allegations honestly typed,
+    # linkability demanded verbatim
+    assert "BOTH TIERS" in t._prompt and "indictment" in t._prompt
+    assert "LINKABILITY" in t._prompt and "d/b/a" in t._prompt
 
     rows, cands = harvest_case_rows(out["result"])
     assert len(rows) == 1                                  # the no-URL row dropped
     r = rows.iloc[0]
     assert r["case_id"] == "https://www.justice.gov/usao-ri/pr/acme"
     assert r["qui_tam"] == 1
+    assert r["label_tier"] == "resolved"                   # settlement = tier 1
     assert "from 2018 through 2021" in r["summary"]        # window recoverable
     assert "npi" not in rows.columns                       # candidates never in rows
     assert list(cands["npi"]) == ["1234567893"]
@@ -388,3 +392,37 @@ def test_resume_research_reattaches_by_task_id():
     assert t.calls["create"] == 0                    # never re-dispatched
     assert out["ok"] is True and out["result"] == {"cases": []}
     assert out["task_id"] == "t-123"
+
+
+def test_pending_allegations_are_tiered_never_hard_label():
+    """An indictment must be CAPTURED (comprehensiveness) but tiered 'pending'
+    so it can never enter the hard label; linkage identifiers come through
+    verbatim and joined."""
+    from src.feeds.manus_research import harvest_case_rows
+
+    result = {"cases": [
+        {"announced_date": "2024-01-10", "defendant_name": "Dr. A Person",
+         "summary": "Indicted for billing for visits not made.",
+         "source_url": "https://www.justice.gov/usao/pr/indicted",
+         "outcome_type": "indictment",
+         "npi_in_source": "1234567893",
+         "license_numbers": ["MD-12345", "MD-99"],
+         "addresses": ["1 Main St, Providence, RI"],
+         "dba_names": ["A Person Clinic"],
+         "related_individuals": [{"name": "B Owner", "role": "co-owner"},
+                                 {"name": "C Biller"}],
+         "states_involved": ["RI", "MA"]},
+        {"announced_date": "2024-02-01", "defendant_name": "Settled Org LLC",
+         "summary": "Paid to resolve FCA allegations.",
+         "source_url": "https://www.justice.gov/usao/pr/settled",
+         "outcome_type": "settlement"},
+    ]}
+    rows, _ = harvest_case_rows(result)
+    tiers = dict(zip(rows["defendant_name"], rows["label_tier"]))
+    assert tiers["Dr. A Person"] == "pending"
+    assert tiers["Settled Org LLC"] == "resolved"
+    r = rows[rows["defendant_name"] == "Dr. A Person"].iloc[0]
+    assert r["npi_in_source"] == "1234567893"
+    assert r["license_numbers"] == "MD-12345 | MD-99"
+    assert r["related_individuals"] == "B Owner (co-owner) | C Biller"
+    assert r["states_involved"] == "RI | MA"

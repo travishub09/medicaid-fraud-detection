@@ -528,46 +528,79 @@ def mfcu_sweep(state: str, months: int = 24,
 # scheme + conduct window); the missing input is the multi-year backfill of
 # resolved enforcement outcomes. That is browser work, so it is Manus work.
 #
-# Discipline (docs/platform/01): OUTCOMES only (settlement, civil judgment,
-# guilty plea, conviction, CIA) — never indictments or complaints, which are
-# allegations. Every row must carry its source URL. NPIs are never asserted:
-# NPPES lookups produce CANDIDATES with a stated basis, for human review.
-# Harvested rows land in a review file; only operator-reviewed rows may be
-# appended to enforcement/doj_cases.csv. Frozen, versioned, reviewed — never a
-# live call in the scoring path.
+# Discipline (docs/platform/01): the net is WIDE but the label stays clean via
+# TIERING. Everything citable is captured — resolved outcomes AND pending
+# allegations — but each row carries outcome_type, and harvest_case_rows
+# splits them: only resolved outcomes (settlement, judgment, plea, conviction,
+# CIA) are candidates for the hard label in enforcement/doj_cases.csv; pending
+# rows (indictments, complaints) go to a separate review file for weak
+# supervision and monitoring, never the hard label. Every row must carry its
+# source URL. NPIs are never asserted: NPPES lookups produce CANDIDATES with a
+# stated basis, for human review. Frozen, versioned, reviewed — never a live
+# call in the scoring path.
 
 _CASE_HARVEST_TEMPLATE = (
-    "Research task, public sources only. Build a structured list of RESOLVED "
-    "healthcare-fraud enforcement outcomes involving {state} providers announced "
-    "between {start_year} and {end_year} where Medicaid or Medicare money was at "
+    "Research task, public sources only. Build the most COMPREHENSIVE "
+    "structured list you can of healthcare-fraud enforcement events involving "
+    "{state} providers (or multistate cases that include {state} conduct or "
+    "defendants) announced between {start_year} and {end_year}, where "
+    "Medicaid, Medicare, or another government health program's money was at "
     "issue.\n\n"
-    "Sources to sweep, in order: (1) DOJ press releases (justice.gov, including "
-    "the {state} U.S. Attorney's office); (2) HHS-OIG enforcement actions and "
-    "corporate integrity agreements (oig.hhs.gov); (3) the {state} Medicaid "
-    "Fraud Control Unit and state Attorney General press releases; (4) NAMFCU "
-    "case summaries.\n\n"
-    "STRICT inclusion rule: only RESOLVED outcomes — a settlement, civil "
-    "judgment, guilty plea, conviction, or corporate integrity agreement. Do "
-    "NOT include indictments, complaints, or charges: those are allegations, "
-    "not outcomes, and must be left out entirely.\n\n"
-    "For each case record: the announcement date; every named defendant "
-    "(person or organization, exactly as written); the healthcare sector "
-    "(home_health, hospice, dme, lab, behavioral, snf, pharmacy, physician, "
-    "hospital, other); the scheme type (kickback, upcoding, "
-    "medical_necessity, billing_fraud, services_not_rendered, other); the "
-    "dollar amount; whether it was a qui tam case and whether the government "
-    "intervened (leave unknown if not stated); the court/district; the conduct "
-    "period as stated in the release (e.g. 'from 2016 through 2020'); a 2-4 "
-    "sentence factual summary INCLUDING the conduct-period years verbatim; and "
-    "the source URL. The source URL is mandatory — no URL, no row.\n\n"
-    "Then, for each defendant, look up NPI CANDIDATES in the NPPES registry "
-    "(npiregistry.cms.hhs.gov) by name and state. Report candidates only: the "
-    "NPI, the registry name, and the match basis (exact name + state, name "
-    "variant, practice address matches the release, etc.). Never assert that a "
-    "candidate IS the defendant — these are for human review.\n\n"
+    "Sweep EVERY source you can reach, including at minimum: (1) DOJ press "
+    "releases (justice.gov, main and the {state} U.S. Attorney's offices); "
+    "(2) HHS-OIG enforcement actions, exclusion announcements, and corporate "
+    "integrity agreements (oig.hhs.gov); (3) the {state} Medicaid Fraud "
+    "Control Unit and state Attorney General press releases and annual "
+    "reports; (4) NAMFCU case summaries; (5) the {state} Medicaid agency's "
+    "program-integrity or inspector-general pages (terminations, sanctions, "
+    "recoveries); (6) federal court records (CourtListener/RECAP) for False "
+    "Claims Act and healthcare-fraud judgments; (7) state licensing-board "
+    "actions taken FOR billing fraud; (8) qui tam law-firm "
+    "case announcements and credible news coverage — used as POINTERS whose "
+    "facts you then confirm against a primary source. Do not stop at the "
+    "first source; different sources catch different cases.\n\n"
+    "CAPTURE BOTH TIERS, clearly typed. Tier 1, resolved outcomes: "
+    "settlement, civil judgment, guilty plea, jury conviction, plea "
+    "agreement, corporate integrity agreement. Tier 2, pending allegations: "
+    "indictment, criminal or civil complaint, charges filed. Record BOTH, and "
+    "set outcome_type honestly for each — never present an allegation as an "
+    "outcome. If a case appears twice (charged, later resolved), record the "
+    "RESOLVED event and note the charge date in the summary.\n\n"
+    "For each case record: the announcement date; EVERY named defendant, "
+    "person or organization, exactly as written, one entry per defendant; "
+    "the healthcare sector (use home_health, hospice, dme, lab, behavioral, "
+    "snf, pharmacy, physician, hospital when they fit, otherwise your own "
+    "words); the scheme (use kickback, upcoding, medical_necessity, "
+    "billing_fraud, services_not_rendered, ghost_patients, identity_theft "
+    "when they fit, otherwise your own words); the dollar amount; qui tam "
+    "and government-intervention status (unknown if not stated); the "
+    "court/district; the conduct period as stated (e.g. 'from 2016 through "
+    "2020'); a 2-4 sentence factual summary INCLUDING the conduct-period "
+    "years verbatim; and the source URL. The source URL is mandatory — no "
+    "URL, no row.\n\n"
+    "LINKABILITY IS CRITICAL — these rows join to a provider graph. Extract "
+    "VERBATIM every identifier the sources contain: any NPI printed in the "
+    "release or docket; professional license numbers; CMS certification "
+    "numbers (CCN); Medicaid provider numbers; every practice or business "
+    "address mentioned; every d/b/a, trade, or former business name; the "
+    "names and roles of owners, officers, and co-conspirators tied to an "
+    "organization defendant; and every state the conduct touched. An "
+    "identifier you copy from the source is worth more than any lookup.\n\n"
+    "Then, for each defendant WITHOUT an NPI printed in the source, look up "
+    "NPI CANDIDATES in the NPPES registry (npiregistry.cms.hhs.gov) by name "
+    "and state, and by the practice address when you have one. Report "
+    "candidates only: the NPI, the registry name, and the match basis. Never "
+    "assert that a candidate IS the defendant — these are for human review.\n\n"
     "Report facts from the cited public record only; no characterization "
-    "beyond what the release states."
+    "beyond what the sources state. More rows with honest outcome_type beats "
+    "fewer rows: completeness is the goal, the tiering keeps it safe."
 )
+
+# outcome types that count as RESOLVED (tier 1, hard-label candidates).
+# Everything else — indictments, complaints, charges — is a pending allegation:
+# weak-supervision signal and monitoring input, never the hard label.
+RESOLVED_OUTCOMES = {"settlement", "civil_judgment", "guilty_plea",
+                     "conviction", "plea_agreement", "cia"}
 
 # structured output: rows land directly in enforcement/case_db.CASE_COLUMNS
 # shape after harvest_case_rows(); npi candidates ride separately for review.
@@ -593,7 +626,26 @@ CASE_HARVEST_SCHEMA = {
                     "outcome_type": {
                         "type": "string",
                         "enum": ["settlement", "civil_judgment", "guilty_plea",
-                                 "conviction", "cia"]},
+                                 "conviction", "plea_agreement", "cia",
+                                 "indictment", "criminal_complaint",
+                                 "civil_complaint", "charges_filed", "other"]},
+                    "npi_in_source": {"type": "string"},
+                    "license_numbers": {"type": "array",
+                                        "items": {"type": "string"}},
+                    "ccn": {"type": "string"},
+                    "medicaid_provider_id": {"type": "string"},
+                    "addresses": {"type": "array", "items": {"type": "string"}},
+                    "dba_names": {"type": "array", "items": {"type": "string"}},
+                    "related_individuals": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"name": {"type": "string"},
+                                           "role": {"type": "string"}},
+                            "required": ["name"],
+                        }},
+                    "states_involved": {"type": "array",
+                                        "items": {"type": "string"}},
                     "npi_candidates": {
                         "type": "array",
                         "items": {
@@ -659,6 +711,20 @@ def harvest_case_rows(result: dict) -> tuple:
         period = str(c.get("conduct_period") or "").strip()
         if period and period not in summary:
             summary = f"{summary} Conduct period: {period}.".strip()
+        outcome = str(c.get("outcome_type") or "").strip().lower()
+
+        def _joined(key, item_fmt=None):
+            vals = c.get(key) or []
+            if not isinstance(vals, list):
+                vals = [vals]
+            parts = []
+            for v in vals:
+                if item_fmt and isinstance(v, dict):
+                    parts.append(item_fmt(v))
+                elif v:
+                    parts.append(str(v).strip())
+            return " | ".join(p for p in parts if p)
+
         rows.append({
             "case_id": url,
             "announced_date": str(c.get("announced_date") or ""),
@@ -673,7 +739,26 @@ def harvest_case_rows(result: dict) -> tuple:
             "jurisdiction": str(c.get("jurisdiction") or ""),
             "source_url": url,
             "summary": summary,
-            "outcome_type": str(c.get("outcome_type") or ""),
+            "outcome_type": outcome,
+            # TIERING: only resolved outcomes may ever reach the hard label in
+            # doj_cases.csv; pending allegations feed weak supervision and
+            # monitoring only. The runner splits its review files on this.
+            "label_tier": ("resolved" if outcome in RESOLVED_OUTCOMES
+                           else "pending"),
+            # linkage extras — join keys back to the entity graph. Extra
+            # columns are harmless downstream: build_case_db selects
+            # CASE_COLUMNS only.
+            "npi_in_source": str(c.get("npi_in_source") or "").strip(),
+            "license_numbers": _joined("license_numbers"),
+            "ccn": str(c.get("ccn") or "").strip(),
+            "medicaid_provider_id": str(c.get("medicaid_provider_id") or "").strip(),
+            "addresses": _joined("addresses"),
+            "dba_names": _joined("dba_names"),
+            "related_individuals": _joined(
+                "related_individuals",
+                lambda v: (f"{v.get('name', '')} ({v.get('role', '')})"
+                           if v.get("role") else str(v.get("name", "")))),
+            "states_involved": _joined("states_involved"),
         })
         for cand in (c.get("npi_candidates") or []):
             if isinstance(cand, dict) and str(cand.get("npi") or "").strip():
