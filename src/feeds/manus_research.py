@@ -250,7 +250,11 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
     if schema is not None:
         prompt = (f"{prompt}\n\nOUTPUT FORMAT (mandatory): respond with ONLY "
                   "a single JSON object that matches this JSON schema exactly. "
-                  "No prose before or after it, no markdown code fences:\n"
+                  "No prose before or after it, no markdown code fences. "
+                  "PASTE THE ENTIRE JSON DIRECTLY IN YOUR FINAL CHAT REPLY - "
+                  "do NOT deliver it as an attached file; the API caller "
+                  "cannot open attachments, and a summary with the data in an "
+                  "attachment counts as NO ANSWER:\n"
                   + json.dumps(schema))
 
     created_raw = transport.create(prompt, mode=mode, **create_opts)
@@ -593,7 +597,12 @@ _CASE_HARVEST_TEMPLATE = (
     "assert that a candidate IS the defendant — these are for human review.\n\n"
     "Report facts from the cited public record only; no characterization "
     "beyond what the sources state. More rows with honest outcome_type beats "
-    "fewer rows: completeness is the goal, the tiering keeps it safe."
+    "fewer rows: completeness is the goal, the tiering keeps it safe.\n\n"
+    "Work AUTONOMOUSLY: this task runs unattended, so never pause to ask a "
+    "question or request confirmation — nobody can answer. When something is "
+    "ambiguous, make the reasonable assumption, note it in the relevant "
+    "summary, and keep going to the final answer. A partial but delivered "
+    "list beats a paused task."
 )
 
 # outcome types that count as RESOLVED (tier 1, hard-label candidates).
