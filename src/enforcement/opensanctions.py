@@ -68,16 +68,30 @@ def normalize_opensanctions(entities) -> pd.DataFrame:
             "excl_type": excl_type,
             # keep the raw date STRINGS; parse the whole columns vectorized below
             # (per-row pd.to_datetime is O(N) slow scalar calls on a big bulk file).
+            # excl_date stays the EFFECTIVE date (startDate first): agencies
+            # backdate effective dates to the conviction, so this is CONDUCT
+            # time — which is the conservative choice for the forward label (a
+            # backdated ban is dropped as pre-cutoff, never counted as a
+            # forward win).
             "excl_date": _first(props, "startDate") or _first(props, "listingDate"),
             "reinstate_date": _first(props, "endDate"),
+            # listed_date is KNOWLEDGE time — when the row became publicly
+            # listed (listingDate, else the aggregator's first_seen). Kept
+            # separately so point-in-time work can distinguish "when it
+            # happened" from "when anyone could know"; never collapsed into
+            # excl_date.
+            "listed_date": (_first(props, "listingDate")
+                            or str(e.get("first_seen") or "")),
         })
-    df = pd.DataFrame(rows, columns=EXCLUSION_COLS[:-1])
+    df = pd.DataFrame(rows, columns=EXCLUSION_COLS[:-1] + ["listed_date"])
     if not len(df):
-        return pd.DataFrame(columns=EXCLUSION_COLS)
+        return pd.DataFrame(columns=EXCLUSION_COLS + ["listed_date"])
     df["excl_date"] = pd.to_datetime(df["excl_date"], errors="coerce")
     df["reinstate_date"] = pd.to_datetime(df["reinstate_date"], errors="coerce")
+    df["listed_date"] = pd.to_datetime(df["listed_date"], errors="coerce")
     df["currently_active"] = df["reinstate_date"].isna().astype(int)
-    return df[df["name_key"] != ""].reset_index(drop=True)[EXCLUSION_COLS]
+    return (df[df["name_key"] != ""].reset_index(drop=True)
+            [EXCLUSION_COLS + ["listed_date"]])
 
 
 def _records_from_simple(df: pd.DataFrame) -> list[dict]:

@@ -224,7 +224,8 @@ def test_opensanctions_to_exclusion_schema():
         {"schema": "Organization",
          "properties": {"name": ["Bad Care LLC"], "topics": ["debarment"],
                         "startDate": ["2022-05-01"]},
-         "datasets": ["us_med_exclusions"]},
+         "datasets": ["us_med_exclusions"],
+         "first_seen": "2023-11-15"},
         {"schema": "Vehicle", "properties": {"name": ["not an entity"]}},  # skipped
     ]
     out = normalize_opensanctions(entities)
@@ -232,6 +233,24 @@ def test_opensanctions_to_exclusion_schema():
     assert out.iloc[0]["name_key"] == "BAD CARE"
     assert out.iloc[0]["excl_type"] == "opensanctions:us_med_exclusions"
     assert out.iloc[0]["currently_active"] == 1
+    # conduct time vs knowledge time stay SEPARATE columns: excl_date is the
+    # (possibly backdated) effective date, listed_date is when the row became
+    # publicly listed — never collapsed into one date.
+    assert str(out.iloc[0]["excl_date"].date()) == "2022-05-01"
+    assert str(out.iloc[0]["listed_date"].date()) == "2023-11-15"
+
+
+def test_opensanctions_listing_date_preferred_for_listed_date():
+    entities = [
+        {"schema": "Person",
+         "properties": {"name": ["Backdated, Doc"],
+                        "startDate": ["2014-06-01"],       # conviction-backdated
+                        "listingDate": ["2023-06-20"]},    # when CMS acted
+         "datasets": ["us_state_med"], "first_seen": "2024-01-01"},
+    ]
+    out = normalize_opensanctions(entities)
+    assert str(out.iloc[0]["excl_date"].date()) == "2014-06-01"
+    assert str(out.iloc[0]["listed_date"].date()) == "2023-06-20"  # not first_seen
 
 
 # ----------------------------------------------------------- GLiNER ---
