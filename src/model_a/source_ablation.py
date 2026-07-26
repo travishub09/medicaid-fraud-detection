@@ -488,7 +488,7 @@ def main() -> None:
               f"[{d['roc_auc']['lo']:+.4f}, {d['roc_auc']['hi']:+.4f}]")
         print(f"  lift delta {d['lift10']['delta']:+.4f} "
               f"[{d['lift10']['lo']:+.4f}, {d['lift10']['hi']:+.4f}]")
-        print(f"  → {args.out}")
+        print(f"  -> {args.out}")
         return
     res = run_source_ablation(matrix, manifest, label_col=args.label_col,
                               future_label=fl, splits=args.splits)
@@ -496,7 +496,7 @@ def main() -> None:
     print(f"[source_ablation] full-vs-core ROC delta "
           f"{res['full_vs_core']['delta']:+.4f} "
           f"[{res['full_vs_core']['lo']:+.4f}, {res['full_vs_core']['hi']:+.4f}] "
-          f"→ {args.out}")
+          f"-> {args.out}")
 
 
 if __name__ == "__main__":
