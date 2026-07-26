@@ -96,12 +96,22 @@ def classify_joins(cases: pd.DataFrame, candidates: pd.DataFrame,
     c["_org_key"] = c["defendant_name"].map(norm_org_name)
     c["_person_key"] = c["defendant_name"].map(person_key)
 
-    cand_keys = set()
+    # NPIs in OUR universe: a found NPI only matters if that provider ever
+    # appears in our billing data — a label with no provider to land on is
+    # worthless, and hunting identifiers for out-of-universe defendants is
+    # wasted agent spend.
+    universe_npis: set = set()
+    if provider_dim is not None and len(provider_dim) and "npi" in provider_dim:
+        universe_npis = set(provider_dim["npi"].astype(str).str.strip())
+
+    cand_npi_by_key: dict = {}
     if candidates is not None and len(candidates):
         has_npi = candidates["npi"].fillna("").str.strip() != ""
-        cand_keys = set(zip(candidates.loc[has_npi, "case_id"].astype(str),
-                            candidates.loc[has_npi, "defendant_name"]
-                            .map(person_key)))
+        for cid, dname, npi in zip(candidates.loc[has_npi, "case_id"].astype(str),
+                                   candidates.loc[has_npi, "defendant_name"],
+                                   candidates.loc[has_npi, "npi"].astype(str)):
+            cand_npi_by_key.setdefault((cid, person_key(dname)), []).append(
+                npi.strip())
 
     org_keys: set = set()
     if org_nodes is not None and len(org_nodes):
@@ -110,9 +120,17 @@ def classify_joins(cases: pd.DataFrame, candidates: pd.DataFrame,
             keys = (org_nodes[col].map(norm_org_name)
                     if col != "name_key" else org_nodes[col].fillna(""))
             org_keys = set(k for k in keys if isinstance(k, str) and len(k) >= 8)
+    # blocked fuzzy candidates: org keys grouped by first token, so the
+    # difflib pass compares against dozens, not the whole universe
+    org_blocks: dict = {}
+    for k in org_keys:
+        org_blocks.setdefault(k.split(" ", 1)[0], []).append(k)
 
-    # local NPPES person matching: order-free name key + state, individuals only
-    pd_lookup: dict = {}
+    # local NPPES person matching: order-free name key, individuals only.
+    # In-state unique is the strong match; nationally unique is the fallback
+    # (defendants often bill from a neighboring state).
+    pd_state: dict = {}
+    pd_national: dict = {}
     if provider_dim is not None and len(provider_dim):
         name_col = _pick(provider_dim, "name_key", "display_name",
                          "provider_name", "name")
@@ -128,27 +146,52 @@ def classify_joins(cases: pd.DataFrame, candidates: pd.DataFrame,
                       if state_col else pd.Series("", index=pdim.index))
             counts = pd.DataFrame({"k": keys, "s": states})
             counts = counts[counts["k"].str.len() >= 7]
-            pd_lookup = counts.groupby(["k", "s"]).size().to_dict()
+            pd_state = counts.groupby(["k", "s"]).size().to_dict()
+            pd_national = counts.groupby("k").size().to_dict()
+
+    def _fuzzy_org(key):
+        """case_labels' conservative difflib pass, blocked by first token."""
+        import difflib
+        if len(key) < 8:
+            return False
+        block = org_blocks.get(key.split(" ", 1)[0], [])
+        if not block or len(block) > 2000:
+            return False
+        return bool(difflib.get_close_matches(key, block, n=1, cutoff=0.92))
 
     def _status(row):
-        if str(row.get("npi_in_source") or "").strip():
-            return "direct_npi"
-        if (str(row.get("case_id")), row["_person_key"]) in cand_keys:
-            return "candidate_npi"
+        src_npi = str(row.get("npi_in_source") or "").strip()
+        if src_npi:
+            return ("direct_npi" if not universe_npis
+                    or src_npi in universe_npis else "npi_outside_universe")
+        cands = cand_npi_by_key.get((str(row.get("case_id")),
+                                     row["_person_key"]))
+        if cands:
+            if not universe_npis or any(n in universe_npis for n in cands):
+                return "candidate_npi"
+            return "npi_outside_universe"
         if len(row["_org_key"]) >= 8 and row["_org_key"] in org_keys:
             return "org_name_match"
-        if pd_lookup and len(row["_person_key"]) >= 7:
-            n = pd_lookup.get((row["_person_key"],
-                               str(row.get("state") or "").upper()), 0)
+        if pd_state and len(row["_person_key"]) >= 7:
+            n = pd_state.get((row["_person_key"],
+                              str(row.get("state") or "").upper()), 0)
             if n == 1:
                 return "nppes_unique_name"
             if n > 1:
                 return "nppes_ambiguous"
+            if pd_national.get(row["_person_key"], 0) == 1:
+                return "nppes_unique_national"
+        if _fuzzy_org(row["_org_key"]):
+            return "org_fuzzy_match"
         return "unmatched"
 
     c["join_status"] = c.apply(_status, axis=1)
 
     def _feasibility(row):
+        if row["join_status"] == "npi_outside_universe":
+            # identifier FOUND, provider simply never bills in our data — no
+            # enrichment can change that; case-level fact only.
+            return "outside_universe"
         if row["join_status"] not in ("unmatched", "nppes_ambiguous"):
             return ""
         text = f"{row.get('defendant_name', '')} {row.get('summary', '')}"
@@ -163,6 +206,10 @@ def classify_joins(cases: pd.DataFrame, candidates: pd.DataFrame,
     return c.drop(columns=["_org_key", "_person_key"])
 
 
+JOINABLE = ["direct_npi", "candidate_npi", "org_name_match",
+            "org_fuzzy_match", "nppes_unique_name", "nppes_unique_national"]
+
+
 def gaps_worklist(classified: pd.DataFrame) -> pd.DataFrame:
     """The go-back-to-Manus rows: unmatched/ambiguous where an identifier is
     plausibly findable. Carries the context the enrichment task needs."""
@@ -171,7 +218,14 @@ def gaps_worklist(classified: pd.DataFrame) -> pd.DataFrame:
     m = classified[classified["join_status"].isin(["unmatched",
                                                    "nppes_ambiguous"])
                    & classified["gap_feasibility"].isin(["likely_public",
-                                                         "unknown"])]
+                                                         "unknown"])].copy()
+    # PRIORITIZED: likely_public before unknown, big dollars first — the
+    # enrichment spend starts where a recovered identifier moves the label
+    # most, and the long tail of tiny cases can wait for the label to prove
+    # itself.
+    m["_amt"] = pd.to_numeric(m.get("amount_usd"), errors="coerce").fillna(0.0)
+    m["_feas"] = (m["gap_feasibility"] == "likely_public").astype(int)
+    m = m.sort_values(["_feas", "_amt"], ascending=[False, False])
     keep = [c for c in ["state", "window", "defendant_name", "join_status",
                         "gap_feasibility", "outcome_type", "amount_usd",
                         "source_url", "summary"] if c in m.columns]
@@ -187,13 +241,12 @@ def to_markdown(classified: pd.DataFrame, gaps: pd.DataFrame) -> str:
     L.append("")
     L.append("| join path | rows | share |")
     L.append("|---|--:|--:|")
-    order = ["direct_npi", "candidate_npi", "org_name_match",
-             "nppes_unique_name", "nppes_ambiguous", "unmatched"]
+    order = JOINABLE + ["npi_outside_universe", "nppes_ambiguous", "unmatched"]
     vc = classified["join_status"].value_counts()
     for k in order:
         v = int(vc.get(k, 0))
         L.append(f"| {k} | {v:,} | {v / n:.0%} |")
-    joinable = int(sum(vc.get(k, 0) for k in order[:4]))
+    joinable = int(sum(vc.get(k, 0) for k in JOINABLE))
     L.append("")
     L.append(f"**Joinable now: {joinable:,} of {n:,} ({joinable / n:.0%}).**")
     fz = classified.loc[classified["gap_feasibility"] != "",
@@ -214,7 +267,7 @@ def to_markdown(classified: pd.DataFrame, gaps: pd.DataFrame) -> str:
                  "case-level facts, never provider labels.")
     L.append("")
     st = (classified.assign(ok=classified["join_status"]
-                            .isin(order[:4])).groupby("state")["ok"].mean()
+                            .isin(JOINABLE)).groupby("state")["ok"].mean()
           .sort_values())
     L.append("## Joinability by state (worst first)")
     L.append("")
@@ -233,6 +286,11 @@ def main() -> None:
     ap.add_argument("--org-nodes", default=None)
     ap.add_argument("--out", default="JOIN_AUDIT.md")
     ap.add_argument("--gaps-out", default="gaps_for_manus.csv")
+    ap.add_argument("--priority-n", type=int, default=500,
+                    help="also write the TOP-N prioritized gaps (big dollars, "
+                         "likely_public first) as *_priority.csv — the "
+                         "enrichment worklist that is actually worth agent "
+                         "spend")
     args = ap.parse_args()
 
     cases = load_harvest(args.harvest_dir)
@@ -243,15 +301,17 @@ def main() -> None:
     classified = classify_joins(cases, cands, pdim, orgs)
     gaps = gaps_worklist(classified)
     gaps.to_csv(args.gaps_out, index=False)
+    prio_path = Path(args.gaps_out).with_name(
+        Path(args.gaps_out).stem + "_priority.csv")
+    gaps.head(args.priority_n).to_csv(prio_path, index=False)
     classified.to_csv(Path(args.out).with_suffix(".rows.csv"), index=False)
     Path(args.out).write_text(to_markdown(classified, gaps), encoding="utf-8")
     n = len(classified)
-    ok = int(classified["join_status"].isin(
-        ["direct_npi", "candidate_npi", "org_name_match",
-         "nppes_unique_name"]).sum()) if n else 0
+    ok = int(classified["join_status"].isin(JOINABLE).sum()) if n else 0
     print(f"[join_audit] {n:,} rows | joinable {ok:,} "
           f"({(ok / n if n else 0):.0%}) | gaps {len(gaps):,} -> "
-          f"{args.gaps_out} | report -> {args.out}")
+          f"{args.gaps_out} (top {min(args.priority_n, len(gaps))} -> "
+          f"{prio_path.name}) | report -> {args.out}")
 
 
 if __name__ == "__main__":

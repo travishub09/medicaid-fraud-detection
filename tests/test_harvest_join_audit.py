@@ -35,11 +35,13 @@ def _cases():
 
 
 def _provider_dim():
+    # includes the direct/candidate NPIs so those rows are IN our universe
     return pd.DataFrame({
-        "npi": ["1", "2", "3"],
-        "display_name": ["UNIQUE PERSON", "COMMON NAME", "NAME, COMMON"],
-        "addr_state": ["ID", "ID", "ID"],
-        "entity_type": ["1", "1", "1"],
+        "npi": ["1", "2", "3", "1234567893", "1999999992"],
+        "display_name": ["UNIQUE PERSON", "COMMON NAME", "NAME, COMMON",
+                         "ROW XONE", "ROW XTWO"],
+        "addr_state": ["ID", "ID", "ID", "ID", "ID"],
+        "entity_type": ["1", "1", "1", "1", "1"],
     })
 
 
@@ -115,3 +117,61 @@ def test_nan_npi_in_source_is_not_a_join():
     assert status["Acme Home Health LLC"] == "org_name_match"
     assert status["Karen Office Manager"] == "unmatched"
     assert (out["join_status"] == "direct_npi").sum() == 0
+
+
+def test_universe_membership_and_new_paths():
+    """v2: candidate/direct NPIs outside our billing universe are NOT joins
+    (and not enrichment targets); nationally-unique names and fuzzy org keys
+    rescue rows the exact paths missed."""
+    import pandas as pd
+    cases = pd.DataFrame({
+        "case_id": ["u0", "u1", "u2", "u3"],
+        "window": ["ID_2020_2025"] * 4,
+        "state": ["ID"] * 4,
+        "defendant_name": ["Outside Universe Doc",   # candidate NPI not ours
+                           "National Unique",        # unique in NPPES, other state
+                           "Acme Home Health Services LLC",  # fuzzy org
+                           "Direct Outside"],        # source NPI not ours
+        "npi_in_source": ["", "", "", "1999999992"],
+        "outcome_type": ["settlement"] * 4,
+        "amount_usd": ["100"] * 4,
+        "source_url": ["https://www.justice.gov/x"] * 4,
+        "summary": ["An MD case."] * 4,
+    })
+    cands = pd.DataFrame({"case_id": ["u0"],
+                          "defendant_name": ["Outside Universe Doc"],
+                          "npi": ["1888888885"]})
+    pdim = pd.DataFrame({"npi": ["1"], "display_name": ["NATIONAL UNIQUE"],
+                         "addr_state": ["WA"], "entity_type": ["1"]})
+    orgs = pd.DataFrame({"org_name": ["ACME HOME HEALTH SERVICE LLC"]})
+    out = classify_joins(cases, cands, pdim, orgs)
+    status = dict(zip(out["defendant_name"], out["join_status"]))
+    assert status["Outside Universe Doc"] == "npi_outside_universe"
+    assert status["Direct Outside"] == "npi_outside_universe"
+    assert status["National Unique"] == "nppes_unique_national"
+    assert status["Acme Home Health Services LLC"] == "org_fuzzy_match"
+    feas = dict(zip(out["defendant_name"], out["gap_feasibility"]))
+    assert feas["Outside Universe Doc"] == "outside_universe"
+    # outside-universe rows never reach the enrichment worklist
+    assert "Outside Universe Doc" not in set(
+        gaps_worklist(out).get("defendant_name", []))
+
+
+def test_gaps_worklist_is_prioritized():
+    import pandas as pd
+    cases = pd.DataFrame({
+        "case_id": [f"u{i}" for i in range(3)],
+        "window": ["PA_2020_2025"] * 3,
+        "state": ["PA"] * 3,
+        "defendant_name": ["Small Doc", "Huge Clinic Org", "Mystery Person"],
+        "npi_in_source": ["", "", ""],
+        "outcome_type": ["settlement"] * 3,
+        "amount_usd": ["1000", "5000000", "200000"],
+        "source_url": ["https://www.justice.gov/x"] * 3,
+        "summary": ["A physician case.", "A clinic settled.", "no markers"],
+    })
+    out = classify_joins(cases, None, None, None)
+    gaps = gaps_worklist(out)
+    # likely_public first, then by dollars: Huge Clinic > Small Doc > Mystery
+    assert list(gaps["defendant_name"]) == ["Huge Clinic Org", "Small Doc",
+                                            "Mystery Person"]
