@@ -88,7 +88,11 @@ def classify_joins(cases: pd.DataFrame, candidates: pd.DataFrame,
     """Per-row join_status + gap_feasibility (see module docstring)."""
     if not len(cases):
         return cases.copy()
-    c = cases.copy()
+    # CSVs read with dtype=str still yield NaN for empty cells, and NaN is
+    # TRUTHY in python — str(nan) == "nan" classified every row direct_npi on
+    # the first live run. Blank everything textual up front.
+    c = cases.copy().fillna("")
+    c = c.replace({"nan": "", "None": ""})
     c["_org_key"] = c["defendant_name"].map(norm_org_name)
     c["_person_key"] = c["defendant_name"].map(person_key)
 

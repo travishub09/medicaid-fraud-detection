@@ -45,7 +45,7 @@ import pandas as pd
 from src.entity_graph.resolve_entities import norm_org_name
 
 PRIMARY_DOMAINS = re.compile(
-    r"(justice\.gov|oig\.hhs\.gov|\.gov/|\.gov$|courtlistener\.com|"
+    r"(?:justice\.gov|oig\.hhs\.gov|\.gov/|\.gov$|courtlistener\.com|"
     r"namfcu\.net)", re.IGNORECASE)
 _TOKEN = re.compile(r"[a-z]{2,}")
 
@@ -156,14 +156,18 @@ def per_state_year_counts(cases: pd.DataFrame,
 
 def verification_sample(cases: pd.DataFrame, per_state: int = 5,
                         big_dollar: float = 1_000_000.0,
-                        seed: int = 42) -> pd.DataFrame:
-    """The precision working paper: every row >= big_dollar plus per_state
-    random rows per state, with empty reviewer columns (verified yes/no + note).
-    Deterministic sample so the sheet is reproducible."""
+                        max_big: int = 100, seed: int = 42) -> pd.DataFrame:
+    """The precision working paper: the LARGEST ``max_big`` rows at/above
+    big_dollar plus per_state random rows per state, with empty reviewer
+    columns (verified yes/no + note). Deterministic so the sheet is
+    reproducible. Capped — the first live harvest carried ~1,500 rows over
+    $1M (multistate settlements), and an unreviewable sample is no sample."""
     if not len(cases):
         return pd.DataFrame()
     amt = pd.to_numeric(cases.get("amount_usd"), errors="coerce").fillna(0.0)
-    big = cases[amt >= big_dollar]
+    big = (cases.assign(_amt=amt)[amt >= big_dollar]
+           .sort_values("_amt", ascending=False).head(max_big)
+           .drop(columns=["_amt"]))
     rng = np.random.RandomState(seed)
     rest = []
     for st, grp in cases[amt < big_dollar].groupby("state"):

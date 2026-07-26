@@ -80,3 +80,25 @@ def test_verification_sample_takes_big_dollar_and_stratified():
     assert "Acme Home Health LLC" in set(s["defendant_name"])
     assert {"verified", "review_note"} <= set(s.columns)
     assert len(s) <= 4
+
+
+def test_verification_sample_caps_big_dollar_flood():
+    """~1,500 rows over $1M made the first live sample unreviewable; only the
+    largest max_big survive, and the cap keeps the sheet workable."""
+    n = 300
+    flood = pd.DataFrame({
+        "case_id": [f"u{i}" for i in range(n)],
+        "state": ["PA"] * n,
+        "window": ["PA_2020_2025"] * n,
+        "announced_date": ["2023-01-01"] * n,
+        "defendant_name": [f"Org {i}" for i in range(n)],
+        "outcome_type": ["settlement"] * n,
+        "amount_usd": [str(1_000_000 + i) for i in range(n)],
+        "scheme": ["billing_fraud"] * n,
+        "source_url": ["https://www.justice.gov/x"] * n,
+        "summary": ["s"] * n,
+    })
+    s = verification_sample(flood, per_state=5, max_big=50)
+    assert len(s) <= 55
+    amts = pd.to_numeric(s["amount_usd"], errors="coerce")
+    assert amts.max() == 1_000_000 + n - 1          # keeps the LARGEST ones

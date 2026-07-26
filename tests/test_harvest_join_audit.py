@@ -100,3 +100,18 @@ def test_enrichment_task_dispatches_with_roster():
     assert env["ok"] and env["query"]["task"] == "identifier_enrichment"
     assert "Common Name" in t._prompt and "state: ID" in t._prompt
     assert "Do not pause to ask questions" in t._prompt
+
+
+def test_nan_npi_in_source_is_not_a_join():
+    """Live-run regression: CSV round-trip turns empty npi_in_source into NaN,
+    and NaN is truthy — every row classified direct_npi (100% joinable, 0
+    gaps). Blank cells must classify by the LOWER precedence paths."""
+    import numpy as np
+    cases = _cases()
+    cases["npi_in_source"] = [np.nan, np.nan, "nan", np.nan, np.nan, np.nan]
+    out = classify_joins(cases, _cands(), _provider_dim(), _org_nodes())
+    status = dict(zip(out["defendant_name"], out["join_status"]))
+    assert status["Direct Npi Doc"] != "direct_npi"       # NaN is not an NPI
+    assert status["Acme Home Health LLC"] == "org_name_match"
+    assert status["Karen Office Manager"] == "unmatched"
+    assert (out["join_status"] == "direct_npi").sum() == 0
