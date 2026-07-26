@@ -825,6 +825,81 @@ def harvest_case_rows(result: dict) -> tuple:
                         "match_basis"])
 
 
+# ---- identifier enrichment: fill the join gaps the audit found -------------
+
+_ENRICH_TEMPLATE = (
+    "Research task, public sources only. For each defendant below — all named "
+    "in RESOLVED public healthcare-fraud enforcement announcements — find the "
+    "public identifiers that let a record system link them to healthcare "
+    "billing data. For each one report: (1) NPI candidates from the NPPES "
+    "registry (npiregistry.cms.hhs.gov), searched by name + state AND by any "
+    "practice location you find — report the NPI, registry name, and match "
+    "basis, never asserting identity; (2) the organization(s) they billed "
+    "through or owned — exact legal names and d/b/a names from the state "
+    "Secretary of State registry or the enforcement release; (3) practice or "
+    "business addresses; (4) professional license numbers from the state "
+    "licensing board. Read the cited enforcement URL first — it often names "
+    "the employer, city, or specialty that disambiguates the person. If "
+    "nothing can be found for a defendant, say so explicitly for that "
+    "defendant rather than guessing. Do not pause to ask questions; make "
+    "reasonable assumptions and proceed to the final answer.\n\n"
+    "DEFENDANTS:\n{roster}"
+)
+
+ENRICH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "defendants": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "state": {"type": "string"},
+                    "npi_candidates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "npi": {"type": "string"},
+                                "registry_name": {"type": "string"},
+                                "match_basis": {"type": "string"},
+                            },
+                            "required": ["npi", "registry_name",
+                                         "match_basis"]}},
+                    "org_names": {"type": "array", "items": {"type": "string"}},
+                    "addresses": {"type": "array", "items": {"type": "string"}},
+                    "license_numbers": {"type": "array",
+                                        "items": {"type": "string"}},
+                    "nothing_found": {"type": "boolean"},
+                    "note": {"type": "string"},
+                },
+                "required": ["name"],
+            }},
+    },
+    "required": ["defendants"],
+}
+
+
+def identifier_enrichment(defendants: list, transport: ManusTransport | None = None,
+                          **kw) -> dict:
+    """One batch of join-gap defendants → public identifiers for review.
+
+    ``defendants``: dicts with name, state, source_url, and optionally a short
+    context line (the audit's gaps worklist rows). Keep batches to ~15 so the
+    agent stays thorough."""
+    lines = []
+    for d in defendants:
+        ctx = str(d.get("context") or d.get("summary") or "")[:200]
+        lines.append(f"- {d.get('name')} | state: {d.get('state', '?')} | "
+                     f"case: {d.get('source_url', '')} | context: {ctx}")
+    prompt = _ENRICH_TEMPLATE.format(roster="\n".join(lines))
+    out = run_research(prompt, transport=transport, schema=ENRICH_SCHEMA,
+                       label=f"enrich_{len(defendants)}", **kw)
+    out["query"] = {"task": "identifier_enrichment", "n": len(defendants)}
+    return out
+
+
 def public_disclosure_screen(npi: str, descriptor: str,
                              transport: ManusTransport | None = None,
                              **kw) -> dict:
