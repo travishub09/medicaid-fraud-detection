@@ -196,6 +196,33 @@ def _extract_result(payload: dict):
     return payload
 
 
+def _poll_to_terminal(transport, task_id, payload, status, poll_seconds,
+                      max_polls, sleep, max_poll_errors: int = 6):
+    """Poll until a terminal state, tolerating transient poll failures.
+
+    A research agent runs for tens of minutes; a single 500 on ONE poll must
+    not abandon a task that is still working (and still billing) server-side.
+    Consecutive-failure counting: any successful poll resets the budget; only
+    ``max_poll_errors`` failures IN A ROW give up. Returns
+    (status, payload, polls, last_error)."""
+    polls, errors, last_err = 0, 0, None
+    while (status not in _DONE_OK and status not in _DONE_BAD
+           and polls < max_polls):
+        sleep(poll_seconds)
+        polls += 1
+        try:
+            payload = _unwrap(transport.get(task_id))
+            errors = 0
+        except Exception as e:                      # transient API hiccup
+            errors += 1
+            last_err = str(e)
+            if errors >= max_poll_errors:
+                break
+            continue
+        status = str(_field(payload, "status") or "running").lower()
+    return status, payload, polls, last_err
+
+
 def run_research(prompt: str, transport: ManusTransport | None = None,
                  mode: str = "agent", poll_seconds: float = 10.0,
                  max_polls: int = 180, sleep=time.sleep,
@@ -205,7 +232,10 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
 
     Blocks (polling) until the task reaches a terminal state or ``max_polls``
     is hit. ``sleep`` is injectable so tests do not wait. Refuses prompts that
-    trip the PHI/sensitive-inference guard.
+    trip the PHI/sensitive-inference guard. Transient poll failures (a 500 on
+    task.listMessages) are retried, not fatal — see _poll_to_terminal. A run
+    that times out has NOT cancelled the task server-side: keep the task_id
+    and finish it later with ``resume_research``.
     """
     if _PHI_MARKERS.search(prompt or ""):
         raise ValueError(
@@ -232,16 +262,15 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
         cache_raw("manus", f"{label}_create_{task_id}", created_raw, root=cache_root)
 
     status = str(_field(created, "status") or "running").lower()
-    payload = created
-    polls = 0
-    while status not in _DONE_OK and status not in _DONE_BAD and polls < max_polls:
-        sleep(poll_seconds)
-        polls += 1
-        payload = _unwrap(transport.get(task_id))
-        status = str(_field(payload, "status") or "running").lower()
+    status, payload, polls, poll_err = _poll_to_terminal(
+        transport, task_id, created, status, poll_seconds, max_polls, sleep)
     if cache:
         cache_raw("manus", f"{label}_final_{task_id}", payload, root=cache_root)
+    return _envelope(task_id, status, payload, polls, max_polls, schema,
+                     poll_err)
 
+
+def _envelope(task_id, status, payload, polls, max_polls, schema, poll_err):
     ok = status in _DONE_OK
     result = _extract_result(payload) if ok else None
     if schema is not None and isinstance(result, str):
@@ -253,9 +282,30 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
         "status": status,
         "ok": ok,
         "timed_out": polls >= max_polls and status not in _DONE_OK | _DONE_BAD,
+        "poll_error": poll_err,
         "result": result,
         "raw": payload,
     }
+
+
+def resume_research(task_id: str, transport: ManusTransport | None = None,
+                    poll_seconds: float = 10.0, max_polls: int = 180,
+                    sleep=time.sleep, cache: bool = True, cache_root=None,
+                    label: str = "task", schema: dict | None = None) -> dict:
+    """Re-attach to an ALREADY-DISPATCHED task and poll it to a terminal state.
+
+    A timed-out or poll-crashed run leaves the task running (and billing)
+    server-side; re-creating it would pay twice for the same research.
+    Callers keep the task_id from the create envelope (or the cached
+    ``*_create_<task_id>.json``) and finish the job here. Same envelope as
+    run_research; ``schema`` re-enables the JSON-reply parsing."""
+    transport = transport or ManusTransport()
+    status, payload, polls, poll_err = _poll_to_terminal(
+        transport, task_id, {}, "running", poll_seconds, max_polls, sleep)
+    if cache:
+        cache_raw("manus", f"{label}_final_{task_id}", payload, root=cache_root)
+    return _envelope(task_id, status, payload, polls, max_polls, schema,
+                     poll_err)
 
 
 def _parse_json_text(text: str):

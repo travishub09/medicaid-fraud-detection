@@ -344,3 +344,47 @@ def test_waiting_agent_is_terminal_not_ok():
                        cache=False)
     assert out["ok"] is False and out["status"] == "waiting"
     assert t.calls["get"] <= 2                         # stopped immediately
+
+
+def test_transient_poll_errors_are_retried_not_fatal():
+    """One 500 on task.listMessages must not abandon a task that is still
+    running server-side: consecutive-failure counting, reset on success."""
+    class _Flaky(_FakeTransport):
+        def get(self, task_id):
+            self.calls["get"] += 1
+            if self.calls["get"] in (1, 3):          # sporadic 500s
+                raise RuntimeError("500 Server Error: Internal Server Error")
+            if self.calls["get"] >= 4:
+                return {"task_id": task_id, "status": "completed",
+                        "structured_output": {"answer": "survived"}}
+            return {"task_id": task_id, "status": "running"}
+    out = run_research("public prompt", transport=_Flaky(),
+                       sleep=lambda s: None, cache=False)
+    assert out["ok"] is True and out["result"] == {"answer": "survived"}
+
+
+def test_six_consecutive_poll_errors_give_up():
+    class _Dead(_FakeTransport):
+        def get(self, task_id):
+            self.calls["get"] += 1
+            raise RuntimeError("500 Server Error")
+    t = _Dead()
+    out = run_research("public prompt", transport=t,
+                       sleep=lambda s: None, cache=False)
+    assert out["ok"] is False
+    assert "500" in (out["poll_error"] or "")
+    assert t.calls["get"] == 6                       # gave up at the cap
+
+
+def test_resume_research_reattaches_by_task_id():
+    """A timed-out run's task keeps working server-side; resume_research must
+    poll it to completion WITHOUT creating a new task, and parse a schema
+    reply."""
+    from src.feeds.manus_research import resume_research
+    t = _FakeTransport(polls_until_done=2)
+    t._result = '{"cases": []}'
+    out = resume_research("t-123", transport=t, sleep=lambda s: None,
+                          cache=False, schema={"type": "object"})
+    assert t.calls["create"] == 0                    # never re-dispatched
+    assert out["ok"] is True and out["result"] == {"cases": []}
+    assert out["task_id"] == "t-123"
