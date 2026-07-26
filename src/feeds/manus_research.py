@@ -143,9 +143,19 @@ class ManusTransport:
                            .get("agent_status") or "running").lower()
         status = {"stopped": "completed"}.get(agent_status, agent_status)
         answer_msg = _newest("assistant_message")
-        output = ((answer_msg or {}).get("assistant_message") or {}).get("content")
+        am = (answer_msg or {}).get("assistant_message") or {}
+        err_msg = _newest("error_message")
         return {"task_id": str(payload.get("task_id") or task_id),
-                "status": status, "output": output, "messages": msgs}
+                "status": status, "output": am.get("content"),
+                # agents often deliver the payload as an attached file with a
+                # prose summary in the reply; surface the attachment list
+                # (filename, content_type, signed url) so callers can fetch it
+                "attachments": am.get("attachments") or [],
+                # quota/server errors arrive as error_message entries — the
+                # human-readable reason ("You don't have enough credits...")
+                "error_detail": ((err_msg or {}).get("error_message") or {})
+                .get("content"),
+                "messages": msgs}
 
 
 def _unwrap(payload: dict) -> dict:
@@ -281,6 +291,12 @@ def _envelope(task_id, status, payload, polls, max_polls, schema, poll_err):
         parsed = _parse_json_text(result)
         if parsed is not None:
             result = parsed
+    # attachment fallback: a prose reply with the JSON delivered as a file
+    if (ok and schema is not None and not isinstance(result, dict)
+            and isinstance(payload, dict)):
+        fetched = fetch_json_attachment(payload.get("attachments"))
+        if isinstance(fetched, dict):
+            result = fetched
     return {
         "task_id": str(task_id),
         "status": status,
@@ -310,6 +326,32 @@ def resume_research(task_id: str, transport: ManusTransport | None = None,
         cache_raw("manus", f"{label}_final_{task_id}", payload, root=cache_root)
     return _envelope(task_id, status, payload, polls, max_polls, schema,
                      poll_err)
+
+
+def fetch_json_attachment(attachments, timeout: int = 120):
+    """Download and parse the first JSON attachment from a task's reply.
+
+    ``attachments`` is the list the transport surfaces (filename,
+    content_type, signed CDN url — live-verified shape). Returns the parsed
+    dict or None. The signed URL needs no auth header."""
+    import requests
+    for a in attachments or []:
+        if not isinstance(a, dict):
+            continue
+        url = str(a.get("url") or "")
+        ct = str(a.get("content_type") or "").lower()
+        name = str(a.get("filename") or "").lower()
+        if not url or not ("json" in ct or name.endswith(".json")):
+            continue
+        try:
+            r = requests.get(url, timeout=timeout)
+            r.raise_for_status()
+            obj = _parse_json_text(r.text)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:
+            continue
+    return None
 
 
 def _parse_json_text(text: str):

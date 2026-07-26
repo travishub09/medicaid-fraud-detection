@@ -426,3 +426,91 @@ def test_pending_allegations_are_tiered_never_hard_label():
     assert r["license_numbers"] == "MD-12345 | MD-99"
     assert r["related_individuals"] == "B Owner (co-owner) | C Biller"
     assert r["states_involved"] == "RI | MA"
+
+
+def test_transport_surfaces_attachments_and_error_detail(monkeypatch):
+    """Live shape (probe 3): attachments ride on assistant_message, quota
+    errors arrive as error_message entries."""
+    payload = {"ok": True, "task_id": "oT3", "messages": [
+        {"id": "s2", "type": "status_update", "timestamp": "3",
+         "status_update": {"agent_status": "stopped"}},
+        {"id": "a1", "type": "assistant_message", "timestamp": "2",
+         "assistant_message": {
+             "content": "The dataset is complete. Two files are attached.",
+             "attachments": [
+                 {"content_type": "application/json", "type": "file",
+                  "filename": "idaho.json", "url": "https://cdn/x.json?sig=1"},
+                 {"content_type": "text/markdown", "type": "file",
+                  "filename": "sum.md", "url": "https://cdn/y.md?sig=2"}]}},
+        {"id": "e1", "type": "error_message", "timestamp": "1",
+         "error_message": {"content": "You don't have enough credits.",
+                           "error_type": "quota_limit"}},
+    ]}
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return payload
+
+    monkeypatch.setattr("requests.get",
+                        lambda url, params=None, headers=None, timeout=None: _R())
+    out = ManusTransport(api_key="k").get("oT3")
+    assert out["status"] == "completed"
+    assert out["attachments"][0]["filename"] == "idaho.json"
+    assert "credits" in out["error_detail"]
+
+
+def test_json_attachment_fetched_when_reply_is_prose(monkeypatch):
+    """The Idaho failure mode: perfect work delivered as an attachment with a
+    prose summary inline. run_research must fetch and parse the attachment."""
+    from src.feeds import manus_research as mr
+
+    class _AttachTransport(_FakeTransport):
+        def get(self, task_id):
+            self.calls["get"] += 1
+            return {"task_id": task_id, "status": "completed",
+                    "output": "The dataset is complete. See attached file.",
+                    "attachments": [{"content_type": "application/json",
+                                     "filename": "cases.json",
+                                     "url": "https://cdn/cases.json?sig"}]}
+
+    class _R:
+        status_code = 200
+        text = '{"cases": [{"defendant_name": "Attached Org"}]}'
+        def raise_for_status(self): pass
+
+    monkeypatch.setattr("requests.get",
+                        lambda url, timeout=None: _R())
+    out = run_research("public prompt", transport=_AttachTransport(),
+                       sleep=lambda s: None, cache=False,
+                       schema={"type": "object"})
+    assert out["ok"] is True
+    assert out["result"] == {"cases": [{"defendant_name": "Attached Org"}]}
+
+
+def test_fetch_json_attachment_skips_non_json_and_failures(monkeypatch):
+    from src.feeds.manus_research import fetch_json_attachment
+
+    calls = []
+    class _R:
+        def __init__(self, ok, text=""):
+            self.status_code = 200 if ok else 500
+            self.text = text
+        def raise_for_status(self):
+            if self.status_code != 200:
+                raise RuntimeError("500")
+
+    def fake_get(url, timeout=None):
+        calls.append(url)
+        if "bad" in url:
+            return _R(False)
+        return _R(True, '{"cases": []}')
+
+    monkeypatch.setattr("requests.get", fake_get)
+    out = fetch_json_attachment([
+        {"content_type": "text/markdown", "filename": "s.md", "url": "https://cdn/s.md"},
+        {"content_type": "application/json", "filename": "bad.json", "url": "https://cdn/bad.json"},
+        {"content_type": "application/json", "filename": "good.json", "url": "https://cdn/good.json"},
+    ])
+    assert out == {"cases": []}
+    assert calls == ["https://cdn/bad.json", "https://cdn/good.json"]  # md skipped
