@@ -247,7 +247,13 @@ def run_research(prompt: str, transport: ManusTransport | None = None,
     that times out has NOT cancelled the task server-side: keep the task_id
     and finish it later with ``resume_research``.
     """
-    if _PHI_MARKERS.search(prompt or ""):
+    # Guard the PROSE, not the links: DOJ/court URL slugs legitimately contain
+    # guarded words ("/pr/whistleblower-lawsuit-settlement") and a URL cannot
+    # carry PHI the way a sentence can. Strip URLs before scanning so a cited
+    # public case link never false-positives the backstop; the sensitive
+    # phrasings themselves stay blocked.
+    prose = re.sub(r"https?://\S+", " ", prompt or "")
+    if _PHI_MARKERS.search(prose):
         raise ValueError(
             "prompt appears to contain PHI or the sensitive whistleblower "
             "inference — Manus receives public identifiers only")

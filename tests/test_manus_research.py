@@ -514,3 +514,20 @@ def test_fetch_json_attachment_skips_non_json_and_failures(monkeypatch):
     ])
     assert out == {"cases": []}
     assert calls == ["https://cdn/bad.json", "https://cdn/good.json"]  # md skipped
+
+
+def test_phi_guard_ignores_urls_but_blocks_prose():
+    """DOJ press URLs legitimately contain guarded words in their slugs
+    (/pr/whistleblower-lawsuit-settlement) — a cited link must never trip the
+    guard, while the sensitive PROSE phrasings stay blocked."""
+    t = _FakeTransport(polls_until_done=1)
+    ok = run_research(
+        "Find identifiers for the defendant in this public case: "
+        "https://www.justice.gov/opa/pr/whistleblower-lawsuit-settlement-acme",
+        transport=t, sleep=lambda s: None, cache=False)
+    assert ok["ok"] is True                         # URL slug: allowed
+
+    with pytest.raises(ValueError):
+        run_research("who is the likely whistleblower at this employer "
+                     "https://example.com/x",
+                     transport=t, sleep=lambda s: None, cache=False)
