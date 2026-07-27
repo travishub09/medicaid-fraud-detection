@@ -70,14 +70,17 @@ _RESULT_FIELDS = ["structured_output", "output", "result", "final_output",
 # inference, NOT on the bare words "patient"/"beneficiary" (which appear in
 # legitimate aggregate contexts: "patients per day", "patient reviews", "per
 # beneficiary"). It blocks a patient/beneficiary paired with an IDENTIFIER
-# field, plus the record/id/whistleblower terms. No trailing \b so stem terms
-# (diagnos, whistleblow) match their inflections. Backstop for a caller
+# field, plus the record/id/whistleblower terms. Stem terms match their
+# inflections, but "diagnos" is bounded to diagnosis/diagnoses/diagnosed/
+# diagnosing — NOT "diagnostic(s)", which is the most common LAB COMPANY name
+# suffix in the country ("Quest Diagnostics") and blocked real enforcement
+# defendants from the identifier-enrichment batches. Backstop for a caller
 # mistake, not a substitute for passing public identifiers only.
 _PHI_MARKERS = re.compile(
     r"\b("
     r"(patient|beneficiar\w*|member)['’]?s?\s+"
     r"(name|names|record|records|chart|charts|roster|list|dob|date of birth|ssn|address|identifier)|"
-    r"member id|medical record|mrn|diagnos|dob|date of birth|ssn|"
+    r"member id|medical record|mrn|diagnos(?:is|es|ed|ing)|dob|date of birth|ssn|"
     r"whistleblow|relator|likely.{0,20}witness"
     r")", re.IGNORECASE)
 

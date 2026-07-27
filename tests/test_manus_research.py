@@ -531,3 +531,18 @@ def test_phi_guard_ignores_urls_but_blocks_prose():
         run_research("who is the likely whistleblower at this employer "
                      "https://example.com/x",
                      transport=t, sleep=lambda s: None, cache=False)
+
+
+def test_phi_guard_allows_diagnostics_company_names():
+    """'diagnos' was bounded to diagnosis/diagnosed/diagnosing after lab
+    defendants named '... Diagnostics' (the most common lab-company suffix)
+    were blocked from enrichment batches."""
+    t = _FakeTransport(polls_until_done=1)
+    ok = run_research("Find identifiers for Quest Diagnostics Inc and "
+                      "Precision Diagnostics, defendants in public cases.",
+                      transport=t, sleep=lambda s: None, cache=False)
+    assert ok["ok"] is True
+
+    with pytest.raises(ValueError):
+        run_research("list the diagnosis for each person seen",
+                     transport=t, sleep=lambda s: None, cache=False)
