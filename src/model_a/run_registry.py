@@ -390,6 +390,11 @@ def to_markdown(rows: list[dict], rec: dict,
                  f"`future_bans_after_2023-12.csv`, and the report .md files "
                  f"all inside this folder.")
     L.append("")
+    L.append("## Terms")
+    L.append("")
+    for g in GLOSSARY:
+        L.append(f"- **{g['term']}** — {g['def']}")
+    L.append("")
     L.append("_Registered by run_registry; append-only jsonl beside this "
              "report is the machine-readable source of truth._")
     return "\n".join(L)
@@ -398,6 +403,161 @@ def to_markdown(rows: list[dict], rec: dict,
 def _esc(s) -> str:
     return (str(s).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
+
+
+# ---------------------------------------------------------------------------
+# Glossary — every piece of house lingo gets a hover definition so a new
+# reader (Brad, counsel, a future hire) can read the dashboard cold.
+# Plain wording on purpose; aliases are matched in free text.
+# ---------------------------------------------------------------------------
+GLOSSARY: list[dict] = [
+    {"term": "frozen",
+     "aliases": ["frozen", "freeze date", "freeze"],
+     "def": "We stopped the clock at the end of 2023. The model only sees "
+            "data from before that date, and we grade it on who got banned "
+            "after. It cannot peek at the future."},
+    {"term": "withcases",
+     "aliases": ["withcases"],
+     "def": "A run that included the court-case file our research agents "
+            "gathered (DOJ and court fraud cases used as extra labels)."},
+    {"term": "clean run",
+     "aliases": ["clean run", "clean-room"],
+     "def": "A run with the agent-gathered case file locked away, to prove "
+            "the results hold on official government data alone."},
+    {"term": "core model",
+     "aliases": ["core model", "core files", "five core files",
+                 "core-only", "core only"],
+     "def": "The core model is trained only on the five basic public "
+            "files Travis started with. 'Core only' counts banned "
+            "providers that rank high on the core model's list but not "
+            "the full model's."},
+    {"term": "full model",
+     "aliases": ["full model", "full data set", "full-only", "full only"],
+     "def": "The full model is trained on everything: the five core files "
+            "plus every extra source we added (referrals, ownership, "
+            "inspections, payments, and more). 'Full only' counts banned "
+            "providers that rank high on the full model's list but not "
+            "the core model's."},
+    {"term": "lift",
+     "aliases": ["top-decile lift", "lift delta", "lift gap", "lift"],
+     "def": "Lift looks at the top 10% of the ranked list and asks how "
+            "many times more future-banned providers land there than "
+            "chance would put there. The lift delta (or lift gap) is the "
+            "full model's lift minus the core model's: above zero means "
+            "the extra data helped."},
+    {"term": "graph features",
+     "aliases": ["graph features", "network features", "network verdict",
+                 "KEEP"],
+     "def": "Graph (network) features are signals from connections "
+            "between providers: shared addresses, shared owners, links "
+            "to banned providers. KEEP is the test verdict saying they "
+            "add real signal and stay in the model; CUT would mean they "
+            "get dropped."},
+    {"term": "future bans",
+     "aliases": ["forward positives", "future bans", "future-banned",
+                 "fwd positives"],
+     "def": "Providers banned from Medicare or Medicaid AFTER our freeze "
+            "date. The model never saw these outcomes. They are the "
+            "answer key we grade against."},
+    {"term": "integrity FAILs",
+     "aliases": ["expectation FAILs", "integrity FAILs", "FAILs",
+                 "expectation FAIL(s)", "data-integrity checks"],
+     "def": "Automatic sanity checks on every data column. A FAIL means "
+            "a column looked wrong (empty, constant, or out of range) "
+            "and needs a human look before the run is trusted."},
+    {"term": "out-of-fold",
+     "aliases": ["out-of-fold", "OOF"],
+     "def": "Every provider is scored by a model that never trained on "
+            "that provider, so nobody grades their own homework."},
+    {"term": "95% CI",
+     "aliases": ["95% CI", "whisker", "CI"],
+     "def": "The error-bar range around a number: where the true value "
+            "very likely sits. If the whole range is above zero, the "
+            "win is too big to be luck."},
+    {"term": "ROC-AUC",
+     "aliases": ["ROC-AUC", "ROC"],
+     "def": "A whole-list score: how often the model ranks a random bad "
+            "actor above a random normal provider. 0.5 is a coin flip; "
+            "1.0 is perfect."},
+    {"term": "PR-AUC",
+     "aliases": ["PR-AUC"],
+     "def": "A score focused on how pure the top of the list is when "
+            "the thing you hunt is rare, as fraud is here."},
+    {"term": "PROMOTE",
+     "aliases": ["PROMOTE"],
+     "def": "This run met every requirement and becomes the new "
+            "champion that everyone reads from."},
+    {"term": "HOLD",
+     "aliases": ["HOLD"],
+     "def": "Something needs a look before shipping. The previous "
+            "champion stays in charge until it is resolved."},
+    {"term": "champion",
+     "aliases": ["champion"],
+     "def": "The run everyone currently uses (Travis handoffs, company "
+            "lists, dossiers all read from its folder). A new run "
+            "replaces it only by meeting every promotion requirement."},
+    {"term": "pre-registered",
+     "aliases": ["pre-registered", "Declared before the run",
+                 "pre-registration"],
+     "def": "The goal and the pass bar were written down and "
+            "time-stamped BEFORE the run existed, so the result cannot "
+            "be spun after the fact."},
+    {"term": "reconstructed",
+     "aliases": ["reconstructed"],
+     "def": "Rebuilt afterward from the working chat, the git log, and "
+            "the docs, not measured live by this system. Shown for "
+            "context; never used for decisions."},
+    {"term": "UNREPRODUCED",
+     "aliases": ["UNREPRODUCED"],
+     "def": "No second person has independently re-run these numbers "
+            "yet. The chip clears when a reviewer signs off."},
+]
+
+_ALIAS_DEF: dict[str, str] = {}
+for _g in GLOSSARY:
+    for _a in _g["aliases"]:
+        _ALIAS_DEF[_a] = _g["def"]
+_GLOSS_RE = re.compile(
+    r"(?<![\w>])("
+    + "|".join(re.escape(a) for a in
+               sorted(_ALIAS_DEF, key=len, reverse=True))
+    + r")(?![\w<])")
+
+
+def _attr(s: str) -> str:
+    return _esc(s).replace('"', "&quot;")
+
+
+def _dfn(alias: str, display: str | None = None) -> str:
+    """One glossed term for hand-placed template text."""
+    d = _ALIAS_DEF.get(alias)
+    if not d:
+        return _esc(display or alias)
+    return (f'<span class="dfn" title="{_attr(d)}">'
+            f'{_esc(display or alias)}</span>')
+
+
+def _gloss(escaped_text: str) -> str:
+    """Wrap known terms in already-ESCAPED plain text (no tags inside)."""
+    return _GLOSS_RE.sub(
+        lambda m: f'<span class="dfn" title="{_attr(_ALIAS_DEF[m.group(1)])}"'
+                  f'>{m.group(1)}</span>', escaped_text)
+
+
+def _tag_span(tag: str) -> str:
+    """Version tags explain themselves: anything named *frozen*,
+    *withcases*, or *clean* carries its definition on hover."""
+    t = str(tag)
+    parts = []
+    if "frozen" in t.lower():
+        parts.append(_ALIAS_DEF["frozen"])
+    if "withcases" in t.lower():
+        parts.append(_ALIAS_DEF["withcases"])
+    if "clean" in t.lower():
+        parts.append(_ALIAS_DEF["clean run"])
+    if not parts:
+        return _esc(t)
+    return f'<span class="dfn" title="{_attr(" ".join(parts))}">{_esc(t)}</span>'
 
 
 def _plain_run_sentence(r: dict) -> str:
@@ -438,29 +598,32 @@ def _rec_html(rec: dict, warns: list[str]) -> str:
     """Recommendation block with short/full variants."""
     dec = rec.get("decision", "NONE")
     champ = rec.get("champion") or "none yet"
-    short = (f"<p><b>{dec}</b>. Keep everyone reading from "
-             f"<code>{_esc(champ)}</code>."
+    short = (f"<p><b>{_dfn(dec, dec)}</b>. Keep everyone reading from "
+             f"<code>{_tag_span(champ)}</code>."
              + (" Investigate the flagged issues before shipping anything "
                 "new." if rec.get("reasons") else
                 " The newest run met every requirement.") + "</p>")
-    full = [f"<p><b>Decision: {dec}.</b> Champion: "
-            f"<code>{_esc(champ)}</code></p>"]
+    full = [f"<p><b>Decision: {_dfn(dec, dec)}.</b> "
+            f"{_dfn('champion', 'Champion')}: "
+            f"<code>{_tag_span(champ)}</code></p>"]
     if rec.get("reasons"):
-        full.append("<p>Why not PROMOTE:</p><ul>")
-        full += [f"<li>{_esc(x)}</li>" for x in rec["reasons"]]
+        full.append(f"<p>Why not {_dfn('PROMOTE')}:</p><ul>")
+        full += [f"<li>{_gloss(_esc(x))}</li>" for x in rec["reasons"]]
         full.append("</ul>")
     else:
-        full.append("<p>All four promotion requirements met: zero "
-                    "integrity FAILs, KEEP network verdict, lift interval "
-                    "clear of zero, no big drop vs the champion.</p>")
+        full.append(f"<p>All four promotion requirements met: zero "
+                    f"{_dfn('integrity FAILs')}, a "
+                    f"{_dfn('KEEP')} {_dfn('network verdict')}, a "
+                    f"{_dfn('lift delta')} interval clear of zero, and no "
+                    f"big drop vs the {_dfn('champion')}.</p>")
     if warns:
         full.append("<p>Standing warnings:</p><ul>")
-        full += [f"<li>{_esc(w)}</li>" for w in warns]
+        full += [f"<li>{_gloss(_esc(w))}</li>" for w in warns]
         full.append("</ul>")
-    full.append("<p>Rolling back never means rebuilding: point consumers "
-                "(Travis handoffs, company lists, dossiers) back at the "
-                "previous champion's folder, and check out its git commit "
-                "if code must match.</p>")
+    full.append(f"<p>Rolling back never means rebuilding: point consumers "
+                f"(Travis handoffs, company lists, dossiers) back at the "
+                f"previous {_dfn('champion')}'s folder, and check out its "
+                f"git commit if code must match.</p>")
     return ('<div class="card"><h2>Recommendation '
             '<span class="mini"><button onclick="recmode(0)" id="rb0" '
             'class="on">short</button><button onclick="recmode(1)" '
@@ -506,25 +669,33 @@ def _trend_svg(rows: list[dict], history: list[dict]) -> str:
         dash = ' stroke-dasharray="4 3"' if p["hist"] else ""
         lo = p["lo"] if p["lo"] is not None else p["d"]
         hi = p["hi"] if p["hi"] is not None else p["d"]
+        hover = (f"{p['tag']}: lift delta {p['d']:+.3f}"
+                 + (f" [{lo:+.3f}, {hi:+.3f}]" if p["lo"] is not None
+                    else "")
+                 + (". Reconstructed from the working record."
+                    if p["hist"] else ""))
         parts.append(
+            f'<g><title>{_esc(hover)}</title>'
             f'<line x1="{x}" y1="{y(hi):.1f}" x2="{x}" y2="{y(lo):.1f}" '
             f'stroke="{col}" stroke-width="2"{dash}/>'
             f'<circle cx="{x}" cy="{y(p["d"]):.1f}" r="5" fill="{col}"/>'
             f'<text x="{x}" y="212" text-anchor="middle" font-size="10">'
             f'{_esc(p["tag"])[:16]}</text>'
             f'<text x="{x + 9}" y="{y(p["d"]) - 6:.1f}" font-size="10" '
-            f'font-weight="bold">{p["d"]:+.3f}</text>')
+            f'font-weight="bold">{p["d"]:+.3f}</text></g>')
     w = max(460, 90 + len(pts) * 120)
+    note = ("Grey dashed points are reconstructed from the working record "
+            "before this system existed. Blue points are registered runs. "
+            "Each whisker is the 95% CI; a point above the zero line means "
+            "the full model beat the core model, so the extra data helped. "
+            "Hover any point for its numbers.")
     return (f'<svg viewBox="0 0 {w} 230" style="max-width:100%;'
             f'font-family:monospace">'
             f'<line x1="40" y1="{y(0):.1f}" x2="{w - 10}" y2="{y(0):.1f}" '
             f'stroke="#888" stroke-width="1.5"/>'
             f'<text x="34" y="{y(0) + 4:.1f}" text-anchor="end" '
             f'font-size="10">0</text>' + "".join(parts) + "</svg>"
-            "<p class='note'>Grey dashed = reconstructed from the working "
-            "record before the registry existed. Blue = registered runs. "
-            "Whisker = 95% range; above the zero line means the extra "
-            "data helped.</p>")
+            "<p class='note'>" + _gloss(_esc(note)) + "</p>")
 
 
 def _timeline_html(rows: list[dict], history: list[dict],
@@ -539,38 +710,48 @@ def _timeline_html(rows: list[dict], history: list[dict],
             f"{_esc(json.dumps(e.get('results') or {}))}</code></p>"
             f"<p class='note'>Evidence: {_esc(e.get('evidence', '—'))}</p>")
         cards.append((d, (
-            '<div class="card hist"><span class="badge">reconstructed'
+            f'<div class="card hist"><span class="badge" '
+            f'title="{_attr(_ALIAS_DEF["reconstructed"])}">reconstructed'
             f'</span><h3>{_esc(d)} — {_esc(e.get("title", e.get("tag")))}'
-            f'</h3><p><b>What we were changing:</b> {_esc(e.get("goal"))}'
-            f'</p><p><b>Why:</b> {_esc(e.get("why"))}</p>'
-            f'<p><b>Result:</b> {_esc(e.get("results_text", "—"))}</p>'
-            + (f'<p><b>Lesson:</b> {_esc(e["lesson"])}</p>'
+            f'</h3><p><b>What we were changing:</b> '
+            f'{_gloss(_esc(e.get("goal")))}'
+            f'</p><p><b>Why:</b> {_gloss(_esc(e.get("why")))}</p>'
+            f'<p><b>Result:</b> '
+            f'{_gloss(_esc(e.get("results_text", "—")))}</p>'
+            + (f'<p><b>Lesson:</b> {_gloss(_esc(e["lesson"]))}</p>'
                if e.get("lesson") else "")
             + f'<div class="tech">{tech}</div></div>')))
     for r in rows:
         tag = r.get("tag", "?")
         d = str(r.get("registered_at", "?"))[:10]
         so = so_by_tag.get(tag)
-        chip = ('<span class="badge warn">UNREPRODUCED</span>' if so is None
+        chip = (f'<span class="badge warn" '
+                f'title="{_attr(_ALIAS_DEF["UNREPRODUCED"])}">UNREPRODUCED'
+                f'</span>' if so is None
                 else f'<span class="badge ok">{_esc(so.get("status", "?")).upper()}'
                      f' ({_esc(so.get("by", "?"))})</span>')
         dec = r.get("decision", "—")
-        pill = (f'<span class="badge {"ok" if dec == "PROMOTE" else "warn"}">'
+        pill = (f'<span class="badge {"ok" if dec == "PROMOTE" else "warn"}"'
+                f'{" title=" + chr(34) + _attr(_ALIAS_DEF[dec]) + chr(34) if dec in _ALIAS_DEF else ""}>'
                 f'{dec}</span>')
         p = pr_by_tag.get(tag)
         declared = ""
         if p:
-            declared = (f'<p><b>Declared before the run</b> '
+            declared = (f'<p><b>{_dfn("pre-registered", "Declared before the run")}</b> '
                         f'({_esc(str(p.get("declared_at", ""))[:16])}): '
-                        f'{_esc(p.get("goal", ""))} — acceptance: '
-                        f'{_esc(p.get("expected", ""))}</p>')
+                        f'{_gloss(_esc(p.get("goal", "")))} — acceptance: '
+                        f'{_gloss(_esc(p.get("expected", "")))}</p>')
         lift = (f"{_fmt(r.get('ablation_lift_delta'), '+.3f')} "
                 f"[{_fmt(r.get('ablation_lift_lo'), '+.3f')}, "
                 f"{_fmt(r.get('ablation_lift_hi'), '+.3f')}]")
         tech = (
-            f"<table><tr><th>providers×cols</th><th>fwd positives</th>"
-            f"<th>FAILs</th><th>network</th><th>lift Δ [CI]</th>"
-            f"<th>full/core-only</th><th>commit</th></tr>"
+            f"<table><tr><th>providers×cols</th>"
+            f"<th>{_dfn('fwd positives')}</th>"
+            f"<th>{_dfn('FAILs')}</th>"
+            f"<th>{_dfn('network verdict', 'network')}</th>"
+            f"<th>{_dfn('lift delta', 'lift Δ')} [{_dfn('CI')}]</th>"
+            f"<th>{_dfn('full-only', 'full')}/{_dfn('core-only', 'core')}"
+            f"-only</th><th>commit</th></tr>"
             f"<tr><td>{_fmt(r.get('n_providers'), ',')}×"
             f"{_fmt(r.get('n_columns'))}</td>"
             f"<td>{_fmt(r.get('forward_positives'), ',')}</td>"
@@ -590,9 +771,10 @@ def _timeline_html(rows: list[dict], history: list[dict],
                f"rollback is just pointing consumers at this folder.</p>"
                if r.get("git_commit") else ""))
         cards.append((d, (
-            f'<div class="card"><h3>{_esc(d)} — {_esc(tag)} {pill} {chip}'
-            f'</h3>{declared}'
-            f'<div class="simple"><p>{_esc(_plain_run_sentence(r))}</p>'
+            f'<div class="card"><h3>{_esc(d)} — {_tag_span(tag)} {pill} '
+            f'{chip}</h3>{declared}'
+            f'<div class="simple"><p>'
+            f'{_gloss(_esc(_plain_run_sentence(r)))}</p>'
             f'</div><div class="tech">{tech}</div></div>')))
     cards.sort(key=lambda t: t[0])
     return "".join(c for _, c in cards)
@@ -614,13 +796,22 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
     md = to_markdown(rows, rec, prereg, signoffs, history)
 
     champ = rec.get("champion") or "none yet"
-    banner = (f'<div class="card champ"><b>Current champion:</b> '
-              f'<code>{_esc(champ)}</code>'
+    dec = rec.get("decision", "NONE")
+    banner = (f'<div class="card champ"><b>Current '
+              f'{_dfn("champion")}:</b> '
+              f'<code>{_tag_span(champ)}</code>'
               + (f' — <code>{_esc(rec.get("champion_dir"))}</code>'
                  if rec.get("champion_dir") else "")
-              + f'<br><b>Latest run decision:</b> {rec.get("decision")}'
-              + (": " + _esc("; ".join(rec.get("reasons", [])))
+              + f'<br><b>Latest run decision:</b> {_dfn(dec, dec)}'
+              + (": " + _gloss(_esc("; ".join(rec.get("reasons", []))))
                  if rec.get("reasons") else "") + "</div>")
+
+    terms = ('<div class="card"><h2>Terms used on this page</h2>'
+             '<p class="note">Hover any dotted-underline word for its '
+             'meaning, or read them all here.</p><dl>'
+             + "".join(f"<dt><b>{_esc(g['term'])}</b></dt>"
+                       f"<dd>{_esc(g['def'])}</dd>" for g in GLOSSARY)
+             + "</dl></div>")
 
     extra = ""
     if economics_md:
@@ -649,6 +840,8 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
         "#e2e2dc;border-radius:8px;padding:12px;font-size:12px;"
         "overflow-x:auto}"
         ".note{font-size:12px;color:#666}"
+        ".dfn{border-bottom:1px dotted #888;cursor:help}"
+        "dl dd{margin:0 0 8px 0;font-size:13px}dl dt{margin-top:6px}"
         "button{font:12px system-ui;padding:3px 10px;border-radius:8px;"
         "border:1px solid #bbb;background:#fff;cursor:pointer}"
         "button.on{background:#2a78d6;color:#fff;border-color:#2a78d6}"
@@ -675,6 +868,7 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
         + "<h2>Timeline</h2>"
         + _timeline_html(rows, history, pr_by_tag, so_by_tag)
         + extra
+        + terms
         + "<div class='card tech'><h2>Full technical report</h2><pre>"
         + _esc(md) + "</pre></div>"
         + "<script>"

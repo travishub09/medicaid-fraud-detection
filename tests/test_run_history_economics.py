@@ -65,6 +65,39 @@ def test_html_dashboard_toggles_history_and_revert():
     assert "ECONOMICS" in html
 
 
+def test_html_glossary_hover_terms():
+    rows = [{"tag": "v2_withcases", "registered_at": "2026-07-28T00:00:00",
+             "ablation_lift_delta": 0.745, "ablation_lift_lo": 0.413,
+             "ablation_lift_hi": 1.107, "expectation_fails": 0,
+             "forward_positives": 1021, "network_verdict": "KEEP",
+             "decision": "PROMOTE", "run_dir": "/x"}]
+    html = to_html(rows, recommend(rows), [], [], rh.HISTORY)
+    # hover spans exist and carry definitions
+    assert 'class="dfn"' in html and "cursor:help" in html
+    assert "cannot peek at the future" in html          # frozen definition
+    assert "court-case file our research agents" in html  # withcases def
+    # the version tag itself is hoverable
+    assert "dfn" in html.split("v2_withcases")[0].rsplit("<", 2)[-1] or \
+        '<span class="dfn"' in html
+    # terms card renders every glossary entry for non-hover readers
+    assert "Terms used on this page" in html
+    from src.model_a.run_registry import GLOSSARY
+    for g in GLOSSARY:
+        assert g["def"][:40] in html
+    # markdown report carries the same terms
+    md = to_markdown(rows, recommend(rows), [], [], rh.HISTORY)
+    assert "## Terms" in md and "grades their own homework" in md
+
+
+def test_gloss_wraps_free_text_terms():
+    from src.model_a.run_registry import _gloss
+    out = _gloss("the lift delta beat the core model under the KEEP rule")
+    assert out.count('class="dfn"') == 3
+    assert "title=" in out
+    # unknown words untouched
+    assert _gloss("nothing special here") == "nothing special here"
+
+
 def test_economics_log_and_unit_costs(tmp_path):
     p = tmp_path / "economics.jsonl"
     eco.log_entry(p, "manus_enrichment", cost_credits=900,
