@@ -22,7 +22,11 @@ release can be rolled back by pointing consumers at the previous champion.
   report       python -m src.model_a.run_registry --report-only
                regenerates MODEL_RUNS.md (and MODEL_RUNS.html with --html):
                policy, table, declared-vs-measured, trends, recommendation,
-               cohort-usage warnings.
+               cohort-usage warnings, the reconstructed pre-registry release
+               history (run_history.py), and — when their ledgers exist —
+               economics and lead-disposition sections. The HTML has two
+               view toggles (plain/technical wording, short/full
+               recommendations) and per-run revert instructions.
 
 TEST-SET HYGIENE (cohort tracking): every registered run records its eval
 cohort (the freeze cutoff). Each decision against the same cohort is a peek
@@ -272,7 +276,8 @@ def _fmt(v, spec=""):
 
 def to_markdown(rows: list[dict], rec: dict,
                 prereg: list[dict] | None = None,
-                signoffs: list[dict] | None = None) -> str:
+                signoffs: list[dict] | None = None,
+                history: list[dict] | None = None) -> str:
     prereg = prereg or []
     signoffs = signoffs or []
     so_by_tag = {}
@@ -363,6 +368,19 @@ def to_markdown(rows: list[dict], rec: dict,
                 L.append(f"- {name}: {va} → {vb} ({vb - va:+})"
                          if isinstance(va, int) else
                          f"- {name}: {va:.3f} → {vb:.3f} ({vb - va:+.3f})")
+    if history:
+        L.append("")
+        L.append("## Release history before the registry (reconstructed)")
+        L.append("")
+        L.append("_Curated after the fact from the working chat, git log, "
+                 "and docs — numbers verbatim from the reports quoted at "
+                 "the time. Informational only: these rows never drive a "
+                 "PROMOTE/HOLD decision._")
+        L.append("")
+        for e in history:
+            d = e.get("date", "?") + ("~" if e.get("date_approx") else "")
+            L.append(f"- **{d} — {e.get('title', e.get('tag'))}**: "
+                     f"{e.get('results_text', '—')}")
     L.append("")
     L.append("## Where the files live")
     L.append("")
@@ -377,51 +395,300 @@ def to_markdown(rows: list[dict], rec: dict,
     return "\n".join(L)
 
 
-def to_html(rows: list[dict], rec: dict, prereg: list[dict],
-            signoffs: list[dict]) -> str:
-    """Self-contained data-driven dashboard — regenerated on every
-    registration, so KPIs never travel by clipboard."""
-    md = to_markdown(rows, rec, prereg, signoffs)
-    body = (md.replace("&", "&amp;").replace("<", "&lt;")
+def _esc(s) -> str:
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;"))
-    # lift-delta strip chart from the data itself
+
+
+def _plain_run_sentence(r: dict) -> str:
+    """One plain-language sentence per registered run for the simple view."""
+    bits = []
+    d = r.get("ablation_lift_delta")
+    lo = r.get("ablation_lift_lo")
+    if d is not None:
+        if lo is not None and lo > 0:
+            bits.append(f"the full data set beat the five core files at "
+                        f"putting future-banned providers near the top of "
+                        f"the list (advantage {d:+.2f}, too big to be "
+                        f"luck)")
+        elif lo is not None:
+            bits.append(f"the full-vs-core gap ({d:+.2f}) was inside the "
+                        f"noise range, so this run alone can't call a "
+                        f"winner")
+        else:
+            bits.append(f"full-vs-core advantage {d:+.2f} (no error bars "
+                        f"recorded)")
+    fo, co = r.get("catches_full_only"), r.get("catches_core_only")
+    if fo is not None and co is not None:
+        bits.append(f"{fo} banned providers were caught only by the full "
+                    f"model vs {co} only by the core files")
+    v = r.get("network_verdict") or ""
+    if v.startswith("KEEP"):
+        bits.append("the network features passed their keep-or-cut test")
+    f = r.get("expectation_fails")
+    if f:
+        bits.append(f"{f} data-integrity checks failed and need a look")
+    elif f == 0:
+        bits.append("every data-integrity check passed")
+    return ("In this run, " + "; ".join(bits) + "."
+            if bits else "No headline numbers were recorded for this run.")
+
+
+def _rec_html(rec: dict, warns: list[str]) -> str:
+    """Recommendation block with short/full variants."""
+    dec = rec.get("decision", "NONE")
+    champ = rec.get("champion") or "none yet"
+    short = (f"<p><b>{dec}</b>. Keep everyone reading from "
+             f"<code>{_esc(champ)}</code>."
+             + (" Investigate the flagged issues before shipping anything "
+                "new." if rec.get("reasons") else
+                " The newest run met every requirement.") + "</p>")
+    full = [f"<p><b>Decision: {dec}.</b> Champion: "
+            f"<code>{_esc(champ)}</code></p>"]
+    if rec.get("reasons"):
+        full.append("<p>Why not PROMOTE:</p><ul>")
+        full += [f"<li>{_esc(x)}</li>" for x in rec["reasons"]]
+        full.append("</ul>")
+    else:
+        full.append("<p>All four promotion requirements met: zero "
+                    "integrity FAILs, KEEP network verdict, lift interval "
+                    "clear of zero, no big drop vs the champion.</p>")
+    if warns:
+        full.append("<p>Standing warnings:</p><ul>")
+        full += [f"<li>{_esc(w)}</li>" for w in warns]
+        full.append("</ul>")
+    full.append("<p>Rolling back never means rebuilding: point consumers "
+                "(Travis handoffs, company lists, dossiers) back at the "
+                "previous champion's folder, and check out its git commit "
+                "if code must match.</p>")
+    return ('<div class="card"><h2>Recommendation '
+            '<span class="mini"><button onclick="recmode(0)" id="rb0" '
+            'class="on">short</button><button onclick="recmode(1)" '
+            'id="rb1">full</button></span></h2>'
+            f'<div class="rec-short">{short}</div>'
+            f'<div class="rec-full" style="display:none">'
+            f'{"".join(full)}</div></div>')
+
+
+def _trend_svg(rows: list[dict], history: list[dict]) -> str:
+    """Lift-delta whiskers: grey/dashed = reconstructed history, blue =
+    registered runs. Auto-scaled to the data."""
     pts = []
-    usable = [r for r in rows if r.get("ablation_lift_delta") is not None]
-    for i, r in enumerate(usable):
-        x = 90 + i * 130
+    for e in history or []:
+        res = e.get("results") or {}
+        if res.get("lift_delta") is not None:
+            pts.append({"tag": e.get("tag", "?"),
+                        "d": float(res["lift_delta"]),
+                        "lo": res.get("lift_lo"), "hi": res.get("lift_hi"),
+                        "hist": True})
+    for r in rows:
+        if r.get("ablation_lift_delta") is not None:
+            pts.append({"tag": r.get("tag", "?"),
+                        "d": float(r["ablation_lift_delta"]),
+                        "lo": r.get("ablation_lift_lo"),
+                        "hi": r.get("ablation_lift_hi"), "hist": False})
+    if not pts:
+        return "<p>No lift-delta data yet.</p>"
+    vals = [p["d"] for p in pts] + [p[k] for p in pts
+                                    for k in ("lo", "hi")
+                                    if p[k] is not None] + [0.0]
+    vmin, vmax = min(vals), max(vals)
+    pad = max((vmax - vmin) * 0.15, 0.05)
+    vmin, vmax = vmin - pad, vmax + pad
 
-        def y(v):
-            return 190 - (v + 0.2) / 1.4 * 160
+    def y(v):
+        return 190 - (v - vmin) / (vmax - vmin) * 160
 
-        d = r["ablation_lift_delta"]
-        lo = r.get("ablation_lift_lo", d)
-        hi = r.get("ablation_lift_hi", d)
-        pts.append(
+    parts = []
+    for i, p in enumerate(pts):
+        x = 90 + i * 120
+        col = "#8a8a86" if p["hist"] else "#2a78d6"
+        dash = ' stroke-dasharray="4 3"' if p["hist"] else ""
+        lo = p["lo"] if p["lo"] is not None else p["d"]
+        hi = p["hi"] if p["hi"] is not None else p["d"]
+        parts.append(
             f'<line x1="{x}" y1="{y(hi):.1f}" x2="{x}" y2="{y(lo):.1f}" '
-            f'stroke="#2a78d6" stroke-width="2"/>'
-            f'<circle cx="{x}" cy="{y(d):.1f}" r="5" fill="#2a78d6"/>'
+            f'stroke="{col}" stroke-width="2"{dash}/>'
+            f'<circle cx="{x}" cy="{y(p["d"]):.1f}" r="5" fill="{col}"/>'
             f'<text x="{x}" y="212" text-anchor="middle" font-size="10">'
-            f'{r.get("tag", "?")}</text>'
-            f'<text x="{x + 10}" y="{y(d) - 6:.1f}" font-size="10" '
-            f'font-weight="bold">{d:+.3f}</text>')
-    zero_y = 190 - 0.2 / 1.4 * 160
-    svg = (f'<svg viewBox="0 0 {max(460, 90 + len(usable) * 130)} 230" '
-           f'style="max-width:560px;font-family:monospace">'
-           f'<line x1="40" y1="{zero_y:.1f}" x2="98%" y2="{zero_y:.1f}" '
-           f'stroke="#888" stroke-width="1.5"/>'
-           f'<text x="34" y="{zero_y + 4:.1f}" text-anchor="end" '
-           f'font-size="10">0</text>' + "".join(pts) + "</svg>")
-    return ("<title>Model runs</title>"
-            "<style>body{font:14px/1.5 system-ui;max-width:900px;"
-            "margin:24px auto;padding:0 16px;color:#141410}"
-            "pre{white-space:pre-wrap;background:#f4f4f1;border:1px solid "
-            "#e2e2dc;border-radius:8px;padding:14px;font-size:12.5px}"
-            "@media(prefers-color-scheme:dark){body{background:#1a1a19;"
-            "color:#f2f1ea}pre{background:#232322;border-color:#38382f}}"
-            "</style>"
-            "<h1 style='font-size:20px'>Model runs — auto-generated</h1>"
-            "<p>Lift delta (full − core) by release, whisker = 95% CI:</p>"
-            + svg + "<pre>" + body + "</pre>")
+            f'{_esc(p["tag"])[:16]}</text>'
+            f'<text x="{x + 9}" y="{y(p["d"]) - 6:.1f}" font-size="10" '
+            f'font-weight="bold">{p["d"]:+.3f}</text>')
+    w = max(460, 90 + len(pts) * 120)
+    return (f'<svg viewBox="0 0 {w} 230" style="max-width:100%;'
+            f'font-family:monospace">'
+            f'<line x1="40" y1="{y(0):.1f}" x2="{w - 10}" y2="{y(0):.1f}" '
+            f'stroke="#888" stroke-width="1.5"/>'
+            f'<text x="34" y="{y(0) + 4:.1f}" text-anchor="end" '
+            f'font-size="10">0</text>' + "".join(parts) + "</svg>"
+            "<p class='note'>Grey dashed = reconstructed from the working "
+            "record before the registry existed. Blue = registered runs. "
+            "Whisker = 95% range; above the zero line means the extra "
+            "data helped.</p>")
+
+
+def _timeline_html(rows: list[dict], history: list[dict],
+                   pr_by_tag: dict, so_by_tag: dict) -> str:
+    """Merged chronological cards: what changed, why, results, revert."""
+    cards = []
+    for e in history or []:
+        d = e.get("date", "?") + ("~" if e.get("date_approx") else "")
+        ch = "".join(f"<li>{_esc(c)}</li>" for c in e.get("changes", []))
+        tech = (f"<p><b>Changes:</b></p><ul>{ch}</ul>" if ch else "") + (
+            f"<p><b>Raw numbers:</b> <code>"
+            f"{_esc(json.dumps(e.get('results') or {}))}</code></p>"
+            f"<p class='note'>Evidence: {_esc(e.get('evidence', '—'))}</p>")
+        cards.append((d, (
+            '<div class="card hist"><span class="badge">reconstructed'
+            f'</span><h3>{_esc(d)} — {_esc(e.get("title", e.get("tag")))}'
+            f'</h3><p><b>What we were changing:</b> {_esc(e.get("goal"))}'
+            f'</p><p><b>Why:</b> {_esc(e.get("why"))}</p>'
+            f'<p><b>Result:</b> {_esc(e.get("results_text", "—"))}</p>'
+            + (f'<p><b>Lesson:</b> {_esc(e["lesson"])}</p>'
+               if e.get("lesson") else "")
+            + f'<div class="tech">{tech}</div></div>')))
+    for r in rows:
+        tag = r.get("tag", "?")
+        d = str(r.get("registered_at", "?"))[:10]
+        so = so_by_tag.get(tag)
+        chip = ('<span class="badge warn">UNREPRODUCED</span>' if so is None
+                else f'<span class="badge ok">{_esc(so.get("status", "?")).upper()}'
+                     f' ({_esc(so.get("by", "?"))})</span>')
+        dec = r.get("decision", "—")
+        pill = (f'<span class="badge {"ok" if dec == "PROMOTE" else "warn"}">'
+                f'{dec}</span>')
+        p = pr_by_tag.get(tag)
+        declared = ""
+        if p:
+            declared = (f'<p><b>Declared before the run</b> '
+                        f'({_esc(str(p.get("declared_at", ""))[:16])}): '
+                        f'{_esc(p.get("goal", ""))} — acceptance: '
+                        f'{_esc(p.get("expected", ""))}</p>')
+        lift = (f"{_fmt(r.get('ablation_lift_delta'), '+.3f')} "
+                f"[{_fmt(r.get('ablation_lift_lo'), '+.3f')}, "
+                f"{_fmt(r.get('ablation_lift_hi'), '+.3f')}]")
+        tech = (
+            f"<table><tr><th>providers×cols</th><th>fwd positives</th>"
+            f"<th>FAILs</th><th>network</th><th>lift Δ [CI]</th>"
+            f"<th>full/core-only</th><th>commit</th></tr>"
+            f"<tr><td>{_fmt(r.get('n_providers'), ',')}×"
+            f"{_fmt(r.get('n_columns'))}</td>"
+            f"<td>{_fmt(r.get('forward_positives'), ',')}</td>"
+            f"<td>{_fmt(r.get('expectation_fails'))}</td>"
+            f"<td>{_esc(r.get('network_verdict') or '—')}</td>"
+            f"<td>{lift}</td>"
+            f"<td>{_fmt(r.get('catches_full_only'))}/"
+            f"{_fmt(r.get('catches_core_only'))}</td>"
+            f"<td><code>{_esc(r.get('git_commit') or '—')}</code></td>"
+            f"</tr></table>"
+            f"<p><b>Files:</b> <code>{_esc(r.get('run_dir', '—'))}</code>"
+            f"</p>"
+            + (f"<p><b>Revert to this exact code:</b> <code>git checkout "
+               f"{_esc(r['git_commit'])}</code> (read-only look; "
+               f"<code>git checkout -b rollback-{_esc(tag)} "
+               f"{_esc(r['git_commit'])}</code> to work from it). Data "
+               f"rollback is just pointing consumers at this folder.</p>"
+               if r.get("git_commit") else ""))
+        cards.append((d, (
+            f'<div class="card"><h3>{_esc(d)} — {_esc(tag)} {pill} {chip}'
+            f'</h3>{declared}'
+            f'<div class="simple"><p>{_esc(_plain_run_sentence(r))}</p>'
+            f'</div><div class="tech">{tech}</div></div>')))
+    cards.sort(key=lambda t: t[0])
+    return "".join(c for _, c in cards)
+
+
+def to_html(rows: list[dict], rec: dict, prereg: list[dict],
+            signoffs: list[dict], history: list[dict] | None = None,
+            economics_md: str | None = None,
+            dispositions_md: str | None = None) -> str:
+    """Self-contained data-driven dashboard — regenerated on every
+    registration, so KPIs never travel by clipboard. Two view toggles:
+    plain/technical wording, and short/full recommendations."""
+    history = history or []
+    so_by_tag = {}
+    for s in signoffs:
+        so_by_tag[s.get("tag")] = s
+    pr_by_tag = {p.get("tag"): p for p in prereg}
+    warns = cohort_usage(rows)
+    md = to_markdown(rows, rec, prereg, signoffs, history)
+
+    champ = rec.get("champion") or "none yet"
+    banner = (f'<div class="card champ"><b>Current champion:</b> '
+              f'<code>{_esc(champ)}</code>'
+              + (f' — <code>{_esc(rec.get("champion_dir"))}</code>'
+                 if rec.get("champion_dir") else "")
+              + f'<br><b>Latest run decision:</b> {rec.get("decision")}'
+              + (": " + _esc("; ".join(rec.get("reasons", [])))
+                 if rec.get("reasons") else "") + "</div>")
+
+    extra = ""
+    if economics_md:
+        extra += ('<div class="card tech"><h2>Economics</h2><pre>'
+                  + _esc(economics_md) + "</pre></div>")
+    if dispositions_md:
+        extra += ('<div class="card"><h2>Lead outcomes</h2><pre>'
+                  + _esc(dispositions_md) + "</pre></div>")
+
+    return (
+        "<title>Model runs</title>"
+        "<style>"
+        "body{font:14px/1.55 system-ui;max-width:960px;margin:24px auto;"
+        "padding:0 16px;color:#141410}"
+        ".card{background:#f7f7f4;border:1px solid #e2e2dc;border-radius:"
+        "10px;padding:14px 16px;margin:14px 0}"
+        ".card.champ{border-left:5px solid #2a78d6}"
+        ".card.hist{border-left:5px solid #c9a227;background:#faf8f0}"
+        ".badge{font-size:11px;padding:2px 8px;border-radius:10px;"
+        "background:#ddd;vertical-align:middle}"
+        ".badge.ok{background:#cde8cd}.badge.warn{background:#f3d9b0}"
+        "table{border-collapse:collapse;width:100%;font-size:12.5px;"
+        "overflow-x:auto;display:block}"
+        "th,td{border:1px solid #ddd;padding:4px 8px;text-align:left}"
+        "pre{white-space:pre-wrap;background:#f4f4f1;border:1px solid "
+        "#e2e2dc;border-radius:8px;padding:12px;font-size:12px;"
+        "overflow-x:auto}"
+        ".note{font-size:12px;color:#666}"
+        "button{font:12px system-ui;padding:3px 10px;border-radius:8px;"
+        "border:1px solid #bbb;background:#fff;cursor:pointer}"
+        "button.on{background:#2a78d6;color:#fff;border-color:#2a78d6}"
+        ".mini{float:right}"
+        "body.plain .tech{display:none}body.techmode .simple{display:none}"
+        "@media(prefers-color-scheme:dark){body{background:#1a1a19;"
+        "color:#f2f1ea}.card{background:#232322;border-color:#38382f}"
+        ".card.hist{background:#26241d}pre{background:#202020;"
+        "border-color:#38382f}th,td{border-color:#3a3a35}"
+        "button{background:#2c2c2b;color:#eee;border-color:#555}"
+        ".badge{background:#444}.badge.ok{background:#2c5230}"
+        ".badge.warn{background:#6b5423}.note{color:#aaa}}"
+        "</style>"
+        "<body class='plain'>"
+        "<h1 style='font-size:21px;margin-bottom:4px'>Model runs</h1>"
+        "<p class='note' style='margin-top:0'>Auto-generated from the "
+        "registry files. "
+        "<button onclick=\"view(0)\" id=\"vb0\" class=\"on\">plain</button> "
+        "<button onclick=\"view(1)\" id=\"vb1\">technical</button></p>"
+        + banner
+        + _rec_html(rec, warns)
+        + "<div class='card'><h2>Is the extra data winning?</h2>"
+        + _trend_svg(rows, history) + "</div>"
+        + "<h2>Timeline</h2>"
+        + _timeline_html(rows, history, pr_by_tag, so_by_tag)
+        + extra
+        + "<div class='card tech'><h2>Full technical report</h2><pre>"
+        + _esc(md) + "</pre></div>"
+        + "<script>"
+        "function view(t){document.body.className=t?'techmode':'plain';"
+        "document.getElementById('vb0').className=t?'':'on';"
+        "document.getElementById('vb1').className=t?'on':'';}"
+        "function recmode(t){"
+        "for(const el of document.querySelectorAll('.rec-short'))"
+        "el.style.display=t?'none':'';"
+        "for(const el of document.querySelectorAll('.rec-full'))"
+        "el.style.display=t?'':'none';"
+        "document.getElementById('rb0').className=t?'':'on';"
+        "document.getElementById('rb1').className=t?'on':'';}"
+        "</script></body>")
 
 
 def main() -> None:
@@ -499,13 +766,37 @@ def main() -> None:
         rows.append(row)
         _append_jsonl(reg_path, row)
 
+    # history: the file if the operator wrote one, else the baked-in curation
+    hist_rows = _load_jsonl(reg_dir / "run_history.jsonl")
+    if not hist_rows:
+        try:
+            from src.model_a.run_history import HISTORY as hist_rows
+        except Exception:
+            hist_rows = []
+
     rec = recommend(rows)
     report = reg_dir / "MODEL_RUNS.md"
-    report.write_text(to_markdown(rows, rec, prereg, signoffs),
+    report.write_text(to_markdown(rows, rec, prereg, signoffs, hist_rows),
                       encoding="utf-8")
     if args.html:
+        econ_md = disp_md = None
+        try:
+            from src.model_a import economics as _eco
+            erows = _eco.load_log(reg_dir / "economics.jsonl")
+            if erows:
+                econ_md = _eco.to_markdown(_eco.summarize(erows))
+        except Exception:
+            pass
+        try:
+            from src.model_a import lead_dispositions as _ld
+            drows = _ld.load_log(reg_dir / "lead_dispositions.jsonl")
+            if drows:
+                disp_md = _ld.to_markdown(_ld.summarize(drows))
+        except Exception:
+            pass
         (reg_dir / "MODEL_RUNS.html").write_text(
-            to_html(rows, rec, prereg, signoffs), encoding="utf-8")
+            to_html(rows, rec, prereg, signoffs, hist_rows,
+                    econ_md, disp_md), encoding="utf-8")
     print(f"[run_registry] {len(rows)} run(s) | latest decision: "
           f"{rec['decision']} | champion: {rec.get('champion')} | "
           f"report -> {report}")
