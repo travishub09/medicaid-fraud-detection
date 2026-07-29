@@ -97,3 +97,38 @@ def test_missing_columns_tolerated():
     # file had no such column
     assert "outcome_type" in out.columns
     assert stats["confirmed"] == 1
+
+
+def test_normalized_name_fallback_matching():
+    cases = _cases()
+    corr = pd.DataFrame([{
+        "defendant_name":
+            "Owner of Acme Home Health (John Doe) – Sentenced",
+        "source_url": "https://different/url", "verdict": "confirmed",
+        "note": ""}]).fillna("")
+    # normalized key of the correction is 'owner acme home health' which is
+    # NOT a unique match -> stays unmatched (no guessing)
+    out, stats = apply_corrections(cases, corr)
+    assert stats["unmatched"]
+    corr2 = pd.DataFrame([{
+        "defendant_name": "Tenet Healthcare Corporation – Settled",
+        "source_url": "https://different/url", "verdict": "confirmed",
+        "note": ""}]).fillna("")
+    out2, stats2 = apply_corrections(cases, corr2)
+    assert not stats2["unmatched"]
+    assert out2.set_index("case_id").loc["2", "verify_status"] == "confirmed"
+
+
+def test_emit_kind_worklist():
+    from src.model_a.case_corrections import emit_kind_worklist
+    out, _ = apply_corrections(_cases(), _corrections())
+    w = emit_kind_worklist(out, top_n=10)
+    # rows with a classified kind (Acme paid, Tenet paid, DME superseded)
+    # are excluded; only the never-verified Medline row would qualify but
+    # it is cannot_verify -> usable=0, so nothing remains
+    assert len(w) == 0
+    out.loc[out["case_id"] == "4", "usable"] = 1
+    out.loc[out["case_id"] == "4", "amount_kind_class"] = ""
+    w2 = emit_kind_worklist(out, top_n=10)
+    assert list(w2["case_id"]) == ["4"]
+    assert "scheme size" in w2["what_to_check"].iloc[0]

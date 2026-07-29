@@ -38,6 +38,24 @@ import pandas as pd
 
 _DUP = re.compile(r"duplicat|same (case|settlement|action|announcement|"
                   r"press release|resolution)", re.IGNORECASE)
+_PAREN = re.compile(r"\([^)]*\)")
+_STAGE = re.compile(r"[–—-]\s*(sentenced|convicted|indicted|"
+                    r"charged|pleads?( guilty)?|settle[ds]?)\s*$",
+                    re.IGNORECASE)
+_NONWORD = re.compile(r"[^a-z0-9 ]")
+
+
+def _match_key(name: str) -> str:
+    """Normalized defendant key tolerant of agent rephrasing: drops
+    parentheticals, '– Sentenced'-style stage suffixes, punctuation, and
+    corporate suffix tokens."""
+    s = _PAREN.sub(" ", str(name or "").lower())
+    s = _STAGE.sub(" ", s)
+    s = _NONWORD.sub(" ", s)
+    toks = [t for t in s.split() if t not in
+            ("llc", "inc", "corp", "corporation", "plc", "group", "the",
+             "of", "and", "co", "company", "companies", "pc", "pa", "md")]
+    return " ".join(toks)
 _ALLEGED = re.compile(r"alleg|billed|scheme size|intended|fraud loss",
                       re.IGNORECASE)
 _PAID = re.compile(r"settle|restitution|judgment|recover|paid|penalt|"
@@ -76,16 +94,22 @@ def apply_corrections(cases: pd.DataFrame,
                                    c.get("source_url", ""))):
         by_key.setdefault((str(n).strip(), str(u).strip()), []).append(i)
     by_name: dict = {}
+    by_norm: dict = {}
     for i, n in enumerate(c.get("defendant_name", "")):
         by_name.setdefault(str(n).strip(), []).append(i)
+        by_norm.setdefault(_match_key(n), []).append(i)
 
     stats = {"confirmed": 0, "corrected": 0, "cannot_verify": 0,
              "superseded": 0, "unmatched": [], "fields_changed": 0}
     for _, r in corrections.iterrows():
         name = str(r.get("defendant_name") or "").strip()
         url = str(r.get("source_url") or "").strip()
-        idxs = by_key.get((name, url)) or (
-            by_name.get(name) if len(by_name.get(name, [])) == 1 else None)
+        norm = _match_key(name)
+        idxs = (by_key.get((name, url))
+                or (by_name.get(name)
+                    if len(by_name.get(name, [])) == 1 else None)
+                or (by_norm.get(norm)
+                    if norm and len(by_norm.get(norm, [])) == 1 else None))
         if not idxs:
             stats["unmatched"].append(name)
             continue
@@ -182,17 +206,47 @@ def to_markdown(c: pd.DataFrame, stats: dict) -> str:
     return "\n".join(L)
 
 
+def emit_kind_worklist(applied: pd.DataFrame, top_n: int = 250) -> pd.DataFrame:
+    """The biggest usable rows whose dollar KIND is still unverified —
+    the worklist that turns the 'unverified kind' bucket into paid vs
+    alleged. Same shape the re-verification runner reads."""
+    c = applied.copy()
+    amt = pd.to_numeric(c["amount_usd"], errors="coerce").fillna(0)
+    kind = c["amount_kind_class"].replace("", "unknown")
+    mask = (c["usable"].astype(int) == 1) & (kind == "unknown") & (amt > 0)
+    w = c[mask].copy()
+    w["_amt"] = amt[mask]
+    w["what_to_check"] = ("state whether the amount is a settlement/judgment "
+                          "paid or the alleged/billed scheme size")
+    cols = [x for x in ["case_id", "defendant_name", "announced_date",
+                        "amount_usd", "outcome_type", "source_url",
+                        "what_to_check"] if x in w.columns]
+    return w.sort_values("_amt", ascending=False).head(top_n)[cols]
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cases", required=True)
-    ap.add_argument("--corrections", required=True)
+    ap.add_argument("--corrections", required=True, nargs="+",
+                    help="one or more verdict CSVs (later files win)")
     ap.add_argument("--out", required=True)
+    ap.add_argument("--emit-kind-worklist", type=int, default=0,
+                    help="also write kind_check_batch.csv with the top-N "
+                         "usable rows whose dollar kind is unverified")
     args = ap.parse_args()
     cases = pd.read_csv(args.cases, dtype=str).fillna("")
-    corr = pd.read_csv(args.corrections, dtype=str).fillna("")
+    corr = pd.concat([pd.read_csv(p, dtype=str).fillna("")
+                      for p in args.corrections], ignore_index=True)
     out, stats = apply_corrections(cases, corr)
     out.to_csv(args.out, index=False)
+    if args.emit_kind_worklist:
+        wp = Path(args.out).with_name("kind_check_batch.csv")
+        w = emit_kind_worklist(out, args.emit_kind_worklist)
+        w.to_csv(wp, index=False)
+        amt = pd.to_numeric(w["amount_usd"], errors="coerce").fillna(0).sum()
+        print(f"[case_corrections] kind worklist: {len(w)} rows carrying "
+              f"${amt / 1e9:,.1f}B -> {wp}")
     report = Path(args.out).with_name("CASE_CORRECTIONS_REPORT.md")
     report.write_text(to_markdown(out, stats), encoding="utf-8")
     print(f"[case_corrections] {stats['confirmed']}+{stats['corrected']}"
