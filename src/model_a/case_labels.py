@@ -105,6 +105,20 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "conduct_end", "case_ids", "amount_usd", "label_source"]
     if case_db is None or not len(case_db) or org_nodes is None or not len(org_nodes):
         return pd.DataFrame(columns=cols)
+    # v3+ case files carry QC provenance: superseded duplicates and
+    # cannot-verify rows are marked usable=0 and must never become labels
+    # (a duplicate would double-weight its case; an unverified row is not
+    # evidence). Older files without the column pass through unchanged.
+    if "usable" in case_db.columns:
+        n0 = len(case_db)
+        keep = pd.to_numeric(case_db["usable"], errors="coerce").fillna(1) == 1
+        case_db = case_db.loc[keep]
+        if n0 - len(case_db):
+            print(f"    [case_labels] dropped {n0 - len(case_db):,} "
+                  f"non-usable rows (superseded dups / cannot-verify) "
+                  f"per QC provenance")
+        if not len(case_db):
+            return pd.DataFrame(columns=cols)
     if medicaid_only:
         text = (case_db.get("summary", pd.Series("", index=case_db.index)).fillna("")
                 .astype(str) + " "

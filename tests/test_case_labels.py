@@ -75,3 +75,15 @@ def test_case_labels_fold_into_widened_label(tmp_path):
 def test_empty_case_db_is_safe(tmp_path):
     _, _, org_nodes, npi_to_org, _ = _graph_and_case(tmp_path)
     assert build_case_labels(pd.DataFrame(), org_nodes, npi_to_org).empty
+
+
+def test_non_usable_rows_never_become_labels(tmp_path):
+    _, _, org_nodes, npi_to_org, case_db = _graph_and_case(tmp_path)
+    # v3 provenance: the row is a superseded duplicate
+    case_db["usable"] = "0"
+    labels = build_case_labels(case_db, org_nodes, npi_to_org)
+    assert len(labels) == 0
+    # and usable=1 passes through as before
+    case_db["usable"] = "1"
+    labels2 = build_case_labels(case_db, org_nodes, npi_to_org)
+    assert RING_NPI in set(labels2["npi"])
