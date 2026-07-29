@@ -546,3 +546,25 @@ def test_phi_guard_allows_diagnostics_company_names():
     with pytest.raises(ValueError):
         run_research("list the diagnosis for each person seen",
                      transport=t, sleep=lambda s: None, cache=False)
+
+
+def test_record_reverification_prompt_and_schema():
+    from src.feeds.manus_research import record_reverification
+    t = _FakeTransport(polls_until_done=1, result={"cases": [
+        {"defendant_name": "Big Fraud Corp", "verdict": "corrected",
+         "amount_usd_in_source": 990000000,
+         "evidence_quote": "agreed to pay $990 million"}]})
+    rows = [{"defendant_name": "Big Fraud Corp",
+             "announced_date": "2023-05-01", "amount_usd": "99000000000",
+             "outcome_type": "settlement", "source_url": "https://x/2",
+             "what_to_check": "confirm the dollar amount"}]
+    out = record_reverification(rows, transport=t, sleep=lambda s: None,
+                                cache=False)
+    assert out["ok"] is True
+    assert out["query"] == {"task": "record_reverification", "n": 1}
+    assert out["result"]["cases"][0]["verdict"] == "corrected"
+    # the prompt carries the citation, the recorded values, and the checks
+    assert "https://x/2" in t._prompt
+    assert "99000000000" in t._prompt
+    assert "confirm the dollar amount" in t._prompt
+    assert "cannot_verify" in t._prompt          # never-guess instruction

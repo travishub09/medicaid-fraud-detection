@@ -909,6 +909,75 @@ def identifier_enrichment(defendants: list, transport: ManusTransport | None = N
     return out
 
 
+_REVERIFY_TEMPLATE = (
+    "Research task, public records only. Below are previously collected "
+    "case rows whose recorded facts failed a mechanical quality screen and "
+    "must be RE-VERIFIED against their cited sources. For each case: open "
+    "the cited URL and re-read it carefully (if the URL is dead, find the "
+    "same announcement on the official agency site and report the "
+    "replacement URL). Then report, for each field listed under 'check', "
+    "exactly what the source document says, QUOTING the sentence that "
+    "contains it verbatim: the announcement date, the dollar amount (as a "
+    "number; distinguish alleged loss vs settlement/judgment amount and say "
+    "which the document states), the outcome type, and the conduct period. "
+    "Give a per-case verdict: 'confirmed' when the recorded value matches "
+    "the document, 'corrected' when the document says something different "
+    "(report the correct value), 'cannot_verify' when the document does not "
+    "state it or cannot be found. Never guess; a cannot_verify is a good "
+    "answer. Do not pause to ask questions.\n\nCASES:\n{roster}"
+)
+
+REVERIFY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "defendant_name": {"type": "string"},
+                    "source_url": {"type": "string"},
+                    "replacement_url": {"type": "string"},
+                    "verdict": {"type": "string",
+                                "enum": ["confirmed", "corrected",
+                                         "cannot_verify"]},
+                    "announced_date_in_source": {"type": "string"},
+                    "amount_usd_in_source": {"type": ["number", "null"]},
+                    "amount_kind": {"type": "string"},
+                    "outcome_type_in_source": {"type": "string"},
+                    "conduct_period_in_source": {"type": "string"},
+                    "evidence_quote": {"type": "string"},
+                    "note": {"type": "string"},
+                },
+                "required": ["defendant_name", "verdict"],
+            }},
+    },
+    "required": ["cases"],
+}
+
+
+def record_reverification(rows: list, transport: ManusTransport | None = None,
+                          **kw) -> dict:
+    """One batch of QC-flagged case rows → per-field verdicts with quotes.
+
+    ``rows``: dicts with defendant_name, announced_date, amount_usd,
+    outcome_type, source_url, and what_to_check (from case_qc's
+    reverify_batch.csv). Keep batches to ~10 so every citation gets read."""
+    lines = []
+    for r in rows:
+        lines.append(
+            f"- {r.get('defendant_name')} | recorded date: "
+            f"{r.get('announced_date', '?')} | recorded amount: "
+            f"{r.get('amount_usd', '?')} | recorded outcome: "
+            f"{r.get('outcome_type', '?')} | cited: {r.get('source_url', '')}"
+            f" | check: {r.get('what_to_check', 'all fields')}")
+    prompt = _REVERIFY_TEMPLATE.format(roster="\n".join(lines))
+    out = run_research(prompt, transport=transport, schema=REVERIFY_SCHEMA,
+                       label=f"reverify_{len(rows)}", **kw)
+    out["query"] = {"task": "record_reverification", "n": len(rows)}
+    return out
+
+
 def public_disclosure_screen(npi: str, descriptor: str,
                              transport: ManusTransport | None = None,
                              **kw) -> dict:
