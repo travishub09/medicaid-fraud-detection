@@ -63,6 +63,24 @@ SOURCE_SCHEME_MAP = {
                     "DME-equipment cases"),
 }
 
+# source -> columns defining the FAIR COMPARISON COHORT: providers with any
+# real exposure to what the source measures. Without this the test collapses
+# to "can you tell scheme-adjacent providers from the whole world" (opioid
+# cases vs a universe of non-prescribers scores a fake 10x; hospital billing
+# settlements vs an individual-provider universe scores below chance). The
+# sharp question is bad-vs-comparable: positives judged against their own
+# kind. A row qualifies when ANY listed column is numeric and > 0.
+SOURCE_COHORT_COLS = {
+    "open_payments": ["op_total_dollars"],
+    "opioid": ["opioid_claims", "opioid_claim_share"],
+    "hcris": ["hcris_cost_anomaly"],
+    "facility_quality": ["deficiency_count", "pbj_understaffing",
+                         "hospice_live_discharge_rate"],
+    "hrsa_340b": ["contract_pharmacy_concentration"],
+    "medicare_puf": ["total_allowed", "total_services"],
+    "other_extra": ["dme_high_cost_item_share", "dme_code_concentration"],
+}
+
 
 def _to_num(v):
     return pd.to_numeric(pd.Series(v), errors="coerce").fillna(0).to_numpy()
@@ -92,14 +110,26 @@ def run_scheme_eval(matrix: pd.DataFrame, manifest: dict,
             skipped[source] = "source group not present in this manifest"
             continue
         is_pos = scheme.str.contains(pat, case=False, regex=True)
+        # fair-cohort restriction: judge positives against their own kind
+        cohort = pd.Series(False, index=matrix.index)
+        cohort_cols = [c for c in SOURCE_COHORT_COLS.get(source, [])
+                       if c in matrix.columns]
+        for cc in cohort_cols:
+            cohort |= pd.Series(_to_num(matrix[cc]) > 0, index=matrix.index)
+        if not cohort_cols:
+            cohort[:] = True
+        n_pos_all = int(is_pos.sum())
+        is_pos = is_pos & cohort
         n_pos = int(is_pos.sum())
         if n_pos < min_pos:
-            skipped[source] = f"only {n_pos} case-labeled positives (< {min_pos})"
+            skipped[source] = (f"only {n_pos} case-labeled positives inside "
+                               f"the comparison cohort ({n_pos_all} overall; "
+                               f"< {min_pos})")
             continue
-        # eval universe: this scheme's positives + the unlabeled pool. Other
-        # case positives and non-matching exclusion positives are fraud-ish —
-        # they may not sit in the negative pool.
-        keep = is_pos | (~any_case & ~excl)
+        # eval universe: this scheme's positives + the unlabeled pool WITHIN
+        # the cohort. Other case positives and non-matching exclusion
+        # positives are fraud-ish — they may not sit in the negative pool.
+        keep = (is_pos | (~any_case & ~excl)) & cohort
         m = matrix.loc[keep.to_numpy()].reset_index(drop=True)
         y = is_pos.loc[keep.to_numpy()].astype(int).to_numpy()
         g = groups_all[keep.to_numpy()] if groups_all is not None else None
@@ -115,7 +145,9 @@ def run_scheme_eval(matrix: pd.DataFrame, manifest: dict,
         results[source] = {
             "description": desc,
             "n_pos": n_pos,
+            "n_pos_all": n_pos_all,
             "n_eval": int(len(m)),
+            "cohort_cols": cohort_cols,
             "n_source_features": len(extra[source]),
             "abs": abs_scores,
             "full_vs_core": _oof_delta_ci(y, p_full, p_core, g, n_boot=n_boot),
@@ -139,8 +171,18 @@ def to_markdown(res: dict) -> str:
     for source, r in res["results"].items():
         L.append("")
         L.append(f"## {source} → {r['description']}")
-        L.append(f"- positives: {r['n_pos']:,} | eval universe: "
-                 f"{r['n_eval']:,} | source features: {r['n_source_features']}")
+        cohort_note = (
+            f" | cohort: any of {', '.join(r['cohort_cols'])} > 0"
+            if r.get("cohort_cols") else "")
+        L.append(f"- positives: {r['n_pos']:,}"
+                 + (f" (of {r['n_pos_all']:,} overall)"
+                    if r.get("n_pos_all", r["n_pos"]) != r["n_pos"] else "")
+                 + f" | eval universe: {r['n_eval']:,} | source features: "
+                 f"{r['n_source_features']}{cohort_note}")
+        if r["n_pos"] < 150:
+            L.append(f"- _CAUTION: {r['n_pos']} positives is thin — bootstrap "
+                     "intervals can collapse to [0, 0] at this count; treat "
+                     "the verdict as provisional._")
         L.append("")
         L.append("| metric | core | full | without source | full-core [95% CI] "
                  "| source marginal [95% CI] |")

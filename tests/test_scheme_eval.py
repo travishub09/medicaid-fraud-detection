@@ -69,3 +69,27 @@ def test_missing_fraud_scheme_column_is_a_clear_error():
     m = _matrix().drop(columns=["fraud_scheme"])
     res = run_scheme_eval(m, _manifest())
     assert "fraud_scheme" in res["error"]
+
+
+def test_cohort_restriction_judges_bad_vs_comparable():
+    m = _matrix()
+    # op_total_dollars defines the open_payments cohort: half the universe
+    # receives industry payments; ALL kickback positives do (as in reality)
+    m["op_total_dollars"] = 0.0
+    m.loc[:299, "op_total_dollars"] = 100.0
+    res = run_scheme_eval(m, _manifest(), min_pos=20, n_splits=3, n_boot=50)
+    r = res["results"]["open_payments"]
+    assert r["cohort_cols"] == ["op_total_dollars"]
+    assert r["n_eval"] <= 300                    # universe shrank to cohort
+    assert r["n_pos"] == 60
+    md = to_markdown(res)
+    assert "cohort: any of op_total_dollars" in md
+    assert "provisional" in md                   # thin-count caution renders
+
+
+def test_positives_outside_cohort_are_reported():
+    m = _matrix()
+    m["op_total_dollars"] = 0.0                  # nobody in the cohort
+    res = run_scheme_eval(m, _manifest(), min_pos=20, n_splits=3, n_boot=50)
+    assert "open_payments" in res["skipped"]
+    assert "inside the comparison cohort" in res["skipped"]["open_payments"]
