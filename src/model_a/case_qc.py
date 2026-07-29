@@ -14,6 +14,15 @@ through mechanical sanity screens and QUARANTINES (flags, never deletes):
                   starting before 1980
   DUPLICATE       same normalized defendant + announcement year seen twice —
                   the later row is flagged, the first kept
+  AMOUNT_DUP      same dollar amount (>= $50M) + same year under different
+                  names — how the same settlement re-enters via a second
+                  press release ("Two owners of DME companies" vs "Two
+                  owners of numerous durable medical equipment companies")
+  NAME_SUBSET_DUP one defendant name contained in another, same year —
+                  catches "(sentencing)" suffixes and total-vs-component
+                  rows (Reckitt $1.4B vs Reckitt $700M)
+  PLACEHOLDER_DT  announced on January 1 — almost always a year-only
+                  precision placeholder, review not quarantine
   PENDING_TIER    allegation-stage outcomes (indictment/complaint/charges) —
                   not an error, but marked so they NEVER hard-label
 
@@ -98,15 +107,47 @@ def qc_frame(cases: pd.DataFrame, today: date | None = None) -> pd.DataFrame:
         or (e is not None and y is not None and e > y)
         for s, e, y in zip(starts, ends, ann_year)]
 
-    key = c.get("defendant_name", pd.Series("", index=c.index)) \
-        .map(_norm_name) + "|" + pd.Series(ann_year, index=c.index).astype(str)
+    names = c.get("defendant_name",
+                  pd.Series("", index=c.index)).map(_norm_name)
+    year_s = pd.Series(ann_year, index=c.index).astype(str)
+    key = names + "|" + year_s
     c["flag_duplicate"] = key.duplicated(keep="first") & (key.str.len() > 6)
+
+    # same amount + same year under different names (>= $50M): the classic
+    # second-press-release duplicate
+    amt_key = amount.round(0).astype("Int64").astype(str) + "|" + year_s
+    c["flag_amount_dup"] = (amount >= 50_000_000).fillna(False) & \
+        amt_key.duplicated(keep="first")
+
+    # one name's tokens contained in another's, same year: "(sentencing)"
+    # suffixes, total-vs-component rows, "X" vs "X / Y"
+    subset = [False] * len(c)
+    by_year: dict = {}
+    for i, (nm, yr) in enumerate(zip(names, year_s)):
+        toks = frozenset(t for t in nm.split()
+                         if t not in ("llc", "inc", "corp", "corporation",
+                                      "plc", "group", "companies", "company",
+                                      "the", "of", "and"))
+        if len(toks) < 2:
+            continue
+        for prev in by_year.setdefault(yr, []):
+            if toks <= prev or prev <= toks:
+                subset[i] = True
+                break
+        by_year[yr].append(toks)
+    c["flag_name_subset_dup"] = pd.Series(subset, index=c.index) & \
+        ~c["flag_duplicate"]
+
+    c["flag_placeholder_date"] = c.get(
+        "announced_date", pd.Series("", index=c.index)).astype(str) \
+        .str.strip().str.endswith("-01-01")
 
     c["flag_pending_tier"] = outcome.isin(PENDING_OUTCOMES)
 
     hard = c["flag_bad_date"] | c["flag_impossible_amount"] | \
-        c["flag_conduct_window"] | c["flag_duplicate"]
-    soft = c["flag_review_amount"]
+        c["flag_conduct_window"] | c["flag_duplicate"] | \
+        c["flag_amount_dup"] | c["flag_name_subset_dup"]
+    soft = c["flag_review_amount"] | c["flag_placeholder_date"]
     c["qc_status"] = "clean"
     c.loc[soft, "qc_status"] = "review"
     c.loc[hard, "qc_status"] = "quarantine"
@@ -127,7 +168,11 @@ def reverify_batch(qc: pd.DataFrame, top_n: int = 40) -> pd.DataFrame:
                      "flag_review_amount")),
                 ("confirm the conduct period", r.get("flag_conduct_window")),
                 ("check whether this duplicates an earlier row",
-                 r.get("flag_duplicate")),
+                 r.get("flag_duplicate") or r.get("flag_amount_dup")
+                 or r.get("flag_name_subset_dup")),
+                ("state whether the amount is a settlement/judgment paid or "
+                 "the alleged/billed scheme size",
+                 r.get("flag_amount_dup") or r.get("flag_review_amount")),
             ] if f), axis=1)
     cols = [x for x in ["case_id", "defendant_name", "announced_date",
                         "amount_usd", "outcome_type", "source_url",
@@ -151,6 +196,12 @@ def to_markdown(qc: pd.DataFrame) -> str:
                       ("flag_review_amount", "review-size dollars (> $2B)"),
                       ("flag_conduct_window", "broken conduct window"),
                       ("flag_duplicate", "duplicate defendant+year"),
+                      ("flag_amount_dup",
+                       "same amount + year, different name (likely dup)"),
+                      ("flag_name_subset_dup",
+                       "name contained in another, same year (likely dup)"),
+                      ("flag_placeholder_date",
+                       "January-1 placeholder date (review)"),
                       ("flag_pending_tier",
                        "allegation-stage (never hard-labels)")]:
         L.append(f"| {name} | {int(qc[col].sum()):,} |")

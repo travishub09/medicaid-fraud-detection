@@ -78,3 +78,44 @@ def test_markdown_summary():
     md = to_markdown(qc)
     assert "quarantined" in md and "never deleted" in md
     assert "impossible dollars" in md
+
+
+def test_v2_screens_from_the_top15_paste():
+    df = pd.DataFrame([
+        # same amount + year, different names (the $871M DME pair)
+        {"case_id": "a", "defendant_name": "Two owners of DME companies",
+         "announced_date": "2020-09-30", "amount_usd": "871000000",
+         "outcome_type": "conviction", "source_url": "https://x/a",
+         "summary": "Billed 2016 through 2019."},
+        {"case_id": "b",
+         "defendant_name": "Two owners of numerous durable medical equipment companies",
+         "announced_date": "2020-09-30", "amount_usd": "871000000",
+         "outcome_type": "conviction", "source_url": "https://x/b",
+         "summary": "Billed 2016 through 2019."},
+        # name-subset duplicate (the Adkins sentencing row)
+        {"case_id": "c", "defendant_name": "Alfred Bradley Adkins",
+         "announced_date": "2017-06-12", "amount_usd": "600000000",
+         "outcome_type": "conviction", "source_url": "https://x/c",
+         "summary": "Scheme 2004 through 2016."},
+        {"case_id": "d", "defendant_name": "Alfred Bradley Adkins (sentencing)",
+         "announced_date": "2017-09-22", "amount_usd": "550000000",
+         "outcome_type": "sentencing", "source_url": "https://x/d",
+         "summary": "Sentenced for the 2004 through 2016 scheme."},
+        # placeholder date -> review, not quarantine
+        {"case_id": "e", "defendant_name": "Reckitt Benckiser Group plc",
+         "announced_date": "2019-01-01", "amount_usd": "700000000",
+         "outcome_type": "settlement", "source_url": "https://x/e",
+         "summary": "Civil settlement for 2010 through 2014 conduct."},
+    ])
+    from datetime import date as _date
+    qc = qc_frame(df, today=_date(2026, 7, 30))
+    by = qc.set_index("case_id")
+    assert by.loc["b", "flag_amount_dup"] and by.loc["b", "qc_status"] == "quarantine"
+    assert not by.loc["a", "flag_amount_dup"]          # first kept
+    assert by.loc["d", "flag_name_subset_dup"] and \
+        by.loc["d", "qc_status"] == "quarantine"
+    assert not by.loc["c", "flag_name_subset_dup"]
+    assert by.loc["e", "flag_placeholder_date"] and \
+        by.loc["e", "qc_status"] == "review"
+    batch = reverify_batch(qc, top_n=10)
+    assert batch["what_to_check"].str.contains("settlement/judgment paid").any()
