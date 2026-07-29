@@ -87,3 +87,13 @@ def test_unmatched_correction_is_reported():
                           "verdict": "confirmed", "note": ""}]).fillna("")
     out, stats = apply_corrections(_cases(), corr)
     assert stats["unmatched"] == ["Nobody Known"]
+
+
+def test_missing_columns_tolerated():
+    cases = _cases().drop(columns=["outcome_type"])
+    out, stats = apply_corrections(cases, _corrections())
+    assert len(out) == 4
+    # the corrected outcome from the source lands even though the original
+    # file had no such column
+    assert "outcome_type" in out.columns
+    assert stats["confirmed"] == 1

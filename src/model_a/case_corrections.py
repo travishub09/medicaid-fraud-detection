@@ -56,6 +56,10 @@ def classify_amount_kind(kind: str) -> str:
 def apply_corrections(cases: pd.DataFrame,
                       corrections: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     c = cases.copy()
+    for col in ("defendant_name", "source_url", "announced_date",
+                "amount_usd", "outcome_type"):
+        if col not in c.columns:
+            c[col] = ""
     for col in ("verify_status", "amount_kind", "amount_kind_class",
                 "conduct_period_verified", "orig_amount_usd",
                 "orig_announced_date", "orig_outcome_type",
