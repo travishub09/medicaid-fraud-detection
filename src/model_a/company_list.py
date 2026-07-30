@@ -59,6 +59,25 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
         | set(manifest.get("leakage_hard", []) or [])
     cols = [c for c in full_feature_list(partition_features(manifest))
             if c in matrix.columns and c not in banned]
+    # mechanical leak screen: the ban list is curated, but any single column
+    # that near-perfectly separates the PU label on its own IS the label in
+    # disguise, whatever it's called. Drop it and say so.
+    y_screen = _to_num(matrix[label_col])
+    if y_screen.sum() > 0 and y_screen.sum() < len(matrix):
+        from sklearn.metrics import roc_auc_score
+        leaked = []
+        for c in list(cols):
+            v = pd.to_numeric(matrix[c], errors="coerce").fillna(0.0)
+            if v.nunique() <= 1:
+                continue
+            auc = roc_auc_score(y_screen, v.to_numpy())
+            if max(auc, 1 - auc) > 0.985:
+                leaked.append((c, round(max(auc, 1 - auc), 4)))
+                cols.remove(c)
+        if leaked:
+            print("[company_list] auto-dropped label-leaking feature(s): "
+                  + ", ".join(f"{c} (single-column AUC {a})"
+                              for c, a in leaked))
     X = matrix[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy()
     y = _to_num(matrix[label_col])
     groups = (matrix["group_id"].to_numpy()

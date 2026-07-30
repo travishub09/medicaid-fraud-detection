@@ -98,3 +98,36 @@ def test_label_adjacent_features_are_banned_from_pu_scoring():
     assert not np.all(scores[:30] > 0.99)
     # and the ranking is not a two-value collapse
     assert len(np.unique(np.round(scores, 10))) > 10
+
+
+def test_unlisted_leak_is_auto_screened():
+    """A leaky column with an unrecognized NAME must still be caught by the
+    single-column separation screen."""
+    import numpy as np
+    import pandas as pd
+    from src.model_a.company_list import oof_scores
+    n = 600
+    rng = np.random.default_rng(1)
+    y = np.zeros(n, dtype=int)
+    y[:30] = 1
+    m = pd.DataFrame({
+        "npi": [f"{1000000000 + i}" for i in range(n)],
+        "group_id": [f"g{i}" for i in range(n)],
+        "provider_on_exclusion": y,
+        "net_paid": rng.lognormal(10, 1, n),
+        "shell_score": rng.normal(0, 1, n),
+        # a perfect leak under an innocent-sounding name nobody banned
+        "regulatory_attention_index": y.astype(float) + rng.normal(0, 1e-6, n),
+    })
+    manifest = {
+        "raw_feature_cols": ["net_paid", "shell_score",
+                             "regulatory_attention_index"],
+        "peerpct_cols": [], "subscore_cols": [], "embedding_cols": [],
+        "leakage_hard": [], "leakage_adjacent": [],
+        "sources_used": {"spending": ["net_paid"],
+                         "entity_graph": ["shell_score",
+                                          "regulatory_attention_index"]},
+        "scheme_coverage": {},
+    }
+    scores = oof_scores(m, manifest)
+    assert not np.all(scores[:30] > 0.99)      # cannot be perfect once dropped
