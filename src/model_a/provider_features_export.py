@@ -1218,6 +1218,7 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
     if "kickback" in skip:
         log("    [kickback] skipped: --skip-sources")
         return frames
+    pd_raw = None
     try:
         op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS, max_year)
         pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS, max_year)
@@ -1228,6 +1229,31 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 log(f"    [kickback] {len(kb):,} prescribers (op_payment_utilization_corr)")
     except Exception as e:
         log(f"    [kickback] skipped: {e}")
+
+    # NADAC name-grain brand-premium (per-NPI): needs the NADAC reference +
+    # the Part D raw already loaded above. The NDC-claims path stays in the
+    # org-grain adapter; this is the lawful name-level fallback (no claims).
+    if "nadac_namegrain" in skip:
+        log("    [nadac_namegrain] skipped: --skip-sources")
+        return frames
+    try:
+        nadac_p = _first_existing(pc / "nadac", "nadac.csv", "*.csv")
+        if nadac_p and pd_raw is not None:
+            from src.ingest_cms import nadac as nadac_mod
+            from src.attempt_2.clean_data import read_csv_text
+            idx = nadac_mod.name_price_index(read_csv_text(str(nadac_p)))
+            bp = nadac_mod.brand_premium_by_prescriber(pd_raw, idx)
+            if len(bp):
+                frames["nadac_namegrain"] = bp
+                hot = int((pd.to_numeric(bp["nadac_brand_premium_share"],
+                                         errors="coerce") > 0.05).sum())
+                log(f"    [nadac_namegrain] {len(idx):,} NADAC drug names; "
+                    f"{len(bp):,} prescribers scored from {nadac_p.name}, "
+                    f"{hot:,} with >5% avoidable brand-premium dollars")
+        elif nadac_p:
+            log("    [nadac_namegrain] skipped: NADAC present but no Part D raw")
+    except Exception as e:
+        log(f"    [nadac_namegrain] skipped: {e}")
     return frames
 
 

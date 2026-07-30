@@ -94,3 +94,99 @@ def drug_spread_anomaly(ndc_claims: pd.DataFrame, nadac_reference: pd.DataFrame,
     g["drug_spread_anomaly"] = (g["above_nadac_paid"] / g["drug_paid"]).where(
         g["drug_paid"] > 0, 0.0).clip(0, 1)
     return g.reset_index()[cols]
+
+
+# --- name-grain benchmark (no NDC claims needed) ----------------------------
+# Provider-level NDC claims are lawfully out of reach (T-MSIS pharmacy DUAs
+# bar litigation targeting), so the drug-spread idea runs at DRUG-NAME grain
+# instead: NADAC knows each drug name's brand and generic per-unit prices;
+# the Part D PUF knows each prescriber's brand-vs-generic dollars by name.
+# The join yields "dollars spent on brand versions with a NADAC-listed
+# cheaper generic", weighted by the potential-savings share — one-sided by
+# construction (choosing the cheap option can never hurt a provider).
+
+_NUM_TOKEN = None  # set lazily; avoids importing re at module top twice
+
+
+def _name_key(description: pd.Series) -> pd.Series:
+    """Drug-name key from a NADAC description: the tokens before the first
+    numeric/strength token, uppercased ('ATORVASTATIN CALCIUM 10 MG TAB' ->
+    'ATORVASTATIN CALCIUM')."""
+    import re
+    pat = re.compile(r"^\D*?(?=\s*\d|$)")
+    s = description.fillna("").astype(str).str.upper().str.strip()
+    return s.map(lambda x: (pat.match(x).group(0) if pat.match(x) else x)
+                 .strip(" -"))
+
+
+def name_price_index(nadac_raw: pd.DataFrame) -> pd.DataFrame:
+    """NADAC rows → per drug-name medians: (name_key, generic_per_unit,
+    brand_per_unit). Names with only one classification get NaN for the
+    other side; the premium calc requires both."""
+    resolved = _resolve_columns(list(nadac_raw.columns), NADAC_COLS)
+    if "description" not in resolved or "per_unit" not in resolved:
+        raise ValueError(f"NADAC file missing description/per-unit columns; "
+                         f"saw {list(nadac_raw.columns)[:12]}")
+    df = nadac_raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    df["per_unit"] = pd.to_numeric(df["per_unit"], errors="coerce")
+    df["cls"] = (df["classification"] if "classification" in df.columns
+                 else pd.Series("", index=df.index)
+                 ).fillna("").astype(str).str.upper().str[:1]
+    df["name_key"] = _name_key(df["description"])
+    df = df[(df["name_key"] != "") & df["per_unit"].notna()]
+    gen = df[df["cls"] == "G"].groupby("name_key")["per_unit"].median()
+    brd = df[df["cls"] == "B"].groupby("name_key")["per_unit"].median()
+    out = pd.DataFrame({"generic_per_unit": gen, "brand_per_unit": brd})
+    return out.reset_index().rename(columns={"index": "name_key"})
+
+
+def brand_premium_by_prescriber(partd_raw: pd.DataFrame,
+                                price_index: pd.DataFrame) -> pd.DataFrame:
+    """Per-NPI NADAC brand-premium exposure from the Part D PUF.
+
+    For each prescriber's BRAND drug rows whose GENERIC name has both a
+    brand and a cheaper generic NADAC price, accumulate
+    row_cost × (brand − generic)/brand — the avoidable-dollar share.
+    Returns (npi, nadac_brand_premium_share, nadac_matched_share):
+      nadac_brand_premium_share  avoidable dollars / total drug dollars
+      nadac_matched_share        dollars on NADAC-matched names / total —
+                                 the coverage honesty column (a low share
+                                 means the signal saw little of this NPI).
+    """
+    from src.ingest_cms.partd import PARTD_COLS
+    from src.attempt_2.clean_data import canonicalize_series
+    resolved = _resolve_columns(list(partd_raw.columns), PARTD_COLS)
+    need = [c for c in ["npi", "generic_name", "cost"] if c not in resolved]
+    if need:
+        raise ValueError(f"Part D file missing {need} for the NADAC join")
+    df = partd_raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    df["npi"] = canonicalize_series(df["npi"])
+    df = df[df["npi"].notna()]
+    df["cost"] = pd.to_numeric(df["cost"], errors="coerce").fillna(0.0)
+    brand = df.get("brand_name", pd.Series("", index=df.index)) \
+        .fillna("").astype(str).str.strip().str.upper()
+    generic = df["generic_name"].fillna("").astype(str).str.strip().str.upper()
+    df["is_brand"] = (brand != "") & (generic != "") & (brand != generic)
+    df["name_key"] = _name_key(df["generic_name"])
+
+    idx = price_index.dropna(subset=["generic_per_unit", "brand_per_unit"])
+    idx = idx[idx["brand_per_unit"] > idx["generic_per_unit"]].copy()
+    idx["savings_frac"] = ((idx["brand_per_unit"] - idx["generic_per_unit"])
+                           / idx["brand_per_unit"]).clip(0, 1)
+    m = df.merge(idx[["name_key", "savings_frac"]], on="name_key", how="left")
+    m["avoidable"] = (m["cost"] * m["savings_frac"]).where(
+        m["is_brand"] & m["savings_frac"].notna(), 0.0)
+    m["matched_cost"] = m["cost"].where(m["savings_frac"].notna(), 0.0)
+    g = m.groupby("npi")
+    out = pd.DataFrame({
+        "total_cost": g["cost"].sum(),
+        "avoidable": g["avoidable"].sum(),
+        "matched": g["matched_cost"].sum(),
+    })
+    out = out[out["total_cost"] > 0]
+    out["nadac_brand_premium_share"] = (out["avoidable"]
+                                        / out["total_cost"]).clip(0, 1)
+    out["nadac_matched_share"] = (out["matched"]
+                                  / out["total_cost"]).clip(0, 1)
+    return out.reset_index()[["npi", "nadac_brand_premium_share",
+                              "nadac_matched_share"]]
