@@ -60,3 +60,41 @@ def test_oof_scores_are_out_of_fold_and_discriminative():
     # shell_score carries real signal; OOF ranking should beat chance
     from sklearn.metrics import roc_auc_score
     assert roc_auc_score(y, s) > 0.6
+
+
+def test_label_adjacent_features_are_banned_from_pu_scoring():
+    """The 2026-07-30 collapse: exclusion-built features trained against the
+    exclusion label saturate to exact 0/1. They must never reach this scorer."""
+    import numpy as np
+    from src.model_a.company_list import oof_scores
+    n = 600
+    rng = np.random.default_rng(0)
+    y = np.zeros(n, dtype=int)
+    y[:30] = 1
+    m = _matrix(n) if "_matrix" in dir() else None
+    import pandas as pd
+    m = pd.DataFrame({
+        "npi": [f"{1000000000 + i}" for i in range(n)],
+        "group_id": [f"g{i}" for i in range(n)],
+        "provider_on_exclusion": y,
+        "net_paid": rng.lognormal(10, 1, n),
+        "shell_score": rng.normal(0, 1, n),
+        # the answer key: exactly equals the label
+        "graph_fraud_proximity": y.astype(float),
+    })
+    manifest = {
+        "raw_feature_cols": ["net_paid", "shell_score",
+                             "graph_fraud_proximity"],
+        "peerpct_cols": [], "subscore_cols": [], "embedding_cols": [],
+        "leakage_hard": [], "leakage_adjacent": [],
+        "sources_used": {"spending": ["net_paid"],
+                         "entity_graph": ["shell_score",
+                                          "graph_fraud_proximity"]},
+        "scheme_coverage": {},
+    }
+    scores = oof_scores(m, manifest)
+    # with the leaky column banned the model cannot be perfect: no exact-1.0
+    # saturation on the positive block
+    assert not np.all(scores[:30] > 0.99)
+    # and the ranking is not a two-value collapse
+    assert len(np.unique(np.round(scores, 10))) > 10

@@ -41,11 +41,24 @@ RANDOM_STATE = 42
 def oof_scores(matrix: pd.DataFrame, manifest: dict,
                label_col: str = "provider_on_exclusion",
                n_splits: int = 5) -> np.ndarray:
-    """Out-of-fold probability for every provider, full feature set."""
-    from sklearn.model_selection import GroupKFold, KFold
+    """Out-of-fold probability for every provider, full feature set MINUS
+    every label-adjacent column.
 
+    The PU label here is "already on an exclusion list", and several features
+    are BUILT FROM the exclusion lists (fraud-proximity PageRank,
+    excluded-owner flags, the ownership-integrity subscore). Trained on this
+    label they are the answer key: the model saturates to exact 0/1 and the
+    ranking collapses to "contains an excluded provider" (the 538k-way tie
+    caught on 2026-07-30). The forward-label ablation can keep them; this
+    scorer must not."""
+    from sklearn.model_selection import GroupKFold, KFold
+    from src.model_a.network_ab import LABEL_ADJACENT_NET
+
+    banned = set(LABEL_ADJACENT_NET) \
+        | set(manifest.get("leakage_adjacent", []) or []) \
+        | set(manifest.get("leakage_hard", []) or [])
     cols = [c for c in full_feature_list(partition_features(manifest))
-            if c in matrix.columns]
+            if c in matrix.columns and c not in banned]
     X = matrix[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy()
     y = _to_num(matrix[label_col])
     groups = (matrix["group_id"].to_numpy()
@@ -57,6 +70,18 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
                            random_state=RANDOM_STATE))
     for k, (tr, te) in enumerate(splitter.split(X, y, groups)):
         scores[te] = _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k)
+    # collapse guard (hard-fail, rule #2): a real probability ranking over a
+    # large universe has thousands of distinct values; exact-0/1 saturation
+    # or a giant single tie means a leaky feature or empty X reached the
+    # model, and shipping that ranking would be worse than shipping nothing.
+    if len(matrix) > 10_000:
+        distinct = int(np.unique(np.round(scores, 12)).size)
+        modal_share = float(pd.Series(scores).value_counts(normalize=True).iat[0])
+        if distinct < 500 or modal_share > 0.95:
+            raise ValueError(
+                f"score collapse: {distinct} distinct scores, modal share "
+                f"{modal_share:.1%} — a leaky or empty feature set reached "
+                f"the scorer; refusing to write a broken ranking")
     return scores
 
 
