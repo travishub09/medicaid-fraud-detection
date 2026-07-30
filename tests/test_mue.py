@@ -69,3 +69,25 @@ def test_wrong_file_raises(tmp_path):
     bad.write_text("foo,bar\n1,2\n", encoding="utf-8")
     with pytest.raises(ValueError):
         load_mue_table(bad)
+
+
+def test_load_mue_tables_merges_most_permissive():
+    import pandas as pd
+    from pathlib import Path
+    import tempfile
+    from src.ingest_cms.mue import load_mue_tables
+    with tempfile.TemporaryDirectory() as d:
+        p1 = Path(d) / "practitioner.csv"
+        p2 = Path(d) / "dme.csv"
+        pd.DataFrame({"HCPCS/CPT Code": ["99213", "E0601"],
+                      "Practitioner Services MUE Values": [1, 2]}
+                     ).to_csv(p1, index=False)
+        pd.DataFrame({"HCPCS/CPT Code": ["E0601", "K0001"],
+                      "DME Supplier Services MUE Values": [3, 1]}
+                     ).to_csv(p2, index=False)
+        merged = load_mue_tables([p1, p2])
+    by = merged.set_index("hcpcs")["mue_units"]
+    assert by["99213"] == 1
+    assert by["E0601"] == 3          # highest limit wins (conservative)
+    assert by["K0001"] == 1
+    assert len(merged) == 3

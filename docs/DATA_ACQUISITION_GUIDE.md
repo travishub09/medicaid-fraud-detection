@@ -250,10 +250,14 @@ After dropping any new file, re-run `make provider-features` and check
 
 ### B12. CMS MUE table → `impossible_day` (published impossible-units rule)
 - **Get:** https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits
-  → "**Medicare NCCI Medically Unlikely Edits (MUEs)**" → download the
-  **Practitioner Services MUE Table** (quarterly ZIP).
-- **Save:** unzip; if the table is Excel, open it and File > Save As > CSV.
-  Final path: `preclean/reference/mue/mue.csv`.
+  → "**Medicare NCCI Medically Unlikely Edits (MUEs)**" → download all three
+  quarterly ZIPs: **Practitioner Services**, **DME Supplier Services**, and
+  **Facility Outpatient Hospital Services** MUE Tables.
+- **Save:** unzip each; if a table is Excel, open it and File > Save As > CSV.
+  Drop all of them in `preclean/reference/mue/` (any names, e.g.
+  `mue_practitioner.csv`, `mue_dme.csv`, `mue_facility.csv`) — the loader
+  merges every CSV in the folder, keeping the most permissive limit when a
+  code appears in more than one table (under-flags, never over-flags).
 - **Needs:** HCPCS/CPT code + the MUE value (max units per day) columns —
   the loader auto-detects common headings.
 - **Unlocks:** `mue_violation_share` (billed more units of a code in a month

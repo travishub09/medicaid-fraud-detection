@@ -1900,18 +1900,20 @@ def main() -> None:
         # unit maximum × days (conservative pigeonhole bound; ingest_cms/mue.py).
         # Wakes impossible_day. Table drop: preclean/reference/mue/mue.csv
         try:
-            mue_p = _first_existing(preclean / "reference" / "mue",
-                                    "mue.csv", "*.csv", "*.parquet")
+            mue_dir = preclean / "reference" / "mue"
+            mue_paths = sorted(set(list(mue_dir.glob("*.csv"))
+                                   + list(mue_dir.glob("*.parquet")))) \
+                if mue_dir.exists() else []
             spend_mue = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
-            if mue_p and spend_mue:
-                from src.ingest_cms.mue import load_mue_table, compute_mue_violations
-                mue_tbl = load_mue_table(mue_p)
+            if mue_paths and spend_mue:
+                from src.ingest_cms.mue import load_mue_tables, compute_mue_violations
+                mue_tbl = load_mue_tables(mue_paths)
                 mv = compute_mue_violations(str(spend_mue), mue_tbl)
                 if len(mv):
                     adapter_frames["mue"] = mv[["npi", "mue_violation_share"]]
                     n_hot = int((pd.to_numeric(mv["mue_violation_share"],
                                                errors="coerce") > 0).sum())
-                    audit(f"    [mue] {len(mue_tbl):,} MUE codes; {len(mv):,} NPIs "
+                    audit(f"    [mue] {len(mue_tbl):,} MUE codes from {len(mue_paths)} table(s); {len(mv):,} NPIs "
                           f"scored, {n_hot:,} with a violating (code, month) cell "
                           f"(from {Path(mue_p).name})")
                 else:

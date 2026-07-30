@@ -77,6 +77,19 @@ def load_mue_table(path: str | Path) -> pd.DataFrame:
     return (out.groupby("hcpcs", as_index=False)["mue_units"].max())
 
 
+def load_mue_tables(paths) -> pd.DataFrame:
+    """Merge SEVERAL CMS MUE tables (practitioner + DME supplier + facility
+    outpatient) into one (hcpcs, mue_units) rule set. A code appearing in
+    more than one table keeps the HIGHEST limit — the most permissive bound,
+    so merged tables can only under-flag, never over-flag."""
+    frames = [load_mue_table(p) for p in paths]
+    frames = [f for f in frames if len(f)]
+    if not frames:
+        return pd.DataFrame(columns=["hcpcs", "mue_units"])
+    both = pd.concat(frames, ignore_index=True)
+    return both.groupby("hcpcs", as_index=False)["mue_units"].max()
+
+
 _DAYS = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30,
          10: 31, 11: 30, 12: 31}          # 29 for Feb: permissive = conservative
 
