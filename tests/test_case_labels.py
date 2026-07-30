@@ -87,3 +87,67 @@ def test_non_usable_rows_never_become_labels(tmp_path):
     case_db["usable"] = "1"
     labels2 = build_case_labels(case_db, org_nodes, npi_to_org)
     assert RING_NPI in set(labels2["npi"])
+
+
+def test_affiliation_broadcast_tiers_and_guard():
+    import pandas as pd
+    from src.model_a.case_labels import build_case_labels
+    case_db = pd.DataFrame([
+        {"case_id": "c1", "defendant": "Acme Home Health LLC",
+         "defendant_name_key": "ACME HOME HEALTH",
+         "amount_usd": "5000000", "scheme": "upcoding",
+         "announced_date": "2024-06-01",
+         "summary": "Billed from 2020 through 2023.",
+         "npi_in_source": "1234567893"},
+    ])
+    org_nodes = pd.DataFrame([
+        {"org_node_id": "org:1", "org_name": "Acme Home Health LLC"}])
+    npi_to_org = pd.DataFrame([
+        {"npi": "1999999992", "org_node_id": "org:1"}])       # org billing NPI
+    # two affiliated clinicians at the settled org, plus a mega-org edge set
+    aff = pd.DataFrame(
+        [{"src_id": "provider:1888888881", "dst_id": "org:1",
+          "edge_type": "reassigns_to", "basis": "reassignment"},
+         {"src_id": "provider:1777777770", "dst_id": "org:1",
+          "edge_type": "reassigns_to", "basis": "reassignment"}]
+        + [{"src_id": f"provider:{1000000000 + i}", "dst_id": "org:big",
+            "edge_type": "reassigns_to", "basis": "reassignment"}
+           for i in range(300)])
+    out = build_case_labels(case_db, org_nodes, npi_to_org,
+                            fuzzy_threshold=None, affiliations=aff,
+                            max_org_members=150)
+    by = out.set_index("npi")
+    assert by.loc["1234567893", "label_basis"] == "named_npi"
+    assert by.loc["1999999992", "label_basis"] == "org_billing"
+    assert by.loc["1888888881", "label_basis"] == "affiliated_individual"
+    assert by.loc["1888888881", "fraud_scheme"] == "upcoding"
+    # the 300-member org was not settled AND would be guarded anyway
+    assert "1000000005" not in by.index
+    # dollars counted once per case even though the org reaches it two ways
+    assert by.loc["1999999992", "amount_usd"] == 5000000.0
+
+
+def test_affiliation_guard_suppresses_mega_org():
+    import pandas as pd
+    from src.model_a.case_labels import build_case_labels
+    case_db = pd.DataFrame([
+        {"case_id": "c2", "defendant": "Giant Hospital System Inc",
+         "defendant_name_key": "GIANT HOSPITAL SYSTEM",
+         "amount_usd": "100000000", "scheme": "upcoding",
+         "announced_date": "2024-01-01",
+         "summary": "Conduct 2019 through 2022."}])
+    org_nodes = pd.DataFrame([
+        {"org_node_id": "org:big", "org_name": "Giant Hospital System Inc"}])
+    npi_to_org = pd.DataFrame([
+        {"npi": "1999999992", "org_node_id": "org:big"}])
+    aff = pd.DataFrame(
+        [{"src_id": f"provider:{1000000000 + i}", "dst_id": "org:big",
+          "edge_type": "reassigns_to", "basis": "reassignment"}
+         for i in range(200)])
+    out = build_case_labels(case_db, org_nodes, npi_to_org,
+                            fuzzy_threshold=None, affiliations=aff,
+                            max_org_members=150)
+    # billing NPI labeled; NONE of the 200 clinicians smeared
+    bases = set(out["label_basis"])
+    assert bases == {"org_billing"}
+    assert len(out) == 1

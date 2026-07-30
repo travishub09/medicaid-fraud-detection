@@ -290,10 +290,18 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         cl = case_labels.copy()
         cl["npi"] = cl["npi"].astype(str)
         meta = [c for c in ["npi", "fraud_scheme", "conduct_start", "conduct_end",
-                            "case_ids"] if c in cl.columns]
+                            "case_ids", "label_basis"] if c in cl.columns]
         m = m.merge(cl[meta].drop_duplicates("npi"), on="npi", how="left")
         assert len(m) == n0, "case-label join fanned out"
-        hit = m["npi"].isin(set(cl["npi"]))
+        # affiliation-broadcast rows ("worked at a settling org") carry scheme
+        # METADATA for stratified evaluation but never flip the hard PU label —
+        # only named-NPI and org-billing bases are prosecution-grade evidence.
+        if "label_basis" in cl.columns:
+            hard_npis = set(cl.loc[cl["label_basis"] != "affiliated_individual",
+                                   "npi"])
+        else:
+            hard_npis = set(cl["npi"])
+        hit = m["npi"].isin(hard_npis)
         if "provider_on_exclusion" not in m.columns:
             m["provider_on_exclusion"] = 0
         m["provider_on_exclusion"] = (m["provider_on_exclusion"].fillna(0).astype(int)
@@ -512,6 +520,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # for scheme-stratified and out-of-time validation.
     label_metadata = [c for c in ["exclusion_label_sources", "fraud_scheme",
                                   "conduct_start", "conduct_end", "case_ids",
+                                  "label_basis",
                                   "provider_on_leie", "confirmed_clean", "clean_basis",
                                   "weak_label_score", "weak_label", "weak_label_votes",
                                   "billing_implied_taxonomy"]
@@ -1200,7 +1209,7 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                             "slope columns)")
                 frames[f"{name}_trend"] = tr
                 log(f"    [{name}_trend] {len(tr):,} providers: {prev_file.name} "
-                    f"→ {cur_file.name} year-over-year deltas "
+                    f"-> {cur_file.name} year-over-year deltas "
                     f"({', '.join(f'{c}_yoy' for c in share)})")
             except Exception as e:
                 log(f"    [{name}_trend] skipped: {e}")
@@ -1459,7 +1468,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                           ["ownership_turnover"])
             else:
                 n = len(load_snapshots(snapshots_dir)) if snapshots_dir else 0
-                log(f"    [ownership_churn] skipped: {n} owner snapshot(s) — needs ≥2 "
+                log(f"    [ownership_churn] skipped: {n} owner snapshot(s) — needs >=2 "
                     "(snapshot cadence, or drop an older All-Owners edition in "
                     "preclean/owners_prior/ for the vintage diff)")
         except Exception as e:
@@ -1469,7 +1478,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     if _skipped("facility"):
         pass
     elif ccn_to_npi is None:
-        log("    [facility/hcris/pos] skipped: no CCN→NPI crosswalk "
+        log("    [facility/hcris/pos] skipped: no CCN->NPI crosswalk "
             "(processed/ccn_to_npi.parquet) — the one missing link for the "
             "facility / cost-report / capacity schemes")
     else:
@@ -1918,12 +1927,20 @@ def main() -> None:
             cdb = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
                    else pd.read_parquet(args.case_db))
             # frozen runs box case positives to conduct that STARTED pre-cutoff
+            aff_p = Path(args.graph_dir) / "edges" / "reassigns_to_edges.parquet"
+            affiliations = pd.read_parquet(aff_p) if aff_p.exists() else None
             case_lbls = build_case_labels(cdb, org_nodes, npi_to_org,
-                                          asof_cutoff=args.asof_cutoff)
+                                          asof_cutoff=args.asof_cutoff,
+                                          affiliations=affiliations)
+            n_aff = int((case_lbls["label_basis"] == "affiliated_individual"
+                         ).sum()) if len(case_lbls) else 0
             audit(f"    [doj_case] {len(case_lbls):,} NPIs labeled from "
                   f"{Path(args.case_db).name} (scheme-typed + conduct windows"
                   + (f", boxed to <= {str(args.asof_cutoff)[:4]}" if args.asof_cutoff
-                     else "") + ")")
+                     else "")
+                  + (f"; {n_aff:,} via affiliation broadcast" if n_aff else
+                     "; no affiliation edges" if affiliations is None else "")
+                  + ")")
 
         # external grounding (address) + temporal-graph velocity + billing LM
         pdim_p = _first_existing(processed, "provider_dim.parquet")
@@ -1963,7 +1980,7 @@ def main() -> None:
                 adapter_frames["graph_velocity"] = vel
                 audit(f"    [graph_velocity] {len(vel):,} providers (snapshot diff)")
             else:
-                audit("    [graph_velocity] skipped: needs ≥2 feature snapshots "
+                audit("    [graph_velocity] skipped: needs >=2 feature snapshots "
                       "(make feature-snapshot on a cadence)")
         except Exception as e:
             audit(f"    [graph_velocity] skipped: {e}")
@@ -2048,7 +2065,7 @@ def main() -> None:
         from .scheme_health import write_health
         sh = write_health(matrix, manifest, out_dir)
         msg = (f"  [scheme_health] {sh['n_broken']} BROKEN / {sh['n_degraded']} "
-               f"DEGRADED → {out_dir / 'SCHEME_HEALTH.md'}")
+               f"DEGRADED -> {out_dir / 'SCHEME_HEALTH.md'}")
         if sh["regressions"]:
             msg += (f"\n  *** {len(sh['regressions'])} SCHEME REGRESSION(S) vs the "
                     "last run — a source may have silently dropped. Check "
@@ -2068,7 +2085,7 @@ def main() -> None:
             val = res[res["verdict"] == "VALIDATED"]["scheme"].tolist() if len(res) else []
             print(f"  [case_validation] {n_case:,} DOJ-case NPIs; validated "
                   f"schemes: {', '.join(val) if val else 'none yet'} "
-                  f"→ {out_dir / 'CASE_VALIDATION.md'}")
+                  f"-> {out_dir / 'CASE_VALIDATION.md'}")
         except Exception as e:                                # reporter, not a gate
             print(f"  [case_validation] skipped: {e}")
     # the standing calc-integrity feedback loop: file findings, never kill the run
@@ -2088,15 +2105,15 @@ def main() -> None:
             json.dumps(manifest, indent=2), encoding="utf-8")
         print(f"[expectations] {manifest['expectations']['fails']} FAIL / "
               f"{manifest['expectations']['warns']} WARN "
-              f"→ {out_dir / 'EXPECTATIONS_REPORT.md'}")
+              f"-> {out_dir / 'EXPECTATIONS_REPORT.md'}")
     except Exception as e:                                    # reporter, not a gate
         print(f"[expectations] reporter failed (run unaffected): {e}")
     used = sum(1 for r in manifest["sources_audit"] if r["status"] == "used")
     skipped = sum(1 for r in manifest["sources_audit"] if r["status"] == "skipped")
     print(f"  sources: {used} used / {skipped} skipped "
-          f"→ {out_dir / 'SOURCES_REPORT.md'}")
+          f"-> {out_dir / 'SOURCES_REPORT.md'}")
     print(f"Wrote {out_dir}/provider_features_for_model.parquet "
-          f"— {manifest['n_providers']:,} providers × {matrix.shape[1]} columns")
+          f"— {manifest['n_providers']:,} providers x {matrix.shape[1]} columns")
     print(f"  schemes scored: {', '.join(sorted(manifest['scheme_coverage']))}")
     if manifest["label"]:
         pos = int(pd.to_numeric(matrix[manifest["label"]], errors="coerce").fillna(0).sum())
@@ -2116,7 +2133,7 @@ def main() -> None:
             n_ctrl = int((matched["cohort"] == "control").sum())
             kind = matched["control_kind"].iloc[0]
             print(f"  matched case-control: {n_case:,} cases + {n_ctrl:,} controls "
-                  f"({kind}) → provider_features_matched.parquet")
+                  f"({kind}) -> provider_features_matched.parquet")
         else:
             print("  case-control: no positives to match (skipped)")
 
@@ -2128,7 +2145,7 @@ def main() -> None:
         asof = args.asof or _dt.date.today().strftime("%Y-%m-%d")
         store = Path(args.snapshot_dir) if args.snapshot_dir else root / "feature_snapshots"
         snapshot_features(matrix, asof, store)
-        print(f"  snapshotted as-of {asof} → {store} "
+        print(f"  snapshotted as-of {asof} -> {store} "
               f"({len(load_snapshot_index(store))} point-in-time snapshot(s))")
 
 
@@ -2175,7 +2192,7 @@ def _write_dictionary(matrix: pd.DataFrame, manifest: dict, out_dir: Path) -> No
 def _write_report(matrix: pd.DataFrame, manifest: dict, out_dir: Path) -> None:
     lines = ["# PROVIDER_FEATURES_EXPORT — report\n",
              f"_Per-NPI training matrix for the supervised model. "
-             f"{manifest['n_providers']:,} providers × {matrix.shape[1]} columns._\n\n",
+             f"{manifest['n_providers']:,} providers x {matrix.shape[1]} columns._\n\n",
              "## Sources contributing features\n"]
     if manifest["sources_used"]:
         for src, cols in manifest["sources_used"].items():

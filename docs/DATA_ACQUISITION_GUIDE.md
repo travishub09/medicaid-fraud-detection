@@ -247,3 +247,15 @@ owner_snapshots/                (make owner-snapshot, monthly)
 
 After dropping any new file, re-run `make provider-features` and check
 `PROVIDER_FEATURES_EXPORT_REPORT.md` to confirm the source was picked up.
+
+### B12. CMS MUE table → `impossible_day` (published impossible-units rule)
+- **Get:** https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits
+  → "**Medicare NCCI Medically Unlikely Edits (MUEs)**" → download the
+  **Practitioner Services MUE Table** (quarterly ZIP).
+- **Save:** unzip; if the table is Excel, open it and File > Save As > CSV.
+  Final path: `preclean/reference/mue/mue.csv`.
+- **Needs:** HCPCS/CPT code + the MUE value (max units per day) columns —
+  the loader auto-detects common headings.
+- **Unlocks:** `mue_violation_share` (billed more units of a code in a month
+  than the published daily maximum allows) — the canonical, CMS-citable
+  "physically impossible billing" flag. Pure download; no other file needed.

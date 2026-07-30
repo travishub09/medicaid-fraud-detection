@@ -142,10 +142,14 @@ def run_scheme_eval(matrix: pd.DataFrame, manifest: dict,
         abs_scores = {}
         for tag, p in (("core", p_core), ("full", p_full), ("without", p_wo)):
             abs_scores[tag] = {k: float(f(y, p)) for k, f in _OOF_METRICS}
+        n_aff = int((matrix.loc[is_pos.to_numpy(), "label_basis"]
+                     .astype(str) == "affiliated_individual").sum()) \
+            if "label_basis" in matrix.columns else None
         results[source] = {
             "description": desc,
             "n_pos": n_pos,
             "n_pos_all": n_pos_all,
+            "n_pos_affiliated": n_aff,
             "n_eval": int(len(m)),
             "cohort_cols": cohort_cols,
             "n_source_features": len(extra[source]),
@@ -177,6 +181,9 @@ def to_markdown(res: dict) -> str:
         L.append(f"- positives: {r['n_pos']:,}"
                  + (f" (of {r['n_pos_all']:,} overall)"
                     if r.get("n_pos_all", r["n_pos"]) != r["n_pos"] else "")
+                 + (f" | {r['n_pos_affiliated']:,} via affiliation broadcast "
+                    "(weak basis: worked at a settling org)"
+                    if r.get("n_pos_affiliated") else "")
                  + f" | eval universe: {r['n_eval']:,} | source features: "
                  f"{r['n_source_features']}{cohort_note}")
         if r["n_pos"] < 150:
