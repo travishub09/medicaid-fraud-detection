@@ -603,3 +603,20 @@ def test_innocent_audit_returns_structured_strength():
                                      cache=False)
     assert out["result"]["strength"] == "plausible"
     assert "STRONGEST" in t._prompt
+
+
+def test_article_relevance_check():
+    from src.feeds.manus_research import article_relevance_check
+    t = _FakeTransport(polls_until_done=1, result={
+        "items": [{"url": "https://x/1", "conduct_described": "different",
+                   "describes_our_pattern": "no"}],
+        "overall_verdict": "no", "why": "unrelated conduct"})
+    out = article_relevance_check(
+        ["https://x/1", "https://x/2"],
+        pattern="T2046 billed on individual provider numbers",
+        codes="T2046", npis="1205822277", transport=t,
+        sleep=lambda s: None, cache=False)
+    assert out["result"]["overall_verdict"] == "no"
+    assert out["query"] == {"task": "article_relevance_check", "n": 2}
+    assert "https://x/2" in t._prompt and "1205822277" in t._prompt
+    assert "do not speculate" in t._prompt.lower()

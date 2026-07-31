@@ -677,6 +677,72 @@ INNOCENT_SCHEMA = {
 }
 
 
+_ARTICLE_RELEVANCE_TEMPLATE = (
+    "Research task, public sources only. Read each of these published items "
+    "in full:\n{urls}\n\n"
+    "Then answer, separately for EACH item: (1) what conduct does it "
+    "describe, in one or two sentences; (2) which providers, companies, or "
+    "programs does it name; (3) does it describe THIS pattern: {pattern}; "
+    "(4) does it mention the billing code(s) {codes}; (5) does it name any "
+    "of these provider numbers: {npis}. Quote the sentences you rely on. "
+    "If an item is behind a paywall or unavailable, say so and find the same "
+    "story from another outlet or the official announcement. End with one "
+    "overall verdict: does the public record in these items already disclose "
+    "the pattern described above (yes / no / partially), and why. Report "
+    "only what the items say; do not speculate."
+)
+
+ARTICLE_RELEVANCE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "conduct_described": {"type": "string"},
+                    "entities_named": {"type": "array",
+                                       "items": {"type": "string"}},
+                    "describes_our_pattern": {"type": "string",
+                                              "enum": ["yes", "no",
+                                                       "partially",
+                                                       "unavailable"]},
+                    "mentions_our_codes": {"type": "boolean"},
+                    "mentions_our_npis": {"type": "boolean"},
+                    "key_quote": {"type": "string"},
+                },
+                "required": ["url", "conduct_described",
+                             "describes_our_pattern"]}},
+        "overall_verdict": {"type": "string",
+                            "enum": ["yes", "no", "partially"]},
+        "why": {"type": "string"},
+    },
+    "required": ["items", "overall_verdict", "why"],
+}
+
+
+def article_relevance_check(urls, pattern: str, codes: str = "",
+                            npis: str = "",
+                            transport: ManusTransport | None = None,
+                            **kw) -> dict:
+    """Do these specific published items disclose OUR pattern?
+
+    The pattern-level disclosure screen surfaces adjacent hits (same state,
+    same service line, different conduct). This reads the named items and
+    answers the only question that matters for the FCA public-disclosure
+    bar: is THIS conduct already in them."""
+    url_list = "\n".join(f"- {u}" for u in urls)
+    out = run_research(
+        _ARTICLE_RELEVANCE_TEMPLATE.format(
+            urls=url_list, pattern=pattern, codes=codes or "(none specified)",
+            npis=npis or "(none specified)"),
+        transport=transport, schema=ARTICLE_RELEVANCE_SCHEMA,
+        label=f"articles_{len(urls)}", **kw)
+    out["query"] = {"task": "article_relevance_check", "n": len(urls)}
+    return out
+
+
 def state_exclusion_sweep(state: str, transport: ManusTransport | None = None,
                           **kw) -> dict:
     """Locate a state's own Medicaid exclusion/termination list (label source)."""
