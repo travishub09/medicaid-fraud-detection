@@ -568,3 +568,38 @@ def test_record_reverification_prompt_and_schema():
     assert "99000000000" in t._prompt
     assert "confirm the dollar amount" in t._prompt
     assert "cannot_verify" in t._prompt          # never-guess instruction
+
+
+def test_pattern_disclosure_screen_asks_the_fca_bar_questions():
+    from src.feeds.manus_research import pattern_disclosure_screen
+    t = _FakeTransport(polls_until_done=1, result={
+        "pattern_publicly_reported": "no",
+        "government_audit_found": "no",
+        "bottom_line": "no public disclosure of this pattern found"})
+    out = pattern_disclosure_screen(
+        pattern="hospice room-and-board code billed on individual provider "
+                "numbers rather than facility numbers",
+        states="RI", codes="T2046", transport=t, sleep=lambda s: None,
+        cache=False)
+    assert out["ok"] is True
+    assert out["result"]["pattern_publicly_reported"] == "no"
+    assert out["query"]["task"] == "pattern_disclosure_screen"
+    # the prompt must chase all four case-killers
+    p = t._prompt
+    assert "T2046" in p and "RI" in p
+    assert "qui tam" in p.lower()
+    assert "audit" in p.lower()
+    assert "who may bill" in p.lower() or "permitted to bill" in p.lower()
+    assert "do not accuse" in p.lower()
+
+
+def test_innocent_audit_returns_structured_strength():
+    from src.feeds.manus_research import innocent_explanation_audit
+    t = _FakeTransport(polls_until_done=1, result={
+        "innocent_explanation": "state waiver program permits it",
+        "strength": "plausible"})
+    out = innocent_explanation_audit("1234567893", "billed T2046 at scale",
+                                     transport=t, sleep=lambda s: None,
+                                     cache=False)
+    assert out["result"]["strength"] == "plausible"
+    assert "STRONGEST" in t._prompt

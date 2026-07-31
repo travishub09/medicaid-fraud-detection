@@ -554,6 +554,129 @@ _INNOCENT_AUDIT_TEMPLATE = (
 )
 
 
+_PATTERN_DISCLOSURE_TEMPLATE = (
+    "Research task, public sources only. Determine whether a BILLING PATTERN "
+    "has already been publicly disclosed. The pattern: {pattern}. State(s): "
+    "{states}. Billing code(s) at issue: {codes}.\n\n"
+    "Search all of the following and report every hit with URL, date, "
+    "publisher, and what it says: (1) federal and state government audit "
+    "reports (HHS-OIG reports and audits, state Auditor General, state "
+    "Medicaid program integrity reports, MFCU annual reports, GAO, MACPAC); "
+    "(2) filed court cases and dockets, including any qui tam / False Claims "
+    "Act case that has been unsealed involving this code, this pattern, or "
+    "these provider types in this state; (3) prior enforcement announcements "
+    "or settlements (DOJ, state AG) involving the same code or pattern "
+    "anywhere in the country; (4) news coverage, local and national; "
+    "(5) state Medicaid provider bulletins, manuals, or rate notices that "
+    "discuss this code and who may bill it.\n\n"
+    "Then answer these questions explicitly and separately:\n"
+    "A. Has this specific pattern in this state been publicly reported? "
+    "(yes/no, with the strongest citation)\n"
+    "B. Has any government audit or program-integrity report examined this "
+    "code in this state? (yes/no, citation)\n"
+    "C. Are there unsealed False Claims Act cases about this code or pattern "
+    "in ANY state? (list them: caption, court, year, outcome, URL)\n"
+    "D. Do the state's own published rules say who is permitted to bill this "
+    "code, and does the published rule contradict or permit the pattern? "
+    "(quote the rule text and cite it)\n\n"
+    "A 'nothing found' answer is valid and useful when you list the searches "
+    "you ran. Report only what is published; do not speculate and do not "
+    "accuse anyone."
+)
+
+PATTERN_DISCLOSURE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "pattern_publicly_reported": {"type": "string",
+                                      "enum": ["yes", "no", "unclear"]},
+        "government_audit_found": {"type": "string",
+                                   "enum": ["yes", "no", "unclear"]},
+        "hits": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string",
+                             "enum": ["government_audit", "court_case",
+                                      "enforcement", "news", "program_rule",
+                                      "other"]},
+                    "title": {"type": "string"},
+                    "publisher": {"type": "string"},
+                    "date": {"type": "string"},
+                    "url": {"type": "string"},
+                    "what_it_says": {"type": "string"},
+                    "mentions_our_state": {"type": "boolean"},
+                    "mentions_our_code": {"type": "boolean"},
+                },
+                "required": ["kind", "title", "url", "what_it_says"]}},
+        "prior_fca_cases": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "caption": {"type": "string"},
+                    "court": {"type": "string"},
+                    "year": {"type": "string"},
+                    "outcome": {"type": "string"},
+                    "url": {"type": "string"},
+                },
+                "required": ["caption"]}},
+        "billing_rule_text": {"type": "string"},
+        "billing_rule_url": {"type": "string"},
+        "rule_permits_pattern": {"type": "string",
+                                 "enum": ["permits", "prohibits", "silent",
+                                          "unclear"]},
+        "searches_run": {"type": "array", "items": {"type": "string"}},
+        "bottom_line": {"type": "string"},
+    },
+    "required": ["pattern_publicly_reported", "government_audit_found",
+                 "bottom_line"],
+}
+
+
+def pattern_disclosure_screen(pattern: str, states: str, codes: str,
+                              transport: ManusTransport | None = None,
+                              **kw) -> dict:
+    """FCA public-disclosure screen at the PATTERN level (not one NPI).
+
+    A qui tam case can be barred when the conduct is already publicly
+    disclosed and the relator is not an original source, so this must run
+    BEFORE money is spent developing a case. It also surfaces the two other
+    case-killers: a government audit already covering the code, and prior
+    unsealed FCA cases on the same pattern elsewhere."""
+    out = run_research(
+        _PATTERN_DISCLOSURE_TEMPLATE.format(pattern=pattern, states=states,
+                                            codes=codes),
+        transport=transport, schema=PATTERN_DISCLOSURE_SCHEMA,
+        label=f"patdisc_{states}", **kw)
+    out["query"] = {"task": "pattern_disclosure_screen", "states": states,
+                    "codes": codes}
+    return out
+
+
+INNOCENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "innocent_explanation": {"type": "string"},
+        "strength": {"type": "string",
+                     "enum": ["strong", "plausible", "weak", "none_found"]},
+        "evidence": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "what": {"type": "string"},
+                    "url": {"type": "string"},
+                    "quote": {"type": "string"},
+                },
+                "required": ["what"]}},
+        "what_would_confirm": {"type": "string"},
+        "what_would_refute": {"type": "string"},
+    },
+    "required": ["innocent_explanation", "strength"],
+}
+
+
 def state_exclusion_sweep(state: str, transport: ManusTransport | None = None,
                           **kw) -> dict:
     """Locate a state's own Medicaid exclusion/termination list (label source)."""
@@ -999,7 +1122,8 @@ def innocent_explanation_audit(npi: str, pattern: str,
     money is spent (the Tulare/hemophilia/IHS kill, institutionalized)."""
     out = run_research(_INNOCENT_AUDIT_TEMPLATE.format(npi=str(npi),
                                                        pattern=pattern),
-                       transport=transport, label=f"innocent_{npi}", **kw)
+                       transport=transport, schema=INNOCENT_SCHEMA,
+                       label=f"innocent_{npi}", **kw)
     out["query"] = {"task": "innocent_explanation_audit", "npi": str(npi)}
     return out
 
