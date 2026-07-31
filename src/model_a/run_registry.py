@@ -7,10 +7,16 @@ into an APPEND-ONLY registry so releases are comparable over time and a bad
 release can be rolled back by pointing consumers at the previous champion.
 
   preregister  python -m src.model_a.run_registry --preregister --tag v3 \
-                   --goal "..." --expected "lift delta >= +0.5, CI clear"
+                   --goal "..." --expected "lift delta >= +0.5, CI clear" \
+                   --check "lift_lo > 0" "sources_evaluated >= 2"
                LOCKS the hypothesis and acceptance bar with a timestamp
                BEFORE the run exists — measured-vs-declared is then shown
                side by side, so impact can never be narrated after the fact.
+               --expected is the prose for humans; --check is the ENFORCED
+               half, evaluated against the registered row (an unmet check is
+               a HOLD). Prose alone cannot gate a release: the v3 run declared
+               "scheme_eval evaluates at least 2 sources", delivered one, and
+               was PROMOTEd because nothing read the sentence.
   register     python -m src.model_a.run_registry --run-dir <folder> --tag v2
                parses the run folder's reports into one KPI row (plus a
                REPRODUCIBILITY CAPSULE: git commit, library versions, input
@@ -42,9 +48,10 @@ machine" is always one lookup.
 
 PROMOTION POLICY (encoded in recommend()):
   PROMOTE   0 expectation FAILs, network verdict KEEP, ablation lift CI clear
-            of zero, and lift delta not more than 0.15 below the reigning
-            champion's.
-  HOLD      any FAILs, a CI that includes zero, or a >0.15 lift-delta drop —
+            of zero, lift delta not more than 0.15 below the reigning
+            champion's, AND every machine check the run pre-registered.
+  HOLD      any FAILs, a CI that includes zero, a >0.15 lift-delta drop, or a
+            declared check that failed (or that the run never measured) —
             investigate before shipping; the champion stays the champion.
   Rollback = the champion pointer: consumers (Travis handoffs, dossiers,
   company lists) read from the champion run's folder, which is never deleted.
@@ -157,6 +164,21 @@ def parse_run_dir(run_dir: str | Path) -> dict:
         row["catches_core_only"] = _search(
             r"core only[^|]*\|\s*(\d+)", oof, int)
 
+    sch = _read(d / "SCHEME_EVAL.md")
+    if sch:
+        heads = [ln for ln in sch.splitlines() if ln.startswith("## ")]
+        row["schemes_evaluated"] = sum(
+            1 for h in heads if h.strip().lower() != "## skipped")
+        tail = sch.split("## Skipped", 1)
+        row["schemes_skipped"] = (
+            sum(1 for ln in tail[1].splitlines() if ln.startswith("- "))
+            if len(tail) > 1 else 0)
+
+    srp = _read(d / "SOURCES_REPORT.md")
+    if srp:
+        row["sources_used"] = _search(r"_(\d+) source\(s\) contributed", srp, int)
+        row["sources_skipped"] = _search(r";\s*(\d+) skipped", srp, int)
+
     try:
         row["git_commit"] = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True,
@@ -232,11 +254,91 @@ def cohort_usage(rows: list[dict], warn_at: int = 5) -> list[str]:
             for c, n in counts.items() if n > warn_at]
 
 
-def recommend(rows: list[dict]) -> dict:
-    """PROMOTE / HOLD for the newest run + the current champion pointer."""
+# --- machine-checkable acceptance bars -------------------------------------
+# A pre-registered bar written only as prose ("… and scheme_eval evaluates at
+# least 2 sources inside fair cohorts") cannot be enforced: recommend() reads
+# registry FIELDS, not English. The v3 run made that concrete — the declared bar
+# named a two-source scheme_eval, the run delivered one, and the four mechanical
+# gates promoted it anyway because none of them looks at the prose. So a
+# pre-registration may now also carry CHECKS: tiny "<metric><op><value>"
+# expressions evaluated against the registered row. An unmet check is a HOLD,
+# exactly like an expectation FAIL, and a metric the run never measured is also a
+# HOLD ("declared but unverifiable" is not a pass).
+
+CHECK_ALIASES = {
+    "lift_delta": "ablation_lift_delta", "lift_lo": "ablation_lift_lo",
+    "lift_hi": "ablation_lift_hi", "roc_delta": "ablation_roc_delta",
+    "roc_lo": "ablation_roc_lo", "roc_hi": "ablation_roc_hi",
+    "pr_delta": "ablation_pr_delta", "pr_lo": "ablation_pr_lo",
+    "fails": "expectation_fails", "warns": "expectation_warns",
+    "network": "network_verdict", "positives": "forward_positives",
+    "sources_evaluated": "schemes_evaluated",
+    "columns": "n_columns", "providers": "n_providers",
+}
+_CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"
+                       r"(>=|<=|==|!=|=|>|<)\s*(.+?)\s*$")
+
+
+def parse_check(expr: str) -> tuple[str, str, str]:
+    """'sources_evaluated >= 2' → ('schemes_evaluated', '>=', '2'). Raises on
+    anything unparseable so a typo is caught at DECLARE time, not at judgement
+    time when it would silently wave a run through."""
+    m = _CHECK_RE.match(str(expr))
+    if not m:
+        raise ValueError(
+            f"cannot parse check {expr!r} — use '<metric> <op> <value>', "
+            f"e.g. 'lift_lo > 0' or 'network = KEEP'")
+    metric, op, value = m.group(1), m.group(2), m.group(3)
+    return CHECK_ALIASES.get(metric, metric), op, value
+
+
+def eval_check(expr: str, row: dict) -> dict:
+    """One declared check against one registered run row."""
+    metric, op, value = parse_check(expr)
+    actual = row.get(metric)
+    out = {"expr": expr, "metric": metric, "op": op, "value": value,
+           "actual": actual}
+    if actual is None:
+        out.update(ok=False, why=f"{metric} was not measured in this run")
+        return out
+    try:                                   # numeric comparison when both sides are
+        a, b = float(actual), float(value)  # numbers; string compare otherwise
+    except (TypeError, ValueError):
+        a, b = str(actual).strip().upper(), str(value).strip().upper()
+        if op in ("=", "=="):
+            ok = a.startswith(b)           # 'KEEP / ...' satisfies 'KEEP'
+        elif op == "!=":
+            ok = not a.startswith(b)
+        else:
+            out.update(ok=False, why=f"{op} needs numbers, got {actual!r}")
+            return out
+        out.update(ok=ok, why="" if ok else f"{metric} is {actual!r}, "
+                                            f"declared {op} {value}")
+        return out
+    ok = {">=": a >= b, "<=": a <= b, ">": a > b, "<": a < b,
+          "=": a == b, "==": a == b, "!=": a != b}[op]
+    out.update(ok=ok, why="" if ok else
+               f"{metric} is {actual:g}, declared {op} {value}")
+    return out
+
+
+def check_prereg(row: dict, prereg_entry: dict | None) -> list[dict]:
+    """Every machine check declared for this run, evaluated."""
+    if not prereg_entry:
+        return []
+    return [eval_check(c, row) for c in (prereg_entry.get("checks") or [])]
+
+
+def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
+    """PROMOTE / HOLD for the newest run + the current champion pointer.
+
+    Four mechanical gates (FAILs, network KEEP, lift CI, lift-delta drop) plus
+    every machine-checkable criterion the run's own pre-registration declared."""
     if not rows:
         return {"decision": "NONE", "champion": None, "reasons": []}
     latest = rows[-1]
+    pr_by_tag = {p.get("tag"): p for p in (prereg or [])}
+    checks = check_prereg(latest, pr_by_tag.get(latest.get("tag")))
     champion = None
     for r in rows[:-1]:
         if r.get("decision") == "PROMOTE":
@@ -261,11 +363,20 @@ def recommend(rows: list[dict]) -> dict:
         if prev is not None and cur is not None and cur < prev - 0.15:
             reasons.append(f"lift delta dropped {prev - cur:.2f} vs champion "
                            f"'{champion.get('tag')}' (>0.15 threshold)")
+    for c in checks:
+        if not c["ok"]:
+            reasons.append(f"pre-registered check failed — {c['why']}")
     decision = "HOLD" if reasons else "PROMOTE"
     new_champion = latest if decision == "PROMOTE" else champion
+    # An acceptance bar written in prose with no machine checks behind it is a
+    # bar nothing enforces. Say so on the report rather than letting a PROMOTE
+    # imply the whole declared bar was verified.
+    entry = pr_by_tag.get(latest.get("tag"))
+    unenforced = bool(entry and entry.get("expected") and not checks)
     return {"decision": decision, "reasons": reasons,
             "champion": (new_champion or {}).get("tag"),
-            "champion_dir": (new_champion or {}).get("run_dir")}
+            "champion_dir": (new_champion or {}).get("run_dir"),
+            "checks": checks, "unenforced_prereg": unenforced}
 
 
 def _fmt(v, spec=""):
@@ -288,7 +399,8 @@ def to_markdown(rows: list[dict], rec: dict,
     L.append("**Policy.** Every major run is registered here with its KPIs and "
              "file locations. PROMOTE requires: zero expectation FAILs, a KEEP "
              "network verdict, an ablation lift CI clear of zero, and no more "
-             "than a 0.15 lift-delta drop vs the reigning champion. Anything "
+             "than a 0.15 lift-delta drop vs the reigning champion — plus every "
+             "machine check the run's own pre-registration declared. Anything "
              "else is HOLD: investigate before shipping, and keep pointing "
              "consumers (Travis handoffs, company lists, dossiers) at the "
              "champion run's folder below. Run folders are immutable — "
@@ -300,6 +412,19 @@ def to_markdown(rows: list[dict], rec: dict,
     L.append(f"**Latest run decision:** **{rec.get('decision')}**"
              + ("" if not rec.get("reasons")
                 else " — " + "; ".join(rec["reasons"])))
+    if rec.get("unenforced_prereg"):
+        L.append("")
+        L.append("> ⚠ **The declared bar for this run is prose only.** Its "
+                 "pre-registration carries no `--check` expressions, so the "
+                 "decision above reflects the four standing gates and NOT the "
+                 "rest of what was declared. Read the declared-vs-measured "
+                 "section below and judge those criteria by hand; pre-register "
+                 "the next run with `--check` so the machine does it.")
+    if rec.get("checks"):
+        L.append("")
+        L.append("**Pre-registered checks on the latest run:** "
+                 + "; ".join(f"{c['expr']} → {'PASS' if c['ok'] else 'FAIL'}"
+                             for c in rec["checks"]))
     L.append("")
     L.append("| run | registered | providers×cols | fwd positives | expect "
              "FAILs | network | ablation lift Δ [CI] | full/core-only catches "
@@ -344,7 +469,19 @@ def to_markdown(rows: list[dict], rec: dict,
                          f"[{_fmt(r.get('ablation_lift_lo'), '+.3f')}, "
                          f"{_fmt(r.get('ablation_lift_hi'), '+.3f')}], "
                          f"FAILs {_fmt(r.get('expectation_fails'))}, "
-                         f"verdict {(r.get('network_verdict') or '—')[:20]}")
+                         f"verdict {(r.get('network_verdict') or '—')[:20]}, "
+                         f"scheme_eval sources {_fmt(r.get('schemes_evaluated'))} "
+                         f"evaluated / {_fmt(r.get('schemes_skipped'))} skipped, "
+                         f"inputs {_fmt(r.get('sources_used'))} used / "
+                         f"{_fmt(r.get('sources_skipped'))} skipped")
+                for c in check_prereg(r, p):
+                    L.append(f"  - check `{c['expr']}` → "
+                             f"**{'PASS' if c['ok'] else 'FAIL'}**"
+                             + ("" if c["ok"] else f" ({c['why']})"))
+                if p.get("expected") and not p.get("checks"):
+                    L.append("  - ⚠ no machine checks declared — the acceptance "
+                             "bar above was NOT enforced by the decision; "
+                             "verify it by hand")
             else:
                 L.append("  measured — run not registered yet")
     warns = cohort_usage(rows)
@@ -741,6 +878,20 @@ def _timeline_html(rows: list[dict], history: list[dict],
                         f'({_esc(str(p.get("declared_at", ""))[:16])}): '
                         f'{_gloss(_esc(p.get("goal", "")))} — acceptance: '
                         f'{_gloss(_esc(p.get("expected", "")))}</p>')
+            checks = check_prereg(r, p)
+            if checks:
+                declared += "<ul>" + "".join(
+                    f'<li><code>{_esc(c["expr"])}</code> → '
+                    f'<span class="badge {"ok" if c["ok"] else "warn"}">'
+                    f'{"PASS" if c["ok"] else "FAIL"}</span>'
+                    + ("" if c["ok"] else f' {_esc(c["why"])}') + "</li>"
+                    for c in checks) + "</ul>"
+            elif p.get("expected"):
+                declared += ('<p class="note">⚠ No machine checks were declared '
+                             'for this run, so the acceptance bar above was not '
+                             'enforced by the PROMOTE/HOLD decision — only the '
+                             'four standing gates were. Verify the rest by '
+                             'hand.</p>')
         lift = (f"{_fmt(r.get('ablation_lift_delta'), '+.3f')} "
                 f"[{_fmt(r.get('ablation_lift_lo'), '+.3f')}, "
                 f"{_fmt(r.get('ablation_lift_hi'), '+.3f')}]")
@@ -804,7 +955,12 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
                  if rec.get("champion_dir") else "")
               + f'<br><b>Latest run decision:</b> {_dfn(dec, dec)}'
               + (": " + _gloss(_esc("; ".join(rec.get("reasons", []))))
-                 if rec.get("reasons") else "") + "</div>")
+                 if rec.get("reasons") else "")
+              + ('<p class="note">⚠ This run\'s declared acceptance bar is '
+                 'prose with no machine checks behind it, so the decision '
+                 'above enforced only the four standing gates. Check the rest '
+                 'of the declared bar by hand.</p>'
+                 if rec.get("unenforced_prereg") else "") + "</div>")
 
     terms = ('<div class="card"><h2>Terms used on this page</h2>'
              '<p class="note">Hover any dotted-underline word for its '
@@ -906,6 +1062,14 @@ def main() -> None:
     ap.add_argument("--expected", default=None,
                     help="with --preregister: the acceptance bar, e.g. "
                          "'lift delta CI clear of zero and >= champion-0.15'")
+    ap.add_argument("--check", nargs="+", default=None,
+                    help="with --preregister: the ENFORCED half of the bar, one "
+                         "or more '<metric> <op> <value>' expressions checked "
+                         "against the registered run — an unmet check is a HOLD. "
+                         "e.g. --check \"lift_lo > 0\" \"sources_evaluated >= 2\" "
+                         "\"fails = 0\" \"network = KEEP\". Metrics are registry "
+                         "fields (aliases: " + ", ".join(sorted(CHECK_ALIASES))
+                         + ")")
     # independent-review sign-off
     ap.add_argument("--signoff", action="store_true")
     ap.add_argument("--by", default=None, help="with --signoff: reviewer name")
@@ -930,13 +1094,23 @@ def main() -> None:
         if any(p.get("tag") == args.tag for p in prereg):
             raise SystemExit(f"tag '{args.tag}' already pre-registered — "
                              "pre-registrations are locked, pick a new tag")
+        for c in (args.check or []):       # fail loudly on a typo, now, not later
+            parse_check(c)
         entry = {"tag": args.tag, "goal": args.goal, "expected": args.expected,
+                 "checks": list(args.check or []),
                  "declared_at": datetime.now(timezone.utc).isoformat(
                      timespec="seconds")}
         _append_jsonl(pre_path, entry)
         prereg.append(entry)
         print(f"[run_registry] pre-registered '{args.tag}' — goal locked at "
               f"{entry['declared_at']}")
+        if entry["checks"]:
+            print("  enforced checks: " + "; ".join(entry["checks"]))
+        else:
+            print("  WARNING: no --check given, so the acceptance bar is prose "
+                  "only. recommend() cannot enforce prose; add --check "
+                  "expressions (e.g. --check \"sources_evaluated >= 2\") or the "
+                  "run can be PROMOTEd without meeting its declared bar.")
     elif args.signoff:
         if not (args.tag and args.by and args.status):
             raise SystemExit("--signoff needs --tag, --by, --status")
@@ -955,7 +1129,7 @@ def main() -> None:
         row = parse_run_dir(args.run_dir)
         if args.tag:
             row["tag"] = args.tag
-        rec_now = recommend(rows + [row])
+        rec_now = recommend(rows + [row], prereg)
         row["decision"] = rec_now["decision"]
         rows.append(row)
         _append_jsonl(reg_path, row)
@@ -968,7 +1142,7 @@ def main() -> None:
         except Exception:
             hist_rows = []
 
-    rec = recommend(rows)
+    rec = recommend(rows, prereg)
     report = reg_dir / "MODEL_RUNS.md"
     report.write_text(to_markdown(rows, rec, prereg, signoffs, hist_rows),
                       encoding="utf-8")

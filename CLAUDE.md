@@ -304,7 +304,12 @@ python -m pytest tests/ -v
   `clean_data.read_csv_text` (UTF-8 → Latin-1 fallback) + `encoding='latin-1'` on the
   DuckDB `read_csv_auto` paths, so CP1252/Latin-1 CMS files (stray 0xA0 bytes) load
   instead of crashing; every raw-CSV entry point routes through it.
-  Full suite: `pytest tests/` (349 tests).
+  Release gating: a pre-registration's `--expected` prose is for humans and the
+  new `--check "<metric> <op> <value>"` expressions are the ENFORCED half —
+  `recommend()` evaluates them against the registered row, and an unmet (or
+  unmeasured) check is a HOLD. A prose-only bar is labelled "not enforced" on
+  the report instead of being silently waved through.
+  Full suite: `pytest tests/` (636 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

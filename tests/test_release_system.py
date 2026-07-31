@@ -70,6 +70,87 @@ def test_html_renders_from_data():
     assert "<svg" in html and "+0.550" in html and "v1" in html
 
 
+# ---------------- machine-checkable acceptance bars ------------------------
+
+def _passing_row(**over):
+    row = {"tag": "v3", "registered_at": "2026-07-31T00:00:00",
+           "expectation_fails": 0, "network_verdict": "KEEP (matched)",
+           "ablation_lift_delta": 0.66, "ablation_lift_lo": 0.30,
+           "ablation_lift_hi": 1.00, "eval_cohort": "2023-12",
+           "run_dir": "/x/v3", "schemes_evaluated": 1, "schemes_skipped": 6}
+    row.update(over)
+    return row
+
+
+def test_parse_check_aliases_and_rejects_garbage():
+    from src.model_a.run_registry import parse_check
+    assert parse_check("sources_evaluated >= 2") == (
+        "schemes_evaluated", ">=", "2")
+    assert parse_check("lift_lo>0") == ("ablation_lift_lo", ">", "0")
+    assert parse_check("network = KEEP") == ("network_verdict", "=", "KEEP")
+    for bad in ("", "at least two sources", ">= 2"):
+        with pytest.raises(ValueError):
+            parse_check(bad)
+
+
+def test_eval_check_numeric_string_and_unmeasured():
+    from src.model_a.run_registry import eval_check
+    row = _passing_row()
+    assert eval_check("lift_lo > 0", row)["ok"]
+    assert not eval_check("sources_evaluated >= 2", row)["ok"]
+    assert eval_check("network = KEEP", row)["ok"]        # prefix match
+    assert not eval_check("network = DROP", row)["ok"]
+    # a metric the run never measured is a FAIL, not a silent pass
+    miss = eval_check("sources_used >= 20", row)
+    assert not miss["ok"] and "not measured" in miss["why"]
+
+
+def test_unmet_prereg_check_forces_hold():
+    """The v3 gap: a declared 'two sources evaluated' bar that the four
+    standing gates cannot see. With a check, it HOLDs."""
+    from src.model_a.run_registry import recommend
+    rows = [_passing_row()]
+    assert recommend(rows)["decision"] == "PROMOTE"       # gates alone pass it
+    prereg = [{"tag": "v3", "goal": "g", "expected": "prose",
+               "checks": ["lift_lo > 0", "sources_evaluated >= 2"]}]
+    rec = recommend(rows, prereg)
+    assert rec["decision"] == "HOLD"
+    assert any("pre-registered check failed" in r for r in rec["reasons"])
+    assert [c["ok"] for c in rec["checks"]] == [True, False]
+    # and it promotes once the run actually meets the declared bar
+    ok = recommend([_passing_row(schemes_evaluated=3)], prereg)
+    assert ok["decision"] == "PROMOTE" and ok["champion"] == "v3"
+
+
+def test_prose_only_prereg_is_flagged_as_unenforced():
+    from src.model_a.run_registry import recommend, to_markdown, to_html
+    rows = [_passing_row()]
+    prereg = [{"tag": "v3", "goal": "g",
+               "expected": "scheme_eval evaluates at least 2 sources"}]
+    rec = recommend(rows, prereg)
+    assert rec["decision"] == "PROMOTE" and rec["unenforced_prereg"]
+    md = to_markdown(rows, rec, prereg, [])
+    assert "prose only" in md and "scheme_eval sources 1 evaluated" in md
+    assert "no machine checks declared" in md
+    assert "No machine checks were declared" in to_html(rows, rec, prereg, [])
+
+
+def test_parse_run_dir_reads_scheme_and_source_counts(tmp_path):
+    from src.model_a.run_registry import parse_run_dir
+    d = tmp_path / "v3"
+    d.mkdir()
+    (d / "SCHEME_EVAL.md").write_text(
+        "# scheme eval\n\n## medicare_puf → upcoding\n\nbody\n\n"
+        "## Skipped\n\n- opioid: only 1 positive\n- hcris: only 0 positives\n",
+        encoding="utf-8")
+    (d / "SOURCES_REPORT.md").write_text(
+        "# SOURCES_REPORT\n\n_31 source(s) contributed features; 4 skipped. "
+        "A skip is usually a missing file._\n", encoding="utf-8")
+    row = parse_run_dir(d)
+    assert row["schemes_evaluated"] == 1 and row["schemes_skipped"] == 2
+    assert row["sources_used"] == 31 and row["sources_skipped"] == 4
+
+
 # ---------------- lead dispositions ---------------------------------------
 
 def test_disposition_log_and_precision(tmp_path):
