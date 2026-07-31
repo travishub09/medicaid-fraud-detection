@@ -304,6 +304,13 @@ python -m pytest tests/ -v
   `clean_data.read_csv_text` (UTF-8 → Latin-1 fallback) + `encoding='latin-1'` on the
   DuckDB `read_csv_auto` paths, so CP1252/Latin-1 CMS files (stray 0xA0 bytes) load
   instead of crashing; every raw-CSV entry point routes through it.
+  Label-source ablation (`model_a/label_ablation.py`): the label counterpart of
+  source_ablation — retrains OOF with one label source's positives removed
+  (leie / opensanctions / sam / medicare_revocation / doj_case / …, from the
+  `exclusion_label_sources` provenance), same screened features + folds, and
+  measures the forward-lift delta per source with a cluster-bootstrap CI.
+  Overlap guard reports the lift with training∩forward positives removed.
+  Conclusions feed the NEXT pre-registration's label choice; never gate a run.
   Release gating: a pre-registration's `--expected` prose is for humans and the
   new `--check "<metric> <op> <value>"` expressions are the ENFORCED half —
   `recommend()` evaluates them against the registered row, and an unmet (or
