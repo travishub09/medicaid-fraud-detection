@@ -161,7 +161,11 @@ def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
             "n_jcodes", "n_manufacturers", "op_total_dollars", "opioid_claims",
             "services_per_bene", "allowed_per_bene", "code_concentration_hhi",
             "brand_generic_cost_ratio", "dme_code_concentration", "pos_bed_count",
-            "first_service_month", "last_service_month"}
+            "first_service_month", "last_service_month",
+            # ownership-churn raw counts (ownership_turnover is the feature) and
+            # the NADAC name-match coverage denominator (brand_premium_share is
+            # the feature)
+            "n_owner_entries", "n_owner_exits", "nadac_matched_share"}
 
     def _bucket(c: str) -> str:
         if c.startswith("evidence_n_"):
@@ -498,7 +502,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # graph embeddings (all clean); the fraud-proximity DELTA stays leakage-adjacent.
     from .billing_lm import EMB_PREFIX as _BILL_EMB
     billing_emb_cols = [c for c in out.columns if c.startswith(_BILL_EMB)]
-    extra_clean = [c for c in ["addr_is_mailbox", "addr_provider_count", "addr_shared",
+    extra_clean = [c for c in ["nadac_brand_premium_share",
+                               "addr_is_mailbox", "addr_provider_count", "addr_shared",
                                "addr_is_cmra", "addr_distinct_orgs", "addr_cluster_degree",
                                "addr_geocoded", "addr_no_match",
                                "graph_emb_drift", "graph_degree_delta", "graph_kcore_delta",
@@ -1941,7 +1946,7 @@ def main() -> None:
                                                errors="coerce") > 0).sum())
                     audit(f"    [mue] {len(mue_tbl):,} MUE codes from {len(mue_paths)} table(s); {len(mv):,} NPIs "
                           f"scored, {n_hot:,} with a violating (code, month) cell "
-                          f"(from {Path(mue_p).name})")
+                          f"(fact: {Path(spend_mue).name})")
                 else:
                     audit("    [mue] skipped: no fact rows matched the MUE codes")
             else:
