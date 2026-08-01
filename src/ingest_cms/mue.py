@@ -132,7 +132,11 @@ def compute_mue_violations(spending_path: str | Path,
             GROUP BY 1, 2, 3
         ),
         judged AS (
-            SELECT c.npi, c.paid,
+            -- refund/adjustment cells carry negative paid; as raw dollars they
+            -- push the share outside [0,1] (negative numerator, or a shrunken
+            -- denominator under the violating dollars). One-sided rule: only
+            -- positive dollars are service activity a share can sit on.
+            SELECT c.npi, GREATEST(c.paid, 0) AS paid,
                    c.lines / (mue.mue_units * ({days_case})) AS ratio
             FROM cell c JOIN mue ON c.hcpcs = mue.hcpcs
         )

@@ -163,3 +163,29 @@ def test_build_provider_code_raises_on_missing_column(tmp_path):
     bad.to_parquet(sp); dim.to_parquet(dp)
     with pytest.raises(ValueError, match="paid amount"):
         build_provider_code(str(sp), str(dp))
+
+
+def test_facility_share_negative_paid_stays_in_unit_interval(tmp_path):
+    """The run-6 FAIL twin: an individual with a refunded (negative) row could
+    land facility_code_share slightly below 0 or above 1."""
+    from src.entity_graph.code_rings import compute_facility_code_share
+    rows = []
+    for i in range(2):                                   # T2046 org-dominated
+        rows.append({"billing_npi": f"2{i:09d}", "hcpcs_code": "T2046",
+                     "total_paid": 30_000_000, "entity_type": "2"})
+    # individual: facility dollars positive, normal code REFUNDED (negative)
+    rows.append({"billing_npi": "1457794422", "hcpcs_code": "T2046",
+                 "total_paid": 2_000_000, "entity_type": "1"})
+    rows.append({"billing_npi": "1457794422", "hcpcs_code": "99213",
+                 "total_paid": -500_000, "entity_type": "1"})
+    # individual: facility row refunded, normal row positive
+    rows.append({"billing_npi": "1093079006", "hcpcs_code": "T2046",
+                 "total_paid": -10_000, "entity_type": "1"})
+    rows.append({"billing_npi": "1093079006", "hcpcs_code": "99213",
+                 "total_paid": 1_000_000, "entity_type": "1"})
+    sp = tmp_path / "fact_neg.parquet"
+    pd.DataFrame(rows).to_parquet(sp)
+    fc = compute_facility_code_share(str(sp), min_code_total=1_000_000).set_index("npi")
+    assert ((fc["facility_code_share"] >= 0) & (fc["facility_code_share"] <= 1)).all()
+    assert fc.loc["1457794422", "facility_code_share"] == 1.0
+    assert fc.loc["1093079006", "facility_code_share"] == 0.0

@@ -91,3 +91,38 @@ def test_load_mue_tables_merges_most_permissive():
     assert by["E0601"] == 3          # highest limit wins (conservative)
     assert by["K0001"] == 1
     assert len(merged) == 3
+
+
+def test_negative_paid_cells_cannot_push_share_outside_unit_interval(tmp_path):
+    """Refund/adjustment months carry negative paid. Raw, they made
+    mue_violation_share go negative (violating cell refunded) or above 1
+    (clean cells refunded below the violating dollars) — the run-6
+    share_out_of_bounds FAIL. One-sided rule: only positive dollars count."""
+    rows = [
+        # violating cell (200 lines vs bound 30) that was REFUNDED
+        {"billing_npi": "1111111111", "hcpcs_code": "J2505",
+         "service_month": "2023-06", "total_claim_lines": 200,
+         "total_paid": -5_000},
+        {"billing_npi": "1111111111", "hcpcs_code": "99213",
+         "service_month": "2023-06", "total_claim_lines": 10,
+         "total_paid": 50_000},
+        # violator whose CLEAN cell is a big refund: raw share would be
+        # 100k / (100k - 90k) = 10.0
+        {"billing_npi": "2222222222", "hcpcs_code": "J2505",
+         "service_month": "2023-06", "total_claim_lines": 200,
+         "total_paid": 100_000},
+        {"billing_npi": "2222222222", "hcpcs_code": "99213",
+         "service_month": "2023-06", "total_claim_lines": 10,
+         "total_paid": -90_000},
+    ]
+    p = tmp_path / "fact_neg.parquet"
+    pd.DataFrame(rows).to_parquet(p)
+    res = compute_mue_violations(p, load_mue_table(_mue_csv(tmp_path))).set_index("npi")
+    assert ((res["mue_violation_share"].fillna(0) >= 0)
+            & (res["mue_violation_share"].fillna(0) <= 1)).all()
+    assert res.loc["1111111111", "mue_violation_share"] == 0.0
+    assert res.loc["2222222222", "mue_violation_share"] == 1.0
+    # the refunded violation still COUNTS as a cell (conduct happened) but
+    # carries no positive dollars
+    assert res.loc["1111111111", "n_mue_violation_cells"] == 1
+    assert res.loc["1111111111", "mue_violation_dollars"] == 0.0

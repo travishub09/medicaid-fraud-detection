@@ -246,9 +246,11 @@ def compute_facility_code_share(spending_path: str,
               AND org_paid / NULLIF(code_total, 0) >= {float(org_share_min)}
         )
         SELECT pc.npi,
-               SUM(CASE WHEN fac.hcpcs IS NOT NULL THEN pc.paid ELSE 0 END)
-                   / NULLIF(SUM(pc.paid), 0)                    AS facility_code_share,
-               SUM(CASE WHEN fac.hcpcs IS NOT NULL THEN pc.paid ELSE 0 END)
+               -- GREATEST: refund rows (negative paid) are not service activity;
+               -- raw they push the share outside [0,1] (the run-6 FAIL)
+               SUM(CASE WHEN fac.hcpcs IS NOT NULL THEN GREATEST(pc.paid, 0) ELSE 0 END)
+                   / NULLIF(SUM(GREATEST(pc.paid, 0)), 0)       AS facility_code_share,
+               SUM(CASE WHEN fac.hcpcs IS NOT NULL THEN GREATEST(pc.paid, 0) ELSE 0 END)
                                                                 AS facility_code_paid,
                COUNT(DISTINCT CASE WHEN fac.hcpcs IS NOT NULL
                                    THEN pc.hcpcs END)           AS n_facility_codes
