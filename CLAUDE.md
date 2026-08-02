@@ -316,7 +316,13 @@ python -m pytest tests/ -v
   `recommend()` evaluates them against the registered row, and an unmet (or
   unmeasured) check is a HOLD. A prose-only bar is labelled "not enforced" on
   the report instead of being silently waved through.
-  Full suite: `pytest tests/` (636 tests).
+  Crash-resume checkpointing (`_ResumeCache` in the provider export): every
+  adapter/org/analytics frame is written to `<out>/_resume_cache/` the moment
+  it is computed, so a killed multi-hour build restarts from the last finished
+  source instead of from zero. Keyed to git commit + freeze args (stale caches
+  self-invalidate — never serve pre-bugfix frames); cleared on successful
+  completion; `--no-resume-cache` disables.
+  Full suite: `pytest tests/` (652 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -1004,6 +1004,73 @@ class _SourceAudit:
         return rows
 
 
+class _ResumeCache:
+    """Crash insurance for the multi-hour build.
+
+    The export is a single long transaction that only commits (writes the
+    matrix) at the very end — a power loss at hour three used to cost the whole
+    night. This checkpoints every adapter frame to
+    ``<out>/_resume_cache/<name>.parquet`` the moment it is computed; a
+    restarted run reloads finished frames and recomputes only what was in
+    flight when the machine died.
+
+    Staleness guard: the cache is keyed to the git commit and the arguments
+    that change feature VALUES (asof cutoff, analytics, trends). Any mismatch
+    wipes the cache — this week's mid-retry code fixes (the mue log crash, the
+    share clamp) are exactly the scenario where silently serving pre-fix
+    frames would poison the matrix. The cache is deleted on successful
+    completion, so it only ever exists for a run that died."""
+
+    def __init__(self, out_dir: Path, log, key: dict):
+        import shutil
+        self.dir = Path(out_dir) / "_resume_cache"
+        self.log = log
+        self._saved: set[str] = set()
+        meta = self.dir / "_meta.json"
+        if self.dir.exists():
+            old = None
+            try:
+                old = json.loads(meta.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+            if old != key:
+                shutil.rmtree(self.dir, ignore_errors=True)
+                log("  [resume] stale cache discarded (code or freeze args "
+                    "changed since it was written)")
+        self.dir.mkdir(parents=True, exist_ok=True)
+        meta.write_text(json.dumps(key), encoding="utf-8")
+
+    def load(self, prefix: str = "") -> dict:
+        out = {}
+        for p in sorted(self.dir.glob(f"{prefix}*.parquet")):
+            name = p.stem[len(prefix):] if prefix else p.stem
+            if not prefix and "__" in p.stem:
+                continue                      # prefixed families load separately
+            try:
+                out[name] = pd.read_parquet(p)
+                self._saved.add(p.stem)
+            except Exception:
+                p.unlink(missing_ok=True)     # half-written at crash time
+        return out
+
+    def save_frames(self, frames: dict, prefix: str = "") -> None:
+        for name, df in frames.items():
+            stem = f"{prefix}{name}"
+            if stem in self._saved or df is None or not hasattr(df, "to_parquet"):
+                continue
+            try:
+                tmp = self.dir / f"{stem}.parquet.tmp"
+                df.to_parquet(tmp, index=False)
+                tmp.replace(self.dir / f"{stem}.parquet")   # atomic-ish commit
+                self._saved.add(stem)
+            except Exception as e:
+                self.log(f"  [resume] could not checkpoint {stem}: {e}")
+
+    def clear(self) -> None:
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+
 def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                       max_year: int | None = None,
                       no_trends: bool = False,
@@ -1296,16 +1363,18 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # specialty_mismatch via pass-through (already one-sided percentiles). Opt-in
     # because they add a couple of streaming passes over the fact.
     if with_analytics and spending_p:
-        try:
+        if not _skipped("growth"):
+          try:
             from src.analytics import growth
             gp = growth.growth_percentiles(
                 growth.growth_features_from_parquet(str(spending_p), npi_to_org))
             if len(gp):
                 frames["growth"] = gp
                 log(f"    [growth] {len(gp):,} orgs, cols: growth_level_shift, new_code_burst")
-        except Exception as e:
+          except Exception as e:
             log(f"    [growth] skipped: {e}")
-        try:
+        if not _skipped("plausibility"):
+          try:
             from src.analytics import plausibility
             pdim_p = _first_existing(proc, "provider_dim.parquet")
             if pdim_p:
@@ -1317,7 +1386,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
                     log(f"    [plausibility] {len(pp):,} orgs, cols: clinical_implausibility")
             else:
                 log("    [plausibility] skipped: needs processed/provider_dim.parquet")
-        except Exception as e:
+          except Exception as e:
             log(f"    [plausibility] skipped: {e}")
     elif not with_analytics:
         log("    [growth/plausibility] skipped: pass --with-analytics "
@@ -1662,6 +1731,14 @@ def main() -> None:
                     help="comma-separated source names to skip (e.g. "
                          "'kickback,billing_lm') — a safety valve for a memory-heavy "
                          "adapter on a tight box; the column is simply absent (NaN)")
+    ap.add_argument("--no-resume-cache", action="store_true",
+                    help="disable the crash-resume cache (<out>/_resume_cache): by "
+                         "default every adapter frame is checkpointed to disk the "
+                         "moment it is computed, so a killed multi-hour build "
+                         "restarts from the last finished source instead of from "
+                         "zero. The cache is keyed to the git commit + freeze args "
+                         "(stale caches self-invalidate) and is deleted when the "
+                         "run completes.")
     args = ap.parse_args()
     skip = {s.strip().lower() for s in (args.skip_sources or "").split(",") if s.strip()}
 
@@ -1672,6 +1749,7 @@ def main() -> None:
     # ends with one SOURCES_REPORT table (used/skipped + reason + file), not a console
     # the operator has to grep. ``audit`` IS the log everywhere a source is reported.
     audit = _SourceAudit(print)
+    rescache = None                    # set on real-data runs unless disabled
 
     if args.fixture:
         from src.entity_graph.__main__ import run as run_graph
@@ -1719,10 +1797,55 @@ def main() -> None:
         vintage_cap = int(str(args.asof_cutoff)[:4]) if args.asof_cutoff else None
         if vintage_cap:
             print(f"  [vintage] annual-PUF cap for the frozen run: {vintage_cap} or older")
+
+        # Crash-resume checkpointing: reload every adapter frame a previous
+        # (killed) run of this SAME out-dir/commit/freeze already finished, and
+        # force-skip their recompute. See _ResumeCache for the staleness guard.
+        cached_npi, cached_org = {}, {}
+        if not args.no_resume_cache:
+            out_for_cache = Path(args.out or (root / "model_a" / "provider_features"))
+            _commit = None
+            try:
+                import subprocess as _sp
+                _commit = _sp.run(["git", "rev-parse", "--short", "HEAD"],
+                                  capture_output=True, text=True,
+                                  timeout=10).stdout.strip() or None
+            except Exception:
+                pass
+            rescache = _ResumeCache(out_for_cache, print, key={
+                "commit": _commit, "asof_cutoff": args.asof_cutoff,
+                "with_analytics": bool(args.with_analytics),
+                "no_trends": bool(args.no_trends),
+                "trend_years": args.trend_years, "case_db": args.case_db})
+            cached_npi = rescache.load()
+            cached_org = rescache.load(prefix="org__")
+            if cached_npi or cached_org:
+                print(f"  [resume] restored {len(cached_npi)} adapter + "
+                      f"{len(cached_org)} org frame(s) from a previous killed "
+                      f"run: {', '.join(sorted(list(cached_npi) + list(cached_org)))}")
+        skip = skip | set(cached_npi) | set(cached_org)
+
         adapter_frames = _run_npi_adapters(preclean, audit, skip=skip,
                                            max_year=vintage_cap,
                                            no_trends=args.no_trends,
                                            trend_years=args.trend_years)
+        for _k, _v in cached_npi.items():
+            adapter_frames.setdefault(_k, _v)
+            # a used-status audit line supersedes the runner's "skipped:
+            # --skip-sources", so SOURCES_REPORT shows the truth
+            audit(f"    [{_k}] restored from resume cache ({len(_v):,} rows)")
+
+        def _have(name: str) -> bool:
+            """True (and audit it) when a frame is already present from the
+            resume cache — the block guard that turns hours into a no-op."""
+            if name in adapter_frames:
+                audit(f"    [{name}] restored from resume cache "
+                      f"({len(adapter_frames[name]):,} rows)")
+                return True
+            return False
+
+        if rescache:
+            rescache.save_frames(adapter_frames)
         # order_referring referrer-grain fallback: the public DMEPOS detail file
         # has no supplier NPI (org-grain ineligible_referral_share stays gated),
         # but the REFERRER's own standing is checkable today — DME dollars billed
@@ -1745,7 +1868,7 @@ def main() -> None:
         except Exception as e:
             audit(f"    [order_referring] referrer-grain check skipped: {e}")
         ne_p = g / "node_embeddings.parquet"
-        if ne_p.exists():
+        if ne_p.exists() and not _have("graph_embeddings"):
             from src.entity_graph.graph_embeddings import to_provider_grain
             pe = to_provider_grain(pd.read_parquet(ne_p), npi_to_org)
             if len(pe):
@@ -1764,10 +1887,15 @@ def main() -> None:
             if base_spend:
                 from .asof_billing import write_asof_spending
                 asof_spend_p = root / "interim" / f"spending_asof_{args.asof_cutoff}.parquet"
-                kept, dropped = write_asof_spending(str(base_spend), args.asof_cutoff,
-                                                    str(asof_spend_p))
-                print(f"  [asof] feature-freeze {args.asof_cutoff}: billing features "
-                      f"see {kept:,} pre-cutoff rows ({dropped:,} dropped)")
+                if (rescache and asof_spend_p.exists()
+                        and asof_spend_p.stat().st_mtime > base_spend.stat().st_mtime):
+                    print(f"  [asof] reusing {asof_spend_p.name} from the previous "
+                          "run (newer than the base fact; deterministic filter)")
+                else:
+                    kept, dropped = write_asof_spending(str(base_spend), args.asof_cutoff,
+                                                        str(asof_spend_p))
+                    print(f"  [asof] feature-freeze {args.asof_cutoff}: billing features "
+                          f"see {kept:,} pre-cutoff rows ({dropped:,} dropped)")
                 # CRITICAL: freeze the BASE frame too, not just the adapters — the
                 # leads file carries full-history stats + concept percentiles.
                 leads = _apply_asof_freeze(leads, asof_spend_p, args.asof_cutoff, print)
@@ -1811,6 +1939,12 @@ def main() -> None:
                                             snapshots_dir=snapshots_dir,
                                             asof_spending=asof_spend_p, skip=skip,
                                             asof_cutoff=args.asof_cutoff)
+        for _k, _v in cached_org.items():
+            org_grain.setdefault(_k, _v)
+            audit(f"    [{_k}] restored from resume cache ({len(_v):,} rows)")
+        if rescache:
+            rescache.save_frames(org_grain, prefix="org__")
+            rescache.save_frames(adapter_frames)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, audit)
         widened = _widened_label_from_graph(g, audit)
 
@@ -1843,7 +1977,7 @@ def main() -> None:
                     cuts.append(("deact", deact.rename(
                         columns={"deactivation_date": "cutoff_date"})
                         [["npi", "cutoff_date"]]))
-            if spend_tl and cuts:
+            if spend_tl and cuts and not _have("smoking_gun_timeline"):
                 tl = None
                 for prefix, cut in cuts:
                     spend = _spending_for_npis(spend_tl, cut["npi"].tolist())
@@ -1867,7 +2001,7 @@ def main() -> None:
             from src.ingest_cms.sector_schemes import sector_metrics_from_parquet
             spend_ss = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
             mins = _first_existing(preclean / "hcpcs_time", "hcpcs_minutes.csv", "*.csv")
-            if spend_ss:
+            if spend_ss and not _have("sector_schemes"):
                 ss = sector_metrics_from_parquet(spend_ss, mins)
                 if len(ss):
                     adapter_frames["sector_schemes"] = ss
@@ -1885,7 +2019,7 @@ def main() -> None:
         # Runs on the as-of file under a freeze, so it is point_in_time.
         try:
             spend_dm = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
-            if spend_dm:
+            if spend_dm and not _have("drug_markup"):
                 from src.analytics.drug_markup import drug_markup_from_parquet
                 dm = drug_markup_from_parquet(str(spend_dm))
                 if len(dm):
@@ -1905,7 +2039,7 @@ def main() -> None:
         # input). Pure billing-fact math; runs on the as-of file under a freeze.
         try:
             spend_fc = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
-            if spend_fc:
+            if spend_fc and not _have("facility_code"):
                 from src.entity_graph.code_rings import compute_facility_code_share
                 pdim_fc = _first_existing(processed, "provider_dim.parquet")
                 fc = compute_facility_code_share(
@@ -1936,7 +2070,7 @@ def main() -> None:
                                    + list(mue_dir.glob("*.parquet")))) \
                 if mue_dir.exists() else []
             spend_mue = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
-            if mue_paths and spend_mue:
+            if mue_paths and spend_mue and not _have("mue"):
                 from src.ingest_cms.mue import load_mue_tables, compute_mue_violations
                 mue_tbl = load_mue_tables(mue_paths)
                 mv = compute_mue_violations(str(spend_mue), mue_tbl)
@@ -1954,6 +2088,8 @@ def main() -> None:
                       "(CMS practitioner MUE export) + spending fact")
         except Exception as e:
             audit(f"    [mue] skipped: {e}")
+        if rescache:
+            rescache.save_frames(adapter_frames)
         case_lbls = None
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
@@ -1977,9 +2113,9 @@ def main() -> None:
 
         # external grounding (address) + temporal-graph velocity + billing LM
         pdim_p = _first_existing(processed, "provider_dim.parquet")
-        if "address" in skip:
+        if "address" in skip and not _have("address"):
             audit("    [address] skipped: --skip-sources")
-        elif pdim_p:
+        elif pdim_p and not _have("address"):
             from .address_grounding import address_flags, load_cmra_reference
             geocoder = None
             if args.geocode:
@@ -2019,7 +2155,7 @@ def main() -> None:
             audit(f"    [graph_velocity] skipped: {e}")
         if args.with_analytics and pdim_p:
             spend_p = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
-            if spend_p:
+            if spend_p and not _have("billing_lm"):
                 try:
                     adapter_frames["billing_lm"] = _billing_lm_from_parquet(
                         spend_p, pd.read_parquet(pdim_p), audit)
@@ -2029,6 +2165,8 @@ def main() -> None:
                 audit("    [billing_lm] skipped: no processed/spending_fact.parquet")
         elif not args.with_analytics:
             audit("    [billing_lm] skipped: pass --with-analytics")
+        if rescache:
+            rescache.save_frames(adapter_frames)   # final adapter checkpoint
 
     out_dir = Path(args.out or (root / "model_a" / "provider_features"))
     # substrate provenance from the graph build (frozen address layer or not)
@@ -2090,6 +2228,9 @@ def main() -> None:
     _write_dictionary(matrix, manifest, out_dir)
     _write_report(matrix, manifest, out_dir)
     _write_sources_report(manifest["sources_audit"], out_dir)
+    if rescache is not None:
+        rescache.clear()               # run completed — the crash insurance
+        print("  [resume] checkpoint cache cleared (run completed)")
     # per-scheme calc integrity + run-to-run regression alarm (the silent-
     # degradation feedback loop): compares against the LAST run's baseline in
     # this out_dir, so a source that quietly stopped feeding a scheme is caught
