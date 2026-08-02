@@ -10,8 +10,9 @@ human view.
 
 Contract (also in CLAUDE.md): every chat session reads this early and weaves
 DUE items into responses, even off-topic ones. When the operator confirms an
-action, the session marks it done here and ships the updated file in the next
-bundle, so the state ports forward.
+action ABSOLUTELY (never inferred from silence), the session marks it done here
+and ships the updated file in the next bundle, so the state ports forward.
+Open items are re-surfaced in EVERY response until explicitly closed.
 
   python -m src.reminders                 # what's due / coming up / queued
   python -m src.reminders --done leie     # mark a cadence item done today
@@ -191,12 +192,12 @@ SEED = {
              'Save as "...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv"']},
     ],
     "tasks": [
-        {"key": "merge_bundle130", "what": "Merge bundle 130 (supersedes 123-129)", "added": "2026-08-02",
+        {"key": "merge_bundle131", "what": "Merge bundle 131 (supersedes 123-130)", "added": "2026-08-02",
          "commands": [
              'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
-             'git fetch "%USERPROFILE%\\Downloads\\bundle130postrun.bundle" claude/happy-mccarthy-3skrn3',
+             'git fetch "%USERPROFILE%\\Downloads\\bundle131nag.bundle" claude/happy-mccarthy-3skrn3',
              'git merge FETCH_HEAD',
-             'python -m src.reminders --done-task merge_bundle130']},
+             'python -m src.reminders --done-task merge_bundle131']},
         {"key": "pdf_part1_moves", "what": "Run the Fix_and_Fetch PDF Part 1 moves — the CRITICAL one (facility files out of hcpcs_minutes) is below; the rest (POS holds, renames, OPAIS park) are in the PDF", "added": "2026-08-02",
          "commands": [
              'set PRE=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean',

@@ -104,7 +104,12 @@ prints what's due (`--done <key>` / `--done-task <key>` / `--add-task "..."`).
 EVERY session must: (1) read the state early; (2) weave DUE items and queued
 tasks into chat responses **even when off-topic** — the operator can only be
 reminded inside a prompt response, so work reminders into whatever is being
-discussed, briefly, at most once or twice per sitting per item; (2b) every
+discussed, and KEEP re-surfacing every open item in EVERY response until the
+operator ABSOLUTELY confirms it is closed — never assume closure from
+silence, a related action, or the passage of time; an ambiguous "done" gets
+a clarifying check ("which item?") rather than a silent close; only an
+explicit confirmation moves an item to done in the JSON. Repetition is the
+point: the operator asked to be nagged; (2b) every
 reminder surfaced in chat MUST carry the complete instructions inline — the
 item's `steps` (search path, exact URL, what to click, exact save path with
 the real data-root) — and anything runnable goes in a fenced copy-paste code

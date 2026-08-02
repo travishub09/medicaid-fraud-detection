@@ -256,14 +256,14 @@
  ],
  "tasks": [
   {
-   "key": "merge_bundle130",
-   "what": "Merge bundle 130 (supersedes 123-129)",
+   "key": "merge_bundle131",
+   "what": "Merge bundle 131 (supersedes 123-130)",
    "added": "2026-08-02",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "git fetch \"%USERPROFILE%\\Downloads\\bundle130postrun.bundle\" claude/happy-mccarthy-3skrn3",
+    "git fetch \"%USERPROFILE%\\Downloads\\bundle131nag.bundle\" claude/happy-mccarthy-3skrn3",
     "git merge FETCH_HEAD",
-    "python -m src.reminders --done-task merge_bundle130"
+    "python -m src.reminders --done-task merge_bundle131"
    ]
   },
   {
