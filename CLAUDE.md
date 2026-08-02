@@ -316,13 +316,24 @@ python -m pytest tests/ -v
   `recommend()` evaluates them against the registered row, and an unmet (or
   unmeasured) check is a HOLD. A prose-only bar is labelled "not enforced" on
   the report instead of being silently waved through.
+  PURSUIT DOSSIER — the standing end-of-run artifact (`model_a/pursuit_dossier.py`,
+  `make pursuit-dossier`, wired after every `provider-features` build and every
+  night-runner): the top-10 cases to pursue, each written twice ("The short
+  story" for any reader + "The technical picture" with named drivers), the
+  inherited disclaimer/alternative-explanations frame, individuals as NPI+city,
+  and one Manus public-records research prompt PER PROSPECT
+  (pursuit_research_prompts.jsonl; `--dispatch` sends live off $MANUS_API_KEY
+  with a re-attachable task registry, `--poll` folds findings back in; without
+  a key the research is visibly pending, never silently skipped). A run
+  without a pursuit dossier is not a finished run — include this step in every
+  future night-runner .bat.
   Crash-resume checkpointing (`_ResumeCache` in the provider export): every
   adapter/org/analytics frame is written to `<out>/_resume_cache/` the moment
   it is computed, so a killed multi-hour build restarts from the last finished
   source instead of from zero. Keyed to git commit + freeze args (stale caches
   self-invalidate — never serve pre-bugfix frames); cleared on successful
   completion; `--no-resume-cache` disables.
-  Full suite: `pytest tests/` (652 tests).
+  Full suite: `pytest tests/` (664 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -77,6 +77,17 @@ provider-features: graph
 		--preclean $(DATA_ROOT)/preclean \
 		--processed $(DATA_ROOT)/processed \
 		--out $(DATA_ROOT)/model_a/provider_features $(PF_FLAGS)
+	$(MAKE) pursuit-dossier RUN_DIR=$(DATA_ROOT)/model_a/provider_features
+
+# The standing end-of-run artifact: the top-10 pursuit list, written for both
+# an 8th-grade and a technical reader, with a Manus research prompt per
+# prospect (dispatched live when MANUS_API_KEY is set; visibly pending when
+# not). Every model run ends with this — a run without a pursuit dossier is
+# not a finished run.
+RUN_DIR ?= $(DATA_ROOT)/model_a/provider_features
+pursuit-dossier:
+	$(PY) -m src.model_a.pursuit_dossier --run-dir $(RUN_DIR) \
+		$(if $(MANUS_API_KEY),--dispatch,)
 
 # Archive a valid-time snapshot of the per-NPI matrix so point-in-time history
 # accumulates for as-of (out-of-time) training. Run on a cadence (e.g. monthly).
