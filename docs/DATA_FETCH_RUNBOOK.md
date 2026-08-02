@@ -50,12 +50,21 @@ here (they come from the source registry, `python -m src.preflight --registry`).
   2025Q4 file to the hold folder.
 
 ### 3. Care Compare 2023 archives — deficiencies + hospice
-- **Where:** data.cms.gov provider-data section — search "Nursing Home
-  Provider Information" (deficiencies/citations) and "Hospice Provider Data"
-  (live-discharge). Both have archived monthly/quarterly snapshots.
-- **Pull:** the edition closest to (but not after) December 2023.
-- **Save:** `preclean\facility\deficiencies_2023.csv` and
-  `preclean\facility\hospice_2023.csv`.
+- **Where (NOT the main data.cms.gov search — these live on the provider-data
+  section's Archived Data pages):**
+  - data.cms.gov/provider-data/archived-data/**nursing-homes**
+  - data.cms.gov/provider-data/archived-data/**hospice-care**
+  (or open any Care Compare dataset page and click "Archived data" in the
+  left menu.)
+- **Pull:** each page lists monthly zip snapshots — take **December 2023**
+  (or the closest month NOT after it). Extract the zips; from the
+  nursing-home zip keep the csv whose name contains **HealthDeficiencies**;
+  from the hospice zip keep the provider-level csv (it carries the
+  live-discharge measures).
+- **Save:** `preclean\facility\deficiencies_2023-12.csv` and
+  `preclean\facility\hospice_2023-12.csv`. Move the undated `hospice.csv`
+  and `deficiencies.csv` to a `preclean\facility_current_hold\` folder the
+  same way as POS.
 
 ### 4. The minutes reference — wakes impossible_day's time input
 - **Where:** cms.gov — search "PFS Relative Value Files", download **RVU23D**
@@ -161,6 +170,90 @@ trends and frozen runs need the history. New year = new file beside the old.
 | CMS Preclusion List | widens the PU label | sponsor-channel access, gated |
 | NDC-grain claims | drug_spread_anomaly, controlled_substance_share | does not exist in our extract; do NOT chase a file for this — it needs a different data agreement |
 | People-data vendor | Model B person↔employer resolution | FCRA review first, per legal guardrails |
+
+---
+
+## PART 5 — THE RE-DOWNLOAD-WITH-DATES CAMPAIGN (every undated file)
+
+`preclean\EDITIONS.csv` is the authoritative list (currently ~34 files with
+no known data period). For each file there are two ways to fix it — pick the
+cheap one:
+
+- **Fill:** if you know the period (download email, the page you got it from,
+  the file's Properties date), just fill `data_period` in EDITIONS.csv.
+- **Re-download fresh with a dated name:** for small files this is faster and
+  more trustworthy than archaeology, and it refreshes the data at the same
+  time.
+
+**Re-download list (all small and quick; save with the date, keep the old
+file until preflight shows [ok]):**
+
+| file today | source | save as |
+|---|---|---|
+| `Caught.csv` (LEIE) | oig.hhs.gov → Exclusions database | refresh + record month in EDITIONS |
+| `nppes_deactivation\deactivation.zip` | cms.gov "NPPES Deactivated NPI Report" | `deactivation_YYYY-MM.zip` |
+| `order_referring\order_referring.csv` | data.cms.gov "Order and Referring" | `order_referring_YYYY-MM.csv` |
+| `nadac\nadac.csv` | data.medicaid.gov "NADAC" | `nadac_YYYY-MM.csv` |
+| `revocations\revoked_providers.csv` | data.cms.gov (search "revocation") | `revoked_providers_YYYY-MM.csv` |
+| `opensanctions\targets.simple.csv` | us.opensanctions.org bulk | re-pull + record date |
+| `hrsa_340b\opais.xlsx` | 340bopais.hrsa.gov daily report | `opais_YYYY-MM.xlsx` |
+| `nucc\nucc_taxonomy.csv` | nucc.org code sets | `nucc_taxonomy_YYYY.csv` |
+| `saturation\saturation.csv` | data.cms.gov "Market Saturation" | `saturation_YYYY.csv` |
+| `facility\pbj.csv`, `hospice.csv`, `deficiencies.csv` | Part 1 items 2-3 | dated editions replace them |
+| `pos\pos.csv`, `pos_facility.csv` | Part 1 item 1 | already replaced by Q4_2023 trio |
+| `hcris\` (3 files) | cms.gov "Cost Reports by Fiscal Year" | re-pull with FY in each name |
+| `docgraph\docgraph.csv` | docgraph.org | `docgraph_YYYY.csv` |
+| `owners\owners.csv` | data.cms.gov "All Owners" files | `owners_YYYY-MM.csv` |
+| `mue\` (3 tables) | cms.gov NCCI MUE page | record the quarter in EDITIONS |
+| `hud\zip_county.csv` | huduser.gov crosswalk | record the quarter |
+
+**Fill-only list (do NOT re-download — too big, and the period lives inside
+the data):**
+
+- `Spending.csv` — the service months ARE the period. Extract them:
+  ```
+  python -c "import duckdb; print(duckdb.sql(\"select min(service_month), max(service_month) from 'C:/Users/treyr/OneDrive/Desktop/data/processed/spending_fact.parquet'\"))"
+  ```
+  Put that range in EDITIONS.csv.
+- `NPPES.csv`, `PECOS.csv` — the edition month is in your download history /
+  the CMS file-name at download time; fill from memory or Properties date.
+- Annual PUFs already carrying years (`partb_2023.csv` …) need nothing; the
+  undated base copies (`partb.csv` etc.) can be DELETED once the dated years
+  cover them — check with `python -m src.preflight` after.
+
+## PART 6 — DID I GET THE RIGHT FILE? (the content check)
+
+A downloaded file with the right name but wrong layout fails quietly ("could
+not find X column" in SOURCES_REPORT) or, worse, half-works. After any new
+download, this table is the 30-second check: open the csv, look at the header
+row, confirm the key columns exist. If they don't, you likely grabbed the
+summary/alternate version of the dataset — and the note column says the
+known trap.
+
+| source | the columns that MUST be there | known trap |
+|---|---|---|
+| partb | Rndrng_NPI, HCPCS_Cd, Tot_Srvcs, Tot_Benes | grabbing "by Provider" (no HCPCS) instead of "by Provider and Service" |
+| partd | Prscrbr_NPI, Brnd_Name, Gnrc_Name, Tot_Clms, Tot_Drug_Cst | "by Provider" summary lacks the drug rows |
+| dmepos | Rfrg_NPI, HCPCS_Cd, Tot_Suplr_Srvcs | the by-referring SUMMARY lacks HCPCS and fails — need "by Referring Provider and Service" |
+| opioid | Prscrbr_NPI, Tot_Clms, Opioid_Tot_Clms, Opioid_LA_Tot_Clms | — |
+| open_payments | Covered_Recipient_NPI, Total_Amount_of_Payment_USDollars | older years name the NPI column differently — send me the header if it fails |
+| pos | PRVDR_NUM, BED_CNT, GNRL_FAC_TYPE_CD, STATE_CD | — |
+| facility/PBJ | PROVNUM, WorkDate, MDScensus, Hrs_RN | the "non-nurse" PBJ file lacks Hrs_RN |
+| hcris | PRVDR_NUM, TOTAL_COSTS, TOTAL_CHARGES | raw HCRIS is worksheet-format; we use the flattened cost-report csvs |
+| nadac | NDC, NADAC Per Unit, Classification for Rate Setting | — |
+| mue | an HCPCS/CPT column + an MUE value column | the AMA copyright worksheet extracts first from the zip — take the data sheet |
+| hrsa_340b | 340B ID, Entity Name, Contract Pharmacy Name | must be the 3-worksheet Covered Entity DAILY report xlsx |
+| nppes_deactivation | NPI, NPI Deactivation Date | keep as the zip; the loader unzips it |
+| order_referring | NPI, PARTB, DME, HHA | — |
+| docgraph | from_npi, to_npi, patient_count | — |
+| nucc | Code, Grouping, Classification | — |
+
+**When the file is wrong-but-interesting:** sometimes the "wrong" file
+carries fields we never planned for. Do not delete it — paste me the header
+row. Unplanned fields are exactly what the scheme-discovery loop mines for
+new detectable schemes (the Rhode Island case came from a second look like
+this). Wrong file AND boring → the table above tells you which right file to
+fetch.
 
 ---
 
