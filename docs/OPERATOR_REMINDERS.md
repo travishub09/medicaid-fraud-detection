@@ -9,18 +9,34 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
 - **leie** — OIG LEIE exclusion list (THE label source — new bans are training labels)
   - save to: preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)  |  https://oig.hhs.gov/exclusions/exclusions_list.asp
   - due: freshness unknown
+  - step 1: Open https://oig.hhs.gov/exclusions/exclusions_list.asp
+  - step 2: Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)
+  - step 3: Back up the old file first: copy "C:\Users\treyr\OneDrive\Desktop\data\preclean\caught.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\caught_<yyyymm>.csv.bak"
+  - step 4: Then replace it: move "%USERPROFILE%\Downloads\UPDATED.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\caught.csv"
 - **nppes_deactivation** — CMS Deactivated NPI Report (invalid_identity scheme)
   - save to: preclean/nppes_deactivation/ (keep as the .zip; loader unzips)  |  https://download.cms.gov/nppes/NPI_Files.html
   - due: freshness unknown
+  - step 1: Open https://download.cms.gov/nppes/NPI_Files.html
+  - step 2: Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)
+  - step 3: move "%USERPROFILE%\Downloads\NPPES_Deactivated_*.zip" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes_deactivation\"
 - **sam_exclusions** — SAM.gov exclusions extract (widens the PU label)
-  - save to: preclean/sam/  |  https://sam.gov/data-services (Exclusions public extract)
+  - save to: preclean/sam/  |  https://sam.gov/data-services
   - due: freshness unknown
+  - step 1: Open https://sam.gov/data-services and pick 'Exclusions' → 'Public V2' current extract (CSV)
+  - step 2: No login needed for the public extract
+  - step 3: Save with the month in the name: move "%USERPROFILE%\Downloads\SAM_Exclusions*.CSV" "C:\Users\treyr\OneDrive\Desktop\data\preclean\sam\sam_exclusions_<yyyymm>.csv"
 - **owner_snapshot** — make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
   - save to: run from repo: make owner-snapshot
   - due: freshness unknown
+  - step 1: Open a command window in C:\Users\treyr\medicaid-fraud-detection
+  - step 2: set MEDICAID_DATA_ROOT=C:\Users\treyr\OneDrive\Desktop\data
+  - step 3: make owner-snapshot   (no make? ask Claude for the python -m equivalent)
 - **warn_notices** — WARN layoff notices for the surge monitor (whistleblower timing)
-  - save to: preclean/warn/ (state DOL sites; see runbook)
+  - save to: preclean/warn/
   - due: freshness unknown
+  - step 1: Google '<state> WARN notices' for target states (start: RI, NC, FL, TX, CA) — each state DOL posts a table
+  - step 2: Download/export the current-year table as CSV or XLSX per state
+  - step 3: Save as "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_<state>_<yyyymm>.csv"
 
 ## COMING UP (30 days)
 
