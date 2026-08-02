@@ -95,6 +95,21 @@ python -m src.model_a.expectations --matrix provider_features_for_model.parquet 
 python -m pytest tests/ -v
 ```
 
+## OPERATOR REMINDERS (standing, cross-session — the operator asked for this explicitly)
+
+`docs/reminders.json` is the operator's reminder memory: download cadences
+(monthly/quarterly/annual, with save paths + URLs) and the standing task queue.
+`docs/OPERATOR_REMINDERS.md` is its rendered view; `python -m src.reminders`
+prints what's due (`--done <key>` / `--done-task <key>` / `--add-task "..."`).
+EVERY session must: (1) read the state early; (2) weave DUE items and queued
+tasks into chat responses **even when off-topic** — the operator can only be
+reminded inside a prompt response, so work reminders into whatever is being
+discussed, briefly, at most once or twice per sitting per item; (3) when the
+operator confirms an action (or new work creates one), update the JSON and ship
+it in the next bundle so the state ports forward; (4) exception: `*.csv` is
+gitignored but `docs/reminders.json` is state, not data — it MUST stay
+committed. Never let this file go stale: stale reminders are worse than none.
+
 ## Hard rules (enforced in code — keep them enforced)
 
 1. **Identifiers are strings.** NPIs, PAC IDs, CCNs, ZIPs keep leading zeros. CSVs are
@@ -359,7 +374,9 @@ python -m pytest tests/ -v
   preclean files and fields (READY TO WIRE / CHECK ROWS / BLOCKED), and lists
   every signal-looking column no wired adapter consumes (the raw material for
   schemes nobody has designed yet) → preclean/SCHEME_DISCOVERY.md.
-  Full suite: `pytest tests/` (690 tests).
+  OPERATOR REMINDER ENGINE (`src/reminders.py` + `docs/reminders.json` — see
+  the standing section above the hard rules; weave due items into every chat).
+  Full suite: `pytest tests/` (694 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
