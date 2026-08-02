@@ -74,19 +74,6 @@ git merge FETCH_HEAD
 python -m src.reminders --done-task merge_bundle131
 ```
 
-- [ ] **pdf_part1_moves** — Run the Fix_and_Fetch PDF Part 1 moves — the CRITICAL one (facility files out of hcpcs_minutes) is below; the rest (POS holds, renames, OPAIS park) are in the PDF (added 2026-08-02)
-
-```bat
-set PRE=C:\Users\treyr\OneDrive\Desktop\data\preclean
-move "%PRE%\hcpcs_minutes\Hospice_Provider_Nov2023.csv" "%PRE%\facility\"
-move "%PRE%\hcpcs_minutes\NH_HealthCitations_Nov2023.csv" "%PRE%\facility\"
-move "%PRE%\hcpcs_minutes\NH_Ownership_Nov2023.csv" "%PRE%\facility\"
-move "%PRE%\hcpcs_minutes\NH_Penalties_Nov2023.csv" "%PRE%\facility\"
-move "%PRE%\hcpcs_minutes\NH_SurveyDates_Nov2023.csv" "%PRE%\facility\"
-move "%PRE%\hcpcs_minutes\pbj_daily_staffing_2023Q4.csv" "%PRE%\facility\"
-rmdir "%PRE%\hcpcs_minutes"
-```
-
 - [ ] **pdf_part2_redownloads** — Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023 (URLs + save paths in the PDF) (added 2026-08-02)
 - [ ] **post_download_checks** — After the moves + re-downloads: run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-08-02)
 
