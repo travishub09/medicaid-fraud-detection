@@ -84,6 +84,7 @@ python -m src.reminders --done-task post_download_checks
 
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
 - [ ] **docgraph_placement** — Confirm the DocGraph file sits in preclean/docgraph/ with its year window in the filename (inspection saw DocGraph_Hop_Teaming_2022.csv — looks right; confirm and close this) (added 2026-08-02)
+- [ ] **run_the_readiness_audit** — Run the readiness audit after merging bundle 135 and send READINESS_AUDIT.md (added 2026-08-02)
 
 ## After ANY download session (standing rule)
 

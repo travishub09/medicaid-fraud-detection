@@ -293,6 +293,11 @@
    "key": "docgraph_placement",
    "what": "Confirm the DocGraph file sits in preclean/docgraph/ with its year window in the filename (inspection saw DocGraph_Hop_Teaming_2022.csv \u2014 looks right; confirm and close this)",
    "added": "2026-08-02"
+  },
+  {
+   "key": "run_the_readiness_audit",
+   "what": "Run the readiness audit after merging bundle 135 and send READINESS_AUDIT.md",
+   "added": "2026-08-02"
   }
  ]
 }
