@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -976,6 +977,46 @@ def _warn_if_graph_stale(graph_dir: Path, leads_path: Path, log) -> None:
         pass
 
 
+_NAME_DATE_RE = re.compile(r"(20\d{2})(?:[-_.]?([01]\d))?")
+
+
+def _file_period(name: str) -> str | None:
+    """Latest YYYY-MM implied by date tokens in a filename (year-only → Dec).
+    'nadac_2023' → 2023-12; 'order_referring_20260802' → 2026-08."""
+    best = None
+    for y, m in _NAME_DATE_RE.findall(name):
+        p = f"{y}-{m}" if m else f"{y}-12"
+        best = p if best is None or p > best else best
+    return best
+
+
+def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
+               pattern: str = "*.csv") -> Path | None:
+    """Vintage-aware ``_first_existing`` for snapshot sources with several
+    dated editions in one folder (NADAC, Order & Referring).
+
+    With a cutoff: the NEWEST dated file on/before it wins (a frozen run
+    must never read a post-cutoff edition); an undated contract-name file
+    is the fallback, and the vintage audit flags it. Without a cutoff:
+    the newest dated file wins, then the plain contract name."""
+    if not base.is_dir():
+        return None
+    dated = [(p, _file_period(p.name)) for p in sorted(base.glob(pattern))]
+    dated = [(p, d) for p, d in dated if d]
+    if asof_cutoff:
+        cut = str(asof_cutoff)[:7]
+        if len(cut) == 4:
+            cut += "-12"
+        elig = [(p, d) for p, d in dated if d <= cut]
+        if elig:
+            return max(elig, key=lambda t: t[1])[0]
+        exact_p = base / exact
+        return exact_p if exact_p.exists() else None
+    if dated:
+        return max(dated, key=lambda t: t[1])[0]
+    return _first_existing(base, exact, pattern)
+
+
 def _first_existing(base: Path, *names: str) -> Path | None:
     for n in names:
         # a glob pattern (e.g. "*.csv") globs the base folder itself — so a
@@ -1365,7 +1406,8 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
         log("    [nadac_namegrain] skipped: --skip-sources")
         return frames
     try:
-        nadac_p = _first_existing(pc / "nadac", "nadac.csv", "*.csv")
+        nadac_p = _asof_pick(pc / "nadac", "nadac.csv",
+                             asof_cutoff=(f"{max_year}-12" if max_year else None))
         if nadac_p and pd_raw is not None:
             from src.ingest_cms import nadac as nadac_mod
             from src.attempt_2.clean_data import read_csv_text
@@ -1501,12 +1543,13 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # --- NADAC drug-spread anomaly (NDC-level claims + NADAC ref + npi_to_org) ---
     try:
         from src.ingest_cms import nadac
-        nref_p = _first_existing(pc / "nadac", "nadac.csv", "*.csv")
+        nref_p = _asof_pick(pc / "nadac", "nadac.csv", asof_cutoff=asof_cutoff)
         ndc_p = _first_existing(proc, "ndc_claims.parquet")
         if nref_p and ndc_p:
             ref = nadac.compute_nadac_reference(_read_any(nref_p))
             _emit("nadac", nadac.drug_spread_anomaly(pd.read_parquet(ndc_p), ref, npi_to_org),
                   ["drug_spread_anomaly"])
+            log(f"    [nadac] reference edition: {nref_p.name}")
         else:
             log("    [nadac] skipped: needs NADAC reference + processed/ndc_claims.parquet (NDC-level claims)")
     except Exception as e:
@@ -1515,13 +1558,15 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # --- ineligible-referral share (referred claims + eligibility + npi_to_org) ---
     try:
         from src.ingest_cms import order_referring as orr
-        elig_p = _first_existing(pc / "order_referring", "order_referring.csv", "*.csv")
+        elig_p = _asof_pick(pc / "order_referring", "order_referring.csv",
+                            asof_cutoff=asof_cutoff)
         ref_p = _first_existing(proc, "referred_claims.parquet")
         if elig_p and ref_p:
             elig, _ = orr.eligible_referrers(_read_any(elig_p))
             _emit("order_referring",
                   orr.ineligible_referral_share(pd.read_parquet(ref_p), elig, npi_to_org),
                   ["ineligible_referral_share"])
+            log(f"    [order_referring] eligibility edition: {elig_p.name}")
         else:
             log("    [order_referring] skipped: needs eligibility file + processed/referred_claims.parquet (referring_npi pairs)")
     except Exception as e:
