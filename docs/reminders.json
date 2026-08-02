@@ -256,11 +256,6 @@
  ],
  "tasks": [
   {
-   "key": "pdf_part2_redownloads",
-   "what": "Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023 (URLs + save paths in the PDF)",
-   "added": "2026-08-02"
-  },
-  {
    "key": "post_download_checks",
    "what": "After the moves + re-downloads: run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
    "added": "2026-08-02",
@@ -287,11 +282,6 @@
   {
    "key": "brad_ri_package",
    "what": "Send Brad the RI dossier v4.1 + honest-grade email (ready; your call)",
-   "added": "2026-08-02"
-  },
-  {
-   "key": "docgraph_placement",
-   "what": "Confirm the DocGraph file sits in preclean/docgraph/ with its year window in the filename (inspection saw DocGraph_Hop_Teaming_2022.csv \u2014 looks right; confirm and close this)",
    "added": "2026-08-02"
   },
   {

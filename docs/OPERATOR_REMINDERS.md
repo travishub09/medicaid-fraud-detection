@@ -65,7 +65,6 @@ Nothing in the next 30 days.
 
 ## STANDING TASK QUEUE
 
-- [ ] **pdf_part2_redownloads** — Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023 (URLs + save paths in the PDF) (added 2026-08-02)
 - [ ] **post_download_checks** — After the moves + re-downloads: run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-08-02)
 
 ```bat
@@ -83,7 +82,6 @@ python -m src.reminders --done-task post_download_checks
 ```
 
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
-- [ ] **docgraph_placement** — Confirm the DocGraph file sits in preclean/docgraph/ with its year window in the filename (inspection saw DocGraph_Hop_Teaming_2022.csv — looks right; confirm and close this) (added 2026-08-02)
 - [ ] **run_the_readiness_audit** — Run the readiness audit after merging bundle 135 and send READINESS_AUDIT.md (added 2026-08-02)
 
 ## After ANY download session (standing rule)
