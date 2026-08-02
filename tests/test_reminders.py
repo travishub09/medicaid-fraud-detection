@@ -53,6 +53,7 @@ def test_render_and_save(state):
     assert "## DUE NOW" in md and "monthly_stale" in md
     assert "## STANDING TASK QUEUE" in md and "do the thing" in md
     assert "After ANY download session" in md
+    assert "After ANY model run" in md and "run_packet.zip" in md
     # save() regenerates the view file
     rem.save(state)
     assert rem.VIEW.exists() and "DUE NOW" in rem.VIEW.read_text()

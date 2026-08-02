@@ -65,13 +65,13 @@ Nothing in the next 30 days.
 
 ## STANDING TASK QUEUE
 
-- [ ] **merge_bundle128** — Merge bundle 128 (supersedes 123-127) (added 2026-08-02)
+- [ ] **merge_bundle129** — Merge bundle 129 (supersedes 123-128) (added 2026-08-02)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-git fetch "%USERPROFILE%\Downloads\bundle128commands.bundle" claude/happy-mccarthy-3skrn3
+git fetch "%USERPROFILE%\Downloads\bundle129runpacket.bundle" claude/happy-mccarthy-3skrn3
 git merge FETCH_HEAD
-python -m src.reminders --done-task merge_bundle128
+python -m src.reminders --done-task merge_bundle129
 ```
 
 - [ ] **pdf_part1_moves** — Run the Fix_and_Fetch PDF Part 1 moves — the CRITICAL one (facility files out of hcpcs_minutes) is below; the rest (POS holds, renames, OPAIS park) are in the PDF (added 2026-08-02)
@@ -120,3 +120,14 @@ python -m src.reminders --done-task dossier_poll
 1. `python -m src.vintage_inspect --data-root <data>` — dates + right-file check
 2. `python -m src.model_a.scheme_discovery --data-root <data>` — new-scheme scan
 3. Send me VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md + any header that failed.
+
+## After ANY model run (standing rule): send the run packet
+
+The results are half the point; the feedback loops (scheme triage, release gating, expectations, source audit) need the run's OWN files. One command collects every report into a zip — replace RUN_DIR with the run folder (e.g. frozen_2023-12_v4), then upload run_packet.zip to the chat:
+
+```bat
+set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v4
+powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
+```
+
+That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.

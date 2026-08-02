@@ -110,6 +110,10 @@ item's `steps` (search path, exact URL, what to click, exact save path with
 the real data-root) — and anything runnable goes in a fenced copy-paste code
 block (the item's `commands`), never prose-embedded commands and never a bare
 "X is due"; for a session with 3+ downloads due, offer a rendered PDF;
+(2c) when the operator mentions a model run (started, finished, crashed),
+REQUEST THE RUN PACKET — the one-command zip of the run folder's *.md +
+*.json (see OPERATOR_REMINDERS "After ANY model run") — and treat the run as
+open until the packet arrives and the registry/triage follow-ups are done;
 (3) when the
 operator confirms an action (or new work creates one), update the JSON and ship
 it in the next bundle so the state ports forward; (4) exception: `*.csv` is
