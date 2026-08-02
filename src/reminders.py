@@ -191,12 +191,12 @@ SEED = {
              'Save as "...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv"']},
     ],
     "tasks": [
-        {"key": "merge_bundle129", "what": "Merge bundle 129 (supersedes 123-128)", "added": "2026-08-02",
+        {"key": "merge_bundle130", "what": "Merge bundle 130 (supersedes 123-129)", "added": "2026-08-02",
          "commands": [
              'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
-             'git fetch "%USERPROFILE%\\Downloads\\bundle129runpacket.bundle" claude/happy-mccarthy-3skrn3',
+             'git fetch "%USERPROFILE%\\Downloads\\bundle130postrun.bundle" claude/happy-mccarthy-3skrn3',
              'git merge FETCH_HEAD',
-             'python -m src.reminders --done-task merge_bundle129']},
+             'python -m src.reminders --done-task merge_bundle130']},
         {"key": "pdf_part1_moves", "what": "Run the Fix_and_Fetch PDF Part 1 moves — the CRITICAL one (facility files out of hcpcs_minutes) is below; the rest (POS holds, renames, OPAIS park) are in the PDF", "added": "2026-08-02",
          "commands": [
              'set PRE=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean',
@@ -265,6 +265,56 @@ def mark_done(cfg: dict, key: str, when: str) -> str:
         msg += ("\n[reminders] post-download checks queued — run them after "
                 "this download session ends (exact commands are in the queue)")
     return msg
+
+
+def mark_run_complete(cfg: dict, run_name: str, when: str) -> str:
+    """The operator says a model run finished. Queue the FULL post-run
+    checklist as tracked tasks (each stays on the board, re-surfaced in
+    every chat response, until explicitly closed). Idempotent per run."""
+    root = cfg.get("data_root", "<data-root>").replace("/", "\\")
+    run_dir = f"{root}\\model_a\\{run_name}"
+    repo = "C:\\Users\\treyr\\medicaid-fraud-detection"
+    checklist = [
+        (f"run_packet__{run_name}",
+         f"Send the run packet for {run_name} (every report + audit file, "
+         "zero raw data) — Claude cannot see the run finished, so this zip "
+         "IS the run's arrival",
+         [f'set RUN_DIR={run_dir}',
+          'powershell -Command "Compress-Archive -Force -Path '
+          "'%RUN_DIR%\\*.md','%RUN_DIR%\\*.json'"
+          ' -DestinationPath \'%USERPROFILE%\\Desktop\\run_packet.zip\'"',
+          "REM then upload run_packet.zip to the chat",
+          f'python -m src.reminders --done-task run_packet__{run_name}']),
+        (f"pursuit_dossier__{run_name}",
+         f"Build + dispatch the pursuit dossier for {run_name} (skip if the "
+         "run script already did — check for PURSUIT_DOSSIER.md in the run "
+         "folder)",
+         [f'cd /d {repo}',
+          f'python -m src.model_a.pursuit_dossier --run-dir "{run_dir}" --dispatch',
+          f'python -m src.reminders --done-task pursuit_dossier__{run_name}']),
+        (f"dossier_poll__{run_name}",
+         f"~30 min after dispatch: collect Manus research into the {run_name} "
+         "dossier and send PURSUIT_DOSSIER.md",
+         [f'cd /d {repo}',
+          f'python -m src.model_a.pursuit_dossier --run-dir "{run_dir}" --poll',
+          f'python -m src.reminders --done-task dossier_poll__{run_name}']),
+        (f"registry_verdict__{run_name}",
+         f"Open until Claude reads the packet and returns the release-registry "
+         f"verdict (PROMOTE/HOLD) + scheme-triage follow-ups for {run_name} — "
+         "close only when you have them",
+         None),
+    ]
+    added = []
+    for key, what, cmds in checklist:
+        if any(t["key"] == key for t in cfg["tasks"]):
+            continue
+        t = {"key": key, "what": what, "added": when}
+        if cmds:
+            t["commands"] = cmds
+        cfg["tasks"].append(t)
+        added.append(key)
+    return (f"[reminders] run {run_name} marked complete — "
+            f"{len(added)} post-run task(s) queued: {', '.join(added) or 'none new'}")
 
 
 def _next_due(item: dict) -> date | None:
@@ -361,10 +411,16 @@ def main() -> None:
                     help="done-date override (YYYY-MM-DD)")
     ap.add_argument("--done-task", help="task key to complete/remove")
     ap.add_argument("--add-task", help="text of a new queued task")
+    ap.add_argument("--run-complete", metavar="RUN_FOLDER",
+                    help="a model run finished (e.g. frozen_2023-12_v4): "
+                         "queue the full post-run checklist")
     args = ap.parse_args()
     cfg = load()
     if args.done:
         print(mark_done(cfg, args.done, args.date))
+        save(cfg)
+    if args.run_complete:
+        print(mark_run_complete(cfg, args.run_complete, args.date))
         save(cfg)
     if args.done_task:
         n = len(cfg["tasks"])

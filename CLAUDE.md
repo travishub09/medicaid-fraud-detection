@@ -110,10 +110,15 @@ item's `steps` (search path, exact URL, what to click, exact save path with
 the real data-root) — and anything runnable goes in a fenced copy-paste code
 block (the item's `commands`), never prose-embedded commands and never a bare
 "X is due"; for a session with 3+ downloads due, offer a rendered PDF;
-(2c) when the operator mentions a model run (started, finished, crashed),
-REQUEST THE RUN PACKET — the one-command zip of the run folder's *.md +
-*.json (see OPERATOR_REMINDERS "After ANY model run") — and treat the run as
-open until the packet arrives and the registry/triage follow-ups are done;
+(2c) the session CANNOT see a model run finish — the operator's prompt is the
+only signal. When the operator says a run completed (or crashed), immediately
+(a) run the equivalent of `python -m src.reminders --run-complete <run_folder>`
+in the repo (queue the full post-run checklist: run packet, dossier
+dispatch + poll, registry verdict), (b) restate ALL of those steps in the
+response with their command blocks, and (c) RE-SURFACE every still-open
+post-run task in EVERY subsequent response until the operator explicitly
+confirms each is closed — only then mark it done. A run with open post-run
+tasks is an open run, no matter how old;
 (3) when the
 operator confirms an action (or new work creates one), update the JSON and ship
 it in the next bundle so the state ports forward; (4) exception: `*.csv` is

@@ -65,13 +65,13 @@ Nothing in the next 30 days.
 
 ## STANDING TASK QUEUE
 
-- [ ] **merge_bundle129** — Merge bundle 129 (supersedes 123-128) (added 2026-08-02)
+- [ ] **merge_bundle130** — Merge bundle 130 (supersedes 123-129) (added 2026-08-02)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-git fetch "%USERPROFILE%\Downloads\bundle129runpacket.bundle" claude/happy-mccarthy-3skrn3
+git fetch "%USERPROFILE%\Downloads\bundle130postrun.bundle" claude/happy-mccarthy-3skrn3
 git merge FETCH_HEAD
-python -m src.reminders --done-task merge_bundle129
+python -m src.reminders --done-task merge_bundle130
 ```
 
 - [ ] **pdf_part1_moves** — Run the Fix_and_Fetch PDF Part 1 moves — the CRITICAL one (facility files out of hcpcs_minutes) is below; the rest (POS holds, renames, OPAIS park) are in the PDF (added 2026-08-02)

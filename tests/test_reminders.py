@@ -77,6 +77,24 @@ def test_mark_done_autoqueues_checks(state):
                if t["key"] == "post_download_checks") == 1
 
 
+def test_run_complete_queues_checklist(state):
+    state["data_root"] = "C:/Users/treyr/OneDrive/Desktop/data"
+    msg = rem.mark_run_complete(state, "frozen_2023-12_v5", "2026-08-02")
+    keys = {t["key"] for t in state["tasks"]}
+    assert {"run_packet__frozen_2023-12_v5",
+            "pursuit_dossier__frozen_2023-12_v5",
+            "dossier_poll__frozen_2023-12_v5",
+            "registry_verdict__frozen_2023-12_v5"} <= keys
+    packet = next(t for t in state["tasks"]
+                  if t["key"] == "run_packet__frozen_2023-12_v5")
+    assert any("frozen_2023-12_v5" in c for c in packet["commands"])
+    assert "4 post-run task(s) queued" in msg
+    # idempotent: telling Claude twice doesn't duplicate the checklist
+    rem.mark_run_complete(state, "frozen_2023-12_v5", "2026-08-03")
+    assert sum(1 for t in state["tasks"]
+               if t["key"].endswith("frozen_2023-12_v5")) == 4
+
+
 def test_seed_written_when_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(rem, "STATE", tmp_path / "reminders.json")
     monkeypatch.setattr(rem, "VIEW", tmp_path / "OPERATOR_REMINDERS.md")
