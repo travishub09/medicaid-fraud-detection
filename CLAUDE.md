@@ -107,8 +107,9 @@ reminded inside a prompt response, so work reminders into whatever is being
 discussed, briefly, at most once or twice per sitting per item; (2b) every
 reminder surfaced in chat MUST carry the complete instructions inline — the
 item's `steps` (search path, exact URL, what to click, exact save path with
-the real data-root) or the exact commands to run — never a bare "X is due";
-for a session with 3+ downloads due, offer a rendered PDF of the due items;
+the real data-root) — and anything runnable goes in a fenced copy-paste code
+block (the item's `commands`), never prose-embedded commands and never a bare
+"X is due"; for a session with 3+ downloads due, offer a rendered PDF;
 (3) when the
 operator confirms an action (or new work creates one), update the JSON and ship
 it in the next bundle so the state ports forward; (4) exception: `*.csv` is

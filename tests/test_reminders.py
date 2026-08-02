@@ -67,8 +67,8 @@ def test_mark_done_autoqueues_checks(state):
     msg = rem.mark_done(state, "monthly_stale", "2026-08-02")
     followups = [t for t in state["tasks"] if t["key"] == "post_download_checks"]
     assert len(followups) == 1
-    assert "vintage_inspect" in followups[0]["what"]
-    assert "scheme_discovery" in followups[0]["what"]
+    cmds = "\n".join(followups[0]["commands"])
+    assert "vintage_inspect" in cmds and "scheme_discovery" in cmds
     assert "post-download checks queued" in msg
     # idempotent: a second download that day doesn't duplicate the task
     rem.mark_done(state, "monthly_stale", "2026-08-02")
@@ -85,3 +85,12 @@ def test_seed_written_when_missing(tmp_path, monkeypatch):
     # the label source is seeded freshness-unknown so it surfaces immediately
     leie = next(i for i in cfg["cadence"] if i["key"] == "leie")
     assert leie["last_done"] is None
+    # runnable reminders carry copy-paste commands, rendered as code blocks
+    assert any("move" in c or "python" in c for c in leie["commands"])
+    md = rem.render_md(cfg, date(2026, 8, 2))
+    assert "```bat" in md
+    assert 'move "%USERPROFILE%\\Downloads\\UPDATED.csv"' in md
+    # tasks with commands render fenced too
+    task_cmds = [t for t in cfg["tasks"] if t.get("commands")]
+    assert task_cmds and any("pursuit_dossier" in "\n".join(t["commands"])
+                             for t in task_cmds)

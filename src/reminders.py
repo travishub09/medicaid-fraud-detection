@@ -42,31 +42,39 @@ SEED = {
          "steps": [
              "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
              "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
-             'Back up the old file first: copy "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_<yyyymm>.csv.bak"',
-             'Then replace it: move "%USERPROFILE%\\Downloads\\UPDATED.csv" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv"']},
+             "Then paste the commands below (they back up the old file, then swap in the new one)"],
+         "commands": [
+             'copy "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_%date:~10,4%%date:~4,2%.csv.bak"',
+             'move "%USERPROFILE%\\Downloads\\UPDATED.csv" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv"',
+             'python -m src.reminders --done leie']},
         {"key": "nppes_deactivation", "what": "CMS Deactivated NPI Report (invalid_identity scheme)",
          "where": "preclean/nppes_deactivation/ (keep as the .zip; loader unzips)",
          "url": "https://download.cms.gov/nppes/NPI_Files.html",
          "every_months": 1, "last_done": None,
          "steps": [
              "Open https://download.cms.gov/nppes/NPI_Files.html",
-             "Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)",
-             'move "%USERPROFILE%\\Downloads\\NPPES_Deactivated_*.zip" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes_deactivation\\"']},
+             "Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)"],
+         "commands": [
+             'move "%USERPROFILE%\\Downloads\\NPPES_Deactivated_*.zip" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes_deactivation\\"',
+             'python -m src.reminders --done nppes_deactivation']},
         {"key": "sam_exclusions", "what": "SAM.gov exclusions extract (widens the PU label)",
          "where": "preclean/sam/",
          "url": "https://sam.gov/data-services",
          "every_months": 1, "last_done": None,
          "steps": [
              "Open https://sam.gov/data-services and pick 'Exclusions' → 'Public V2' current extract (CSV)",
-             "No login needed for the public extract",
-             'Save with the month in the name: move "%USERPROFILE%\\Downloads\\SAM_Exclusions*.CSV" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_<yyyymm>.csv"']},
+             "No login needed for the public extract"],
+         "commands": [
+             'move "%USERPROFILE%\\Downloads\\SAM_Exclusions*.CSV" "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_%date:~10,4%%date:~4,2%.csv"',
+             'python -m src.reminders --done sam_exclusions']},
         {"key": "owner_snapshot", "what": "make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)",
          "where": "run from repo: make owner-snapshot",
          "url": "", "every_months": 1, "last_done": None,
-         "steps": [
-             "Open a command window in C:\\Users\\treyr\\medicaid-fraud-detection",
-             'set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data',
-             "make owner-snapshot   (no make? ask Claude for the python -m equivalent)"]},
+         "steps": ["Nothing to download — paste the commands below"],
+         "commands": [
+             'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
+             'python -m src.entity_graph.ownership_snapshot --owned-by "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\edges\\owned_by_edges.parquet" --snapshots-dir "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\owner_snapshots"',
+             'python -m src.reminders --done owner_snapshot']},
         {"key": "warn_notices", "what": "WARN layoff notices for the surge monitor (whistleblower timing)",
          "where": "preclean/warn/",
          "url": "", "every_months": 1, "last_done": None,
@@ -161,8 +169,11 @@ SEED = {
          "steps": [
              "Google 'CY <year> PFS Final Rule Physician Work Time' — the file lives in the rule's downloads (a zip with a Physician Time .xlsx)",
              "Header must start with cpt_code and contain Median_Intra_Service_Time (an RVU file like PPRRVU is the known wrong file)",
-             'Save as "...preclean\\hcpcs_time\\physician_time_<year>.xlsx"',
-             'Then run: python -m src.ingest_cms.hcpcs_time_convert --in "...preclean\\hcpcs_time\\physician_time_<year>.xlsx" --out "...preclean\\hcpcs_time\\hcpcs_minutes_<year>.csv"']},
+             'Save as "...preclean\\hcpcs_time\\physician_time_<year>.xlsx", then paste the commands below with <year> filled in'],
+         "commands": [
+             'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
+             'python -m src.ingest_cms.hcpcs_time_convert --in "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcpcs_time\\physician_time_<year>.xlsx" --out "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcpcs_time\\hcpcs_minutes_<year>.csv"',
+             'python -m src.reminders --done physician_time']},
         {"key": "docgraph", "what": "DocGraph/CareSet referral teaming file (referral rings)",
          "where": "preclean/docgraph/ with year window in the filename",
          "url": "https://careset.com/docgraph/",
@@ -180,13 +191,39 @@ SEED = {
              'Save as "...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv"']},
     ],
     "tasks": [
-        {"key": "send_vintage_report", "what": "Send VINTAGE_INSPECT.md (+ EDITIONS.csv if changed) after the inspector finishes", "added": "2026-08-02"},
-        {"key": "send_scheme_discovery", "what": "Merge bundle 123, run scheme_discovery, send SCHEME_DISCOVERY.md", "added": "2026-08-02"},
-        {"key": "dossier_poll", "what": "Run pursuit_dossier --poll (20-30 min after dispatch) and send PURSUIT_DOSSIER.md", "added": "2026-08-02"},
-        {"key": "review_rename_plan", "what": "Review preclean/rename_plan.bat with me BEFORE running it", "added": "2026-08-02"},
-        {"key": "label_night", "what": "Run run_label_night.bat on the first free night (never run yet; feeds the label harvest that lifts the v4 HOLD)", "added": "2026-08-02"},
+        {"key": "merge_bundle128", "what": "Merge bundle 128 (supersedes 123-127)", "added": "2026-08-02",
+         "commands": [
+             'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
+             'git fetch "%USERPROFILE%\\Downloads\\bundle128commands.bundle" claude/happy-mccarthy-3skrn3',
+             'git merge FETCH_HEAD',
+             'python -m src.reminders --done-task merge_bundle128']},
+        {"key": "pdf_part1_moves", "what": "Run the Fix_and_Fetch PDF Part 1 moves — the CRITICAL one (facility files out of hcpcs_minutes) is below; the rest (POS holds, renames, OPAIS park) are in the PDF", "added": "2026-08-02",
+         "commands": [
+             'set PRE=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean',
+             'move "%PRE%\\hcpcs_minutes\\Hospice_Provider_Nov2023.csv" "%PRE%\\facility\\"',
+             'move "%PRE%\\hcpcs_minutes\\NH_HealthCitations_Nov2023.csv" "%PRE%\\facility\\"',
+             'move "%PRE%\\hcpcs_minutes\\NH_Ownership_Nov2023.csv" "%PRE%\\facility\\"',
+             'move "%PRE%\\hcpcs_minutes\\NH_Penalties_Nov2023.csv" "%PRE%\\facility\\"',
+             'move "%PRE%\\hcpcs_minutes\\NH_SurveyDates_Nov2023.csv" "%PRE%\\facility\\"',
+             'move "%PRE%\\hcpcs_minutes\\pbj_daily_staffing_2023Q4.csv" "%PRE%\\facility\\"',
+             'rmdir "%PRE%\\hcpcs_minutes"']},
+        {"key": "pdf_part2_redownloads", "what": "Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023 (URLs + save paths in the PDF)", "added": "2026-08-02"},
+        {"key": "post_download_checks", "what": "After the moves + re-downloads: run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude", "added": "2026-08-02",
+         "commands": [
+             'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
+             'python -m src.vintage_inspect --data-root "C:\\Users\\treyr\\OneDrive\\Desktop\\data"',
+             'python -m src.model_a.scheme_discovery --data-root "C:\\Users\\treyr\\OneDrive\\Desktop\\data"',
+             'python -m src.reminders --done-task post_download_checks']},
+        {"key": "dossier_poll", "what": "Collect the Manus research and rebuild the pursuit dossier, then send PURSUIT_DOSSIER.md", "added": "2026-08-02",
+         "commands": [
+             'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
+             'python -m src.model_a.pursuit_dossier --run-dir "C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v3" --poll',
+             'python -m src.reminders --done-task dossier_poll']},
+        {"key": "owners_2022_editions", "what": "While on data.cms.gov: grab a 2022-dated edition of each All-Owners dataset (version history on each dataset page) into preclean/owners_prior/ — unlocks leakage-correct FROZEN ownership churn (needs 2 pre-cutoff editions; you have one)", "added": "2026-08-02"},
+        {"key": "label_night", "what": "Run run_label_night.bat on the first free night (never run yet; feeds the label harvest that lifts the v4 HOLD)", "added": "2026-08-02",
+         "commands": ['"%USERPROFILE%\\Downloads\\run_label_night.bat"']},
         {"key": "brad_ri_package", "what": "Send Brad the RI dossier v4.1 + honest-grade email (ready; your call)", "added": "2026-08-02"},
-        {"key": "docgraph_placement", "what": "Confirm the DocGraph file's folder (preclean/docgraph/) and that the filename carries its year window", "added": "2026-08-02"},
+        {"key": "docgraph_placement", "what": "Confirm the DocGraph file sits in preclean/docgraph/ with its year window in the filename (inspection saw DocGraph_Hop_Teaming_2022.csv — looks right; confirm and close this)", "added": "2026-08-02"},
     ],
 }
 
@@ -217,10 +254,13 @@ def mark_done(cfg: dict, key: str, when: str) -> str:
         if not any(t["key"] == "post_download_checks" for t in cfg["tasks"]):
             cfg["tasks"].append({
                 "key": "post_download_checks",
-                "what": (f'New files landed — run and send the checks: '
-                         f'1) python -m src.vintage_inspect --data-root "{root}"  '
-                         f'2) python -m src.model_a.scheme_discovery --data-root "{root}"  '
-                         f'3) send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude'),
+                "what": ("New files landed — run the checks below, then send "
+                         "VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude"),
+                "commands": [
+                    'cd /d C:\\Users\\treyr\\medicaid-fraud-detection',
+                    f'python -m src.vintage_inspect --data-root "{root}"',
+                    f'python -m src.model_a.scheme_discovery --data-root "{root}"',
+                    'python -m src.reminders --done-task post_download_checks'],
                 "added": when})
         msg += ("\n[reminders] post-download checks queued — run them after "
                 "this download session ends (exact commands are in the queue)")
@@ -271,14 +311,21 @@ def render_md(cfg: dict, today: date) -> str:
                      + (f"  ({it['note']})" if it.get("note") else ""))
             for i, s in enumerate(it.get("steps", []), 1):
                 L.append(f"  - step {i}: {s}")
+            if it.get("commands"):
+                L += ["", "```bat"] + it["commands"] + ["```", ""]
     else:
         L.append("Nothing due. Good.")
     L += ["", "## COMING UP (30 days)", ""]
     L += [f"- {it['key']} — due {it['next_due']}: {it['what']}"
           for it in soon] or ["Nothing in the next 30 days."]
     L += ["", "## STANDING TASK QUEUE", ""]
-    L += [f"- [ ] **{t['key']}** — {t['what']} (added {t['added']})"
-          for t in cfg["tasks"]] or ["Queue empty."]
+    if cfg["tasks"]:
+        for t in cfg["tasks"]:
+            L.append(f"- [ ] **{t['key']}** — {t['what']} (added {t['added']})")
+            if t.get("commands"):
+                L += ["", "```bat"] + t["commands"] + ["```", ""]
+    else:
+        L.append("Queue empty.")
     L += ["", "## After ANY download session (standing rule)", "",
           "1. `python -m src.vintage_inspect --data-root <data>` — dates + "
           "right-file check", "2. `python -m src.model_a.scheme_discovery "
