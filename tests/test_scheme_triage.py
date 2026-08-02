@@ -37,7 +37,10 @@ def _health_rows():
 
 
 def _run_dir(tmp_path):
-    _health_rows().to_json(tmp_path / "scheme_health.json")
+    # the REAL write_health shape: a wrapper object, not a bare table (the
+    # bare-table assumption produced a crash and a 0-byte report on 2026-08-02)
+    (tmp_path / "scheme_health.json").write_text(json.dumps({
+        "schemes": _health_rows().to_dict("records"), "regressions": []}))
     manifest = {
         "sources_used": {
             "opioid": ["opioid_claim_share", "opioid_long_acting_share"],
@@ -100,6 +103,7 @@ def test_report_renders_and_wires_into_run_dir(tmp_path):
 
 def test_empty_health_yields_clean_report(tmp_path):
     (tmp_path / "feature_manifest.json").write_text("{}")
-    pd.DataFrame().to_json(tmp_path / "scheme_health.json")
+    (tmp_path / "scheme_health.json").write_text(
+        json.dumps({"schemes": [], "regressions": []}))
     out = run_triage(tmp_path)
     assert "No underperforming schemes" in out.read_text(encoding="utf-8")

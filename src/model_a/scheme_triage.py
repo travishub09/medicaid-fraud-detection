@@ -56,7 +56,15 @@ def load_run(run_dir: str | Path) -> dict:
     d = Path(run_dir)
     ev: dict = {"run_dir": str(d)}
     hp = d / "scheme_health.json"
-    ev["health"] = (pd.read_json(hp) if hp.exists() else pd.DataFrame())
+    if hp.exists():
+        # write_health's real shape is {"schemes": [...], "regressions": [...]};
+        # tolerate a bare records list too (older/synthetic files)
+        payload = json.loads(hp.read_text(encoding="utf-8"))
+        rows = (payload.get("schemes", []) if isinstance(payload, dict)
+                else payload)
+        ev["health"] = pd.DataFrame(rows)
+    else:
+        ev["health"] = pd.DataFrame()
     mp = d / "feature_manifest.json"
     man = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
     ev["sources_used"] = man.get("sources_used", {}) or {}
