@@ -48,3 +48,22 @@ def test_asof_without_date_column_refuses_loudly():
     })
     with pytest.raises(ValueError, match="no survey date column"):
         compute_deficiency_counts(raw, asof_cutoff="2023-12")
+
+
+def test_hospice_combined_date_range_column():
+    """The current provider-data edition carries ONE 'Measure Date Range'
+    column ('04/01/2022 - 03/31/2023') instead of Start/End — the end date
+    must be extracted and drive the as-of filter."""
+    import pandas as pd
+    from src.ingest_cms.facility import compute_hospice_metrics
+    raw = pd.DataFrame({
+        "CMS Certification Number (CCN)": ["411512", "411512"],
+        "Measure Code": ["H_LIVE_DISCHARGE", "H_LIVE_DISCHARGE"],
+        "Measure Name": ["Live discharge rate", "Live discharge rate"],
+        "Score": ["30", "50"],
+        "Measure Date Range": ["04/01/2022 - 03/31/2023",
+                               "04/01/2024 - 03/31/2025"],
+    })
+    frozen, _ = compute_hospice_metrics(raw, asof_cutoff="2023-12")
+    assert len(frozen) == 1
+    assert float(frozen.iloc[0]["hospice_live_discharge_rate"]) == 30.0

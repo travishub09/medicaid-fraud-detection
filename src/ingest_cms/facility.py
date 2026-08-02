@@ -61,6 +61,11 @@ HOSPICE_COLS = {
                  "measure_end_date", "MEASURE_END_DATE", "Measure Date Range End"],
     "start_date": ["Start Date", "start_date", "Measure Start Date",
                    "measure_start_date", "MEASURE_START_DATE"],
+    # current provider-data editions carry ONE combined column instead
+    # ("Measure Date Range", e.g. "04/01/2022 - 03/31/2023"); the end date is
+    # extracted from it when no separate End Date exists
+    "date_range": ["Measure Date Range", "measure_date_range",
+                   "MEASURE_DATE_RANGE", "Date Range"],
 }
 
 DEFICIENCY_COLS = {
@@ -183,6 +188,11 @@ def compute_hospice_metrics(raw: pd.DataFrame,
                          f"{missing}; saw {list(raw.columns)[:12]}")
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
     df["ccn"] = _canon_ccn(df["ccn"])
+    if "end_date" not in df.columns and "date_range" in df.columns:
+        # "04/01/2022 - 03/31/2023" → the LAST date token is the period end
+        df["end_date"] = (df["date_range"].astype(str)
+                          .str.extract(r"(\d{1,2}/\d{1,2}/\d{4}|"
+                                       r"\d{4}-\d{2}-\d{2})\s*$")[0])
     df = _asof_filter(df, "end_date", resolved, asof_cutoff, "hospice measures")
 
     label = (_col(df, "measure_code").fillna("").astype(str) + " "
