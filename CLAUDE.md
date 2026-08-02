@@ -316,6 +316,14 @@ python -m pytest tests/ -v
   `recommend()` evaluates them against the registered row, and an unmet (or
   unmeasured) check is a HOLD. A prose-only bar is labelled "not enforced" on
   the report instead of being silently waved through.
+  SCHEME TRIAGE — the standing underperformance feedback loop
+  (`model_a/scheme_triage.py`, `make scheme-triage`, chained after every
+  `provider-features` build): every scheme SCHEME_HEALTH flags (or whose label
+  AUC is weak on 20+ positives) gets the six-question diagnosis — why
+  underperforming / design right / fields missing / coded right / wired right /
+  right files — each answered from the run's own artifacts (scheme_health.json,
+  manifest sources_audit, EXPECTATIONS, CASE_VALIDATION, the preflight
+  registry) and ending in a concrete action. Include in every night-runner.
   PURSUIT DOSSIER — the standing end-of-run artifact (`model_a/pursuit_dossier.py`,
   `make pursuit-dossier`, wired after every `provider-features` build and every
   night-runner): the top-10 cases to pursue, each written twice ("The short
@@ -333,7 +341,7 @@ python -m pytest tests/ -v
   source instead of from zero. Keyed to git commit + freeze args (stale caches
   self-invalidate — never serve pre-bugfix frames); cleared on successful
   completion; `--no-resume-cache` disables.
-  Full suite: `pytest tests/` (664 tests).
+  Full suite: `pytest tests/` (668 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
