@@ -60,6 +60,34 @@ def test_load_opais_xlsx_picks_pharmacy_grain_and_merges_state(tmp_path):
     assert ents.loc["CAH01-00", "entity_type"] == "CAH"
 
 
+def test_covered_entities_asof_cutoff():
+    """A frozen run reconstructs the cutoff-date pharmacy network from the
+    current snapshot via Begin/Term dates; no begin-date column hard-fails."""
+    from src.ingest_cms.hrsa_340b import covered_entities
+    raw = pd.DataFrame({
+        "340B ID": ["CAH01-00"] * 3 + ["DSH02-00"],
+        "Entity Name": ["WRANGELL MEDICAL CENTER"] * 3
+        + ["UH PORTAGE MEDICAL CENTER"],
+        "Entity Type": ["CAH"] * 3 + ["DSH"],
+        "State": ["AK"] * 3 + ["OH"],
+        "Pharmacy Name": ["CVS 001", "WALGREENS 002", "RITE AID 003", "CVS 001"],
+        # CVS pre-cutoff & never termed; WALGREENS began post-cutoff;
+        # RITE AID began pre-cutoff but termed BEFORE the cutoff
+        "Begin Date": ["2020-01-15", "2024-06-01", "2019-03-01", "2025-01-01"],
+        "Term Date": ["", "", "2022-05-01", ""],
+    })
+    ents = covered_entities(raw, asof_cutoff="2023-12").set_index("entity_id")
+    assert ents.loc["CAH01-00", "n_contract_pharmacies"] == 1     # CVS only
+    assert "DSH02-00" not in ents.index                          # began 2025
+    # without a cutoff, everything counts (current-day behavior unchanged)
+    cur = covered_entities(raw).set_index("entity_id")
+    assert cur.loc["CAH01-00", "n_contract_pharmacies"] == 3
+    # cutoff without a begin-date column must hard-fail, never silently leak
+    with pytest.raises(ValueError, match="no Begin Date"):
+        covered_entities(raw.drop(columns=["Begin Date", "Term Date"]),
+                         asof_cutoff="2023-12")
+
+
 def test_load_opais_csv_passthrough(tmp_path):
     from src.ingest_cms.hrsa_340b import load_opais
     p = tmp_path / "opais.csv"

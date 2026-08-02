@@ -1578,11 +1578,15 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         ent_p = _first_existing(pc / "hrsa_340b", "opais.xlsx", "opais.csv",
                                 "*.xlsx", "*.csv")
         if ent_p and org_nodes is not None:
-            ents = hrsa_340b.covered_entities(hrsa_340b.load_opais(ent_p))
+            ents = hrsa_340b.covered_entities(hrsa_340b.load_opais(ent_p),
+                                              asof_cutoff=asof_cutoff)
             base = org_nodes[["org_node_id"]].copy()
             out = hrsa_340b.attach_340b(base, org_nodes, ents)
             _emit("hrsa_340b", out[["org_node_id", "contract_pharmacy_concentration"]],
                   ["contract_pharmacy_concentration"])
+            log(f"    [hrsa_340b] {ent_p.name}"
+                + (f" (arrangements begun <= {asof_cutoff}, terms honored)"
+                   if asof_cutoff else ""))
         else:
             log("    [hrsa_340b] skipped: needs OPAIS file + org_nodes")
     except Exception as e:

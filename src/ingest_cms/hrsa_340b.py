@@ -98,21 +98,46 @@ OPAIS_COLS = {
     "state": ["State", "state", "Entity State"],
     "contract_pharmacy": ["Contract Pharmacy Name", "contract_pharmacy_name",
                           "Pharmacy Name"],
+    "begin_date": ["Begin Date", "begin_date", "Contract Begin Date",
+                   "CP Begin Date", "Pharmacy Begin Date", "Start Date"],
+    "term_date": ["Term Date", "term_date", "Termination Date",
+                  "Contract Term Date", "End Date"],
 }
 
 
-def covered_entities(raw: pd.DataFrame) -> pd.DataFrame:
+def covered_entities(raw: pd.DataFrame,
+                     asof_cutoff: str | None = None) -> pd.DataFrame:
     """OPAIS rows → one row per covered entity with its contract-pharmacy count.
 
     OPAIS lists one row per (entity × contract pharmacy); we group to the entity
     and count distinct pharmacies. Returns entity_id, name_key, entity_type,
     state, n_contract_pharmacies.
+
+    ``asof_cutoff`` (YYYY-MM): HRSA only serves the CURRENT daily snapshot, so
+    a frozen run reconstructs the cutoff-date state row-level — keep only
+    arrangements whose Begin Date is on/before the cutoff and whose Term Date
+    (when present) is after it. HARD-FAILS if a cutoff is requested but the
+    file has no begin-date column: silently scoring a frozen run on
+    present-day pharmacy networks is the exact leak this guards against.
     """
     resolved = _resolve_columns(list(raw.columns), OPAIS_COLS)
     if "name" not in resolved:
         raise ValueError(f"340B OPAIS file missing an entity-name column; "
                          f"saw {list(raw.columns)[:12]}")
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    if asof_cutoff:
+        if "begin_date" not in df.columns:
+            raise ValueError(
+                f"asof_cutoff={asof_cutoff} requested but the OPAIS file has "
+                f"no Begin Date column (saw {list(raw.columns)[:12]}) — "
+                "cannot reconstruct the pre-cutoff pharmacy network")
+        cut = pd.Timestamp(f"{str(asof_cutoff)[:7]}-01") + pd.offsets.MonthEnd(0)
+        begin = pd.to_datetime(df["begin_date"], errors="coerce")
+        keep = begin.notna() & (begin <= cut)
+        if "term_date" in df.columns:
+            term = pd.to_datetime(df["term_date"], errors="coerce")
+            keep &= term.isna() | (term > cut)
+        df = df[keep].copy()
     df["name_key"] = df["name"].map(norm_org_name)
     for c in ("entity_id", "entity_type", "state", "contract_pharmacy"):
         if c not in df.columns:
