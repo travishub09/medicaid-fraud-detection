@@ -338,6 +338,42 @@ def test_multi_edition_chain_sees_between_edition_churn(tmp_path):
     assert any(c.startswith("SNF:") for c in chains)
 
 
+def test_asof_editions_frozen_churn(tmp_path):
+    """Frozen runs chain ONLY editions dated on/before the cutoff: SNF with
+    2022-06 + 2023-06 editions diffs leakage-correct; HHA with one pre-cutoff
+    edition is skipped by name. merge_editions unions both folders, deduped
+    by edition date."""
+    from src.entity_graph.owners_vintage import (asof_editions, load_editions,
+                                                 merge_editions,
+                                                 multi_edition_turnover)
+    prior_d = tmp_path / "owners_prior"
+    cur_d = tmp_path / "owners"
+    prior_d.mkdir(), cur_d.mkdir()
+    pd.DataFrame({"ENROLLMENT ID": ["S1", "S1"], "ASSOCIATE ID - OWNER": ["A", "B"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2022-06.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["S1", "S1"], "ASSOCIATE ID - OWNER": ["A", "C"]}
+                 ).to_csv(prior_d / "SNF_All_Owners_2023-06.csv", index=False)
+    # post-cutoff edition + a dupe of 2023-06 living in the current folder
+    pd.DataFrame({"ENROLLMENT ID": ["S1"], "ASSOCIATE ID - OWNER": ["A"]}
+                 ).to_csv(cur_d / "SNF_All_Owners_2026.05.01.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["S1", "S1"], "ASSOCIATE ID - OWNER": ["A", "C"]}
+                 ).to_csv(cur_d / "SNF_All_Owners_2023-06.csv", index=False)
+    pd.DataFrame({"ENROLLMENT ID": ["H1"], "ASSOCIATE ID - OWNER": ["Z"]}
+                 ).to_csv(prior_d / "HHA_All_Owners_2023-06.csv", index=False)
+    merged = merge_editions(load_editions(prior_d), load_editions(cur_d))
+    assert [d for d, _ in merged["SNF"]] == ["2022-06", "2023-06", "2026-05-01"]
+    pri, cur, skipped = asof_editions(merged, "2023-12")
+    assert set(pri) == {"SNF"}                      # HHA: only 1 pre-cutoff
+    assert any(s.startswith("HHA") for s in skipped)
+    assert [d for d, _ in cur["SNF"]] == ["2023-06"]  # chain ENDS pre-cutoff
+    turn, chains = multi_edition_turnover(pri, cur)
+    t = turn.set_index("facility_enrollment_id")
+    # 2022-06 -> 2023-06: B exited, C entered; the 2026 edition never touched
+    assert t.loc["S1", "n_owner_entries"] == 1
+    assert t.loc["S1", "n_owner_exits"] == 1
+    assert chains == ["SNF: 2022-06 → 2023-06"]
+
+
 def test_mixed_cadence_datasets_chain_independently(tmp_path):
     """The operator's real shape: FQHC editions are December-dated, SNF June-
     dated. A global date chain would interleave them and the both-endpoints

@@ -24,9 +24,11 @@ the result is then mapped enrollment -> NPI -> org for the registry feature.
   org_grain_turnover         enrollment-grain churn -> org_node_id grain via
                              the PECOS npi_xwalk and npi_to_org (max per org).
 
-Temporal note: the churn window is the span BETWEEN the two editions (e.g.
-2025-10 -> 2026-05), which is typically post-cutoff — so this feature belongs
-to the CURRENT-DAY matrix (current_state vintage class), never the frozen one.
+Temporal note: the churn window is the span BETWEEN the two editions. On a
+CURRENT-DAY run any chain is fair. On a FROZEN run, ``asof_editions`` filters
+each dataset's chain to editions dated on/before the cutoff, so the diff
+window ends at (or before) the freeze and the feature is leakage-correct —
+a dataset with fewer than two pre-cutoff editions is skipped by name.
 """
 
 from __future__ import annotations
@@ -128,6 +130,40 @@ def load_editions(folder: str | Path) -> dict[str, list[tuple[str, pd.DataFrame]
                     .reset_index(drop=True))
                    for ed, frames in sorted(by_ed.items())]
     return out
+
+
+def asof_editions(editions: dict[str, list[tuple[str, pd.DataFrame]]],
+                  cutoff: str,
+                  ) -> tuple[dict, dict, list[str]]:
+    """Filter per-dataset edition chains to editions dated ON/BEFORE
+    ``cutoff`` (YYYY-MM), split into (prior, current) for
+    ``multi_edition_turnover``. A dataset needs >=2 pre-cutoff editions to
+    diff; the rest are returned in ``skipped`` by name so the run log can
+    say exactly which archived edition would unlock them."""
+    prior: dict[str, list[tuple[str, pd.DataFrame]]] = {}
+    cur: dict[str, list[tuple[str, pd.DataFrame]]] = {}
+    skipped: list[str] = []
+    for ds, eds in editions.items():
+        pre = sorted([(d, p) for d, p in eds if d[:7] <= str(cutoff)[:7]])
+        if len(pre) >= 2:
+            prior[ds] = pre[:-1]
+            cur[ds] = [pre[-1]]
+        else:
+            skipped.append(f"{ds}: {len(pre)} edition(s) on/before "
+                           f"{str(cutoff)[:7]}")
+    return prior, cur, skipped
+
+
+def merge_editions(*edition_dicts: dict[str, list[tuple[str, pd.DataFrame]]],
+                   ) -> dict[str, list[tuple[str, pd.DataFrame]]]:
+    """Union several load_editions() results (e.g. owners_prior + owners),
+    deduped per dataset by edition date, sorted."""
+    out: dict[str, dict[str, pd.DataFrame]] = {}
+    for d in edition_dicts:
+        for ds, eds in d.items():
+            for ed, pairs in eds:
+                out.setdefault(ds, {}).setdefault(ed, pairs)
+    return {ds: sorted(by_ed.items()) for ds, by_ed in out.items()}
 
 
 def multi_edition_turnover(prior_by_dataset: dict[str, list[tuple[str, pd.DataFrame]]],

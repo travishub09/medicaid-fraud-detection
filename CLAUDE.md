@@ -381,7 +381,14 @@ committed. Never let this file go stale: stale reminders are worse than none.
   schemes nobody has designed yet) → preclean/SCHEME_DISCOVERY.md.
   OPERATOR REMINDER ENGINE (`src/reminders.py` + `docs/reminders.json` — see
   the standing section above the hard rules; weave due items into every chat).
-  Full suite: `pytest tests/` (694 tests).
+  FROZEN CHURN (`owners_vintage.asof_editions` + `merge_editions`): frozen
+  runs now chain All-Owners editions dated on/before the cutoff (≥2 per
+  dataset) for a leakage-correct pre-cutoff ownership_turnover, instead of
+  skipping the vintage diff; datasets with too little pre-cutoff history are
+  logged by name with the unlock (download an archived earlier edition).
+  The operator's owners_prior/ archive (2023-2026, six dataset families)
+  powers current-day chains immediately.
+  Full suite: `pytest tests/` (697 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

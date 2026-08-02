@@ -332,9 +332,10 @@ def write_outputs(rows: list[dict], data_root: Path) -> Path:
     L.append("")
     known = set(REQUIRED_COLS) | {"facility", "hcpcs_time", "reference",
                                   "opensanctions", "nppes_deactivation",
-                                  "hrsa_340b", "owners", "hud", "usps",
-                                  "state_licensing", "preclusion", "dmf",
-                                  "cms_priority", "mue"}
+                                  "hrsa_340b", "owners", "owners_prior",
+                                  "hud", "usps", "state_licensing",
+                                  "preclusion", "dmf", "cms_priority", "mue",
+                                  "reassignment", "census", "sam", "warn"}
     for r in rows_s:
         top = r["file"].split("/")[0]
         if "/" in r["file"] and top not in known and "_hold" not in top:

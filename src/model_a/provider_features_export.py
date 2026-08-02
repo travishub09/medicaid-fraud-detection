@@ -1587,32 +1587,49 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # 2) SNAPSHOT DIFF: the monthly graph-snapshot cadence (>=2 to fire).
     churn_done = False
     try:
-        from src.entity_graph.owners_vintage import (load_editions,
+        from src.entity_graph.owners_vintage import (asof_editions,
+                                                     load_editions,
+                                                     merge_editions,
                                                      multi_edition_turnover,
                                                      org_grain_turnover)
         prior_dir = preclean / "owners_prior"
         cur_dir = preclean / "owners"
+        turn, chains, tag = None, [], ""
         if asof_cutoff:
-            log("    [ownership_churn] vintage diff not used on a frozen run "
-                "(the edition window is post-cutoff); snapshot path only")
+            # frozen run: chain ONLY editions dated on/before the cutoff —
+            # the diff window ends at the freeze, so the feature is
+            # leakage-correct (needs >=2 pre-cutoff editions per dataset)
+            merged = merge_editions(load_editions(prior_dir),
+                                    load_editions(cur_dir))
+            pri, cur, skipped = asof_editions(merged, str(asof_cutoff))
+            if pri:
+                turn, chains = multi_edition_turnover(pri, cur)
+                tag = f"pre-cutoff (≤{str(asof_cutoff)[:7]}) "
+            else:
+                log(f"    [ownership_churn] no pre-cutoff edition pairs "
+                    f"({'; '.join(skipped) or 'no dated editions'}) — "
+                    "download an archived earlier All-Owners edition into "
+                    "preclean/owners_prior/ to unlock frozen churn; "
+                    "snapshot path only")
         elif prior_dir.is_dir() and cur_dir.is_dir():
             prior_ds = load_editions(prior_dir)
             cur_ds = load_editions(cur_dir)
             if prior_ds and cur_ds:
-                xw_p = _first_existing(processed, "npi_xwalk.parquet")
                 turn, chains = multi_edition_turnover(prior_ds, cur_ds)
-                if xw_p is not None and len(turn):
-                    org_t = org_grain_turnover(turn, pd.read_parquet(xw_p),
-                                               npi_to_org)
-                    if len(org_t):
-                        _emit("ownership_churn", org_t,
-                              ["ownership_turnover", "n_owner_entries",
-                               "n_owner_exits"])
-                        n_ch = int((org_t["ownership_turnover"] > 0).sum())
-                        log(f"    [ownership_churn] per-dataset edition chains "
-                            f"({'; '.join(chains)}): {len(org_t):,} orgs mapped, "
-                            f"{n_ch:,} with owner changes")
-                        churn_done = True
+        if turn is not None and len(turn):
+            xw_p = _first_existing(processed, "npi_xwalk.parquet")
+            if xw_p is not None:
+                org_t = org_grain_turnover(turn, pd.read_parquet(xw_p),
+                                           npi_to_org)
+                if len(org_t):
+                    _emit("ownership_churn", org_t,
+                          ["ownership_turnover", "n_owner_entries",
+                           "n_owner_exits"])
+                    n_ch = int((org_t["ownership_turnover"] > 0).sum())
+                    log(f"    [ownership_churn] {tag}per-dataset edition "
+                        f"chains ({'; '.join(chains)}): {len(org_t):,} orgs "
+                        f"mapped, {n_ch:,} with owner changes")
+                    churn_done = True
     except Exception as e:
         log(f"    [ownership_churn] vintage diff failed ({e}); trying snapshots")
     if not churn_done:
