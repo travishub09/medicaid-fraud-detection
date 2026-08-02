@@ -67,12 +67,19 @@ here (they come from the source registry, `python -m src.preflight --registry`).
   same way as POS.
 
 ### 4. The minutes reference — wakes impossible_day's time input
-- **Where:** cms.gov — search "PFS Relative Value Files", download **RVU23D**
-  (the 2023 final release, a zip).
-- **Pull:** inside the zip take the **PPRRVU** csv (per-code work times).
-- **Save:** `preclean\hcpcs_time\hcpcs_minutes.csv`. If the columns don't
-  line up when the run reads it, paste me the header row — I'll cut a
-  converter the same day.
+- **CORRECTED 2026-08-02:** the RVU zip's PPRRVU file carries payment weights,
+  NOT minutes (the trap the operator hit). The times live in the separate
+  **Physician Time** file that ships with the fee-schedule rule.
+- **Where:** cms.gov — search "PFS Federal Regulation Notices", open the
+  **CY 2023 PFS Final Rule** page (CMS-1770-F), Downloads section, the zip
+  named like **"CY 2023 PFS Final Rule Physician Time"**.
+- **Pull:** the spreadsheet inside (HCPCS + pre/intra/post service times in
+  minutes).
+- **Save:** `preclean\hcpcs_time\physician_time_2023.xlsx` (keep the year);
+  a converter turns it into the `hcpcs,minutes` map the adapter reads. The
+  PPRRVU file, if downloaded, is still useful — park it at
+  `preclean\reference\rvu\` (global-period days feed a future unbundling
+  scheme), never in `hcpcs_time\`.
 
 ### 5. DocGraph referral edges — wakes dme_ring's missing inputs
 - **Where:** docgraph.org (CareSet) — "Hop Teaming" datasets; the
