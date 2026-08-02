@@ -180,6 +180,7 @@ def _required_check(rel: str, cols: list[str] | None) -> tuple[str, list[str]]:
     """(source_key, missing_required) for a file, by its folder / name."""
     parts = rel.replace("\\", "/").split("/")
     folder = parts[0] if len(parts) > 1 else ""
+    fname = parts[-1].lower()
     if folder == "facility":
         for pat, req in FACILITY_CHECKS:
             if pat.search(parts[-1]):
@@ -187,13 +188,18 @@ def _required_check(rel: str, cols: list[str] | None) -> tuple[str, list[str]]:
                 return f"facility/{pat.pattern}", missing
         return "", []
     req = REQUIRED_COLS.get(folder)
-    if folder == "pos" and "clia" in parts[-1].lower():
-        req = ["PRVDR_NUM"]                  # lab file: no beds by design
+    if folder == "pos" and ("clia" in fname or "iqies" in fname):
+        req = ["PRVDR_NUM"]        # lab / iQIES facility classes: no beds
+    if folder == "nucc" and "crosswalk" in fname:
+        return "", []              # the crosswalk has its own layout
     if not req:
         return "", []
-    low = {str(c).lower() for c in (cols or [])}
+    # normalize '_' vs ' ' so Type of Service matches type_of_service
+    def _norm(s):
+        return re.sub(r"[_\s]+", " ", str(s)).strip().lower()
+    low = {_norm(c) for c in (cols or [])}
     missing = [r for r in req
-               if not any(a.strip().lower() in low for a in r.split("|"))]
+               if not any(_norm(a) in low for a in r.split("|"))]
     return folder, missing
 
 
@@ -207,7 +213,8 @@ def inspect_tree(data_root: Path) -> list[dict]:
             continue
         rel = str(p.relative_to(pre)).replace("\\", "/")
         held = "_hold" in rel or rel.endswith(".bak")
-        name_years = YEAR_RE.findall(p.name)
+        # 8-digit YYYYMMDD stamps in filenames count as dated too
+        name_years = YEAR_RE.findall(p.name) + DATE8_RE.findall(p.name)
         rec = {"file": rel, "size_mb": round(p.stat().st_size / 1e6, 1),
                "held": held, "year_in_name": "/".join(name_years),
                "columns": None, "date_cols": {}, "zip_inner": [],

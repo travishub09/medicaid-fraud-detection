@@ -54,6 +54,9 @@ POLICY = {
     "open_payments": ("dated_editions", [], "program-year files"),
     "pos": ("dated_editions", [], "quarterly editions + hold folder"),
     "hcris": ("row_asof", ["Fiscal Year Begin Date"], "fiscal-year dates inside"),
+    "pbj": ("dated_editions", [], "dated archives + row-level date filters (wired)"),
+    "hospice": ("dated_editions", [], "dated archives + Measure Date Range end-date filter (wired)"),
+    "deficiencies": ("dated_editions", [], "dated archives + Survey Date filter (wired)"),
     "nadac": ("dated_editions", [], "yearly files; as-of pick wired"),
     "order_referring": ("dated_editions", [], "monthly editions; as-of pick wired"),
     "docgraph": ("dated_editions", [], "year-window releases (slow-moving; one edition may serve both views)"),
@@ -95,6 +98,12 @@ COLS_IMPORT = {
 # alias keys the registry uses vs POLICY keys
 _KEY_ALIAS = {"caught": "leie"}
 
+# contract keys the adapters treat as OPTIONAL (verified: they resolve-if-
+# present and never raise) — the audit must not fail a file for lacking them
+OPTIONAL_KEYS = {"partd": {"opioid_claims"},
+                 "hcris": {"related_party_costs", "admin_costs",
+                           "total_charges"}}
+
 
 def _contract(key: str) -> dict | None:
     imp = COLS_IMPORT.get(key)
@@ -112,6 +121,11 @@ def _find_files(pre: Path, src) -> list[Path]:
         return []
     out = []
     names = {n.lower() for n in src.names}
+    if not src.folder:
+        # root-level contract sources match by exact name only — an extension
+        # glob at the preclean root would claim every csv in the tree
+        return [p for p in sorted(folder.iterdir())
+                if p.is_file() and p.name.lower() in names]
     for p in sorted(folder.rglob("*")):
         if not p.is_file():
             continue
@@ -158,7 +172,25 @@ def audit_source(pre: Path, src, cutoff: str = "2023-12") -> dict:
     policy, date_cols, mech = POLICY.get(key, ("snapshot_only", [], "no policy declared"))
     files = _find_files(pre, src)
     contract = _contract(key)
-    best_file, missing_cols = _col_check(files, contract)
+    if contract and key in OPTIONAL_KEYS:
+        contract = {k: v for k, v in contract.items()
+                    if k not in OPTIONAL_KEYS[key]}
+    loader_cols = None
+    if key == "hrsa_340b" and files:
+        # the raw xlsx header is a banner on the wrong worksheet — ask the
+        # real loader what columns the adapter actually sees
+        try:
+            from src.ingest_cms.hrsa_340b import load_opais
+            loader_cols = [str(c) for c in load_opais(files[0]).columns]
+        except Exception:
+            loader_cols = None
+    if loader_cols is not None and contract:
+        low = " | ".join(c.strip().lower() for c in loader_cols)
+        miss = [k for k, aliases in contract.items()
+                if not any(str(a).strip().lower() in low for a in aliases)]
+        best_file, missing_cols = files[0].name, miss
+    else:
+        best_file, missing_cols = _col_check(files, contract)
     cut_year = int(str(cutoff)[:4])
 
     if not files:
@@ -172,7 +204,8 @@ def audit_source(pre: Path, src, cutoff: str = "2023-12") -> dict:
         # the filter's date column must actually exist in the file
         ok = True
         if date_cols:
-            cols = _read_header(files[0]) or []
+            cols = loader_cols if loader_cols is not None else (
+                _read_header(files[0]) or [])
             low = " | ".join(str(c).lower() for c in cols)
             ok = all(any(w in low for w in dc.lower().split()) for dc in date_cols)
         frozen = (f"READY (row as-of: {mech})" if ok
@@ -261,10 +294,14 @@ def write_report(rows: list[dict], data_root: Path,
 
     L += ["## 3. Action list (in order)", ""]
     n = 0
+    seen: set[tuple[str, str]] = set()
     for r in fro_gap + cur_gap:
+        msg = r["frozen"] if r["frozen"].startswith("GAP") else r["current"]
+        if (r["key"], msg) in seen:
+            continue
+        seen.add((r["key"], msg))
         n += 1
-        L.append(f"{n}. **{r['key']}** — "
-                 f"{r['frozen'] if r['frozen'].startswith('GAP') else r['current']}")
+        L.append(f"{n}. **{r['key']}** — {msg}")
     for r in bad_cols:
         n += 1
         L.append(f"{n}. **{r['key']}** — wrong/renamed columns in "

@@ -135,9 +135,18 @@ def test_second_pass_fixes(tmp_path):
     # 5. future sentinel dates must not drive a rename
     (pre / "misc" / "bars.csv").write_text(
         "npi,bar_expiration_date,x\n1,2036-03-18,1\n2,2035-01-01,2\n")
+    # 6. snake_case columns satisfy space-named requirements (nadac class)
+    (pre / "nadac").mkdir()
+    (pre / "nadac" / "nadac_2023.csv").write_text(
+        "NDC_Description,NDC,NADAC_Per_Unit,Effective_Date\nx,0,1.0,2023-01-04\n")
+    # 7. 8-digit date stamp in a FILENAME counts as dated
+    (pre / "misc" / "report_20260802.csv").write_text(
+        "a,b,c\n1,2,3\n")
     rows = _by_file(inspect_tree(tmp_path))
     assert rows["misc/semi.csv"]["columns"] is not None          # pandas fallback
     assert rows["zips/stamped.zip"]["inferred_period"] == "2026"  # DATE8
+    assert rows["nadac/nadac_2023.csv"]["missing_required"] == []
+    assert rows["misc/report_20260802.csv"]["verdict"] == "named"
     assert rows["hcris/CostReport_Final.csv"]["missing_required"] == []
     assert rows["pos/clia.DATA.csv"]["missing_required"] == []
     assert rows["misc/bars.csv"]["verdict"] == "PERIOD FOUND INSIDE"
