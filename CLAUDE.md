@@ -341,7 +341,17 @@ python -m pytest tests/ -v
   source instead of from zero. Keyed to git commit + freeze args (stale caches
   self-invalidate — never serve pre-bugfix frames); cleared on successful
   completion; `--no-resume-cache` disables.
-  Full suite: `pytest tests/` (674 tests).
+  VINTAGE INSPECTOR (`src/vintage_inspect.py`, `python -m src.vintage_inspect
+  --data-root ...`): reaches INSIDE every preclean file (DuckDB-streamed
+  MIN/MAX over date-named columns; zip inner-name peek; banner-row header
+  probing) to settle each file's data period. Writes preclean/VINTAGE_INSPECT.md
+  (the TRUE re-download list = files nothing dates, the machine-run runbook
+  Part-6 required-columns check, orphan folders no adapter reads, full
+  inventory), auto-fills blank EDITIONS.csv data_period rows (operator entries
+  never overwritten, "[auto: from data]" note), and proposes reviewable
+  renames in rename_plan.bat (core contract names Spending/NPPES/PECOS/Caught
+  are never renamed; nothing renames until the operator runs the .bat).
+  Full suite: `pytest tests/` (686 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
