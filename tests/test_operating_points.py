@@ -93,3 +93,52 @@ def test_end_to_end_and_markdown():
     assert "matched review budgets" in md
     assert "calibrated probability cutoffs" in md
     assert "score high enough to matter" in md
+
+
+def test_combined_table_blend_and_union():
+    from src.model_a.operating_points import combined_table
+    y, pc, pf, _ = _setup(n=1_000, seed=3)
+    rows = combined_table(y, pc, pf, budgets=(50, 100))
+    for r in rows:
+        # union of two top-N lists is between N and 2N
+        assert r["budget"] <= r["union_size"] <= 2 * r["budget"]
+        # union catches at least as many as either single list can at N
+        assert r["union_catches"] >= catches_at_budget(y, pf, r["budget"]) or \
+            r["union_catches"] >= catches_at_budget(y, pc, r["budget"])
+        assert 0 <= r["blend_precision"] <= 1
+        assert 0 < r["pct_universe"] < 1
+    # blended list of two correlated-signal models should catch something
+    assert rows[1]["blend_catches"] > 0
+
+
+def test_markdown_has_combined_section():
+    rng = np.random.default_rng(5)
+    n = 400
+    y_fwd = (rng.random(n) < 0.08).astype(int)
+    m = pd.DataFrame({
+        "npi": [f"{1000000000 + i}" for i in range(n)],
+        "group_id": [f"g{i % 80}" for i in range(n)],
+        "provider_on_exclusion": np.zeros(n, dtype=int),
+        "shell_score": rng.normal(0, 1, n) + 0.3 * y_fwd,
+        "net_paid": rng.normal(0, 1, n),
+        "op_payment_concentration": rng.normal(0, 1, n) + y_fwd,
+    })
+    manifest = {
+        "raw_feature_cols": ["shell_score", "net_paid",
+                             "op_payment_concentration"],
+        "peerpct_cols": [], "subscore_cols": [], "embedding_cols": [],
+        "leakage_hard": [],
+        "sources_used": {"entity_graph": ["shell_score"],
+                         "spending": ["net_paid"],
+                         "open_payments": ["op_payment_concentration"]},
+        "scheme_coverage": {},
+    }
+    fl = pd.DataFrame({"npi": m["npi"],
+                       "is_prospective_positive": y_fwd.astype(str),
+                       "was_excluded_pre_cutoff": ["0"] * n})
+    res = run_operating_points(m, manifest, fl, budgets=(20, 40),
+                               n_splits=3, n_boot=20)
+    assert len(res["combined"]) == 2
+    md = to_markdown(res)
+    assert "TOGETHER" in md and "union of lists" in md
+    assert "% of universe" in md

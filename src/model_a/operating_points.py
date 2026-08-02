@@ -101,6 +101,43 @@ def budget_table(y, p_core, p_full, groups, budgets=DEFAULT_BUDGETS,
     return rows
 
 
+def combined_table(y, p_core, p_full, budgets=DEFAULT_BUDGETS) -> list[dict]:
+    """The TOGETHER view: what the two models find jointly.
+
+    Two honest versions per budget:
+      * combined ranking — each provider's rank-percentile under each model,
+        averaged (scale-free; neither model's raw score dominates), then the
+        top-N of that single blended list: catches and precision (the
+        'what % of the top slice is future-banned' number).
+      * union of lists — top-N from EACH model, unioned: how many
+        future-banned providers appear on at least one list, with the union's
+        actual size (up to 2N) so its precision is computed on what a reviewer
+        would really read."""
+    r_core = pd.Series(p_core).rank(pct=True).to_numpy()
+    r_full = pd.Series(p_full).rank(pct=True).to_numpy()
+    blended = (r_core + r_full) / 2.0
+    total_pos = int(y.sum())
+    out = []
+    for n in budgets:
+        if n > len(y):
+            continue
+        c_blend = catches_at_budget(y, blended, n)
+        top_c = np.argpartition(-p_core, n - 1)[:n]
+        top_f = np.argpartition(-p_full, n - 1)[:n]
+        union = np.union1d(top_c, top_f)
+        out.append({
+            "budget": int(n),
+            "pct_universe": n / len(y),
+            "blend_catches": c_blend,
+            "blend_precision": c_blend / n,
+            "blend_recall": c_blend / total_pos if total_pos else float("nan"),
+            "union_size": int(len(union)),
+            "union_catches": int(y[union].sum()),
+            "union_precision": (float(y[union].sum()) / len(union)
+                                if len(union) else float("nan"))})
+    return out
+
+
 def calibrated_cutoff_table(y, p_core, p_full,
                             cutoffs=DEFAULT_PROB_CUTOFFS) -> list[dict]:
     """Isotonic-calibrate each model's OOF scores, then count who clears each
@@ -143,6 +180,7 @@ def run_operating_points(matrix: pd.DataFrame, manifest: dict,
             "n_core": part["n_core"], "n_extra": part["n_extra"],
             "budgets": budget_table(y_s, pc, pf, g_s, budgets=budgets,
                                     n_boot=n_boot),
+            "combined": combined_table(y_s, pc, pf, budgets=budgets),
             "prob_cutoffs": calibrated_cutoff_table(y_s, pc, pf)}
 
 
@@ -171,6 +209,27 @@ def to_markdown(res: dict) -> str:
                  f"| {r['full_catches']} | {ci} "
                  f"| {r['core_precision']:.2%} | {r['full_precision']:.2%} "
                  f"| {r['full_recall']:.1%} |")
+    L.append("")
+    L.append("## The two models TOGETHER (blended list + union of lists)")
+    L.append("")
+    L.append("_The joint view: a single blended ranking (each provider's rank "
+             "under each model, averaged) and the union of both top-N lists. "
+             "'Blend precision' is the direct answer to 'what % of the top "
+             "slice of the combined list are future-banned providers'._")
+    L.append("")
+    L.append("| budget N | % of universe | blend catches | blend precision "
+             "| blend recall | union list size | union catches | union precision |")
+    L.append("|--:|--:|--:|--:|--:|--:|--:|--:|")
+    for r in res.get("combined", []):
+        L.append(f"| {r['budget']:,} | {r['pct_universe']:.2%} "
+                 f"| {r['blend_catches']} | {r['blend_precision']:.2%} "
+                 f"| {r['blend_recall']:.1%} | {r['union_size']:,} "
+                 f"| {r['union_catches']} | {r['union_precision']:.2%} |")
+    L.append("")
+    L.append("_If the blended list beats both single lists at the same budget, "
+             "the two models are complementary and the case for combining them "
+             "is made by the numbers; if it merely matches the full model, the "
+             "full model already contains what the core one knows._")
     L.append("")
     L.append("## At calibrated probability cutoffs")
     L.append("")
