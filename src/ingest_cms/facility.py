@@ -198,6 +198,20 @@ def compute_hospice_metrics(raw: pd.DataFrame,
     label = (_col(df, "measure_code").fillna("").astype(str) + " "
              + _col(df, "measure_name").fillna("").astype(str))
     hit = df[df["ccn"].notna() & label.str.lower().str.contains(pattern)].copy()
+    # The Care Compare provider file carries THREE rows per measure
+    # (…_OBSERVED / …_DENOMINATOR / …_PERCENTILE) and the burdensome-transition
+    # measures also contain "% live discharges" in their NAMES. Averaging all
+    # matches silently mixes observed values with denominators, percentiles,
+    # and the wrong measures (found on the Nov2023 layout, 2026-08-02). When
+    # the code column carries the row-type suffix, keep OBSERVED rows of the
+    # live-discharge measures only (H_012_03 early / H_012_04 late).
+    codes = _col(hit, "measure_code").fillna("").astype(str).str.upper()
+    if codes.str.contains("_OBSERVED").any():
+        is_ld = codes.str.match(r"H_012_0[34]_OBSERVED")
+        if is_ld.any():
+            hit = hit[is_ld].copy()
+        else:                                    # other layouts: observed only
+            hit = hit[codes.str.contains("_OBSERVED")].copy()
     hit["score"] = pd.to_numeric(hit["score"], errors="coerce")
     quarantined = int(hit["score"].isna().sum())
     hit = hit[hit["score"].notna()]
