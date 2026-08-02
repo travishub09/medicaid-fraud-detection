@@ -67,6 +67,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
         # CHOW churn from diffed owner snapshots (A7); absent until two+ monthly
         # snapshots accumulate (src/entity_graph/ownership_churn.py)
         "ownership_turnover": 0.3,
+        # exact disclosed stakes from Care Compare NH ownership (facility.py):
+        # a dense owner web / concentrated control refine the graph counts
+        "nh_owner_count": 0.15,
+        "nh_owner_concentration": 0.1,
     },
     # Part B: upcoding (both features produced by ingest_cms/partb.py)
     "upcoding": {"em_high_level_share": 0.7, "em_level_mean": 0.3},
@@ -110,8 +114,21 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
                            "deficiency_severity_weighted": 0.5,
                            "deficiency_count": 0.2,
                            # capacity-vs-billing "impossible org" (POS, sweep 2.5)
-                           "capacity_mismatch": 0.6},
-    "hospice_ineligibility": {"hospice_live_discharge_rate": 1.0},
+                           "capacity_mismatch": 0.6,
+                           # staffing that collapses when inspectors are off
+                           "pbj_weekend_understaffing": 0.4,
+                           # CMS fines/denials: enforcement-adjacent corroboration
+                           "nh_fine_total": 0.2, "nh_penalty_count": 0.15},
+    # the hospice measure panel (scheme-discovery buildout): live discharge
+    # stays the anchor; NF-care share is the RI captive-referral pattern
+    # generalized; the rest are OIG's standing hospice targets
+    "hospice_ineligibility": {"hospice_live_discharge_rate": 1.0,
+                              "hospice_nf_care_share": 0.5,
+                              "hospice_gip_share": 0.4,
+                              "hospice_visit_gap": 0.5,
+                              "hospice_nurse_minute_deficit": 0.3,
+                              "hospice_spend_per_bene": 0.3,
+                              "hospice_dementia_share": 0.2},
     "saturation_fraud": {"market_saturation_index": 1.0},
     # future (June-2026 sweep adapters: ingest_cms/opioid.py, hrsa_340b.py,
     # nppes_deactivation.py) — absent until those files are loaded

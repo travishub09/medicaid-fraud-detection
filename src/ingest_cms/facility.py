@@ -89,6 +89,47 @@ SEVERITY_WEIGHT = {**{c: 1.0 for c in "ABC"}, **{c: 2.0 for c in "DEF"},
 
 LIVE_DISCHARGE_PATTERN = "live discharge"
 
+# The hospice measure PANEL (scheme-discovery buildout): each entry is
+# (metric_name, label_regex, negate). Measures live as ROWS in the Care
+# Compare provider file, matched on code+name; ``negate`` flips
+# more-is-good measures (visits near death, nurse minutes) so the shared
+# one-sided ranking always reads "high = suspicious". A measure absent from
+# a given edition simply doesn't emit — skip-missing, never zero-filled.
+HOSPICE_MEASURE_PANEL = [
+    # captive-referral setup: hospice census living in partner facilities
+    # (the Rhode Island Continuum-Care pattern generalized)
+    ("hospice_nf_care_share", r"nursing[_ ]?facility|skilled[_ ]?nursing", False),
+    # the two highest-paid care levels — OIG's standing intensity target
+    ("hospice_gip_share", r"inpatient", False),
+    # % patients with visits in the last days of life: HIGH is good care, so
+    # the deficit (negated) is the worthless-services-at-death signal
+    ("hospice_visit_gap", r"last[_ ]?days[_ ]?of[_ ]?life|h_009", True),
+    # nurse minutes per routine-home-care day: low staffing vs billed level
+    ("hospice_nurse_minute_deficit", r"nurse[_ ]?minutes|h_010", True),
+    # long-stay recruitment shows up as spend per head
+    ("hospice_spend_per_bene", r"spending[_ ]?per|per[_ ]?beneficiary", False),
+    # the classic long-stay recruitment case mix
+    ("hospice_dementia_share", r"dementia", False),
+]
+
+NH_OWNERSHIP_COLS = {
+    "ccn": ["CMS Certification Number (CCN)", "cms_certification_number_ccn",
+            "Federal Provider Number", "PROVNUM", "CCN", "ccn"],
+    "role": ["Role played by Owner or Manager in Facility", "Role", "role",
+             "Role Description"],
+    "owner_type": ["Owner Type", "owner_type"],
+    "owner_name": ["Owner Name", "owner_name"],
+    "stake": ["Ownership Percentage", "ownership_percentage"],
+}
+
+NH_PENALTY_COLS = {
+    "ccn": ["CMS Certification Number (CCN)", "cms_certification_number_ccn",
+            "Federal Provider Number", "PROVNUM", "CCN", "ccn"],
+    "penalty_date": ["Penalty Date", "penalty_date", "PENALTY_DATE"],
+    "penalty_type": ["Penalty Type", "penalty_type"],
+    "fine": ["Fine Amount", "fine_amount", "FINE_AMT"],
+}
+
 
 def _col(df: pd.DataFrame, name: str, default="") -> pd.Series:
     """Column or an aligned default series (df.get returns a bare scalar)."""
@@ -218,6 +259,125 @@ def compute_hospice_metrics(raw: pd.DataFrame,
     out = (hit.groupby("ccn", as_index=False)["score"].mean()
            .rename(columns={"score": "hospice_live_discharge_rate"}))
     return out, quarantined
+
+
+def compute_hospice_panel(raw: pd.DataFrame,
+                          asof_cutoff: str | None = None) -> pd.DataFrame:
+    """The full hospice measure panel → one wide per-CCN frame.
+
+    Runs every HOSPICE_MEASURE_PANEL pattern through the same long-format
+    machinery as live discharge (OBSERVED-row selection included). Measures
+    the file doesn't carry are simply absent from the output columns."""
+    parts = []
+    for name, pattern, negate in HOSPICE_MEASURE_PANEL:
+        try:
+            m, _ = compute_hospice_metrics(raw, pattern=pattern,
+                                           asof_cutoff=asof_cutoff)
+        except ValueError:
+            raise                      # missing CCN/score columns is fatal
+        if not len(m):
+            continue
+        m = m.rename(columns={"hospice_live_discharge_rate": name})
+        if negate:
+            m[name] = -m[name]
+        parts.append(m)
+    if not parts:
+        return pd.DataFrame(columns=["ccn"])
+    out = parts[0]
+    for extra in parts[1:]:
+        out = out.merge(extra, on="ccn", how="outer")
+    return out
+
+
+def compute_nh_ownership(raw: pd.DataFrame) -> pd.DataFrame:
+    """Care Compare NH ownership rows → per-CCN stake features.
+
+    ``nh_owner_count``: distinct owner/manager parties on record (a dense
+    related-party web); ``nh_owner_concentration``: the largest disclosed
+    ownership percentage (0-100; concentrated control). Rows whose stake
+    reads 'NOT APPLICABLE'/'NO PERCENTAGE...' parse to NaN and count toward
+    owner_count only."""
+    resolved = _resolve_columns(list(raw.columns), NH_OWNERSHIP_COLS)
+    if "ccn" not in resolved:
+        raise ValueError(f"NH ownership file missing a CCN column; "
+                         f"saw {list(raw.columns)[:12]}")
+    df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    df["ccn"] = _canon_ccn(df["ccn"])
+    df = df[df["ccn"].notna()]
+    owner_id = (_col(df, "owner_name").fillna("").astype(str).str.strip()
+                .str.upper())
+    stake = (_col(df, "stake").fillna("").astype(str)
+             .str.extract(r"(\d+(?:\.\d+)?)\s*%")[0])
+    df["_stake"] = pd.to_numeric(stake, errors="coerce")
+    df["_owner"] = owner_id
+    g = df.groupby("ccn")
+    out = pd.DataFrame({
+        "nh_owner_count": g["_owner"].apply(
+            lambda s: int(s[s != ""].nunique())),
+        "nh_owner_concentration": g["_stake"].max(),
+    }).reset_index()
+    return out
+
+
+def compute_nh_penalties(raw: pd.DataFrame,
+                         asof_cutoff: str | None = None) -> pd.DataFrame:
+    """Care Compare NH penalties (one row per action) → per-CCN
+    ``nh_penalty_count`` + ``nh_fine_total`` (log1p-scaled dollars so one
+    mega-fine doesn't own the percentile). With ``asof_cutoff``, only
+    penalties dated at/before the freeze count (hard-fails without the date
+    column, same rule as every other frozen row filter)."""
+    resolved = _resolve_columns(list(raw.columns), NH_PENALTY_COLS)
+    if "ccn" not in resolved:
+        raise ValueError(f"NH penalties file missing a CCN column; "
+                         f"saw {list(raw.columns)[:12]}")
+    df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    df = _asof_filter(df, "penalty_date", resolved, asof_cutoff,
+                      "NH penalties")
+    df["ccn"] = _canon_ccn(df["ccn"])
+    df = df[df["ccn"].notna()].copy()
+    df["_fine"] = pd.to_numeric(
+        _col(df, "fine").astype(str).str.replace(r"[$,]", "", regex=True),
+        errors="coerce").fillna(0.0)
+    g = df.groupby("ccn")
+    out = pd.DataFrame({
+        "nh_penalty_count": g.size(),
+        "nh_fine_total": np.log1p(g["_fine"].sum()),
+    }).reset_index()
+    return out
+
+
+def compute_pbj_weekend_gap(raw: pd.DataFrame) -> pd.DataFrame:
+    """PBJ daily rows → per-CCN ``pbj_weekend_understaffing``: weekday nurse
+    HPRD minus weekend nurse HPRD. Care is billed seven days a week; a
+    staffing level that collapses when inspectors are off duty is the
+    worthless-services signature with a schedule. Requires WorkDate; a file
+    without it returns empty (skip-missing)."""
+    resolved = _resolve_columns(list(raw.columns), PBJ_COLS)
+    missing = [c for c in ["ccn", "census", "hrs_rn"] if c not in resolved]
+    if missing:
+        raise ValueError(f"PBJ file missing required columns {missing}; "
+                         f"saw {list(raw.columns)[:12]}")
+    if "workdate" not in resolved:
+        return pd.DataFrame(columns=["ccn", "pbj_weekend_understaffing"])
+    df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
+    df["ccn"] = _canon_ccn(df["ccn"])
+    df = df[df["ccn"].notna()].copy()
+    d = pd.to_datetime(df["workdate"].astype(str), errors="coerce",
+                       format="mixed")
+    df = df[d.notna()].copy()
+    df["_weekend"] = d[d.notna()].dt.dayofweek >= 5
+    for c in ("census", "hrs_rn", "hrs_lpn", "hrs_cna"):
+        df[c] = pd.to_numeric(_col(df, c, 0.0), errors="coerce").fillna(0.0)
+    df["nurse_hours"] = df["hrs_rn"] + df["hrs_lpn"] + df["hrs_cna"]
+    df = df[df["census"] > 0]
+    g = df.groupby(["ccn", "_weekend"]).agg(h=("nurse_hours", "sum"),
+                                            c=("census", "sum"))
+    hprd = (g["h"] / g["c"]).unstack("_weekend")
+    if True not in hprd.columns or False not in hprd.columns:
+        return pd.DataFrame(columns=["ccn", "pbj_weekend_understaffing"])
+    out = pd.DataFrame({
+        "pbj_weekend_understaffing": (hprd[False] - hprd[True]).clip(lower=0)})
+    return out.dropna().reset_index()
 
 
 def compute_deficiency_counts(raw: pd.DataFrame,

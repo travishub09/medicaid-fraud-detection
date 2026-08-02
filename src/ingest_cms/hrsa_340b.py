@@ -101,7 +101,8 @@ OPAIS_COLS = {
     "begin_date": ["Begin Date", "begin_date", "Contract Begin Date",
                    "CP Begin Date", "Pharmacy Begin Date", "Start Date"],
     "term_date": ["Term Date", "term_date", "Termination Date",
-                  "Contract Term Date", "End Date"],
+                  "Contract Termination Date", "Contract Term Date",
+                  "End Date"],
 }
 
 

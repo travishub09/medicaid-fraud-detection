@@ -1706,11 +1706,12 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             "(processed/ccn_to_npi.parquet) — the one missing link for the "
             "facility / cost-report / capacity schemes")
     else:
-        _run_ccn_grain(pc, npi_to_org, ccn_to_npi, _emit, log)
+        _run_ccn_grain(pc, npi_to_org, ccn_to_npi, _emit, log, asof_cutoff)
     return frames
 
 
-def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
+def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
+                   asof_cutoff=None) -> None:
     """Facility / HCRIS / POS adapters: CCN-grain features rolled to org via the
     PECOS CCN↔NPI crosswalk, then (by the caller) broadcast to NPI."""
     from src.ingest_cms import facility as fac, hcris as hc, pos
@@ -1727,6 +1728,14 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
             m = pd.concat(parts, ignore_index=True).groupby(
                 "ccn", as_index=False).mean(numeric_only=True)
             ccn_feats.append(fac.facility_peer_percentiles(m, ["pbj_understaffing"]))
+            # weekend collapse: staffing that drops when inspectors are off
+            wk = pd.concat([fac.compute_pbj_weekend_gap(_read_any(pf))
+                            for pf in pbj_files], ignore_index=True)
+            if len(wk):
+                wk = wk.groupby("ccn", as_index=False).mean(numeric_only=True)
+                ccn_feats.append(fac.facility_peer_percentiles(
+                    wk, ["pbj_weekend_understaffing"]))
+                log(f"    [facility/pbj] weekend gap: {len(wk):,} CCNs")
     except Exception as e:
         log(f"    [facility/pbj] skipped: {e}")
     try:
@@ -1739,8 +1748,38 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
                 + (f" (measure periods ending <= {asof_cutoff})"
                    if asof_cutoff else ""))
             ccn_feats.append(fac.facility_peer_percentiles(m, ["hospice_live_discharge_rate"]))
+            # the full measure panel (NF-care share, GIP, visit gap, nurse
+            # minutes, spend/bene, dementia mix) — skip-missing per measure
+            panel = fac.compute_hospice_panel(_read_any(hos_p),
+                                              asof_cutoff=asof_cutoff)
+            pcols = [c for c in panel.columns if c != "ccn"]
+            if pcols:
+                ccn_feats.append(fac.facility_peer_percentiles(panel, pcols))
+                log(f"    [facility/hospice] panel measures: {', '.join(pcols)}")
     except Exception as e:
         log(f"    [facility/hospice] skipped: {e}")
+    try:
+        own_p = _first_existing(pc / "facility", "NH_Ownership*.csv",
+                                "*Ownership*.csv")
+        if own_p:
+            m = fac.compute_nh_ownership(_read_any(own_p))
+            log(f"    [facility/nh_ownership] {own_p.name}: {len(m):,} CCNs")
+            ccn_feats.append(fac.facility_peer_percentiles(
+                m, ["nh_owner_count", "nh_owner_concentration"]))
+    except Exception as e:
+        log(f"    [facility/nh_ownership] skipped: {e}")
+    try:
+        pen_p = _first_existing(pc / "facility", "NH_Penalties*.csv",
+                                "*Penalt*.csv")
+        if pen_p:
+            m = fac.compute_nh_penalties(_read_any(pen_p),
+                                         asof_cutoff=asof_cutoff)
+            log(f"    [facility/nh_penalties] {pen_p.name}: {len(m):,} CCNs"
+                + (f" (penalties <= {asof_cutoff})" if asof_cutoff else ""))
+            ccn_feats.append(fac.facility_peer_percentiles(
+                m, ["nh_penalty_count", "nh_fine_total"]))
+    except Exception as e:
+        log(f"    [facility/nh_penalties] skipped: {e}")
     try:
         defp = _first_existing(pc / "facility", "deficiencies.csv",
                                "*deficienc*.csv", "NH_HealthCitations*.csv",
