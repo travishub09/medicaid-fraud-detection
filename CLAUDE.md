@@ -341,7 +341,7 @@ python -m pytest tests/ -v
   source instead of from zero. Keyed to git commit + freeze args (stale caches
   self-invalidate — never serve pre-bugfix frames); cleared on successful
   completion; `--no-resume-cache` disables.
-  Full suite: `pytest tests/` (673 tests).
+  Full suite: `pytest tests/` (674 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -259,6 +259,68 @@ def registry(data_root: Path | None, as_markdown: bool) -> None:
         print()
 
 
+_EDITION_YEAR = None    # lazy re; avoids import-order noise
+
+
+def scan_editions(data_root: Path) -> Path:
+    """Write/refresh preclean/EDITIONS.csv — the file-vintage worksheet.
+
+    The vintage audit (scheme_triage) can only judge files whose names carry a
+    year; everything else is UNKNOWN until a human records the edition. This
+    inventories every data file under preclean/, infers what it can (year
+    token in the name, else the file's modified date as a HINT ONLY), and
+    preserves any data_period the operator already filled in — so the sheet is
+    filled once per file, not once per run. Columns:
+
+      file, size_mb, modified, year_in_name, data_period (FILL IN), notes
+
+    data_period is the period the DATA covers (e.g. 2023 or 2023Q4 or
+    2018-2024), which is NOT the download date. A filled sheet is the record
+    that lets frozen runs claim point-in-time correctness for undated files.
+    """
+    import csv
+    import re as _re
+    from datetime import datetime as _dt
+    pre = Path(data_root) / "preclean"
+    out = pre / "EDITIONS.csv"
+    existing: dict[str, dict] = {}
+    if out.exists():
+        with open(out, newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                existing[row.get("file", "")] = row
+    year_re = _re.compile(r"(?<!\d)(20[0-9]{2})(?!\d)")
+    rows = []
+    exts = {".csv", ".parquet", ".xlsx", ".zip", ".txt"}
+    for p in sorted(pre.rglob("*")):
+        if not p.is_file() or p.suffix.lower() not in exts \
+                or p.name == "EDITIONS.csv":
+            continue
+        rel = str(p.relative_to(pre)).replace("\\", "/")
+        years = year_re.findall(p.name)
+        old = existing.get(rel, {})
+        rows.append({
+            "file": rel,
+            "size_mb": round(p.stat().st_size / 1e6, 1),
+            "modified": _dt.fromtimestamp(p.stat().st_mtime)
+            .strftime("%Y-%m-%d"),
+            "year_in_name": "/".join(years) if years else "",
+            "data_period": old.get("data_period", ""),
+            "notes": old.get("notes", ""),
+        })
+    with open(out, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=["file", "size_mb", "modified",
+                                           "year_in_name", "data_period",
+                                           "notes"])
+        w.writeheader()
+        w.writerows(rows)
+    n_known = sum(1 for r in rows if r["year_in_name"] or r["data_period"])
+    print(f"[editions] {len(rows)} data file(s) inventoried -> {out}")
+    print(f"[editions] {n_known} carry a known vintage; "
+          f"{len(rows) - n_known} need data_period filled in (open the csv, "
+          "fill the column, save — refreshes never overwrite your entries)")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -270,10 +332,16 @@ def main() -> None:
                          "status if --data-root has data")
     ap.add_argument("--markdown", action="store_true",
                     help="emit the catalog as Markdown (regenerates docs/SOURCE_REGISTRY.md)")
+    ap.add_argument("--editions", action="store_true",
+                    help="write/refresh preclean/EDITIONS.csv — the file-vintage "
+                         "worksheet (fill data_period for undated files; your "
+                         "entries survive refreshes)")
     args = ap.parse_args()
     env_root = os.environ.get("MEDICAID_DATA_ROOT")
     root = Path(args.data_root or env_root) if (args.data_root or env_root) else None
-    if args.markdown or args.registry:
+    if args.editions:
+        scan_editions(root or Path.home() / "Desktop" / "data")
+    elif args.markdown or args.registry:
         registry(root, as_markdown=args.markdown)
     else:
         run(root or Path.home() / "Desktop" / "data")
