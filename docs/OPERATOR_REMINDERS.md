@@ -4,6 +4,8 @@ _As of 2026-08-02. Regenerate/update: `python -m src.reminders` (`--done <key>` 
 
 ## DUE NOW
 
+_Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
+
 - **leie** — OIG LEIE exclusion list (THE label source — new bans are training labels)
   - save to: preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)  |  https://oig.hhs.gov/exclusions/exclusions_list.asp
   - due: freshness unknown

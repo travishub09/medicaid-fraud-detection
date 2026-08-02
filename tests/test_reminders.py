@@ -58,6 +58,24 @@ def test_render_and_save(state):
     assert rem.VIEW.exists() and "DUE NOW" in rem.VIEW.read_text()
 
 
+def test_mark_done_autoqueues_checks(state):
+    msg = rem.mark_done(state, "monthly_stale", "2026-08-02")
+    assert "marked done" in msg
+    # monthly_stale has no url -> not a download -> no auto-queue
+    assert not any(t["key"] == "post_download_checks" for t in state["tasks"])
+    state["cadence"][1]["url"] = "https://example.gov/file"
+    msg = rem.mark_done(state, "monthly_stale", "2026-08-02")
+    followups = [t for t in state["tasks"] if t["key"] == "post_download_checks"]
+    assert len(followups) == 1
+    assert "vintage_inspect" in followups[0]["what"]
+    assert "scheme_discovery" in followups[0]["what"]
+    assert "post-download checks queued" in msg
+    # idempotent: a second download that day doesn't duplicate the task
+    rem.mark_done(state, "monthly_stale", "2026-08-02")
+    assert sum(1 for t in state["tasks"]
+               if t["key"] == "post_download_checks") == 1
+
+
 def test_seed_written_when_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(rem, "STATE", tmp_path / "reminders.json")
     monkeypatch.setattr(rem, "VIEW", tmp_path / "OPERATOR_REMINDERS.md")

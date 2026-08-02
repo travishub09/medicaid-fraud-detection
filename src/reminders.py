@@ -33,6 +33,7 @@ VIEW = DOCS / "OPERATOR_REMINDERS.md"
 # Seed state — written only if docs/reminders.json does not exist yet.
 # last_done=None means freshness UNKNOWN: it shows as due until confirmed.
 SEED = {
+    "data_root": "C:/Users/treyr/OneDrive/Desktop/data",
     "cadence": [
         {"key": "leie", "what": "OIG LEIE exclusion list (THE label source — new bans are training labels)",
          "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
@@ -129,6 +130,31 @@ def save(cfg: dict) -> None:
     VIEW.write_text(render_md(cfg, date.today()), encoding="utf-8")
 
 
+def mark_done(cfg: dict, key: str, when: str) -> str:
+    """Mark a cadence item done. Downloads AUTO-QUEUE the post-download
+    checks with exact commands — the operator never has to remember the
+    standing rule; the queue carries it."""
+    hit = [i for i in cfg["cadence"] if i["key"] == key]
+    if not hit:
+        raise SystemExit(f"unknown cadence key: {key} "
+                         f"(have: {', '.join(i['key'] for i in cfg['cadence'])})")
+    hit[0]["last_done"] = when
+    msg = f"[reminders] {key} marked done {when}"
+    if hit[0].get("url"):                      # it was a download
+        root = cfg.get("data_root", "<data-root>")
+        if not any(t["key"] == "post_download_checks" for t in cfg["tasks"]):
+            cfg["tasks"].append({
+                "key": "post_download_checks",
+                "what": (f'New files landed — run and send the checks: '
+                         f'1) python -m src.vintage_inspect --data-root "{root}"  '
+                         f'2) python -m src.model_a.scheme_discovery --data-root "{root}"  '
+                         f'3) send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude'),
+                "added": when})
+        msg += ("\n[reminders] post-download checks queued — run them after "
+                "this download session ends (exact commands are in the queue)")
+    return msg
+
+
 def _next_due(item: dict) -> date | None:
     """None means freshness unknown → treated as due."""
     if not item.get("last_done"):
@@ -160,6 +186,11 @@ def render_md(cfg: dict, today: date) -> str:
          f"(`--done <key>` after you fetch something)._", "",
          "## DUE NOW", ""]
     if due:
+        L.append("_Mark each fetch done with `python -m src.reminders "
+                 "--done <key>` — that AUTO-QUEUES the post-download checks "
+                 "(vintage inspect + scheme discovery + send reports) with "
+                 "exact commands, so nothing has to be remembered._")
+        L.append("")
         for it in due:
             L.append(f"- **{it['key']}** — {it['what']}")
             L.append(f"  - save to: {it['where']}"
@@ -193,13 +224,8 @@ def main() -> None:
     args = ap.parse_args()
     cfg = load()
     if args.done:
-        hit = [i for i in cfg["cadence"] if i["key"] == args.done]
-        if not hit:
-            raise SystemExit(f"unknown cadence key: {args.done} "
-                             f"(have: {', '.join(i['key'] for i in cfg['cadence'])})")
-        hit[0]["last_done"] = args.date
+        print(mark_done(cfg, args.done, args.date))
         save(cfg)
-        print(f"[reminders] {args.done} marked done {args.date}")
     if args.done_task:
         n = len(cfg["tasks"])
         cfg["tasks"] = [t for t in cfg["tasks"] if t["key"] != args.done_task]
