@@ -65,15 +65,6 @@ Nothing in the next 30 days.
 
 ## STANDING TASK QUEUE
 
-- [ ] **merge_bundle131** — Merge bundle 131 (supersedes 123-130) (added 2026-08-02)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git fetch "%USERPROFILE%\Downloads\bundle131nag.bundle" claude/happy-mccarthy-3skrn3
-git merge FETCH_HEAD
-python -m src.reminders --done-task merge_bundle131
-```
-
 - [ ] **pdf_part2_redownloads** — Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023 (URLs + save paths in the PDF) (added 2026-08-02)
 - [ ] **post_download_checks** — After the moves + re-downloads: run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-08-02)
 
@@ -82,14 +73,6 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -m src.vintage_inspect --data-root "C:\Users\treyr\OneDrive\Desktop\data"
 python -m src.model_a.scheme_discovery --data-root "C:\Users\treyr\OneDrive\Desktop\data"
 python -m src.reminders --done-task post_download_checks
-```
-
-- [ ] **dossier_poll** — Collect the Manus research and rebuild the pursuit dossier, then send PURSUIT_DOSSIER.md (added 2026-08-02)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v3" --poll
-python -m src.reminders --done-task dossier_poll
 ```
 
 - [ ] **owners_2022_editions** — While on data.cms.gov: grab a 2022-dated edition of each All-Owners dataset (version history on each dataset page) into preclean/owners_prior/ — unlocks leakage-correct FROZEN ownership churn (needs 2 pre-cutoff editions; you have one) (added 2026-08-02)
