@@ -5,7 +5,7 @@
 DATA_ROOT ?= $(HOME)/Desktop/data
 PY        ?= python3
 
-.PHONY: help install test demo graph model-a provider-features scheme-triage feature-snapshot frozen-package digest ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
+.PHONY: help install test demo graph model-a provider-features scheme-triage scheme-discovery feature-snapshot frozen-package digest ccn-crosswalk opensanctions owner-snapshot pipeline warn ci-local
 
 # Feature-freeze cutoff for the frozen-package (Travis's forward network test).
 ASOF_CUTOFF ?= 2023-12
@@ -95,6 +95,12 @@ pursuit-dossier:
 # wiring / right files) from the run's own artifacts. Seconds, file-reads only.
 scheme-triage:
 	$(PY) -m src.model_a.scheme_triage --run-dir $(RUN_DIR)
+
+# The discovery loop: mine the current preclean tree for schemes we don't run
+# yet — curated candidates checked against actual files/fields, plus every
+# signal-looking column no adapter consumes. Run after any procurement session.
+scheme-discovery:
+	$(PY) -m src.model_a.scheme_discovery --data-root $(DATA_ROOT)
 
 # Archive a valid-time snapshot of the per-NPI matrix so point-in-time history
 # accumulates for as-of (out-of-time) training. Run on a cadence (e.g. monthly).

@@ -351,7 +351,15 @@ python -m pytest tests/ -v
   never overwritten, "[auto: from data]" note), and proposes reviewable
   renames in rename_plan.bat (core contract names Spending/NPPES/PECOS/Caught
   are never renamed; nothing renames until the operator runs the .bat).
-  Full suite: `pytest tests/` (686 tests).
+  SCHEME DISCOVERY — the standing new-scheme loop (`model_a/scheme_discovery.py`,
+  `make scheme-discovery`, run after any procurement session): checks a curated
+  candidate-scheme menu (hospice NF-care share / GIP share / visits-near-death /
+  nurse minutes / spend-per-bene / dementia mix, NH ownership stakes + penalties,
+  PBJ weekend staffing — each with its fraud rationale) against the ACTUAL
+  preclean files and fields (READY TO WIRE / CHECK ROWS / BLOCKED), and lists
+  every signal-looking column no wired adapter consumes (the raw material for
+  schemes nobody has designed yet) → preclean/SCHEME_DISCOVERY.md.
+  Full suite: `pytest tests/` (690 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
