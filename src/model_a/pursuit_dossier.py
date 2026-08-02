@@ -93,6 +93,19 @@ def _dollars(v: float) -> str:
     return f"${v:,.0f}"
 
 
+def _clip_sentence(text: str, cap: int = 4000) -> str:
+    """Clip a research summary at a sentence boundary, never mid-word.
+    A hard cap keeps a runaway summary from swallowing the dossier; the
+    clip backs up to the last '. ' before the cap so the reader is never
+    left hanging on 'emergency medicin'."""
+    if len(text) <= cap:
+        return text
+    cut = text[:cap]
+    dot = cut.rfind(". ")
+    return (cut[:dot + 1] if dot > cap // 2 else cut.rsplit(" ", 1)[0]) \
+        + " [truncated — full text in the research registry]"
+
+
 def _plain_story(row: pd.Series, members: list[dict]) -> str:
     """The 8th-grade paragraph: what we saw, in ordinary words."""
     name = row.get("org_name") or f"organization {row.get('org_id')}"
@@ -253,7 +266,7 @@ def render(targets: pd.DataFrame, member_map: dict, run_name: str,
             summary = r.get("output") or ""
             if isinstance(summary, str) and summary.strip():
                 L.append("- **Supplemental research (public records):** "
-                         + summary.strip().replace("\n", " ")[:1200])
+                         + _clip_sentence(summary.strip().replace("\n", " ")))
         elif r:
             L.append(f"- **Supplemental research:** {r.get('status')} — rerun "
                      "with --poll to collect")
