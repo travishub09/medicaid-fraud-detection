@@ -107,3 +107,55 @@ def test_empty_health_yields_clean_report(tmp_path):
         json.dumps({"schemes": [], "regressions": []}))
     out = run_triage(tmp_path)
     assert "No underperforming schemes" in out.read_text(encoding="utf-8")
+
+
+def test_vintage_verdicts():
+    from src.model_a.scheme_triage import vintage_verdict
+    assert vintage_verdict("read partb_2023.csv", 2023) == ("2023", "ok")
+    v, verdict = vintage_verdict("read POS_File_iQIES_Q1_2026.csv", 2023)
+    assert verdict == "POST-CUTOFF" and "2026" in v
+    assert vintage_verdict("read pos.csv", 2023) == ("unknown", "UNKNOWN")
+    # no cutoff (current-day run): later years are not violations
+    assert vintage_verdict("read pos_2026.csv", None)[1] == "ok"
+
+
+def test_vintage_audit_flags_postcutoff_snapshot(tmp_path):
+    import json as _json
+    from src.model_a.scheme_triage import load_run, vintage_audit
+    (tmp_path / "scheme_health.json").write_text(
+        _json.dumps({"schemes": [], "regressions": []}))
+    (tmp_path / "feature_manifest.json").write_text(_json.dumps({
+        "asof_cutoff": "2023-12",
+        "sources_used": {},
+        "sources_audit": [
+            {"source": "pos", "status": "used",
+             "detail": "read POS_File_iQIES_Q1_2026.csv; 39,278 orgs"},
+            {"source": "facility", "status": "used",
+             "detail": "read pbj_daily_staffing_2025Q4.csv; 15,798 orgs"},
+            {"source": "partb", "status": "used",
+             "detail": "1,175,281 providers from partb_2023.csv"},
+            {"source": "mue", "status": "used",
+             "detail": "fact: spending_asof_2023-12.parquet"}]}))
+    ev = load_run(tmp_path)
+    va = {r["source"]: r["verdict"] for r in vintage_audit(ev)}
+    assert va["pos"] == "POST-CUTOFF"          # the real v4 leak, caught
+    assert va["facility"] == "POST-CUTOFF"
+    assert va["partb"] == "ok"
+    assert va["mue"] == "ok"
+    # and the report renders the section even with zero underperformers
+    from src.model_a.scheme_triage import run_triage
+    text = run_triage(tmp_path).read_text(encoding="utf-8")
+    assert "POST-CUTOFF" in text and "pos" in text
+
+
+def test_coverage_flag_v2_natural_universe_vs_wiring(tmp_path):
+    """A big source with sliver coverage flags WIRING; a source whose file is
+    naturally small gets the natural-universe note instead (the v1 false
+    alarms on opioid/deactivation)."""
+    ev = load_run(_run_dir(tmp_path))
+    under = select_underperformers(ev["health"])
+    d = {x["scheme"]: x for x in
+         (diagnose(r, ev) for _, r in under.iterrows())}
+    pm = d["pill_mill"]          # opioid file: 1.38M rows, coverage 17.2%
+    assert any("natural universe" in s for s in pm["q5"])
+    assert not any("WIRING FLAG" in s for s in pm["q5"])

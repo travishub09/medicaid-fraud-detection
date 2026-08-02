@@ -30,11 +30,22 @@ THRESHOLD = 0.5
 # scheme -> {feature_column: weight}. Columns marked (future) arrive with the
 # Priority-1 procurement sources; absent columns are skipped at runtime.
 DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
-    # available today: v3 de-correlated concept percentiles (company grain)
-    "single_service_mill": {"concentration": 1.0},
-    "payment_outlier": {"payment_intensity": 1.0},
-    "overutilization": {"service_intensity": 1.0},
+    # Company-grain v3 concepts AND provider-grain equivalents. The concept
+    # columns exist only in the detection pipeline's company features; the
+    # per-NPI export never carried them, which left these three schemes DORMANT
+    # on every provider run (2026-08-02 triage). Each scheme now ALSO points at
+    # the per-NPI column that measures the same thing (skip-missing keeps
+    # whichever grain is present).
+    "single_service_mill": {"concentration": 1.0,
+                            "code_concentration_hhi": 0.8},
+    "payment_outlier": {"payment_intensity": 1.0,
+                        "allowed_per_bene": 0.8},
+    "overutilization": {"service_intensity": 1.0,
+                        "services_per_bene": 0.8},
     "specialty_mismatch": {"specialty_mismatch": 0.5,
+                           # billing-implied specialty distance (billing LM) —
+                           # the per-NPI equivalent of the company concept
+                           "billing_taxonomy_mismatch": 0.5,
                            # data-derived clinical plausibility (A5); absent
                            # until spending + taxonomy are attached, then blends
                            "clinical_implausibility": 0.3,
@@ -49,7 +60,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "ownership_integrity": {
         "within_2_hops_of_exclusion": 0.6,
         "shell_score": 0.5,
+        # the graph emits related_party_density; the _norm variant exists only
+        # on the company path — accept both (skip-missing)
         "related_party_density_norm": 0.15,
+        "related_party_density": 0.15,
         # CHOW churn from diffed owner snapshots (A7); absent until two+ monthly
         # snapshots accumulate (src/entity_graph/ownership_churn.py)
         "ownership_turnover": 0.3,

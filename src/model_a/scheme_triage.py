@@ -49,6 +49,56 @@ EXCLUSION_BLIND = {
     "pill_mill", "upcoding",
 }
 
+# frame-name → audit-line name, where an adapter logs under a different tag
+# than the frame it emits (the 2026-08-02 triage's spurious "NOT IN AUDIT")
+AUDIT_ALIASES = {"order_referring_referrer": "order_referring"}
+
+# Sources whose files are SNAPSHOTS of current state (no service-period inside
+# the file): on a frozen run, an edition dated after the cutoff leaks
+# post-cutoff facts (beds, staffing, certification status) into the matrix.
+SNAPSHOT_SOURCES = {"pos", "facility", "pbj", "hcris", "hrsa_340b",
+                    "nppes_deactivation", "ownership_churn"}
+
+_YEAR_RE = re.compile(r"(?<!\d)(20[0-9]{2})(?!\d)")
+
+
+def vintage_verdict(detail: str, cutoff_year: int | None) -> tuple[str, str]:
+    """(inferred_vintage, verdict) for one source's audit detail line.
+
+    Reads every 4-digit year token out of the file names the adapter logged.
+    Verdicts: 'ok' (all years at/before the cutoff), 'POST-CUTOFF' (a file
+    year AFTER the freeze — post-cutoff facts can leak into a frozen matrix),
+    'UNKNOWN' (no year token anywhere — the edition must be recorded before
+    the run can claim point-in-time correctness)."""
+    years = sorted({int(y) for y in _YEAR_RE.findall(detail or "")})
+    if not years:
+        return "unknown", "UNKNOWN"
+    vint = ", ".join(str(y) for y in years)
+    if cutoff_year is not None and years[-1] > cutoff_year:
+        return vint, "POST-CUTOFF"
+    return vint, "ok"
+
+
+def vintage_audit(ev: dict) -> list[dict]:
+    """Every used source's file vintage vs the run's freeze cutoff."""
+    cutoff = ev.get("asof_cutoff")
+    cy = int(str(cutoff)[:4]) if cutoff else None
+    rows = []
+    for src, a in sorted(ev["sources_audit"].items()):
+        if a.get("status") != "used":
+            continue
+        vint, verdict = vintage_verdict(a.get("detail") or "", cy)
+        if verdict == "POST-CUTOFF" and src not in SNAPSHOT_SOURCES \
+                and "trend" not in src:
+            # annual PUFs are already vintage-capped by the export; a later
+            # year in the detail of a non-snapshot source is usually the
+            # processing date, not the data period — soften to note
+            verdict = "check"
+        rows.append({"source": src, "vintage": vint, "verdict": verdict,
+                     "snapshot": src in SNAPSHOT_SOURCES,
+                     "detail": (a.get("detail") or "")[:100]})
+    return rows
+
 
 # --- evidence loaders --------------------------------------------------------
 
@@ -68,6 +118,7 @@ def load_run(run_dir: str | Path) -> dict:
     mp = d / "feature_manifest.json"
     man = json.loads(mp.read_text(encoding="utf-8")) if mp.exists() else {}
     ev["sources_used"] = man.get("sources_used", {}) or {}
+    ev["asof_cutoff"] = man.get("asof_cutoff")
     ev["sources_audit"] = {r.get("source"): r
                            for r in (man.get("sources_audit") or [])}
     ev["expectations"] = _parse_expectations(d / "EXPECTATIONS_REPORT.md")
@@ -225,28 +276,57 @@ def diagnose(row: pd.Series, ev: dict) -> dict:
         q4.append("No calc-integrity findings touch this scheme's columns.")
 
     # Q5 — data wired in correctly
-    feeding = sorted({col2src[c] for c in wmap if c in col2src})
+    feeding = sorted({AUDIT_ALIASES.get(col2src[c], col2src[c])
+                      for c in wmap if c in col2src})
     q5 = []
+    src_rows_max = 0
     for src in feeding:
         a = audit.get(src) or {}
+        detail = a.get("detail") or "no detail"
+        rm = re.search(r"([\d,]{4,})", detail)
+        if rm:
+            src_rows_max = max(src_rows_max,
+                               int(rm.group(1).replace(",", "")))
         q5.append(f"source `{src}`: {a.get('status', 'NOT IN AUDIT')} — "
-                  f"{(a.get('detail') or 'no detail')[:110]}")
-    if cov == cov and feeding and float(cov or 0) < 0.5 \
+                  f"{detail[:110]}")
+    if cov == cov and feeding \
             and all((audit.get(s) or {}).get("status") == "used"
                     for s in feeding):
-        q5.append(f"WIRING FLAG: every feeding source reports used, yet the "
-                  f"subscore covers only {float(cov):.1%} of providers — "
-                  "check the join keys (NPI vs CCN vs org grain) between the "
-                  "adapter output and the matrix.")
+        # a WIRING flag only when the source claims a large universe yet the
+        # subscore covers a sliver; small sources naturally cover a slice
+        if float(cov or 0) < 0.05 and src_rows_max > 200_000:
+            q5.append(f"WIRING FLAG: feeding source reports "
+                      f"~{src_rows_max:,} rows yet the subscore covers only "
+                      f"{float(cov):.1%} of providers — check the join keys "
+                      "(NPI vs CCN vs org grain) between the adapter output "
+                      "and the matrix.")
+        elif float(cov or 0) < 0.5:
+            q5.append(f"Coverage {float(cov):.1%} is consistent with the "
+                      f"source's natural universe (~{src_rows_max:,} rows in "
+                      "its file) — partial coverage here is expected, not a "
+                      "wiring defect.")
     if not q5:
         q5.append("No feeding source resolves from the manifest — the scheme's "
                   "inputs are derived columns; wiring question moves to the "
                   "builder that computes them.")
 
-    # Q6 — right data files
+    # Q6 — right data files (name match + vintage vs the freeze cutoff)
+    cy = int(str(ev.get("asof_cutoff"))[:4]) if ev.get("asof_cutoff") else None
     q6 = []
     for src in feeding or []:
         a = audit.get(src) or {}
+        vint, vv = vintage_verdict(a.get("detail") or "", cy)
+        if vv == "POST-CUTOFF":
+            q6.append(f"VINTAGE FLAG `{src}`: file vintage {vint} is AFTER "
+                      f"the {ev.get('asof_cutoff')} freeze — a snapshot taken "
+                      "after the cutoff leaks post-cutoff facts into a frozen "
+                      "matrix; procure the pre-cutoff edition or exclude this "
+                      "source from frozen builds.")
+        elif vv == "UNKNOWN":
+            q6.append(f"VINTAGE UNKNOWN `{src}`: no year token in the file "
+                      "the adapter logged — record the edition (rename the "
+                      "file with its year, or note it in preclean/) before a "
+                      "frozen run can claim point-in-time correctness for it.")
         r = reg.get(src)
         detail = a.get("detail") or ""
         fm = re.search(r"from ([\w.\-]+\.(?:csv|parquet|xlsx|zip))", detail)
@@ -282,11 +362,46 @@ def to_markdown(diagnoses: list[dict], ev: dict) -> str:
     L.append("")
     if not diagnoses:
         L.append("**No underperforming schemes this run.**")
+        va0 = [r for r in vintage_audit(ev)
+               if r["verdict"] in ("POST-CUTOFF", "UNKNOWN")]
+        for r in va0:
+            L.append(f"- vintage {r['verdict']}: `{r['source']}` "
+                     f"({r['vintage']}) — {r['detail'][:80]}")
         return "\n".join(L)
     L.append("| scheme | trigger |")
     L.append("|---|---|")
     for d in diagnoses:
         L.append(f"| {d['scheme']} | {d['trigger']} |")
+    va = vintage_audit(ev)
+    flagged = [r for r in va if r["verdict"] in ("POST-CUTOFF", "UNKNOWN")]
+    L.append("")
+    L.append("## Vintage audit — file dates vs the freeze")
+    L.append("")
+    if ev.get("asof_cutoff"):
+        L.append(f"_Frozen run (cutoff {ev['asof_cutoff']}): a SNAPSHOT-type "
+                 "source whose edition is dated after the cutoff leaks "
+                 "post-cutoff facts (beds, staffing, certification status) "
+                 "into the matrix; a file with no readable date cannot claim "
+                 "point-in-time correctness at all._")
+    else:
+        L.append("_Current-day run: vintage flags are informational (no "
+                 "freeze to violate); UNKNOWN still deserves a recorded "
+                 "edition._")
+    L.append("")
+    if flagged:
+        L.append("| source | inferred vintage | verdict | file detail |")
+        L.append("|---|---|---|---|")
+        for r in flagged:
+            L.append(f"| `{r['source']}` | {r['vintage']} | "
+                     f"**{r['verdict']}** | {r['detail'][:80]} |")
+        L.append("")
+        L.append("_Action for POST-CUTOFF snapshots: procure the pre-cutoff "
+                 "edition (CMS archives quarterly editions of POS/PBJ/Care "
+                 "Compare) or exclude the source from frozen builds. Action "
+                 "for UNKNOWN: rename the file with its edition year or "
+                 "record it in preclean/ so the next audit can judge it._")
+    else:
+        L.append("All used sources carry vintages consistent with the run.")
     QS = [("q1", "1. Why do we think it is underperforming?"),
           ("q2", "2. Were the analytics built correctly? (design)"),
           ("q3", "3. Are data fields missing from the source data?"),

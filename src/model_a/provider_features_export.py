@@ -191,6 +191,45 @@ def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
     return out
 
 
+def _capacity_mismatch(m: pd.DataFrame) -> pd.Series | None:
+    """Org service volume per certified bed (POS): the worthless-services
+    capacity signal. Needs pos_bed_count (org-broadcast) + service_volume;
+    returns None when either is absent so the scheme stays skip-missing."""
+    if "pos_bed_count" not in m.columns or "service_volume" not in m.columns \
+            or "org_node_id" not in m.columns:
+        return None
+    vol = pd.to_numeric(m["service_volume"], errors="coerce").fillna(0.0)
+    beds = pd.to_numeric(m["pos_bed_count"], errors="coerce")
+    org_vol = vol.groupby(m["org_node_id"].astype(str)).transform("sum")
+    ratio = org_vol / beds.where(beds > 0)
+    return ratio.where(beds.notna() & (beds > 0))
+
+
+def _gate_ownership_subscore(m: pd.DataFrame) -> pd.Series | None:
+    """Assessability gate for subscore_ownership_integrity.
+
+    The 2026-08-02 triage found the subscore INVERTED (label AUC 0.349 on
+    5,210 positives). Mechanism: its inputs (shell clusters, 2-hop proximity,
+    related-party density) only exist for providers embedded in ownership
+    structure, while many label positives are solo practitioners with no
+    graph presence — who therefore score LOW and flip the direction. The
+    honest fix is not a sign flip; it is refusing to score providers who have
+    no ownership structure to assess (NaN, exactly like every skip-missing
+    scheme). Returns the boolean assessable mask, or None if the subscore is
+    absent."""
+    if "subscore_ownership_integrity" not in m.columns:
+        return None
+    def _num(c):
+        return (pd.to_numeric(m[c], errors="coerce")
+                if c in m.columns else pd.Series(np.nan, index=m.index))
+    assessable = (
+        (_num("org_member_count").fillna(1) > 1)
+        | (_num("co_location_cluster_size").fillna(0) > 1)
+        | (_num("has_excluded_owner").fillna(0) > 0)
+        | _num("ownership_turnover").notna())
+    return assessable
+
+
 def _broadcast_org_to_npi(npi_to_org: pd.DataFrame, org_frame: pd.DataFrame,
                           value_cols: list[str]) -> pd.DataFrame:
     """Map org-grain values down to every member NPI (each NPI inherits its org's
@@ -374,6 +413,13 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         assert len(m) == n0, "nucc peer-group join fanned out"
         sources_used["nucc_taxonomy"] = [c for c in keep if c != "npi"]
 
+    # worthless_services' missing input, built from data already in hand: org
+    # service volume per certified bed (POS). One-sided — only excess volume
+    # against capacity is suspicious; NaN where beds are unknown/zero.
+    cap = _capacity_mismatch(m)
+    if cap is not None:
+        m["capacity_mismatch"] = cap
+
     # --- peer-normalize the raw adapter metrics (one-sided taxonomy percentile) ---
     adapter_present = [c for c in ADAPTER_FEATURE_COLS if c in m.columns]
     peerpct = _one_sided_peer_pct(m, adapter_present, min_peer=min_peer)
@@ -394,6 +440,16 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     out = pd.concat(pieces, axis=1)
     out = out.loc[:, ~out.columns.duplicated()]
     assert len(out) == n0, "matrix row count changed during assembly"
+
+    # ownership-integrity assessability gate (see _gate_ownership_subscore):
+    # providers with no ownership structure are unscored, not scored-low.
+    _own_ok = _gate_ownership_subscore(out)
+    if _own_ok is not None:
+        n_gated = int((~_own_ok).sum())
+        out.loc[~_own_ok, "subscore_ownership_integrity"] = np.nan
+        print(f"  [ownership_gate] {n_gated:,} providers without ownership "
+              f"structure left unscored on ownership_integrity "
+              f"(the inversion fix — scored: {int(_own_ok.sum()):,})")
 
     # §E: widen the label with the near-certain smoking guns as POSITIVES —
     # billing after NPI deactivation / after death is definitional fraud conduct
@@ -1409,6 +1465,8 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         if dp and spending_p:
             deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
             spend = _spending_for_npis(spending_p, deact["npi"].tolist())
+            log(f"    [nppes_deactivation] reading {dp.name} "
+                f"({len(deact):,} deactivated NPIs)")
             _emit("nppes_deactivation",
                   nd.billing_after_deactivation(spend, deact, npi_to_org),
                   ["billing_after_deactivation"])
@@ -1778,6 +1836,8 @@ def main() -> None:
         g = Path(args.graph_dir)
         npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
         gf = pd.read_parquet(g / "org_graph_features.parquet")
+        audit(f"    [entity_graph] {len(gf):,} orgs from "
+              f"org_graph_features.parquet in {g.name}")
         org_nodes = (pd.read_parquet(g / "nodes" / "org_nodes.parquet")
                      if (g / "nodes" / "org_nodes.parquet").exists() else None)
         _warn_if_graph_stale(g, Path(args.leads), print)
