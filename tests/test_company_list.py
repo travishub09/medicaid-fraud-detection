@@ -131,3 +131,46 @@ def test_unlisted_leak_is_auto_screened():
     }
     scores = oof_scores(m, manifest)
     assert not np.all(scores[:30] > 0.99)      # cannot be perfect once dropped
+
+
+def test_chase_list_never_headed_by_the_already_caught():
+    """The 2026-08-02 failure: the delivered chase list's top 25 were solo
+    already-excluded providers at exact score 1.0 billing $0-$50k. A pursuit
+    rollup must drop label positives (keeping the org's clean members and an
+    n_excluded_members context column) and break score ties by dollars."""
+    import numpy as np
+    import pandas as pd
+    from src.model_a.company_list import rollup
+    n = 40
+    m = pd.DataFrame({
+        "npi": [f"{1000000000 + i}" for i in range(n)],
+        "org_node_id": [f"org:{i:02d}" for i in range(n)],
+        "provider_name": [f"P{i}" for i in range(n)],
+        "provider_on_exclusion": [1] * 10 + [0] * 30,
+        "net_paid": [50.0] * 10 + [1_000_000.0] * 30,
+        "subscore_upcoding": [0.9] * 10 + [0.5] * 30,
+    })
+    scores = np.array([1.0] * 10 + [0.6] * 30)     # excluded saturate at 1.0
+    out = rollup(m, scores, drop_excluded=True)
+    # no excluded solo org appears at all; the head is a real-dollar org
+    assert not set(out["org_id"]).intersection({f"org:{i:02d}" for i in range(10)})
+    assert float(out.iloc[0]["total_billed"]) >= 1_000_000.0
+    # kept-by-default path still allows the validation view
+    full = rollup(m, scores, drop_excluded=False)
+    assert len(full) == 40
+
+
+def test_tie_break_prefers_dollars():
+    import numpy as np
+    import pandas as pd
+    from src.model_a.company_list import rollup
+    m = pd.DataFrame({
+        "npi": ["1000000001", "1000000002"],
+        "org_node_id": ["org:a", "org:b"],
+        "provider_name": ["A", "B"],
+        "provider_on_exclusion": [0, 0],
+        "net_paid": [100.0, 5_000_000.0],
+        "subscore_upcoding": [0.5, 0.5],
+    })
+    out = rollup(m, np.array([0.9, 0.9]))          # identical scores
+    assert out.iloc[0]["org_id"] == "org:b"        # dollars break the tie

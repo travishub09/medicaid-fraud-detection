@@ -57,7 +57,7 @@ def top_targets(matrix: pd.DataFrame, manifest: dict, top: int = 10,
     dollars to be worth counsel's time) without touching the underlying
     ranking, which ships separately in company_list.csv."""
     scores = oof_scores(matrix, manifest)
-    orgs = rollup(matrix, scores)
+    orgs = rollup(matrix, scores, drop_excluded=True)
     orgs = orgs[orgs["total_billed"] >= float(min_billed)]
     return orgs.head(int(top)).reset_index(drop=True)
 
@@ -277,7 +277,7 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
     scores = oof_scores(matrix, manifest)
-    orgs = rollup(matrix, scores)
+    orgs = rollup(matrix, scores, drop_excluded=True)
     orgs = orgs[orgs["total_billed"] >= float(min_billed)]
     targets = orgs.head(int(top)).reset_index(drop=True)
     member_map = {str(r["org_id"]): _member_lines(matrix, scores, r["org_id"])

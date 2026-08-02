@@ -105,10 +105,25 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
 
 
 def rollup(matrix: pd.DataFrame, scores: np.ndarray,
-           top_k_schemes: int = 3) -> pd.DataFrame:
-    """Provider scores → one row per org with named drivers."""
+           top_k_schemes: int = 3, drop_excluded: bool = False) -> pd.DataFrame:
+    """Provider scores → one row per org with named drivers.
+
+    ``drop_excluded`` removes providers already ON the exclusion label before
+    aggregation — a PURSUIT list must not be headed by the already-caught (the
+    model perfectly re-finding label positives is validation, not a lead; the
+    2026-08-02 chase list's top 25 was exactly that: exact-1.0 solo excluded
+    providers billing $0-$50k). The org keeps its non-excluded members, and an
+    ``n_excluded_members`` column preserves the corroboration context."""
     m = matrix.copy()
     m["_score"] = scores
+    n_excl = None
+    if drop_excluded and "provider_on_exclusion" in m.columns:
+        excl = pd.to_numeric(m["provider_on_exclusion"],
+                             errors="coerce").fillna(0).astype(int)
+        org_key = "org_node_id" if "org_node_id" in m.columns else "group_id"
+        n_excl = (m.loc[excl == 1].groupby(m.loc[excl == 1][org_key])
+                  .size() if excl.any() else pd.Series(dtype=int))
+        m = m.loc[excl == 0]
     m["_billed"] = pd.to_numeric(
         m.get("net_paid", m.get("gross_paid", 0)), errors="coerce").fillna(0.0)
     org_col = "org_node_id" if "org_node_id" in m.columns else "group_id"
@@ -140,9 +155,14 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
 
     out = m.groupby(org_col, dropna=False).apply(_agg).reset_index()
     out = out.rename(columns={org_col: "org_id"})
-    # percentile-normalize the headline score so ANY cutoff is meaningful
+    if n_excl is not None:
+        out["n_excluded_members"] = out["org_id"].map(n_excl).fillna(0).astype(int)
+    # percentile-normalize the headline score so ANY cutoff is meaningful.
+    # Sort ties (exact-equal scores) by dollars so a $35 solo can never sit
+    # above a $1M org at the same score.
     out["score_pct"] = out["score_max"].rank(pct=True)
-    return out.sort_values("score_pct", ascending=False).reset_index(drop=True)
+    return out.sort_values(["score_pct", "total_billed"],
+                           ascending=False).reset_index(drop=True)
 
 
 def main() -> None:
@@ -153,6 +173,10 @@ def main() -> None:
     ap.add_argument("--min-billed", type=float, default=0.0,
                     help="drop orgs below this total billed (0 keeps all; the "
                          "comparer can apply their own floor)")
+    ap.add_argument("--keep-excluded", action="store_true",
+                    help="keep providers already on the exclusion label in the "
+                         "rollup (default drops them: a chase list must not be "
+                         "headed by the already-caught)")
     ap.add_argument("--out", default="company_list.csv")
     args = ap.parse_args()
 
@@ -162,7 +186,7 @@ def main() -> None:
           flush=True)
     scores = oof_scores(matrix, manifest)
     print("[company_list] rolling up to orgs ...", flush=True)
-    out = rollup(matrix, scores)
+    out = rollup(matrix, scores, drop_excluded=not args.keep_excluded)
     if args.min_billed > 0:
         out = out[out["total_billed"] >= args.min_billed]
     out.to_csv(args.out, index=False)
