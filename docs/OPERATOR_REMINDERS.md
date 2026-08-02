@@ -44,13 +44,14 @@ Nothing in the next 30 days.
 
 ## STANDING TASK QUEUE
 
-- [ ] **send_vintage_report** — Send VINTAGE_INSPECT.md (+ EDITIONS.csv if changed) after the inspector finishes (added 2026-08-02)
 - [ ] **send_scheme_discovery** — Merge bundle 123, run scheme_discovery, send SCHEME_DISCOVERY.md (added 2026-08-02)
 - [ ] **dossier_poll** — Run pursuit_dossier --poll (20-30 min after dispatch) and send PURSUIT_DOSSIER.md (added 2026-08-02)
 - [ ] **review_rename_plan** — Review preclean/rename_plan.bat with me BEFORE running it (added 2026-08-02)
 - [ ] **label_night** — Run run_label_night.bat on the first free night (never run yet; feeds the label harvest that lifts the v4 HOLD) (added 2026-08-02)
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
 - [ ] **docgraph_placement** — Confirm the DocGraph file's folder (preclean/docgraph/) and that the filename carries its year window (added 2026-08-02)
+- [ ] **run_the_moves_in** — Run the MOVES in Fix_and_Fetch PDF Part 1: facility files out of hcpcs_minutes, POS 2026-Q1 subfolders to hold, corrected renames (added 2026-08-02)
+- [ ] **fetch_the_4_re-downloads** — Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023 (added 2026-08-02)
 
 ## After ANY download session (standing rule)
 

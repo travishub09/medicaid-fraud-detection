@@ -239,11 +239,6 @@
  ],
  "tasks": [
   {
-   "key": "send_vintage_report",
-   "what": "Send VINTAGE_INSPECT.md (+ EDITIONS.csv if changed) after the inspector finishes",
-   "added": "2026-08-02"
-  },
-  {
    "key": "send_scheme_discovery",
    "what": "Merge bundle 123, run scheme_discovery, send SCHEME_DISCOVERY.md",
    "added": "2026-08-02"
@@ -271,6 +266,16 @@
   {
    "key": "docgraph_placement",
    "what": "Confirm the DocGraph file's folder (preclean/docgraph/) and that the filename carries its year window",
+   "added": "2026-08-02"
+  },
+  {
+   "key": "run_the_moves_in",
+   "what": "Run the MOVES in Fix_and_Fetch PDF Part 1: facility files out of hcpcs_minutes, POS 2026-Q1 subfolders to hold, corrected renames",
+   "added": "2026-08-02"
+  },
+  {
+   "key": "fetch_the_4_re-downloads",
+   "what": "Fetch the 4 re-downloads in Fix_and_Fetch PDF Part 2: Market Saturation State-County, Order and Referring, OPAIS dated, NADAC 2023",
    "added": "2026-08-02"
   }
  ]

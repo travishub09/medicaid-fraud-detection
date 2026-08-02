@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import re
 import zipfile
+from datetime import date as _date
 from pathlib import Path
 
 import pandas as pd
@@ -42,10 +43,14 @@ DATE_NAME_RE = re.compile(
 # formats tried, most specific first (DuckDB strptime patterns)
 DATE_FMTS = ["%Y-%m-%d", "%m/%d/%Y", "%Y%m%d", "%Y-%m", "%m/%d/%y", "%Y/%m/%d"]
 YEAR_RE = re.compile(r"(?<!\d)(20[0-9]{2})(?!\d)")
+# 8-digit YYYYMMDD stamps (e.g. 'Report 20260608.xlsx') — YEAR_RE can't see
+# the year inside these because of its no-adjacent-digit guards
+DATE8_RE = re.compile(r"(?<!\d)(20[0-9]{2})[01][0-9][0-3][0-9](?!\d)")
 
-# sources whose canonical file NAMES are contracts (never auto-rename)
+# sources whose canonical file NAMES are contracts (never auto-rename);
+# code_legality is a built, reviewed reference other modules cite by path
 PROTECTED_NAMES = {"spending.csv", "nppes.csv", "pecos.csv", "caught.csv",
-                   "editions.csv"}
+                   "editions.csv", "code_legality.csv"}
 
 # required columns per source (the runbook Part-6 table, machine-run).
 # folder-key → (any-of-these-files description, [required header fragments])
@@ -57,7 +62,9 @@ REQUIRED_COLS = {
     "open_payments": ["Covered_Recipient_NPI",
                       "Total_Amount_of_Payment_USDollars"],
     "pos": ["PRVDR_NUM", "BED_CNT"],
-    "hcris": ["PRVDR_NUM", "TOTAL_COSTS"],
+    # '|' = any-of aliases: data.cms.gov flattened cost reports use Title Case
+    "hcris": ["PRVDR_NUM|Provider CCN",
+              "TOTAL_COSTS|Total Costs|Total Cost"],
     "nadac": ["NDC", "NADAC Per Unit"],
     "order_referring": ["NPI", "PARTB", "DME"],
     "docgraph": ["from_npi", "to_npi"],
@@ -103,6 +110,17 @@ def _read_header(p: Path) -> list[str] | None:
             named = [c for c in cols if not str(c).startswith("column")]
             if len(named) >= 3:
                 return [str(c) for c in cols]
+        # pandas fallback with delimiter sniffing — clears files DuckDB's
+        # probe can't parse (odd quoting, uncommon separators)
+        try:
+            df = pd.read_csv(p, nrows=5, sep=None, engine="python",
+                             encoding="latin-1", dtype=str)
+            named = [c for c in df.columns
+                     if not str(c).startswith("Unnamed")]
+            if len(named) >= 3:
+                return [str(c) for c in df.columns]
+        except Exception:
+            pass
         return None
     except Exception:
         return None
@@ -169,10 +187,13 @@ def _required_check(rel: str, cols: list[str] | None) -> tuple[str, list[str]]:
                 return f"facility/{pat.pattern}", missing
         return "", []
     req = REQUIRED_COLS.get(folder)
+    if folder == "pos" and "clia" in parts[-1].lower():
+        req = ["PRVDR_NUM"]                  # lab file: no beds by design
     if not req:
         return "", []
     low = {str(c).lower() for c in (cols or [])}
-    missing = [r for r in req if r.lower() not in low]
+    missing = [r for r in req
+               if not any(a.strip().lower() in low for a in r.split("|"))]
     return folder, missing
 
 
@@ -195,7 +216,8 @@ def inspect_tree(data_root: Path) -> list[dict]:
         if p.suffix.lower() == ".zip":
             rec["zip_inner"] = _zip_peek(p)
             inner_years = sorted({y for n in rec["zip_inner"]
-                                  for y in YEAR_RE.findall(n)})
+                                  for y in (YEAR_RE.findall(n)
+                                            + DATE8_RE.findall(n))})
             if inner_years:
                 rec["inferred_period"] = "/".join(inner_years)
                 rec["verdict"] = "PERIOD FROM INNER FILENAMES"
@@ -257,6 +279,10 @@ def write_outputs(rows: list[dict], data_root: Path) -> Path:
             continue
         hi_year = (YEAR_RE.findall(r["inferred_period"]) or [""])[-1]
         if not hi_year:
+            continue
+        # a max-date years in the future is an expiration/sentinel column,
+        # not a data vintage — a '_thru2036' suffix would mislead
+        if int(hi_year) > _date.today().year + 1:
             continue
         stem, ext = base.rsplit(".", 1)
         newname = f"{stem}_thru{hi_year}.{ext}"

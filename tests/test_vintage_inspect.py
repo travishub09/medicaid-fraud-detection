@@ -113,6 +113,39 @@ def test_outputs(data_root):
     assert ed.at["spending.csv", "notes"] == "operator entered"
 
 
+def test_second_pass_fixes(tmp_path):
+    pre = tmp_path / "preclean"
+    # 1. semicolon-delimited csv: DuckDB probe may miss it; pandas sniffs it
+    (pre / "misc").mkdir(parents=True)
+    (pre / "misc" / "semi.csv").write_text(
+        "npi;code;amount\n1;99213;10\n2;99214;20\n")
+    # 2. zip with an 8-digit YYYYMMDD inner stamp
+    (pre / "zips").mkdir()
+    with zipfile.ZipFile(pre / "zips" / "stamped.zip", "w") as z:
+        z.writestr("NPPES Deactivated NPI Report 20260608.xlsx", b"x")
+    # 3. hcris Title-Case layout satisfies the any-of alias check
+    (pre / "hcris").mkdir()
+    (pre / "hcris" / "CostReport_Final.csv").write_text(
+        "Provider CCN,Fiscal Year Begin Date,Total Costs\n"
+        "015009,2022-10-01,100\n")
+    # 4. pos CLIA file has no beds by design
+    (pre / "pos").mkdir()
+    (pre / "pos" / "clia.DATA.csv").write_text(
+        "PRVDR_NUM,STATE_CD,GNRL_FAC_TYPE_CD\n01D0000001,AL,00\n")
+    # 5. future sentinel dates must not drive a rename
+    (pre / "misc" / "bars.csv").write_text(
+        "npi,bar_expiration_date,x\n1,2036-03-18,1\n2,2035-01-01,2\n")
+    rows = _by_file(inspect_tree(tmp_path))
+    assert rows["misc/semi.csv"]["columns"] is not None          # pandas fallback
+    assert rows["zips/stamped.zip"]["inferred_period"] == "2026"  # DATE8
+    assert rows["hcris/CostReport_Final.csv"]["missing_required"] == []
+    assert rows["pos/clia.DATA.csv"]["missing_required"] == []
+    assert rows["misc/bars.csv"]["verdict"] == "PERIOD FOUND INSIDE"
+    write_outputs(rows := inspect_tree(tmp_path), tmp_path)
+    plan = (pre / "rename_plan.bat").read_text()
+    assert "bars" not in plan                                     # 2036 guard
+
+
 def test_orphan_folders_listed(data_root):
     rows = inspect_tree(data_root)
     out = write_outputs(rows, data_root)
