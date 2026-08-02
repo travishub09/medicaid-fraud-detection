@@ -1664,16 +1664,26 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log) -> None:
     except Exception as e:
         log(f"    [facility/pbj] skipped: {e}")
     try:
-        hos_p = _first_existing(pc / "facility", "hospice.csv", "hospice*.csv")
+        hos_p = _first_existing(pc / "facility", "hospice.csv", "hospice*.csv",
+                                "Hospice_Provider*.csv", "*Hospice*.csv")
         if hos_p:
-            m, _ = fac.compute_hospice_metrics(_read_any(hos_p))
+            m, _ = fac.compute_hospice_metrics(_read_any(hos_p),
+                                               asof_cutoff=asof_cutoff)
+            log(f"    [facility/hospice] {hos_p.name}: {len(m):,} CCNs"
+                + (f" (measure periods ending <= {asof_cutoff})"
+                   if asof_cutoff else ""))
             ccn_feats.append(fac.facility_peer_percentiles(m, ["hospice_live_discharge_rate"]))
     except Exception as e:
         log(f"    [facility/hospice] skipped: {e}")
     try:
-        defp = _first_existing(pc / "facility", "deficiencies.csv", "*deficienc*.csv")
+        defp = _first_existing(pc / "facility", "deficiencies.csv",
+                               "*deficienc*.csv", "NH_HealthCitations*.csv",
+                               "*Citations*.csv", "*citation*.csv")
         if defp:
-            m, _ = fac.compute_deficiency_counts(_read_any(defp))
+            m, _ = fac.compute_deficiency_counts(_read_any(defp),
+                                                 asof_cutoff=asof_cutoff)
+            log(f"    [facility/deficiencies] {defp.name}: {len(m):,} CCNs"
+                + (f" (surveys <= {asof_cutoff})" if asof_cutoff else ""))
             ccn_feats.append(fac.facility_peer_percentiles(
                 m, ["deficiency_count", "deficiency_severity_weighted"]))
     except Exception as e:

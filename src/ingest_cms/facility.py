@@ -55,6 +55,12 @@ HOSPICE_COLS = {
     "measure_code": ["Measure Code", "measure_code", "MEASURE_CODE"],
     "measure_name": ["Measure Name", "measure_name", "MEASURE_NAME"],
     "score": ["Score", "score", "Measure Value", "measure_value"],
+    # measurement-period dates (current provider-data editions carry these,
+    # which lets ONE current download serve any freeze via row filtering)
+    "end_date": ["End Date", "end_date", "Measure End Date",
+                 "measure_end_date", "MEASURE_END_DATE", "Measure Date Range End"],
+    "start_date": ["Start Date", "start_date", "Measure Start Date",
+                   "measure_start_date", "MEASURE_START_DATE"],
 }
 
 DEFICIENCY_COLS = {
@@ -63,6 +69,10 @@ DEFICIENCY_COLS = {
             "PROVNUM", "CCN", "ccn"],
     "severity": ["Scope Severity Code", "scope_severity_code",
                  "Scope Severity", "SCOPE_SEVERITY_CODE"],
+    # each citation row carries its survey date — the point-in-time key
+    "survey_date": ["Survey Date", "survey_date", "SURVEY_DATE",
+                    "Inspection Date", "inspection_date", "Citation Date",
+                    "Health Survey Date"],
 }
 
 # CMS scope/severity letters → weight. A raw citation COUNT correlates with
@@ -129,13 +139,42 @@ def compute_pbj_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     return out.reset_index(), quarantined
 
 
+def _cutoff_ts(asof_cutoff):
+    """'2023-12' → the last moment of that month (rows AT the cutoff stay)."""
+    return pd.Period(str(asof_cutoff)[:7], freq="M").end_time
+
+
+def _asof_filter(df: pd.DataFrame, date_key: str, resolved: dict,
+                 asof_cutoff, what: str) -> pd.DataFrame:
+    """Keep rows whose ``date_key`` is at/before the freeze. HARD-FAILS when a
+    cutoff is requested but the file has no usable date column — a frozen run
+    must refuse undated snapshot rows rather than silently leak post-cutoff
+    facts (the POS Q1-2026 lesson, applied to measure-level files)."""
+    if asof_cutoff is None:
+        return df
+    if date_key not in df.columns:
+        raise ValueError(
+            f"as-of {asof_cutoff} requested but the {what} file has no "
+            f"{date_key.replace('_', ' ')} column to filter on — use a "
+            f"pre-cutoff edition instead, or send the header row so the "
+            f"alias list can learn this layout")
+    d = pd.to_datetime(df[date_key], errors="coerce")
+    if d.notna().sum() == 0:
+        raise ValueError(f"{what}: {date_key} column resolved but no value "
+                         f"parsed as a date — cannot apply the as-of filter")
+    return df[d.notna() & (d <= _cutoff_ts(asof_cutoff))]
+
+
 def compute_hospice_metrics(raw: pd.DataFrame,
-                            pattern: str = LIVE_DISCHARGE_PATTERN
+                            pattern: str = LIVE_DISCHARGE_PATTERN,
+                            asof_cutoff: str | None = None
                             ) -> tuple[pd.DataFrame, int]:
     """Care Compare hospice provider measures (long) → per-CCN live-discharge.
 
     Keeps measures whose code or name contains ``pattern`` (case-insensitive);
     non-numeric scores ("Not Available") are dropped, counted as quarantined.
+    With ``asof_cutoff``, only measures whose reporting period ENDED at/before
+    the freeze survive (the current edition then serves any historical run).
     """
     resolved = _resolve_columns(list(raw.columns), HOSPICE_COLS)
     missing = [c for c in ["ccn", "score"] if c not in resolved]
@@ -144,6 +183,7 @@ def compute_hospice_metrics(raw: pd.DataFrame,
                          f"{missing}; saw {list(raw.columns)[:12]}")
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
     df["ccn"] = _canon_ccn(df["ccn"])
+    df = _asof_filter(df, "end_date", resolved, asof_cutoff, "hospice measures")
 
     label = (_col(df, "measure_code").fillna("").astype(str) + " "
              + _col(df, "measure_name").fillna("").astype(str))
@@ -156,15 +196,24 @@ def compute_hospice_metrics(raw: pd.DataFrame,
     return out, quarantined
 
 
-def compute_deficiency_counts(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+def compute_deficiency_counts(raw: pd.DataFrame,
+                              asof_cutoff: str | None = None
+                              ) -> tuple[pd.DataFrame, int]:
     """Care Compare health deficiencies (one row per citation) → per-CCN
     ``deficiency_count`` (raw citations) + ``deficiency_severity_weighted``
     (scope/severity-weighted sum; equals the count when the file has no
-    severity column — skip-missing, never silently zero)."""
+    severity column — skip-missing, never silently zero). With
+    ``asof_cutoff``, only citations whose SURVEY DATE is at/before the freeze
+    count — one current download serves any historical run."""
     resolved = _resolve_columns(list(raw.columns), DEFICIENCY_COLS)
     if "ccn" not in resolved:
         raise ValueError(f"deficiency file missing a CCN column; "
                          f"saw {list(raw.columns)[:12]}")
+    if asof_cutoff is not None:
+        tmp = raw.rename(columns={v: k for k, v in resolved.items()})
+        raw = _asof_filter(tmp, "survey_date", resolved, asof_cutoff,
+                           "deficiency").rename(
+            columns={k: v for k, v in resolved.items()})
     ccn = _canon_ccn(raw[resolved["ccn"]])
     quarantined = int(ccn.isna().sum())
     df = pd.DataFrame({"ccn": ccn})
