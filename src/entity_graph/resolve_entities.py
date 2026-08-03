@@ -12,8 +12,10 @@ Resolution precedence (most reliable first), per the entity-resolution spec:
   1. pac_id        NPIs sharing a PECOS_ASCT_CNTL_ID are the same enrolled entity.
   2. shared_owner  non-PAC NPIs whose facilities share a common owner (owner_edges),
                    counted only where >= 2 non-PAC NPIs actually share that owner.
-  3. name          exact normalized org-name match; multi-state name merges are
-                   kept but flagged low confidence for human review (decision band).
+  3. name          exact normalized org-name match; a multi-state name merge is
+                   kept only when the key is STRONGLY distinctive (a coined
+                   token) — institutional-vocabulary names split per state, and
+                   surviving cross-state merges stay low confidence for review.
   else             the NPI is its own single-NPI organization.
 
 The probabilistic layer (Splink/Fellegi-Sunter fuzzy org-name and person↔employer
@@ -29,8 +31,9 @@ import unicodedata
 import numpy as np
 import pandas as pd
 
-# Reuse the shared name normalizer + distinctiveness guard (clean_data rule 8).
-from src.attempt_2.clean_data import _normalize_name, distinctive_name_key
+# Reuse the shared name normalizer + distinctiveness guards (clean_data rule 8).
+from src.attempt_2.clean_data import (
+    _normalize_name, distinctive_name_key, strongly_distinctive_name_key)
 
 # Mirrors company_rollup.norm_company: a stricter exact-match key that also strips
 # the leading "THE" and a few suffixes the shared normalizer leaves in.
@@ -120,10 +123,31 @@ def resolve_organizations(provider_dim: pd.DataFrame,
     name_ok = ((~df["npi"].isin(pac)) & owner_key.isna() & (df["_name_key"] != "")
                & df["_name_key"].map(distinctive_name_key))
 
+    # STATE-CONSISTENCY GUARD on tier-3: a name-only merge that spans states is
+    # held to the HIGHER distinctiveness bar. "CHILDREN'S HOSPITAL" in DC and NE
+    # are two unrelated systems — institutional-vocabulary names get their key
+    # scoped by state (per-state orgs; blank-state rows stay singletons), while
+    # coined chains ("SOUTHERNCARE") still merge nationally. Real national
+    # systems are caught upstream by PAC/owner hard keys, so the cost of a
+    # wrong split is an under-merge; the cost of a wrong fuse was a fake
+    # mega-org with summed damages in a pursuit dossier.
+    addr_state = (df["addr_state"].fillna("").astype(str)
+                  if "addr_state" in df.columns
+                  else pd.Series("", index=df.index))
+    span = (pd.DataFrame({"k": df.loc[name_ok, "_name_key"],
+                          "st": addr_state[name_ok]})
+            .query("st != ''").groupby("k")["st"].nunique())
+    weak_multistate = {k for k in span[span > 1].index
+                       if not strongly_distinctive_name_key(k)}
+    scoped = name_ok & df["_name_key"].isin(weak_multistate)
+    name_key_final = df["_name_key"].where(
+        ~(scoped & (addr_state != "")), df["_name_key"] + ":" + addr_state)
+    name_ok = name_ok & ~(scoped & (addr_state == ""))   # unknown state → singleton
+
     df["company_id"] = np.where(
         pac_key.notna(), "pac:" + pac_key.astype(str),
         np.where(owner_key.notna(), "owner:" + owner_key.astype(str),
-                 np.where(name_ok, "name:" + df["_name_key"], "npi:" + df["npi"])))
+                 np.where(name_ok, "name:" + name_key_final, "npi:" + df["npi"])))
     df["_basis"] = np.where(
         pac_key.notna(), "pac_id",
         np.where(owner_key.notna(), "shared_owner",

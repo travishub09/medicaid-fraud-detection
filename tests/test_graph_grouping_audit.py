@@ -38,6 +38,32 @@ def test_generic_name_orgs_stay_single():
     assert by["1000000003"].startswith("org:name:")
 
 
+def test_institutional_names_do_not_merge_across_states():
+    # The CHILDREN'S HOSPITAL collision: two unrelated systems (DC + NE) fused
+    # into one canonical org on a name-only key, damages summed into a dossier.
+    dim = _dim([
+        ("1000000010", "2", "CHILDREN'S HOSPITAL", "A DC", "DC", "282NC2000X"),
+        ("1000000011", "2", "CHILDREN'S HOSPITAL", "B NE", "NE", "282NC2000X"),
+        # same institutional name WITHIN one state still merges (real subparts)
+        ("1000000012", "2", "CHILDREN'S HOSPITAL", "C NE", "NE", "282NC2000X"),
+        # coined chain still merges nationally
+        ("1000000013", "2", "SOUTHERNCARE INC", "D AL", "AL", "251G00000X"),
+        ("1000000014", "2", "SOUTHERNCARE INC", "E KS", "KS", "251G00000X"),
+        # blank-state row of a colliding name: unverifiable → singleton
+        ("1000000015", "2", "CHILDREN'S HOSPITAL", "", "", "282NC2000X"),
+    ])
+    org, n2o = resolve_organizations(dim)
+    by = n2o.set_index("npi")["org_node_id"]
+    assert by["1000000010"] != by["1000000011"]          # DC and NE split
+    assert by["1000000011"] == by["1000000012"]          # NE pair stays merged
+    assert by["1000000010"].startswith("org:name:")      # still a name org...
+    assert by["1000000010"].endswith(":DC")              # ...scoped by state
+    assert by["1000000013"] == by["1000000014"]          # coined chain national
+    assert by["1000000015"].startswith("org:npi:")       # blank state: singleton
+    # every NPI still lands in exactly one org (partition invariant)
+    assert int(org["n_constituent_npis"].sum()) == len(dim)
+
+
 def _colo_edges(ids, size):
     hub = ids[0]
     rows = [{"src_id": hub, "dst_id": o, "edge_type": "co_located_with",

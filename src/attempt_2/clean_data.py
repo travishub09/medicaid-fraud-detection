@@ -332,6 +332,48 @@ def distinctive_name_key(key) -> bool:
     return len(toks) > 0
 
 
+# Institutional/civic/demographic vocabulary that names MANY unrelated local
+# institutions. "CHILDREN'S HOSPITAL" passes distinctive_name_key (CHILDREN is
+# not business filler) yet fused two unrelated hospital systems (DC + NE) into
+# one canonical org whose damages summed into a pursuit dossier. A name built
+# only from these words plus generic filler is a fine SINGLE-STATE merge key but
+# must never merge organizations ACROSS states on name alone — real national
+# chains link through PAC/owner hard keys; a name-only cross-state match on
+# institutional vocabulary is a collision, not a chain.
+INSTITUTIONAL_NAME_TOKENS = frozenset({
+    "CHILDREN", "CHILDRENS", "CHILD", "WOMEN", "WOMENS", "MEN", "MENS",
+    "INFANT", "INFANTS", "YOUTH", "ADULT", "ADULTS", "VETERAN", "VETERANS",
+    "SAINT", "SAINTS", "MERCY", "GRACE", "HOPE", "FAITH", "CHARITY", "TRINITY",
+    "PROVIDENCE", "BAPTIST", "METHODIST", "LUTHERAN", "PRESBYTERIAN",
+    "CATHOLIC", "JEWISH", "ADVENTIST", "CHRISTIAN", "SACRED", "HEART", "HOLY",
+    "CROSS", "GOOD", "SAMARITAN", "MEMORIAL", "UNIVERSITY", "COLLEGE",
+    "ACADEMIC", "TEACHING", "COUNTY", "CITY", "STATE", "PUBLIC", "DISTRICT",
+    "PARISH", "TOWNSHIP", "MUNICIPAL", "METRO", "METROPOLITAN", "CAPITAL",
+    "NORTH", "SOUTH", "EAST", "WEST", "CENTRAL", "NORTHERN", "SOUTHERN",
+    "EASTERN", "WESTERN", "NORTHEAST", "NORTHWEST", "SOUTHEAST", "SOUTHWEST",
+    "MIDWEST", "COASTAL", "MOUNTAIN", "HIGHLAND", "TRI", "MID", "GREATER",
+    "NEW", "OLD", "GRAND", "ROYAL", "GOLDEN", "SUNRISE", "SUNSET", "HERITAGE",
+    "LEGACY", "CORNERSTONE", "GATEWAY", "SUMMIT", "PINNACLE", "HORIZON",
+    "OAK", "PINE", "MAPLE", "CEDAR", "WILLOW", "MAGNOLIA", "ROSE", "GARDEN",
+    "GARDENS", "SPRING", "SPRINGS", "HILL", "HILLS", "RIDGE", "CREEK", "BROOK",
+    "GROVE", "MEADOW", "MEADOWS", "WOODS", "FOREST", "FIELD", "FIELDS",
+    "POINT", "POINTE", "BAY", "OCEAN", "GULF", "DESERT", "PRAIRIE",
+})
+
+
+def strongly_distinctive_name_key(key) -> bool:
+    """The HIGHER distinctiveness bar for CROSS-STATE name-only merges: at least
+    one token of length >= 3 that is neither generic business filler nor common
+    institutional vocabulary — i.e. a genuinely coined name ("SOUTHERNCARE",
+    "BLUEWATER"). Names failing this bar may still merge within one state via
+    distinctive_name_key; across states they are treated as unrelated namesakes.
+    """
+    toks = [t for t in str(key or "").upper().split()
+            if len(t) >= 3 and t not in GENERIC_NAME_TOKENS
+            and t not in INSTITUTIONAL_NAME_TOKENS]
+    return len(toks) > 0
+
+
 def _standardize_address(df: pd.DataFrame, prefix: str = "") -> pd.Series:
     """Lightweight USPS-ish address key for blocking during entity resolution.
 
