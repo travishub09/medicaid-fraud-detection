@@ -294,7 +294,8 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
                      label_col: str = "provider_on_exclusion",
                      future_label: pd.DataFrame | None = None,
                      n_splits: int = 5, n_boot: int = 400,
-                     per_group: bool = False) -> dict:
+                     per_group: bool = False,
+                     additive: bool = False) -> dict:
     """Core vs full on POOLED out-of-fold predictions — the powered ablation.
 
     Same question as ``run_source_ablation``, answered with every positive in the
@@ -336,6 +337,25 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
                                           n_boot=n_boot),
                 "doj_deferred": grp in _DOJ_DEFERRED}
         res["per_group"] = pg
+
+    if additive:
+        # THE STANDALONE QUESTION: core + ONE extra group at a time, each
+        # measured against core alone. Leave-one-out (above) undervalues
+        # correlated sources — remove one and its cousins cover for it.
+        # Additive is the honest frame for "which datasets add value over
+        # the core-5 model, standalone."
+        ad = {}
+        for grp, cols in part["extra"].items():
+            with_grp = core + [c for c in cols if c not in set(core)]
+            p_ad = oof_predict(m, y, with_grp, groups, n_splits=n_splits)
+            ok = scored & ~np.isnan(p_ad)
+            ad[grp] = {
+                "n_features": len(cols),
+                "over_core": _oof_delta_ci(y[ok], p_ad[ok], p_core[ok],
+                                           groups[ok] if groups is not None else None,
+                                           n_boot=n_boot),
+                "doj_deferred": grp in _DOJ_DEFERRED}
+        res["additive"] = ad
     return res
 
 
@@ -411,6 +431,34 @@ def oof_to_markdown(res: dict) -> str:
                     else "judgeable on this label")
             L.append(f"| {grp} | {g['n_features']} | "
                      f"{fmt(g['marginal']['lift10'])} | {note} |")
+    if res.get("additive"):
+        L += ["", "## STANDALONE value over core (core + ONE group at a time)",
+              "",
+              "_The additive frame: each row is a model trained on the core "
+              "files PLUS one extra source, measured against core alone. This "
+              "is the honest number for 'what does each dataset add over the "
+              "core-5 model, standalone' — leave-one-out (above) undervalues "
+              "correlated sources; this doesn't._",
+              "",
+              "| extra group | features | lift delta over core [95% CI] | "
+              "ROC delta over core [95% CI] | note |",
+              "|---|--:|---|---|---|"]
+        for grp, g in sorted(res["additive"].items(),
+                             key=lambda kv: -kv[1]["over_core"]["lift10"]["delta"]):
+            oc = g["over_core"]
+            note = ("DOJ-label deferred (exclusion-blind)" if g["doj_deferred"]
+                    else "judgeable on this label")
+            L.append(
+                f"| {grp} | {g['n_features']} | "
+                f"{oc['lift10']['delta']:+.4f} [{oc['lift10']['lo']:+.4f}, "
+                f"{oc['lift10']['hi']:+.4f}] | "
+                f"{oc['roc_auc']['delta']:+.4f} [{oc['roc_auc']['lo']:+.4f}, "
+                f"{oc['roc_auc']['hi']:+.4f}] | {note} |")
+        L.append("")
+        L.append("_Sorted by lift added over core. A group whose lift CI clears "
+                 "zero here adds STANDALONE value even if leave-one-out called "
+                 "it redundant (overlap means two sources carry the same "
+                 "catch — either one works, and that is still value)._")
     return "\n".join(L)
 
 
@@ -472,6 +520,10 @@ def main() -> None:
                          "when the label is rare and the holdout CI spans zero.")
     ap.add_argument("--per-group", action="store_true",
                     help="with --oof: also run leave-one-extra-group-out")
+    ap.add_argument("--additive", action="store_true",
+                    help="with --oof: also run core+ONE-group-at-a-time — the "
+                         "standalone-value-over-core table (the honest frame "
+                         "for 'which datasets beat the core-5 model')")
     ap.add_argument("--out", default="SOURCE_ABLATION.md")
     args = ap.parse_args()
     matrix = pd.read_parquet(args.matrix)
@@ -480,7 +532,8 @@ def main() -> None:
     if args.oof:
         res = run_oof_ablation(matrix, manifest, label_col=args.label_col,
                                future_label=fl, n_splits=max(args.splits, 5),
-                               per_group=args.per_group)
+                               per_group=args.per_group,
+                               additive=args.additive)
         Path(args.out).write_text(oof_to_markdown(res), encoding="utf-8")
         d = res["full_vs_core"]
         print(f"[source_ablation --oof] positives in metric: {res['positives_scored']:,}")

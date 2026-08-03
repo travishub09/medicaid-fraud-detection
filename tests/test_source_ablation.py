@@ -164,3 +164,14 @@ def test_oof_per_group_marginal():
                            per_group=True)
     # dropping the strong extra feature must cost lift → positive marginal
     assert res["per_group"]["open_payments"]["marginal"]["lift10"]["delta"] > 0
+
+
+def test_oof_additive_mode_reports_standalone_value():
+    from src.model_a.source_ablation import run_oof_ablation, oof_to_markdown
+    res = run_oof_ablation(_matrix(), _manifest(), n_splits=4, n_boot=50,
+                           additive=True)
+    ad = res["additive"]["open_payments"]
+    assert ad["over_core"]["roc_auc"]["delta"] > 0     # signal adds over core
+    md = oof_to_markdown(res)
+    assert "STANDALONE value over core" in md
+    assert "lift delta over core" in md
