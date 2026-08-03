@@ -78,9 +78,10 @@ def top_targets_by_damages(matrix: pd.DataFrame, manifest: dict,
     orgs = orgs.merge(sizes, on="org_id", how="left")
     orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"],
                                          errors="coerce").fillna(0.0)
-    cut = orgs["score_pct"].quantile(0.90)
-    keep = orgs[(orgs["score_pct"] >= cut)
-                & (orgs["case_size_yr"] >= float(min_damages))]
+    hot = pd.to_numeric(orgs["score_dollar_weighted"],
+                        errors="coerce").fillna(0.0) >= 0.5
+    gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
+    keep = orgs[hot & ~gov & (orgs["case_size_yr"] >= float(min_damages))]
     return (keep.sort_values("case_size_yr", ascending=False)
             .head(int(top)).reset_index(drop=True))
 
@@ -310,10 +311,19 @@ def render(targets: pd.DataFrame, member_map: dict, run_name: str,
     return "\n".join(L)
 
 
+# entity classes that are not qui tam defendants for this product:
+# sovereigns (no FCA liability per Stevens) and municipal umbrella agencies
+GOV_RE = (r"\b(STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
+          r"DEPARTMENT|DEPT\.?|AUTHORITY|BUREAU|DIVISION OF|"
+          r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF)\b")
+
+
 def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
           poll: bool = False, transport=None,
           min_billed: float = 250_000.0,
-          min_damages: float | None = None) -> Path:
+          min_damages: float | None = None,
+          min_hot: float = 0.5,
+          include_government: bool = False) -> Path:
     d = Path(run_dir)
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
@@ -325,11 +335,21 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
     orgs["case_size_yr"] = pd.to_numeric(
         orgs.get("case_size_yr"), errors="coerce").fillna(0.0)
     if min_damages is not None:
-        # recovery-space selection: top score decile, ranked by case size
-        cut = orgs["score_pct"].quantile(0.90)
-        orgs = orgs[(orgs["score_pct"] >= cut)
-                    & (orgs["case_size_yr"] >= float(min_damages))]
-        orgs = orgs.sort_values("case_size_yr", ascending=False)
+        # recovery-space selection: HOT MONEY (dollar-weighted score, not a
+        # percentile — most orgs are tiny, so even 0.05 ranks high), damages
+        # over the bar, and no government entities (states can't be FCA
+        # defendants; counties/cities aren't this product's market)
+        hot = pd.to_numeric(orgs["score_dollar_weighted"],
+                            errors="coerce").fillna(0.0) >= float(min_hot)
+        gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
+        n_gov = int((gov & hot).sum())
+        if n_gov:
+            print(f"[pursuit_dossier] {n_gov} government-entity org(s) "
+                  "excluded (use --include-government to keep)")
+        keep = hot & (orgs["case_size_yr"] >= float(min_damages))
+        if not include_government:
+            keep &= ~gov
+        orgs = orgs[keep].sort_values("case_size_yr", ascending=False)
         n_small = 0
     else:
         n_small = int((orgs["total_billed"] < float(min_billed)).sum())
@@ -361,9 +381,15 @@ def main() -> None:
     ap.add_argument("--top", type=int, default=10)
     ap.add_argument("--min-billed", type=float, default=250_000.0)
     ap.add_argument("--min-damages", type=float, default=None,
-                    help="recovery-space selection: keep only top-decile-score "
-                         "orgs whose estimated annual single damages clear "
-                         "this bar (e.g. 10000000), ranked by case size")
+                    help="recovery-space selection: keep only hot-money orgs "
+                         "whose estimated annual single damages clear this "
+                         "bar (e.g. 10000000), ranked by case size")
+    ap.add_argument("--min-hot", type=float, default=0.5,
+                    help="minimum dollar-weighted score for the recovery "
+                         "list (the money itself must be hot; default 0.5)")
+    ap.add_argument("--include-government", action="store_true",
+                    help="keep state/county/city umbrella entities on the "
+                         "list (excluded by default)")
     ap.add_argument("--dispatch", action="store_true",
                     help="send the Manus research tasks now (needs "
                          f"${MANUS_KEY_ENV})")
@@ -371,7 +397,8 @@ def main() -> None:
                     help="collect finished research and fold it into the dossier")
     args = ap.parse_args()
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
-          min_billed=args.min_billed, min_damages=args.min_damages)
+          min_billed=args.min_billed, min_damages=args.min_damages,
+          min_hot=args.min_hot, include_government=args.include_government)
 
 
 if __name__ == "__main__":

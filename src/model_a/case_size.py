@@ -46,6 +46,14 @@ P_INTERVENE = 0.20            # cold-start prior (model_c refines per case)
 # kickback-taint candidates (conservative: top tail only)
 KICKBACK_PCTL = 0.95
 
+# INFLATION-THEORY CEILING: the digital twin can't extrapolate to umbrella
+# orgs (a state agency billing $8B has 'expected' ~ 0, so raw excess ≈
+# everything). Inflation theories (excess, shares) cap at this fraction of
+# paid; whole-stream theories (hospice, worthless services, shells) are
+# separate estimators and are NOT capped — a real phantom operation still
+# sizes at its full stream under those.
+EXCESS_CAP_SHARE = 0.40
+
 
 def recovery_walk(damages_single: float, years: float = LOOKBACK_YEARS,
                   p_intervene: float = P_INTERVENE) -> dict:
@@ -89,14 +97,16 @@ def estimate_case_size(matrix: pd.DataFrame) -> pd.DataFrame:
         paid = _num(m, "gross_paid")
     est: dict[str, pd.Series] = {}
 
+    cap = paid * EXCESS_CAP_SHARE if paid is not None else None
     exp = _num(m, "expected_net_paid")
     if paid is not None and exp is not None:
-        est["dmg_billing_excess"] = (paid - exp).clip(lower=0.0)
+        est["dmg_billing_excess"] = np.minimum(
+            (paid - exp).clip(lower=0.0), cap)
     for share_col, name in (("mue_violation_share", "dmg_impossible_day"),
                             ("facility_code_share", "dmg_facility_code")):
         s = _num(m, share_col)
         if paid is not None and s is not None:
-            est[name] = (s.clip(0, 1) * paid).clip(lower=0.0)
+            est[name] = np.minimum((s.clip(0, 1) * paid).clip(lower=0.0), cap)
     d = _num(m, "dme_ineligible_referred_dollars")
     if d is not None:
         est["dmg_dme_ring"] = d.clip(lower=0.0)

@@ -32,12 +32,14 @@ def _matrix():
 
 def test_estimators_and_basis():
     est = estimate_case_size(_matrix())
-    assert est.loc[0, "case_size_yr"] == 10_000_000.0
+    # $10M raw excess on $12M paid caps at 40% of paid = $4.8M — the
+    # institutional-tail guard (a state agency's 'excess' isn't damages)
+    assert est.loc[0, "case_size_yr"] == 4_800_000.0
     assert est.loc[0, "case_size_basis"] == "billing_excess"
     # kickback taint: whole paid stream for the extreme-correlation tail
     assert est.loc[2, "case_size_yr"] == 3_000_000.0
     assert est.loc[2, "case_size_basis"] == "kickback_taint"
-    assert est.loc[4, "case_size_yr"] == 500_000.0
+    assert est.loc[4, "case_size_yr"] == 400_000.0  # 0.5 share capped at 40% of paid
     assert est.loc[4, "case_size_basis"] == "impossible_day"
     # clean provider: no damages, basis 'none'
     assert est.loc[7, "case_size_yr"] == 0.0
@@ -46,10 +48,25 @@ def test_estimators_and_basis():
 
 def test_org_rollup_sums_members():
     orgs = org_case_size(_matrix()).set_index("org_id")
-    # org:0 holds providers 0 and 1 -> the $10M excess
-    assert orgs.loc["org:0", "case_size_yr"] == 10_000_000.0
+    # org:0 holds providers 0 and 1 -> the capped excess (40% of $12M)
+    assert orgs.loc["org:0", "case_size_yr"] == 4_800_000.0
     assert orgs.loc["org:0", "case_size_basis"] == "billing_excess"
     assert orgs.loc["org:1", "case_size_basis"] == "kickback_taint"
+
+
+def test_gov_screen_and_hot_gate():
+    import re
+    from src.model_a.pursuit_dossier import GOV_RE
+    gov_names = ["COMMONWEALTH OF MASSACHUSETTS",
+                 "LOS ANGELES COUNTY DEPARTMENT OF MENTAL HEALTH",
+                 "CITY & COUNTY OF SAN FRANCISCO",
+                 "NEW YORK CITY HEALTH AND HOSPITALS CORPORATION"]
+    ok_names = ["BAYADA HOME HEALTH CARE, INC.", "DAP HEALTH, INC.",
+                "SOUTHERN KENTUCKY HEART INSTITUTE, PSC"]
+    for n in gov_names:
+        assert re.search(GOV_RE, n), n
+    for n in ok_names:
+        assert not re.search(GOV_RE, n), n
 
 
 def test_recovery_walk_math():
