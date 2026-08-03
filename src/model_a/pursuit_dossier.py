@@ -313,7 +313,7 @@ def render(targets: pd.DataFrame, member_map: dict, run_name: str,
 
 # entity classes that are not qui tam defendants for this product:
 # sovereigns (no FCA liability per Stevens) and municipal umbrella agencies
-GOV_RE = (r"\b(STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
+GOV_RE = (r"\b(?:STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
           r"DEPARTMENT|DEPT\.?|AUTHORITY|BUREAU|DIVISION OF|"
           r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF)\b")
 
