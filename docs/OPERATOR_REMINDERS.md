@@ -82,6 +82,9 @@ python -m src.reminders --done-task post_download_checks
 
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
 - [ ] **run_the_readiness_audit** — Run the readiness audit after merging bundle 135 and send READINESS_AUDIT.md (added 2026-08-02)
+- [ ] **tonight:_run_label_ablation** — TONIGHT: run label ablation alone (start labelnight /min run_label_night.bat); morning: send LABEL_ABLATION.md (added 2026-08-03)
+- [ ] **tomorrow_night:_run_v5.bat_alone** — TOMORROW NIGHT: run_v5.bat alone (save to repo folder first); morning after: upload run_packet_v5.zip from Desktop + run the dossier poll line from the log (added 2026-08-03)
+- [ ] **morning:_poll_the_v2** — Morning: poll the v2 recovery dossier and upload PURSUIT_DOSSIER.md (Brad candidate) (added 2026-08-03)
 
 ## After ANY download session (standing rule)
 
