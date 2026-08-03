@@ -267,11 +267,6 @@
    ]
   },
   {
-   "key": "owners_2022_editions",
-   "what": "While on data.cms.gov: grab a 2022-dated edition of each All-Owners dataset (version history on each dataset page) into preclean/owners_prior/ \u2014 unlocks leakage-correct FROZEN ownership churn (needs 2 pre-cutoff editions; you have one)",
-   "added": "2026-08-02"
-  },
-  {
    "key": "label_night",
    "what": "Run run_label_night.bat on the first free night (never run yet; feeds the label harvest that lifts the v4 HOLD)",
    "added": "2026-08-02",

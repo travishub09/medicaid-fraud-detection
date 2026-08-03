@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-08-02. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-08-03. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -74,7 +74,6 @@ python -m src.model_a.scheme_discovery --data-root "C:\Users\treyr\OneDrive\Desk
 python -m src.reminders --done-task post_download_checks
 ```
 
-- [ ] **owners_2022_editions** — While on data.cms.gov: grab a 2022-dated edition of each All-Owners dataset (version history on each dataset page) into preclean/owners_prior/ — unlocks leakage-correct FROZEN ownership churn (needs 2 pre-cutoff editions; you have one) (added 2026-08-02)
 - [ ] **label_night** — Run run_label_night.bat on the first free night (never run yet; feeds the label harvest that lifts the v4 HOLD) (added 2026-08-02)
 
 ```bat
