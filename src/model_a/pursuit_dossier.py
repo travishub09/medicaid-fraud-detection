@@ -62,6 +62,29 @@ def top_targets(matrix: pd.DataFrame, manifest: dict, top: int = 10,
     return orgs.head(int(top)).reset_index(drop=True)
 
 
+def top_targets_by_damages(matrix: pd.DataFrame, manifest: dict,
+                           top: int = 10,
+                           min_damages: float = 10_000_000.0) -> pd.DataFrame:
+    """The recovery-space pursuit list: rank score-qualified orgs by
+    ESTIMATED CASE SIZE (scheme-specific single damages, annualized) and
+    keep only those clearing ``min_damages`` per year. A $3M-billing
+    kickback whose tainted claims clear the bar stays; a $12M-billing org
+    with $200k of unexplained excess drops. Orgs must still sit in the top
+    score decile — damages without detection signal is just a big org."""
+    from .case_size import org_case_size
+    scores = oof_scores(matrix, manifest)
+    orgs = rollup(matrix, scores, drop_excluded=True)
+    sizes = org_case_size(matrix)
+    orgs = orgs.merge(sizes, on="org_id", how="left")
+    orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"],
+                                         errors="coerce").fillna(0.0)
+    cut = orgs["score_pct"].quantile(0.90)
+    keep = orgs[(orgs["score_pct"] >= cut)
+                & (orgs["case_size_yr"] >= float(min_damages))]
+    return (keep.sort_values("case_size_yr", ascending=False)
+            .head(int(top)).reset_index(drop=True))
+
+
 def _member_lines(matrix: pd.DataFrame, scores: np.ndarray, org_id: str,
                   k: int = 3) -> list[dict]:
     """Top-scored member NPIs for one org — NPI + city + their loudest signal."""
@@ -133,6 +156,10 @@ def _technical_block(row: pd.Series, members: list[dict]) -> list[str]:
          f"{str(row.get('top_schemes') or '—').replace('|', ', ') or '—'}",
          f"- **Scale:** {_dollars(row.get('total_billed'))} billed, "
          f"{int(row.get('n_providers', 0)):,} member provider number(s)"]
+    if float(row.get("case_size_yr") or 0) > 0:
+        L.append(f"- **Case size (basis: "
+                 f"{row.get('case_size_basis', 'n/a')}):** "
+                 f"{str(row.get('case_size_line') or '')}")
     if members:
         L.append("- **Loudest member signals** (NPI, city, top peer-percentile "
                  "driver):")
@@ -285,14 +312,30 @@ def render(targets: pd.DataFrame, member_map: dict, run_name: str,
 
 def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
           poll: bool = False, transport=None,
-          min_billed: float = 250_000.0) -> Path:
+          min_billed: float = 250_000.0,
+          min_damages: float | None = None) -> Path:
     d = Path(run_dir)
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
     scores = oof_scores(matrix, manifest)
     orgs = rollup(matrix, scores, drop_excluded=True)
-    orgs = orgs[orgs["total_billed"] >= float(min_billed)]
+    from .case_size import org_case_size, size_line
+    sizes = org_case_size(matrix)
+    orgs = orgs.merge(sizes, on="org_id", how="left")
+    orgs["case_size_yr"] = pd.to_numeric(
+        orgs.get("case_size_yr"), errors="coerce").fillna(0.0)
+    if min_damages is not None:
+        # recovery-space selection: top score decile, ranked by case size
+        cut = orgs["score_pct"].quantile(0.90)
+        orgs = orgs[(orgs["score_pct"] >= cut)
+                    & (orgs["case_size_yr"] >= float(min_damages))]
+        orgs = orgs.sort_values("case_size_yr", ascending=False)
+        n_small = 0
+    else:
+        n_small = int((orgs["total_billed"] < float(min_billed)).sum())
+        orgs = orgs[orgs["total_billed"] >= float(min_billed)]
     targets = orgs.head(int(top)).reset_index(drop=True)
+    targets["case_size_line"] = targets["case_size_yr"].map(size_line)
     member_map = {str(r["org_id"]): _member_lines(matrix, scores, r["org_id"])
                   for _, r in targets.iterrows()}
 
@@ -317,6 +360,10 @@ def main() -> None:
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--top", type=int, default=10)
     ap.add_argument("--min-billed", type=float, default=250_000.0)
+    ap.add_argument("--min-damages", type=float, default=None,
+                    help="recovery-space selection: keep only top-decile-score "
+                         "orgs whose estimated annual single damages clear "
+                         "this bar (e.g. 10000000), ranked by case size")
     ap.add_argument("--dispatch", action="store_true",
                     help="send the Manus research tasks now (needs "
                          f"${MANUS_KEY_ENV})")
@@ -324,7 +371,7 @@ def main() -> None:
                     help="collect finished research and fold it into the dossier")
     args = ap.parse_args()
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
-          min_billed=args.min_billed)
+          min_billed=args.min_billed, min_damages=args.min_damages)
 
 
 if __name__ == "__main__":
