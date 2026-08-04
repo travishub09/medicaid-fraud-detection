@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-08-03. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-08-04. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -85,6 +85,32 @@ python -m src.reminders --done-task post_download_checks
 - [ ] **tonight:_run_label_ablation** — TONIGHT: run label ablation alone (start labelnight /min run_label_night.bat); morning: send LABEL_ABLATION.md (added 2026-08-03)
 - [ ] **tomorrow_night:_run_v5.bat_alone** — TOMORROW NIGHT: run_v5.bat alone (save to repo folder first); morning after: upload run_packet_v5.zip from Desktop + run the dossier poll line from the log (added 2026-08-03)
 - [ ] **morning:_poll_the_v2** — Morning: poll the v2 recovery dossier and upload PURSUIT_DOSSIER.md (Brad candidate) (added 2026-08-03)
+- [ ] **run_packet__frozen_2023-12_v5** — Send the run packet for frozen_2023-12_v5 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-08-04)
+
+```bat
+set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v5
+powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
+REM then upload run_packet.zip to the chat
+python -m src.reminders --done-task run_packet__frozen_2023-12_v5
+```
+
+- [ ] **pursuit_dossier__frozen_2023-12_v5** — Build + dispatch the pursuit dossier for frozen_2023-12_v5 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) (added 2026-08-04)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v5" --dispatch
+python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v5
+```
+
+- [ ] **dossier_poll__frozen_2023-12_v5** — ~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md (added 2026-08-04)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v5" --poll
+python -m src.reminders --done-task dossier_poll__frozen_2023-12_v5
+```
+
+- [ ] **registry_verdict__frozen_2023-12_v5** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v5 — close only when you have them (added 2026-08-04)
 
 ## After ANY download session (standing rule)
 
