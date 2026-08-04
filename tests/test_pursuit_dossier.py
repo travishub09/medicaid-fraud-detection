@@ -186,3 +186,22 @@ def test_priority_list_signal_sorted_filters_only(tmp_path):
     md = (tmp_path / "PRIORITY_LIST.md").read_text(encoding="utf-8")
     assert "investigative hypothesis" in md
     assert "never the sort" in md
+
+
+def test_recovery_mode_sorts_by_signal_not_case_size(tmp_path):
+    # the universal rule: signal sorts, case size only gates
+    m, man = _matrix()
+    m["expected_net_paid"] = m["net_paid"] * 0.4     # excess estimator fires
+    from src.model_a.pursuit_dossier import top_targets_by_damages
+    t = top_targets_by_damages(m, man, top=10, min_damages=1.0)
+    if len(t) > 1:
+        dw = t["score_dollar_weighted"].to_numpy()
+        assert (dw[:-1] >= dw[1:] - 1e-12).all()
+    # and the full build in recovery mode renders in the same order
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+    build(tmp_path, top=5, min_damages=1.0, min_hot=0.0)
+    targets = pd.read_csv(tmp_path / "pursuit_targets.csv")
+    if len(targets) > 1:
+        dw = targets["score_dollar_weighted"].to_numpy()
+        assert (dw[:-1] >= dw[1:] - 1e-12).all()

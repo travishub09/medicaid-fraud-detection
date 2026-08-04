@@ -158,11 +158,14 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
     if n_excl is not None:
         out["n_excluded_members"] = out["org_id"].map(n_excl).fillna(0).astype(int)
     # percentile-normalize the headline score so ANY cutoff is meaningful.
-    # Sort ties (exact-equal scores) by dollars so a $35 solo can never sit
-    # above a $1M org at the same score.
+    # SIGNAL SORTS, DOLLARS FILTER (operator decision 2026-08-04): rank by
+    # the max-score percentile, then dollar-weighted score (still signal) —
+    # dollars only break EXACT signal ties, so a $35 solo never sits above
+    # a $1M org at the same score, but billing size never outranks signal.
     out["score_pct"] = out["score_max"].rank(pct=True)
-    return out.sort_values(["score_pct", "total_billed"],
-                           ascending=False).reset_index(drop=True)
+    return out.sort_values(
+        ["score_pct", "score_dollar_weighted", "total_billed"],
+        ascending=False).reset_index(drop=True)
 
 
 def main() -> None:

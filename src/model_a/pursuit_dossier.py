@@ -65,12 +65,13 @@ def top_targets(matrix: pd.DataFrame, manifest: dict, top: int = 10,
 def top_targets_by_damages(matrix: pd.DataFrame, manifest: dict,
                            top: int = 10,
                            min_damages: float = 10_000_000.0) -> pd.DataFrame:
-    """The recovery-space pursuit list: rank score-qualified orgs by
-    ESTIMATED CASE SIZE (scheme-specific single damages, annualized) and
-    keep only those clearing ``min_damages`` per year. A $3M-billing
-    kickback whose tainted claims clear the bar stays; a $12M-billing org
-    with $200k of unexplained excess drops. Orgs must still sit in the top
-    score decile — damages without detection signal is just a big org."""
+    """The recovery-space pursuit list under the universal rule (operator
+    decision 2026-08-04): FRAUD SIGNAL is the only sort; dollars and entity
+    class are FILTERS. Orgs must clear the hot-money floor, the gov screen,
+    and ``min_damages``/yr of scheme-aware case size (a $3M-billing kickback
+    whose tainted claims clear the bar stays; a $12M-billing org with $200k
+    of excess drops) — then rank by dollar-weighted detection score, ties by
+    max member score. Case size never orders the list; it only gates it."""
     from .case_size import org_case_size
     scores = oof_scores(matrix, manifest)
     orgs = rollup(matrix, scores, drop_excluded=True)
@@ -82,7 +83,8 @@ def top_targets_by_damages(matrix: pd.DataFrame, manifest: dict,
                         errors="coerce").fillna(0.0) >= 0.5
     gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
     keep = orgs[hot & ~gov & (orgs["case_size_yr"] >= float(min_damages))]
-    return (keep.sort_values("case_size_yr", ascending=False)
+    return (keep.sort_values(["score_dollar_weighted", "score_max"],
+                             ascending=False)
             .head(int(top)).reset_index(drop=True))
 
 
@@ -377,10 +379,15 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
     orgs["case_size_yr"] = pd.to_numeric(
         orgs.get("case_size_yr"), errors="coerce").fillna(0.0)
     if min_damages is not None:
-        # recovery-space selection: HOT MONEY (dollar-weighted score, not a
-        # percentile — most orgs are tiny, so even 0.05 ranks high), damages
-        # over the bar, and no government entities (states can't be FCA
-        # defendants; counties/cities aren't this product's market)
+        # recovery-space selection under the universal rule (operator
+        # decision 2026-08-04): SIGNAL SORTS, EVERYTHING ELSE FILTERS.
+        # Filters: hot money (dollar-weighted score floor), damages over the
+        # bar (scheme-aware — kickback orgs size on tainted claims, not
+        # billing), no government entities (states can't be FCA defendants;
+        # counties/cities aren't this product's market). Sort: dollar-
+        # weighted detection score, ties by max member score. Case size
+        # gates the list; it never orders it — sorting on it re-ranked by
+        # org size the moment every estimate hit the 40% ceiling (v5).
         hot = pd.to_numeric(orgs["score_dollar_weighted"],
                             errors="coerce").fillna(0.0) >= float(min_hot)
         gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
@@ -391,7 +398,8 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         keep = hot & (orgs["case_size_yr"] >= float(min_damages))
         if not include_government:
             keep &= ~gov
-        orgs = orgs[keep].sort_values("case_size_yr", ascending=False)
+        orgs = orgs[keep].sort_values(
+            ["score_dollar_weighted", "score_max"], ascending=False)
         n_small = 0
     else:
         n_small = int((orgs["total_billed"] < float(min_billed)).sum())
