@@ -166,14 +166,22 @@ def test_priority_list_signal_sorted_filters_only(tmp_path):
     # SORT: fraud signal, descending — dollars never drive priority
     dw = out["score_dollar_weighted"].to_numpy()
     assert (dw[:-1] >= dw[1:] - 1e-12).all()
-    # the solo individual ships as NPI + city, never a personal name
-    assert not out["org_name"].str.contains("DOE").any()
+    # default: enrollment names ship as-is (operator decision 2026-08-04),
+    # and every identifier rides along — the full member-NPI roster
     solo_rows = out[out["org_id"] == "org:solo"]
     assert len(solo_rows) == 1
-    assert solo_rows.iloc[0]["org_name"].startswith(
-        "Individual provider (NPI 1999999999")
+    assert solo_rows.iloc[0]["org_name"] == "DOE, JANE"
+    assert solo_rows.iloc[0]["member_npis"] == "1999999999"
+    assert "member_npis" in out.columns and out["member_npis"].str.len().gt(0).all()
     # cap-pinned winners carry the honesty flag
     assert bool(solo_rows.iloc[0]["case_size_capped"])
+    # --mask-individuals still available for copies that leave the operator
+    csv2 = build_priority_list(tmp_path, min_damages=1_000_000.0,
+                               mask_individuals=True)
+    out2 = pd.read_csv(csv2)
+    assert not out2["org_name"].str.contains("DOE").any()
+    assert out2[out2["org_id"] == "org:solo"].iloc[0]["org_name"].startswith(
+        "Individual provider (NPI 1999999999")
     # the companion frame ships the legal frame + filter accounting
     md = (tmp_path / "PRIORITY_LIST.md").read_text(encoding="utf-8")
     assert "investigative hypothesis" in md

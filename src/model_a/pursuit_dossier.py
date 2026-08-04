@@ -425,7 +425,8 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
 
 def build_priority_list(run_dir: str | Path,
                         min_damages: float = 10_000_000.0,
-                        include_government: bool = False) -> Path:
+                        include_government: bool = False,
+                        mask_individuals: bool = False) -> Path:
     """The full funder-facing priority list: EVERY qualifying organization,
     ranked by FRAUD SIGNAL alone. Dollars and entity class are FILTERS,
     never sort keys:
@@ -464,8 +465,21 @@ def build_priority_list(run_dir: str | Path,
     small = orgs["case_size_yr"] < float(min_damages)
     out = orgs[~small & (~gov | include_government)].copy()
 
-    # mask solo individual enrollments: personal names never ship externally
-    if "entity_type" in matrix.columns:
+    # every identifier in the data ships: the full member-NPI roster per org
+    # (names come from public enrollment records — NPPES/PECOS)
+    npis = (matrix.assign(_k=mkey).groupby("_k")["npi"]
+            .agg(lambda s: ";".join(sorted(str(x) for x in s)))
+            if "npi" in matrix.columns else pd.Series(dtype=str))
+    out["member_npis"] = out["org_id"].astype(str).map(npis).fillna("")
+    cities = (matrix.assign(_k=mkey).groupby("_k")["addr_city"]
+              .agg(lambda s: ";".join(sorted({str(x) for x in s
+                                              if str(x or "").strip()})[:5]))
+              if "addr_city" in matrix.columns else pd.Series(dtype=str))
+    out["cities"] = out["org_id"].astype(str).map(cities).fillna("")
+
+    # optional masking (--mask-individuals) for versions of this file that
+    # leave the operator's hands; the default ships enrollment names as-is
+    if mask_individuals and "entity_type" in matrix.columns:
         solo = matrix.loc[~mkey.duplicated(keep=False)
                           & (matrix["entity_type"].astype(str) == "1")]
         mask_map = {
@@ -482,7 +496,8 @@ def build_priority_list(run_dir: str | Path,
     out = out.sort_values(["score_dollar_weighted", "score_max"],
                           ascending=False).reset_index(drop=True)
     out.insert(0, "priority_rank", out.index + 1)
-    cols = [c for c in ("priority_rank", "org_name", "org_id", "states",
+    cols = [c for c in ("priority_rank", "org_name", "org_id", "member_npis",
+                        "states", "cities",
                         "n_providers", "score_dollar_weighted", "score_max",
                         "score_pct", "top_schemes", "case_size_yr",
                         "case_size_basis", "case_size_capped", "total_billed",
@@ -504,9 +519,12 @@ def build_priority_list(run_dir: str | Path,
         "(kickback-theory orgs are sized on tainted claims, not billing).",
         "- `case_size_capped` = the estimate sits at the 40%-of-billed "
         "ceiling: an upper-bound screen, not a damages estimate.",
-        "- Individuals appear as NPI + city; organizations are named from "
-        "public enrollment records.",
-        "", "Columns: priority_rank; org_name; states; n_providers; "
+        "- Providers are named from public enrollment records (NPPES/PECOS) "
+        "and every identifier ships: the full member-NPI roster, states, and "
+        "cities per organization. Every row is a statistical lead for "
+        "counsel review — not an accusation, not an adjudication.",
+        "", "Columns: priority_rank; org_name; member_npis (full roster); "
+        "states; cities; n_providers; "
         "score_dollar_weighted (the SORT — 0-1 signal); score_max; "
         "score_pct; top_schemes (named drivers); case_size_yr/basis/capped "
         "(scheme-aware annual single-damages screen); total_billed "
@@ -542,13 +560,18 @@ def main() -> None:
                          "(provider_priority_list.csv): every org, sorted by "
                          "fraud signal; government entities and sub-bar case "
                          "sizes are FILTERS, dollars never sort")
+    ap.add_argument("--mask-individuals", action="store_true",
+                    help="priority list only: replace solo individuals' "
+                         "enrollment names with NPI + city (default ships "
+                         "names as enrolled)")
     args = ap.parse_args()
     if args.priority_list:
         build_priority_list(
             args.run_dir,
             min_damages=(args.min_damages if args.min_damages is not None
                          else 10_000_000.0),
-            include_government=args.include_government)
+            include_government=args.include_government,
+            mask_individuals=args.mask_individuals)
         return
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,
