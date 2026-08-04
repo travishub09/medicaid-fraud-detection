@@ -96,17 +96,25 @@ def estimate_case_size(matrix: pd.DataFrame) -> pd.DataFrame:
     if paid is None:
         paid = _num(m, "gross_paid")
     est: dict[str, pd.Series] = {}
+    # per-estimator: did the raw estimate exceed the ceiling and get clipped?
+    # A cap-pinned winner is an UPPER-BOUND SCREEN (≈ proportional to size),
+    # not an estimate — the v5 top-10 was 10/10 cap-pinned, i.e. size-ranked
+    # in costume. The flag makes that visible instead of silent.
+    capped: dict[str, pd.Series] = {}
 
     cap = paid * EXCESS_CAP_SHARE if paid is not None else None
     exp = _num(m, "expected_net_paid")
     if paid is not None and exp is not None:
-        est["dmg_billing_excess"] = np.minimum(
-            (paid - exp).clip(lower=0.0), cap)
+        raw = (paid - exp).clip(lower=0.0)
+        est["dmg_billing_excess"] = np.minimum(raw, cap)
+        capped["dmg_billing_excess"] = (raw > cap) & (cap > 0)
     for share_col, name in (("mue_violation_share", "dmg_impossible_day"),
                             ("facility_code_share", "dmg_facility_code")):
         s = _num(m, share_col)
         if paid is not None and s is not None:
-            est[name] = np.minimum((s.clip(0, 1) * paid).clip(lower=0.0), cap)
+            raw = (s.clip(0, 1) * paid).clip(lower=0.0)
+            est[name] = np.minimum(raw, cap)
+            capped[name] = (raw > cap) & (cap > 0)
     d = _num(m, "dme_ineligible_referred_dollars")
     if d is not None:
         est["dmg_dme_ring"] = d.clip(lower=0.0)
@@ -124,9 +132,16 @@ def estimate_case_size(matrix: pd.DataFrame) -> pd.DataFrame:
         out["case_size_basis"] = out.drop(columns=["case_size_yr"]) \
             .idxmax(axis=1).str.replace("dmg_", "", regex=False)
         out.loc[out["case_size_yr"] <= 0, "case_size_basis"] = "none"
+        # was the WINNING estimator the clipped ceiling? (flag rides the row)
+        pinned = pd.Series(False, index=m.index)
+        for col, flag in capped.items():
+            pinned |= (out["case_size_basis"]
+                       == col.replace("dmg_", "")) & flag.fillna(False)
+        out["case_size_capped"] = pinned & (out["case_size_yr"] > 0)
     else:
         out["case_size_yr"] = 0.0
         out["case_size_basis"] = "none"
+        out["case_size_capped"] = False
     return out
 
 
@@ -139,22 +154,34 @@ def org_case_size(matrix: pd.DataFrame) -> pd.DataFrame:
     if org_col not in matrix.columns:
         return pd.DataFrame(columns=["case_size_yr", "case_size_basis"])
     g = per.assign(_org=matrix[org_col].astype(str)).groupby("_org")
+    capped_dollars = (per["case_size_yr"].where(per["case_size_capped"], 0.0)
+                      .groupby(matrix[org_col].astype(str)).sum())
+    total = g["case_size_yr"].sum()
     out = pd.DataFrame({
-        "case_size_yr": g["case_size_yr"].sum(),
+        "case_size_yr": total,
         "case_size_basis": g["case_size_basis"]
         .agg(lambda s: s[s != "none"].mode().iat[0]
              if (s != "none").any() else "none"),
+        # org is cap-pinned when clipped members carry most of its dollars
+        "case_size_capped": (capped_dollars / total.replace(0, np.nan))
+        .fillna(0.0) > 0.5,
     })
     out.index.name = "org_id"
     return out.reset_index()
 
 
-def size_line(damages_yr: float) -> str:
+def size_line(damages_yr: float, capped: bool = False) -> str:
     """One human sentence for the dossier: the walk with its assumptions."""
     w = recovery_walk(damages_yr)
     if w["damages_yr"] <= 0:
         return ("Estimated case size: not computable from current signals "
                 "(no dollar-denominated estimator fired).")
+    note = ""
+    if capped:
+        note = (f" NOTE: this figure is pinned at the "
+                f"{EXCESS_CAP_SHARE:.0%}-of-billed ceiling — the excess model "
+                "saturated, so treat it as an upper-bound screen (roughly "
+                "proportional to organization size), not a damages estimate.")
     return (f"Estimated case size: ~${w['damages_yr']:,.0f}/yr single damages "
             f"(~${w['damages_period']:,.0f} over a {LOOKBACK_YEARS}-year "
             f"lookback). Settlement band ${w['settle_lo']:,.0f}–"
@@ -163,4 +190,4 @@ def size_line(damages_yr: float) -> str:
             f"~${w['expected_relator']:,.0f}. Assumptions: excess-only where "
             "estimable, settlement at 1.5–2.0x single damages, relator "
             "15–25%, intervention prior 20%. These are screening estimates, "
-            "not damages calculations.")
+            "not damages calculations." + note)

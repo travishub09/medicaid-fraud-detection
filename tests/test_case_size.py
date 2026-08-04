@@ -87,6 +87,50 @@ def test_size_line_readable():
     assert "not computable" in size_line(0.0)
 
 
+def test_cap_pinned_flag_and_note():
+    est = estimate_case_size(_matrix())
+    # provider 0's raw excess ($10M) exceeded the 40%-of-paid ceiling ($4.8M)
+    assert bool(est.loc[0, "case_size_capped"])
+    # provider 2 won on kickback taint (uncapped estimator) — not pinned
+    assert not bool(est.loc[2, "case_size_capped"])
+    # clean provider: never pinned
+    assert not bool(est.loc[7, "case_size_capped"])
+    # org grain: the pinned member carries all of org:0's dollars
+    orgs = org_case_size(_matrix()).set_index("org_id")
+    assert bool(orgs.loc["org:0", "case_size_capped"])
+    assert not bool(orgs.loc["org:1", "case_size_capped"])
+    # the rendered line carries the upper-bound warning only when pinned
+    assert "upper-bound screen" in size_line(4_800_000.0, capped=True)
+    assert "upper-bound screen" not in size_line(4_800_000.0)
+
+
+def test_screening_cautions():
+    from src.model_a.pursuit_dossier import screening_cautions
+    matrix = pd.DataFrame({
+        "org_node_id": ["org:a", "org:a", "org:b"],
+        "primary_taxonomy": ["261QF0400X", "261QF0400X", "207Q00000X"],
+    })
+    # intermediary-shaped: one NPI, institutional-scale billing
+    row = pd.Series({"org_id": "org:z", "org_name": "MAINS'L FLORIDA, INC.",
+                     "n_providers": 1, "total_billed": 870e6})
+    c = screening_cautions(row, matrix)
+    assert any("fiscal intermediary" in x for x in c)
+    # FQHC-majority org triggers the institutional-anchor caution
+    row2 = pd.Series({"org_id": "org:a", "org_name": "GOLDEN VALLEY HEALTH CENTER",
+                      "n_providers": 31, "total_billed": 113e6})
+    c2 = screening_cautions(row2, matrix)
+    assert any("Institutional-anchor" in x for x in c2)
+    # university names trigger via the anchor name pattern
+    row3 = pd.Series({"org_id": "org:q", "org_name": "UNIVERSITY OF ROCHESTER",
+                      "n_providers": 7, "total_billed": 308e6})
+    assert any("Institutional-anchor" in x
+               for x in screening_cautions(row3, matrix))
+    # an ordinary multi-NPI company draws no cautions
+    row4 = pd.Series({"org_id": "org:b", "org_name": "BAYADA HOME HEALTH CARE",
+                      "n_providers": 40, "total_billed": 90e6})
+    assert screening_cautions(row4, matrix) == []
+
+
 def test_missing_columns_skip_honest():
     df = pd.DataFrame({"npi": ["1"], "org_node_id": ["org:x"],
                        "net_paid": [5e6]})

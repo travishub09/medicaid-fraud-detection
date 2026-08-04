@@ -161,6 +161,9 @@ def _technical_block(row: pd.Series, members: list[dict]) -> list[str]:
         L.append(f"- **Case size (basis: "
                  f"{row.get('case_size_basis', 'n/a')}):** "
                  f"{str(row.get('case_size_line') or '')}")
+    cautions = [c for c in str(row.get("screening_cautions") or "").split(" | ") if c]
+    for c in cautions:
+        L.append(f"- **Screening caution:** {c}")
     if members:
         L.append("- **Loudest member signals** (NPI, city, top peer-percentile "
                  "driver):")
@@ -317,6 +320,45 @@ GOV_RE = (r"\b(?:STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
           r"DEPARTMENT|DEPT\.?|AUTHORITY|BUREAU|DIVISION OF|"
           r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF)\b")
 
+# single provider number billing above this is intermediary-shaped: fiscal
+# agents for self-directed care channel MANY caregivers' services through one
+# NPI, so org-level anomaly math describes the program, not the biller
+INTERMEDIARY_SCALE = 250e6
+
+
+def screening_cautions(row: pd.Series, matrix: pd.DataFrame) -> list[str]:
+    """Visible per-target cautions the v5 real-data list demanded. These
+    ANNOTATE rather than exclude: universities and FQHCs do settle FCA cases
+    (Duke paid $112M), so silently dropping them would hide real targets —
+    but the reader must know the entity class before spending research money.
+    """
+    out = []
+    if (int(row.get("n_providers", 0) or 0) == 1
+            and float(row.get("total_billed", 0) or 0) >= INTERMEDIARY_SCALE):
+        out.append(
+            "Single provider number at institutional scale — verify whether "
+            "this NPI is a fiscal intermediary / payroll agent for "
+            "self-directed care, where one number aggregates many "
+            "caregivers' services and billing-anomaly math describes the "
+            "program rather than the biller.")
+    from .clean_anchors import INSTITUTIONAL_NAME, INSTITUTIONAL_TAXONOMIES
+    name = str(row.get("org_name") or "")
+    inst_name = bool(INSTITUTIONAL_NAME.search(name))
+    inst_tax = False
+    if "org_node_id" in matrix.columns and "primary_taxonomy" in matrix.columns:
+        mem = matrix.loc[matrix["org_node_id"].astype(str)
+                         == str(row.get("org_id")), "primary_taxonomy"]
+        if len(mem):
+            inst_tax = (mem.fillna("").astype(str).str.upper()
+                        .isin(INSTITUTIONAL_TAXONOMIES).mean() > 0.5)
+    if inst_name or inst_tax:
+        out.append(
+            "Institutional-anchor class (FQHC / public clinic / academic / "
+            "government-affiliated): such entities can be FCA defendants, "
+            "but confirm the entity's legal status (sovereign arms are not) "
+            "and public-disclosure exposure before outreach.")
+    return out
+
 
 def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
           poll: bool = False, transport=None,
@@ -355,9 +397,15 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         n_small = int((orgs["total_billed"] < float(min_billed)).sum())
         orgs = orgs[orgs["total_billed"] >= float(min_billed)]
     targets = orgs.head(int(top)).reset_index(drop=True)
-    targets["case_size_line"] = targets["case_size_yr"].map(size_line)
+    capped = targets.get("case_size_capped",
+                         pd.Series(False, index=targets.index)).fillna(False)
+    targets["case_size_line"] = [
+        size_line(v, capped=bool(c))
+        for v, c in zip(targets["case_size_yr"], capped)]
     member_map = {str(r["org_id"]): _member_lines(matrix, scores, r["org_id"])
                   for _, r in targets.iterrows()}
+    targets["screening_cautions"] = [
+        " | ".join(screening_cautions(r, matrix)) for _, r in targets.iterrows()]
 
     prompts = write_prompts(targets, member_map, d)
     reg_path = d / "pursuit_research_tasks.json"
