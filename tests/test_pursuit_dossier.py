@@ -130,3 +130,51 @@ def test_render_shows_disclaimer_and_alternatives():
     md = render(t, {str(r["org_id"]): [] for _, r in t.iterrows()}, "r")
     assert "Alternative explanations are mandatory" in md
     assert md.count("**The short story.**") == 2
+
+
+def test_priority_list_signal_sorted_filters_only(tmp_path):
+    m, man = _matrix()
+    # case-size inputs: raw excess (0.6 x paid) exceeds the 40% ceiling, so
+    # every winner is cap-pinned — the flag must ride into the CSV
+    m["expected_net_paid"] = m["net_paid"] * 0.4
+    m["entity_type"] = "2"
+    # one government org (filtered, never sorted out)
+    govmask = m["org_node_id"] == "org:001"
+    m.loc[govmask, ["org_legal_name", "provider_name"]] = \
+        "STATE OF TESTLAND DEPARTMENT OF HEALTH"
+    # one solo individual enrollment: personal name must never ship
+    solo = pd.DataFrame([{
+        "npi": "1999999999", "org_node_id": "org:solo", "group_id": "org:solo",
+        "org_legal_name": "DOE, JANE", "provider_name": "DOE, JANE",
+        "addr_city": "WARWICK", "practice_state": "RI",
+        "provider_on_exclusion": 0, "net_paid": 5e6,
+        "expected_net_paid": 1e6, "shell_score": 0.0,
+        "facility_code_share__peerpct": 0.5,
+        "subscore_facility_code_billing": 0.2, "subscore_upcoding": 0.1,
+        "entity_type": "1"}])
+    m = pd.concat([m, solo], ignore_index=True)
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+
+    from src.model_a.pursuit_dossier import build_priority_list
+    csv_path = build_priority_list(tmp_path, min_damages=1_000_000.0)
+    out = pd.read_csv(csv_path)
+    assert len(out) > 0
+    # FILTERS: no government entities, nothing under the case-size bar
+    assert not out["org_name"].str.contains("STATE OF TESTLAND").any()
+    assert (out["case_size_yr"] >= 1_000_000.0).all()
+    # SORT: fraud signal, descending — dollars never drive priority
+    dw = out["score_dollar_weighted"].to_numpy()
+    assert (dw[:-1] >= dw[1:] - 1e-12).all()
+    # the solo individual ships as NPI + city, never a personal name
+    assert not out["org_name"].str.contains("DOE").any()
+    solo_rows = out[out["org_id"] == "org:solo"]
+    assert len(solo_rows) == 1
+    assert solo_rows.iloc[0]["org_name"].startswith(
+        "Individual provider (NPI 1999999999")
+    # cap-pinned winners carry the honesty flag
+    assert bool(solo_rows.iloc[0]["case_size_capped"])
+    # the companion frame ships the legal frame + filter accounting
+    md = (tmp_path / "PRIORITY_LIST.md").read_text(encoding="utf-8")
+    assert "investigative hypothesis" in md
+    assert "never the sort" in md

@@ -423,6 +423,100 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
     return out
 
 
+def build_priority_list(run_dir: str | Path,
+                        min_damages: float = 10_000_000.0,
+                        include_government: bool = False) -> Path:
+    """The full funder-facing priority list: EVERY qualifying organization,
+    ranked by FRAUD SIGNAL alone. Dollars and entity class are FILTERS,
+    never sort keys:
+
+      sort     score_dollar_weighted desc (how hot the money is — a 0-1
+               signal independent of how MUCH money there is), ties by
+               score_max
+      filter   government/public entities out (GOV_RE name screen);
+               scheme-aware case size under ``min_damages``/yr out (the
+               kickback estimator sizes tainted claims, so a modest-billing
+               kickback org clears the bar the billing metrics would hide)
+
+    Writes ``provider_priority_list.csv`` + ``PRIORITY_LIST.md`` (the frame,
+    the column dictionary, and what the filters removed). Individuals appear
+    as NPI + city, never by personal name."""
+    from .case_size import org_case_size
+    d = Path(run_dir)
+    matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
+    manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
+    scores = oof_scores(matrix, manifest)
+    orgs = rollup(matrix, scores, drop_excluded=True)
+    orgs = orgs.merge(org_case_size(matrix), on="org_id", how="left")
+    orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"],
+                                         errors="coerce").fillna(0.0)
+
+    # org → states + solo-individual detection (for NPI+city masking)
+    mkey = matrix["org_node_id"].astype(str)
+    states = (matrix.assign(_k=mkey)
+              .groupby("_k")["practice_state"]
+              .agg(lambda s: ",".join(sorted({str(x) for x in s
+                                              if str(x or "").strip()})))
+              if "practice_state" in matrix.columns else pd.Series(dtype=str))
+    orgs["states"] = orgs["org_id"].astype(str).map(states).fillna("")
+
+    gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
+    small = orgs["case_size_yr"] < float(min_damages)
+    out = orgs[~small & (~gov | include_government)].copy()
+
+    # mask solo individual enrollments: personal names never ship externally
+    if "entity_type" in matrix.columns:
+        solo = matrix.loc[~mkey.duplicated(keep=False)
+                          & (matrix["entity_type"].astype(str) == "1")]
+        mask_map = {
+            str(r["org_node_id"]):
+            f"Individual provider (NPI {r.get('npi', '')}, "
+            f"{str(r.get('addr_city', '') or '')}, "
+            f"{str(r.get('practice_state', '') or '')})"
+            for _, r in solo.iterrows()}
+        hit = out["org_id"].astype(str).map(mask_map)
+        out["org_name"] = hit.fillna(out["org_name"])
+
+    out["screening_cautions"] = [
+        " | ".join(screening_cautions(r, matrix)) for _, r in out.iterrows()]
+    out = out.sort_values(["score_dollar_weighted", "score_max"],
+                          ascending=False).reset_index(drop=True)
+    out.insert(0, "priority_rank", out.index + 1)
+    cols = [c for c in ("priority_rank", "org_name", "org_id", "states",
+                        "n_providers", "score_dollar_weighted", "score_max",
+                        "score_pct", "top_schemes", "case_size_yr",
+                        "case_size_basis", "case_size_capped", "total_billed",
+                        "n_excluded_members", "screening_cautions")
+            if c in out.columns]
+    csv_path = d / "provider_priority_list.csv"
+    out[cols].to_csv(csv_path, index=False)
+
+    md = d / "PRIORITY_LIST.md"
+    md.write_text("\n".join([
+        f"# PROVIDER PRIORITY LIST — run {d.name}", "", DISCLAIMER, "",
+        f"- **{len(out):,} organizations** ranked by fraud signal "
+        "(dollar-weighted detection score). Dollars are FILTERS here, "
+        "never the sort: a big biller with cold money ranks below a modest "
+        "biller with hot money.",
+        f"- Filters applied: {int(gov.sum()):,} government/public entities "
+        f"removed; {int((small & ~gov).sum()):,} organizations under the "
+        f"~${min_damages:,.0f}/yr scheme-aware case-size bar removed "
+        "(kickback-theory orgs are sized on tainted claims, not billing).",
+        "- `case_size_capped` = the estimate sits at the 40%-of-billed "
+        "ceiling: an upper-bound screen, not a damages estimate.",
+        "- Individuals appear as NPI + city; organizations are named from "
+        "public enrollment records.",
+        "", "Columns: priority_rank; org_name; states; n_providers; "
+        "score_dollar_weighted (the SORT — 0-1 signal); score_max; "
+        "score_pct; top_schemes (named drivers); case_size_yr/basis/capped "
+        "(scheme-aware annual single-damages screen); total_billed "
+        "(context only); n_excluded_members; screening_cautions.", "",
+    ]), encoding="utf-8")
+    print(f"[priority_list] {len(out):,} orgs -> {csv_path}")
+    print(f"[priority_list] frame + dictionary -> {md}")
+    return csv_path
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("--run-dir", required=True)
@@ -443,7 +537,19 @@ def main() -> None:
                          f"${MANUS_KEY_ENV})")
     ap.add_argument("--poll", action="store_true",
                     help="collect finished research and fold it into the dossier")
+    ap.add_argument("--priority-list", action="store_true",
+                    help="write the FULL signal-ranked priority list "
+                         "(provider_priority_list.csv): every org, sorted by "
+                         "fraud signal; government entities and sub-bar case "
+                         "sizes are FILTERS, dollars never sort")
     args = ap.parse_args()
+    if args.priority_list:
+        build_priority_list(
+            args.run_dir,
+            min_damages=(args.min_damages if args.min_damages is not None
+                         else 10_000_000.0),
+            include_government=args.include_government)
+        return
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,
           min_hot=args.min_hot, include_government=args.include_government)
