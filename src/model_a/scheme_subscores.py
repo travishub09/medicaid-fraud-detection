@@ -182,6 +182,15 @@ def compute_subscores(features: pd.DataFrame,
     coverage: dict[str, list[str]] = {}
     for scheme, wmap in weights.items():
         present = {c: w for c, w in wmap.items() if c in feats.columns}
+        # either/or aliases: a raw column and its _norm variant are ONE signal
+        # listed twice so whichever grain lands is used. When BOTH land (the
+        # provider path emits raw and normalize adds _norm), keep only the
+        # bounded _norm — clip(0,1) on the raw COUNT binarizes it (any related
+        # party at all = 1.0), a double-vote that tie-flooded the top decile
+        # and helped invert ownership_integrity in v4/v5.
+        for c in list(present):
+            if f"{c}_norm" in present:
+                del present[c]
         if not present:
             continue
         # NULL-aware weighted mean: a missing feature means "provider absent from

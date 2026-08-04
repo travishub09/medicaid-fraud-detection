@@ -91,6 +91,25 @@ def test_subscores_skip_missing_features():
     assert coverage["single_service_mill"] == ["concentration"]
 
 
+def test_subscores_norm_alias_never_double_votes():
+    # provider path: raw related_party_density lands AND normalize adds _norm.
+    # The raw count clipped to 0-1 binarizes (any related party = 1.0) — only
+    # the bounded _norm may vote, and evidence counts the signal once.
+    feats = pd.DataFrame({"related_party_density": [2.0],
+                          "shell_score": [0.0],
+                          "within_2_hops_of_exclusion": [0]})
+    subs, coverage = compute_subscores(feats)
+    used = coverage["ownership_integrity"]
+    assert "related_party_density_norm" in used
+    assert "related_party_density" not in used
+    # 3 observed inputs (norm, shell, within_2_hops) — not 4
+    assert int(subs["evidence_n_ownership_integrity"].iloc[0]) == 3
+    # density 2 → norm 0.08: nowhere near the binarized 1.0 the raw gave
+    from src.model_a.scheme_subscores import normalize_graph_features
+    n = normalize_graph_features(feats)
+    assert abs(n["related_party_density_norm"].iloc[0] - 0.08) < 1e-9
+
+
 def test_sector_priors():
     assert sector_for_taxonomy("251E00000X") == "home_health"
     assert sector_for_taxonomy("207Q00000X") == "default"
