@@ -322,6 +322,14 @@ GOV_RE = (r"\b(?:STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
           r"DEPARTMENT|DEPT\.?|AUTHORITY|BUREAU|DIVISION OF|"
           r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF)\b")
 
+# entity_segment name cues: the "institutional book" (hospitals, academic and
+# multi-site systems, mega-groups, anchor classes) vs the "operator book"
+# (owner-run agencies — the classic clean whistleblower-case profile)
+_INSTITUTIONAL_RE = (r"\b(?:HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|"
+                     r"HEALTHCARE SYSTEM|UNIVERSITY|COLLEGE|INFIRMARY|"
+                     r"MEDICAL GROUP|PHYSICIANS NETWORK|HEALTH CENTER|"
+                     r"HEALTH CENTERS|NEIGHBORHOOD HEALTH)\b")
+
 # single provider number billing above this is intermediary-shaped: fiscal
 # agents for self-directed care channel MANY caregivers' services through one
 # NPI, so org-level anomaly math describes the program, not the biller
@@ -501,10 +509,29 @@ def build_priority_list(run_dir: str | Path,
 
     out["screening_cautions"] = [
         " | ".join(screening_cautions(r, matrix)) for _, r in out.iterrows()]
+
+    # entity_segment — the two-books triage lens (institutional vs operator
+    # vs individual). Labels rows; never touches score or rank.
+    solo_person = set()
+    if "entity_type" in matrix.columns:
+        solo_person = set(
+            matrix.loc[~mkey.duplicated(keep=False)
+                       & (matrix["entity_type"].astype(str) == "1"),
+                       "org_node_id"].astype(str))
+    seg = pd.Series("operator", index=out.index)
+    inst = (out["org_name"].astype(str).str.contains(_INSTITUTIONAL_RE, na=False)
+            | (pd.to_numeric(out["n_providers"], errors="coerce")
+               .fillna(1) >= 25)
+            | (out["screening_cautions"].astype(str).str.len() > 0))
+    seg[inst] = "institutional"
+    seg[out["org_id"].astype(str).isin(solo_person)] = "individual"
+    out["entity_segment"] = seg
+
     out = out.sort_values(["score_dollar_weighted", "score_max"],
                           ascending=False).reset_index(drop=True)
     out.insert(0, "priority_rank", out.index + 1)
-    cols = [c for c in ("priority_rank", "org_name", "org_id", "member_npis",
+    cols = [c for c in ("priority_rank", "org_name", "entity_segment",
+                        "org_id", "member_npis",
                         "states", "cities",
                         "n_providers", "score_dollar_weighted", "score_max",
                         "score_pct", "top_schemes", "case_size_yr",
@@ -531,7 +558,12 @@ def build_priority_list(run_dir: str | Path,
         "and every identifier ships: the full member-NPI roster, states, and "
         "cities per organization. Every row is a statistical lead for "
         "counsel review — not an accusation, not an adjudication.",
-        "", "Columns: priority_rank; org_name; member_npis (full roster); "
+        f"- Two books, one list: {int((out['entity_segment'] == 'institutional').sum()):,} "
+        f"institutional, {int((out['entity_segment'] == 'operator').sum()):,} operator, "
+        f"{int((out['entity_segment'] == 'individual').sum()):,} individual "
+        "(`entity_segment` — a triage lens, never a scoring input).",
+        "", "Columns: priority_rank; org_name; entity_segment "
+        "(institutional / operator / individual); member_npis (full roster); "
         "states; cities; n_providers; "
         "score_dollar_weighted (the SORT — 0-1 signal); score_max; "
         "score_pct; top_schemes (named drivers); case_size_yr/basis/capped "

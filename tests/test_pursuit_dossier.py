@@ -205,3 +205,31 @@ def test_recovery_mode_sorts_by_signal_not_case_size(tmp_path):
     if len(targets) > 1:
         dw = targets["score_dollar_weighted"].to_numpy()
         assert (dw[:-1] >= dw[1:] - 1e-12).all()
+
+
+def test_priority_list_entity_segment(tmp_path):
+    m, man = _matrix()
+    m["expected_net_paid"] = m["net_paid"] * 0.4
+    m["entity_type"] = "2"
+    solo = pd.DataFrame([{
+        "npi": "1999999999", "org_node_id": "org:solo", "group_id": "org:solo",
+        "org_legal_name": "DOE, JANE", "provider_name": "DOE, JANE",
+        "addr_city": "WARWICK", "practice_state": "RI",
+        "provider_on_exclusion": 0, "net_paid": 5e6,
+        "expected_net_paid": 1e6, "shell_score": 0.0,
+        "facility_code_share__peerpct": 0.5,
+        "subscore_facility_code_billing": 0.2, "subscore_upcoding": 0.1,
+        "entity_type": "1"}])
+    m = pd.concat([m, solo], ignore_index=True)
+    hosp = m["org_node_id"] == "org:002"
+    m.loc[hosp, ["org_legal_name", "provider_name"]] = "TESTVILLE GENERAL HOSPITAL"
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+    from src.model_a.pursuit_dossier import build_priority_list
+    out = pd.read_csv(build_priority_list(tmp_path, min_damages=1_000_000.0))
+    assert set(out["entity_segment"]) <= {"institutional", "operator", "individual"}
+    assert out.loc[out["org_id"] == "org:solo", "entity_segment"].iloc[0] == "individual"
+    assert out.loc[out["org_name"] == "TESTVILLE GENERAL HOSPITAL",
+                   "entity_segment"].iloc[0] == "institutional"
+    assert (out.loc[out["org_name"].str.startswith("COMPANY"),
+                    "entity_segment"] == "operator").all()
