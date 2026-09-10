@@ -72,3 +72,33 @@ def test_hold_on_fails_and_degradation(tmp_path):
     assert "Current champion:** `v2`" in md
     assert "HOLD" in md and "rollback is a pointer change" in md.lower() or \
            "Rollback" in md or "pointer" in md
+
+
+def test_champion_pointer_and_resolve(tmp_path):
+    import json
+    from src.model_a.run_registry import champion_pointer, resolve_run_dir
+    reg_dir = tmp_path / "model_a"; reg_dir.mkdir(parents=True)
+    rows = [
+        {"tag": "v3", "decision": "PROMOTE", "run_dir": "/runs/v3", "git_commit": "abc1234"},
+        {"tag": "v4", "decision": "HOLD", "run_dir": "/runs/v4", "git_commit": "def5678"},
+        {"tag": "v5", "decision": "HOLD", "run_dir": "/runs/v5", "git_commit": "aaa9999"},
+    ]
+    with open(reg_dir / "run_registry.jsonl", "w") as fh:
+        for r in rows: fh.write(json.dumps(r) + "\n")
+    champ = champion_pointer(tmp_path)
+    assert champ["tag"] == "v3"                       # newest PROMOTE, not newest run
+    assert resolve_run_dir("@champion", tmp_path) == "/runs/v3"
+    assert resolve_run_dir("/explicit/dir", tmp_path) == "/explicit/dir"
+    # a later promotion moves the pointer
+    with open(reg_dir / "run_registry.jsonl", "a") as fh:
+        fh.write(json.dumps({"tag": "v6", "decision": "PROMOTE",
+                             "run_dir": "/runs/v6", "git_commit": "bbb0000"}) + "\n")
+    assert champion_pointer(tmp_path)["tag"] == "v6"
+
+
+def test_resolve_champion_fails_loudly_when_none(tmp_path):
+    import pytest
+    from src.model_a.run_registry import resolve_run_dir
+    (tmp_path / "model_a").mkdir(parents=True)
+    with pytest.raises(SystemExit):
+        resolve_run_dir("@champion", tmp_path)

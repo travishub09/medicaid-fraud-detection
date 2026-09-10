@@ -329,6 +329,43 @@ def check_prereg(row: dict, prereg_entry: dict | None) -> list[dict]:
     return [eval_check(c, row) for c in (prereg_entry.get("checks") or [])]
 
 
+def champion_pointer(data_root: str | Path) -> dict | None:
+    """The current champion run: the newest registry row recorded PROMOTE.
+
+    This is the run every consumer (dossiers, priority lists, Travis
+    handoffs) should read from BY DEFAULT — 'latest' is a fact about the
+    calendar, 'champion' is a fact about validation. Returns the full
+    registry row (tag, run_dir, git_commit, KPIs) or None if nothing has
+    ever been promoted."""
+    reg = Path(data_root) / "model_a" / "run_registry.jsonl"
+    champ = None
+    for r in _load_jsonl(reg):
+        if r.get("decision") == "PROMOTE":
+            champ = r
+    return champ
+
+
+def resolve_run_dir(run_dir: str, data_root: str | Path | None = None) -> str:
+    """Resolve an output CLI's --run-dir, honoring the '@champion' alias.
+
+    '@champion' resolves through the release registry to the promoted run's
+    folder — so operators rerun what VALIDATED best, not what is merely
+    newest. Anything else passes through unchanged."""
+    if str(run_dir).strip().lower() != "@champion":
+        return str(run_dir)
+    root = data_root or os.environ.get("MEDICAID_DATA_ROOT",
+                                       str(Path.home() / "Desktop/data"))
+    champ = champion_pointer(root)
+    if not champ or not champ.get("run_dir"):
+        raise SystemExit(
+            "@champion: no promoted run in the registry yet "
+            f"({Path(root) / 'model_a' / 'run_registry.jsonl'}) — pass an "
+            "explicit run folder, or promote a run first")
+    print(f"[run_registry] @champion -> '{champ.get('tag')}' "
+          f"({champ['run_dir']}, commit {champ.get('git_commit') or '?'})")
+    return str(champ["run_dir"])
+
+
 def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
     """PROMOTE / HOLD for the newest run + the current champion pointer.
 
@@ -1052,6 +1089,11 @@ def main() -> None:
                     default=os.environ.get("MEDICAID_DATA_ROOT",
                                            str(Path.home() / "Desktop/data")))
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--champion", action="store_true",
+                    help="print the current champion run (tag, folder, git "
+                         "commit) + the recipe to rerun or build off it — "
+                         "rerunning the VALIDATED model, not merely the "
+                         "newest one, is a first-class operation")
     ap.add_argument("--html", action="store_true",
                     help="also regenerate MODEL_RUNS.html (data-driven "
                          "dashboard, no clipboard KPIs)")
@@ -1087,6 +1129,30 @@ def main() -> None:
     rows = _load_jsonl(reg_path)
     prereg = _load_jsonl(pre_path)
     signoffs = _load_jsonl(so_path)
+
+    if args.champion:
+        champ = champion_pointer(args.data_root)
+        if not champ:
+            print("[run_registry] no promoted run yet — nothing is champion")
+            return
+        print(f"CHAMPION: {champ.get('tag')}")
+        print(f"  folder : {champ.get('run_dir')}")
+        print(f"  commit : {champ.get('git_commit') or 'not recorded'}")
+        print(f"  lift   : {champ.get('ablation_lift_delta')}")
+        print()
+        print("Read outputs from it (any output CLI accepts @champion):")
+        print("  python -m src.model_a.pursuit_dossier --run-dir @champion "
+              "--priority-list --min-damages 10000000")
+        print()
+        print("Rebuild OFF its exact code (new work branches from what "
+              "validated, not from latest):")
+        if champ.get("git_commit"):
+            print(f"  git checkout -b from-champion {champ['git_commit']}")
+        else:
+            print("  (champion has no recorded commit — older registry row)")
+        print("  # then run the standard frozen-build steps; register the "
+              "result under a NEW tag")
+        return
 
     if args.preregister:
         if not (args.tag and args.goal and args.expected):

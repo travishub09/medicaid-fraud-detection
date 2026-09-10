@@ -545,7 +545,10 @@ def build_priority_list(run_dir: str | Path,
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    ap.add_argument("--run-dir", required=True)
+    ap.add_argument("--run-dir", required=True,
+                    help="run folder, or '@champion' to resolve the promoted "
+                         "run through the release registry (honors "
+                         "MEDICAID_DATA_ROOT)")
     ap.add_argument("--top", type=int, default=10)
     ap.add_argument("--min-billed", type=float, default=250_000.0)
     ap.add_argument("--min-damages", type=float, default=None,
@@ -573,6 +576,8 @@ def main() -> None:
                          "enrollment names with NPI + city (default ships "
                          "names as enrolled)")
     args = ap.parse_args()
+    from .run_registry import resolve_run_dir
+    args.run_dir = resolve_run_dir(args.run_dir)
     if args.priority_list:
         build_priority_list(
             args.run_dir,
