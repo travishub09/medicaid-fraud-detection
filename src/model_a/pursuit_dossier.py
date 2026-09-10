@@ -632,6 +632,11 @@ def main() -> None:
     ap.add_argument("--dispatch", action="store_true",
                     help="send the Manus research tasks now (needs "
                          f"${MANUS_KEY_ENV})")
+    ap.add_argument("--dispatch-file", default=None,
+                    help="dispatch a CUSTOM prompts .jsonl (one {org_id, "
+                         "org_name, prompt} per line) through the run's "
+                         "research registry WITHOUT rebuilding the dossier "
+                         "— for metro/national batches authored elsewhere")
     ap.add_argument("--poll", action="store_true",
                     help="collect finished research and fold it into the dossier")
     ap.add_argument("--priority-list", action="store_true",
@@ -646,6 +651,12 @@ def main() -> None:
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
+    if args.dispatch_file:
+        d = Path(args.run_dir)
+        info = dispatch_research(Path(args.dispatch_file),
+                                 d / "pursuit_research_tasks.json")
+        print(f"[pursuit_dossier] custom batch: {info}")
+        return
     if args.priority_list:
         build_priority_list(
             args.run_dir,

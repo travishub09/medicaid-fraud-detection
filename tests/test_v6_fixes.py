@@ -90,3 +90,56 @@ def test_rank_stability_report(tmp_path):
     assert rep["n_common"] == 3
     md = to_markdown(rep, "v_old", "v_new")
     assert "RANK STABILITY" in md and "top-N" in md
+
+
+def test_pi_facts_extractor(tmp_path):
+    from src.model_a.pi_facts import extract, to_markdown
+    m = pd.DataFrame({
+        "npi": ["1", "2", "3"],
+        "org_node_id": ["org:a", "org:a", "org:b"],
+        "org_legal_name": ["ALPHA CLINIC", "ALPHA CLINIC", "BETA SNF"],
+        "provider_name": ["ALPHA CLINIC", "ALPHA CLINIC", "BETA SNF"],
+        "addr_city": ["MIAMI", "DORAL", "TAMPA"],
+        "practice_state": ["FL", "FL", "FL"],
+        "net_paid": [1e6, 2e6, 3e6],
+        "time_minutes_per_day": [1550.0, None, None],
+        "time_minutes_per_day__peerpct": [0.99, None, None],
+        "pos_bed_count": [None, None, 6.0],
+        "hospice_gip_share": [None, None, 0.8],
+    })
+    res = extract(m, ["org:a", "org:b", "org:missing"])
+    a, b = res["org:a"], res["org:b"]
+    assert a["n_members"] == 2 and a["total_net_paid"] == 3e6
+    # the impossible-day fact rides with value, percentile, and field use
+    f = a["members"][0]["facts"]["time_minutes_per_day"]
+    assert f["value"] == 1550.0 and f["peer_percentile"] == 0.99
+    assert "face time" in f["field_use"] or "day" in f["field_use"]
+    # beds + per-diem contradiction material for the SNF
+    assert b["total_beds_recorded"] == 6.0
+    assert "hospice_gip_share" in b["members"][0]["facts"]
+    assert "error" in res["org:missing"]
+    md = to_markdown(res)
+    assert "ALPHA CLINIC" in md and "billed face-time minutes" in md
+    assert "1,550" in md
+
+
+def test_dispatch_file_roundtrip(tmp_path):
+    import json as _json
+    from src.model_a.pursuit_dossier import dispatch_research
+
+    class _FT:
+        def __init__(self): self.created = []
+        def create(self, prompt, **_):
+            self.created.append(prompt)
+            return {"task_id": f"t{len(self.created)}"}
+
+    prompts = tmp_path / "custom.jsonl"
+    with open(prompts, "w") as fh:
+        for i in range(3):
+            fh.write(_json.dumps({"org_id": f"org:{i}", "org_name": f"O{i}",
+                                  "prompt": f"research O{i}"}) + "\n")
+    ft = _FT()
+    info = dispatch_research(prompts, tmp_path / "reg.json", transport=ft)
+    assert info["dispatched"] == 3
+    info2 = dispatch_research(prompts, tmp_path / "reg.json", transport=ft)
+    assert info2["dispatched"] == 0          # re-attach, never pay twice
