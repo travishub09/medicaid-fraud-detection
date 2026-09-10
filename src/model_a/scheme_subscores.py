@@ -27,6 +27,28 @@ import pandas as pd
 STEEPNESS = 6.0
 THRESHOLD = 0.5
 
+# INSTITUTIONAL DAMPING (v6): three schemes systematically over-fire on large
+# institutional entities for reasons that are complexity, not fraud —
+#   specialty_mismatch  a general acute-care hospital legitimately bills a
+#                       huge code range, so "codes unusual for its specialty"
+#                       fires on breadth;
+#   contract_pharmacy   virtually every 340B hospital has contract pharmacies
+#                       (and the metric is near-constant there);
+#   rapid_ramp          system M&A reads as an organic billing ramp when a
+#                       surviving NPI absorbs an acquired entity's volume —
+#                       damped ONLY when institutional AND owner churn is
+#                       observed, because operator-segment CHOW-then-ramp is
+#                       a REAL fraud precursor (the PE-rollup pattern) and
+#                       must keep firing.
+# Damping halves the subscore for institutional rows (>= 25-member org or
+# any recorded beds); it never zeroes a signal and never touches operators.
+INSTITUTIONAL_DAMPING: dict[str, float] = {
+    "specialty_mismatch": 0.5,
+    "contract_pharmacy": 0.5,
+}
+INSTITUTIONAL_CHURN_DAMPING: dict[str, float] = {"rapid_ramp": 0.5}
+_INSTITUTIONAL_MIN_MEMBERS = 25
+
 # scheme -> {feature_column: weight}. Columns marked (future) arrive with the
 # Priority-1 procurement sources; absent columns are skipped at runtime.
 DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
@@ -146,6 +168,20 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
 }
 
 
+def _institutional_mask(feats: pd.DataFrame) -> pd.Series:
+    """Rows that are institutional-scale entities: a 25+-member organization
+    or anything with recorded beds. Used only to DAMP the schemes above —
+    never to boost, never to exclude."""
+    m = pd.Series(False, index=feats.index)
+    if "org_member_count" in feats.columns:
+        org_n = pd.to_numeric(feats["org_member_count"], errors="coerce")
+        m |= org_n.fillna(0) >= _INSTITUTIONAL_MIN_MEMBERS
+    if "pos_bed_count" in feats.columns:
+        beds = pd.to_numeric(feats["pos_bed_count"], errors="coerce")
+        m |= beds.fillna(0) > 0
+    return m
+
+
 def _sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-x))
 
@@ -204,7 +240,18 @@ def compute_subscores(features: pd.DataFrame,
         num = sum(feats[c].clip(0, 1).fillna(0) * w for c, w in present.items())
         den = sum(feats[c].notna() * w for c, w in present.items())
         x = num / den.where(den > 0)
-        out[f"subscore_{scheme}"] = _sigmoid(STEEPNESS * (x - THRESHOLD))
+        sub = _sigmoid(STEEPNESS * (x - THRESHOLD))
+        if scheme in INSTITUTIONAL_DAMPING:
+            sub = sub.where(~_institutional_mask(feats),
+                            sub * INSTITUTIONAL_DAMPING[scheme])
+        if (scheme in INSTITUTIONAL_CHURN_DAMPING
+                and "ownership_turnover" in feats.columns):
+            churn = pd.to_numeric(feats["ownership_turnover"],
+                                  errors="coerce")
+            hit = _institutional_mask(feats) & (churn.fillna(0) > 0)
+            sub = sub.where(~hit,
+                            sub * INSTITUTIONAL_CHURN_DAMPING[scheme])
+        out[f"subscore_{scheme}"] = sub
         # evidence count: the NULL-aware mean's variance shrinks with the number
         # of observed inputs, so a one-input extreme is easier to reach than a
         # five-input one. Extreme-threshold consumers should require >= 2. Name

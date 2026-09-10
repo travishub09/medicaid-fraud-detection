@@ -81,7 +81,7 @@ def top_targets_by_damages(matrix: pd.DataFrame, manifest: dict,
                                          errors="coerce").fillna(0.0)
     hot = pd.to_numeric(orgs["score_dollar_weighted"],
                         errors="coerce").fillna(0.0) >= 0.5
-    gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
+    gov = government_mask(orgs["org_name"])
     keep = orgs[hot & ~gov & (orgs["case_size_yr"] >= float(min_damages))]
     return (keep.sort_values(["score_dollar_weighted", "score_max"],
                              ascending=False)
@@ -320,7 +320,37 @@ def render(targets: pd.DataFrame, member_map: dict, run_name: str,
 # sovereigns (no FCA liability per Stevens) and municipal umbrella agencies
 GOV_RE = (r"\b(?:STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
           r"DEPARTMENT|DEPT\.?|AUTHORITY|BUREAU|DIVISION OF|"
-          r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF)\b")
+          r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF|"
+          # v6 additions: instrumentality forms the first screen missed
+          r"HOSPITAL DISTRICT|HEALTH DISTRICT|HOSPITAL AUTHORITY|"
+          r"REGENTS OF|BOARD OF REGENTS|PUBLIC BENEFIT)\b")
+
+# Known public/instrumentality health systems whose enrollment names carry no
+# governmental cue — the Hennepin class (a county public corporation whose
+# board the county dissolved) and unambiguous state-arm universities. A name
+# regex cannot decide public vs private for universities in general
+# (Rochester, Miami, Penn are private), so this list stays SHORT, curated,
+# and limited to entities we have positively identified as public arms;
+# ambiguous universities get a screening CAUTION instead of a filter.
+PUBLIC_SYSTEM_NAMES = (
+    "HENNEPIN HEALTHCARE",              # Hennepin County public corporation
+    "UNIVERSITY OF NORTH CAROLINA",     # NC state instrumentality
+    "UNIVERSITY OF CALIFORNIA",         # UC Regents
+    "STATE UNIVERSITY OF NEW YORK",     # SUNY
+    "DENVER HEALTH",                    # Denver public authority
+    "COOK COUNTY HEALTH",               # already county-matched; belt+braces
+    "HARRIS HEALTH",                    # Harris County district
+    "PARKLAND HEALTH",                  # Dallas County district
+)
+_PUBLIC_SYSTEM_RE = "|".join(PUBLIC_SYSTEM_NAMES)
+
+
+def government_mask(names: pd.Series) -> pd.Series:
+    """The full government/public-entity screen: instrumentality name forms
+    (GOV_RE) plus the curated public-system list. Filters, never sorts."""
+    s = names.astype(str)
+    return (s.str.contains(GOV_RE, na=False)
+            | s.str.contains(_PUBLIC_SYSTEM_RE, na=False, regex=True))
 
 # entity_segment name cues: the "institutional book" (hospitals, academic and
 # multi-site systems, mega-groups, anchor classes) vs the "operator book"
@@ -367,6 +397,12 @@ def screening_cautions(row: pd.Series, matrix: pd.DataFrame) -> list[str]:
             "government-affiliated): such entities can be FCA defendants, "
             "but confirm the entity's legal status (sovereign arms are not) "
             "and public-disclosure exposure before outreach.")
+    if "UNIVERSITY" in name.upper() and not out:
+        out.append(
+            "University-affiliated: a name screen cannot decide public vs "
+            "private (Rochester and Penn are private; UNC and UC are state "
+            "arms). Confirm whether the entity is a sovereign arm before "
+            "spending research money — state arms cannot be FCA defendants.")
     return out
 
 
@@ -398,7 +434,7 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         # org size the moment every estimate hit the 40% ceiling (v5).
         hot = pd.to_numeric(orgs["score_dollar_weighted"],
                             errors="coerce").fillna(0.0) >= float(min_hot)
-        gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
+        gov = government_mask(orgs["org_name"])
         n_gov = int((gov & hot).sum())
         if n_gov:
             print(f"[pursuit_dossier] {n_gov} government-entity org(s) "
@@ -477,7 +513,7 @@ def build_priority_list(run_dir: str | Path,
               if "practice_state" in matrix.columns else pd.Series(dtype=str))
     orgs["states"] = orgs["org_id"].astype(str).map(states).fillna("")
 
-    gov = orgs["org_name"].astype(str).str.contains(GOV_RE, na=False)
+    gov = government_mask(orgs["org_name"])
     small = orgs["case_size_yr"] < float(min_damages)
     out = orgs[~small & (~gov | include_government)].copy()
 

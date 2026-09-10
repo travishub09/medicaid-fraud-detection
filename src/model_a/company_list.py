@@ -127,17 +127,25 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
     m["_billed"] = pd.to_numeric(
         m.get("net_paid", m.get("gross_paid", 0)), errors="coerce").fillna(0.0)
     org_col = "org_node_id" if "org_node_id" in m.columns else "group_id"
-    name_col = next((c for c in ("org_display_name", "org_name",
-                                 "provider_name") if c in m.columns), None)
     sub_cols = [c for c in m.columns if c.startswith("subscore_")]
+
+    def _best_name(g):
+        # try each name column in turn, ignoring blanks — a rollup row must
+        # never ship nameless (blank org_name rows reached a funder file)
+        for c in ("org_display_name", "org_name", "provider_name"):
+            if c in g.columns:
+                vals = g[c].dropna().astype(str).str.strip()
+                vals = vals[vals != ""]
+                if len(vals):
+                    return str(vals.mode().iat[0])
+        return ""
 
     def _agg(g):
         w = g["_billed"].to_numpy()
         s = g["_score"].to_numpy()
         wmean = float(np.average(s, weights=w)) if w.sum() > 0 else float(s.mean())
         row = {
-            "org_name": (str(g[name_col].mode().iat[0])
-                         if name_col and g[name_col].notna().any() else ""),
+            "org_name": _best_name(g) or f"UNNAMED ORGANIZATION ({g.name})",
             "n_providers": int(len(g)),
             "total_billed": float(w.sum()),
             "score_max": float(s.max()),
