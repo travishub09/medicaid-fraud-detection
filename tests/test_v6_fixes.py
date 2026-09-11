@@ -143,3 +143,37 @@ def test_dispatch_file_roundtrip(tmp_path):
     assert info["dispatched"] == 3
     info2 = dispatch_research(prompts, tmp_path / "reg.json", transport=ft)
     assert info2["dispatched"] == 0          # re-attach, never pay twice
+
+
+def test_consensus_math_median_and_agreement():
+    from src.model_a.consensus import consensus_from_frames
+    def frame(rows):
+        return pd.DataFrame(rows, columns=["org_id", "org_name",
+                                           "score_dollar_weighted",
+                                           "score_max", "total_billed",
+                                           "top_schemes", "n_providers"])
+    frames = {
+        "v1": frame([("org:a", "ALPHA", 0.9, 0.9, 1e7, "x", 2),
+                     ("org:b", "BETA", 0.1, 0.2, 2e7, "y", 3)]),
+        "v2": frame([("org:a", "ALPHA", 0.8, 0.9, 1e7, "x", 2),
+                     ("org:b", "BETA", 0.95, 0.95, 2e7, "y", 3)]),
+        "v3": frame([("org:a", "ALPHA", 0.85, 0.9, 1e7, "x", 2),
+                     ("org:b", "BETA", 0.15, 0.2, 2e7, "y", 3),
+                     ("org:c", "GAMMA", 0.99, 0.99, 3e7, "z", 1)]),
+    }
+    out = consensus_from_frames(frames, "v3", min_runs=2)
+    a = out[out["org_id"] == "org:a"].iloc[0]
+    b = out[out["org_id"] == "org:b"].iloc[0]
+    # median is the outlier removal: ALPHA médian 0.85 (agrees thrice)
+    assert abs(a["consensus_score"] - 0.85) < 1e-9
+    assert a["runs_hot"] == 3 and a["runs_present"] == 3
+    # BETA's one hot run (0.95) is the OUTLIER; the median stays cold
+    assert abs(b["consensus_score"] - 0.15) < 1e-9
+    assert b["runs_hot"] == 1
+    # ALPHA outranks BETA despite BETA's single spectacular run
+    assert a["consensus_rank"] if "consensus_rank" in a else True
+    assert list(out["org_id"])[0] == "org:a"
+    # GAMMA present in only 1 run: dropped by min_runs=2
+    assert "org:c" not in set(out["org_id"])
+    # per-run transparency columns survive
+    assert {"dw_v1", "dw_v2", "dw_v3"} <= set(out.columns)
