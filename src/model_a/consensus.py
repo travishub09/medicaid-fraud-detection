@@ -178,7 +178,10 @@ def build(run_dirs: list[str], anchor: str, out_dir: str | None = None,
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--runs", nargs="+", required=True,
-                    help="run folders to merge (2+)")
+                    help="run folders to merge (2+), or the single word "
+                         "'auto' to merge every frozen run in the data "
+                         "root's run catalog (src.run_catalog; honors "
+                         "MEDICAID_DATA_ROOT)")
     ap.add_argument("--anchor", required=True,
                     help="run folder whose case sizes/filters apply "
                          "(the champion; '@champion' works)")
@@ -190,7 +193,19 @@ def main() -> None:
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     anchor = resolve_run_dir(args.anchor)
-    runs = [resolve_run_dir(r) for r in args.runs]
+    if len(args.runs) == 1 and args.runs[0].strip().lower() == "auto":
+        import os as _os
+        from ..run_catalog import cataloged_run_dirs
+        root = _os.environ.get("MEDICAID_DATA_ROOT",
+                               str(Path.home() / "Desktop/data"))
+        runs = cataloged_run_dirs(root, kind="frozen")
+        print(f"[consensus] --runs auto: {len(runs)} frozen runs from the "
+              "catalog")
+        if len(runs) < 2:
+            raise SystemExit("catalog found fewer than 2 frozen runs — "
+                             "pass folders explicitly")
+    else:
+        runs = [resolve_run_dir(r) for r in args.runs]
     if anchor not in runs:
         runs.append(anchor)
     build(runs, anchor, out_dir=args.out,

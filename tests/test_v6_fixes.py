@@ -6,6 +6,7 @@ rapid_ramp, blank-name fallback, gov-screen upgrade, rank stability.
 from __future__ import annotations
 
 import numpy as np
+from pathlib import Path
 import pandas as pd
 
 from src.model_a.scheme_subscores import compute_subscores
@@ -177,3 +178,29 @@ def test_consensus_math_median_and_agreement():
     assert "org:c" not in set(out["org_id"])
     # per-run transparency columns survive
     assert {"dw_v1", "dw_v2", "dw_v3"} <= set(out.columns)
+
+
+def test_run_catalog_discovers_and_classifies(tmp_path):
+    import json as _json
+    from src.run_catalog import write_catalog, cataloged_run_dirs
+    ma = tmp_path / "model_a"
+    frozen = ma / "frozen_2023-12_vX"; frozen.mkdir(parents=True)
+    (frozen / "provider_features_for_model.parquet").write_bytes(b"x")
+    (frozen / "feature_manifest.json").write_text(
+        _json.dumps({"asof_cutoff": "2023-12"}))
+    (frozen / "RESULTS_DIGEST.md").write_text("d")
+    cur = ma / "provider_features_runX"; cur.mkdir()
+    (cur / "provider_features_for_model.parquet").write_bytes(b"x")
+    (cur / "feature_manifest.json").write_text(
+        _json.dumps({"asof_cutoff": None}))
+    notrun = ma / "random_stuff"; notrun.mkdir()
+    (notrun / "notes.md").write_text("n")
+    jp = write_catalog(tmp_path)
+    cat = _json.loads(jp.read_text())
+    names = {r["name"]: r for r in cat["runs"]}
+    assert "frozen_2023-12_vX" in names and "provider_features_runX" in names
+    assert "random_stuff" not in names
+    assert names["frozen_2023-12_vX"]["kind"] == "frozen"
+    assert names["provider_features_runX"]["kind"] == "current"
+    frozen_dirs = cataloged_run_dirs(tmp_path, kind="frozen")
+    assert [Path(d).name for d in frozen_dirs] == ["frozen_2023-12_vX"]
