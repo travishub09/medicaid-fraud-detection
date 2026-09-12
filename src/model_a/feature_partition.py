@@ -137,7 +137,52 @@ def partition_features(manifest: dict) -> dict:
         "extra_sources": sorted(extra_srcs),
         "n_core": len(core),
         "n_extra": sum(len(cs) for cs in extra.values()),
+        "core_fingerprint": core_fingerprint(manifest),
     }
+
+
+# Sources that can enter the graph build and therefore reach CORE features
+# (degree, k-core, clustering, related-party, ring motifs) even though they
+# are declared EXTRA in their own right. v6 hit this: two million DocGraph
+# referral edges entered the graph, lifting the CORE-only baseline from 3.09
+# to 3.27 and mechanically shrinking the measured value of the extra data —
+# which then tripped the registry's lift-delta-drop rule against a champion
+# whose "core" meant something different. Not a regression; a moved yardstick.
+GRAPH_CONTAMINATING_SOURCES = {"docgraph", "order_referring", "reassignment"}
+
+
+def core_fingerprint(manifest: dict) -> str:
+    """A stable string identifying WHAT 'core' means for this run.
+
+    Two runs may only have their core-vs-full deltas compared when their
+    fingerprints match: otherwise the baseline itself moved and the delta
+    difference measures the partition, not the model. Composed of the core
+    sources present plus any extra source that reached the graph."""
+    sources_used = manifest.get("sources_used", {}) or {}
+    present = {s for s in sources_used if s in CORE_SOURCES}
+    contaminants = {s for s in sources_used if s in GRAPH_CONTAMINATING_SOURCES}
+    graph_note = manifest.get("graph_edge_sources") or []
+    contaminants |= {s for s in graph_note
+                     if s in GRAPH_CONTAMINATING_SOURCES}
+    parts = sorted(present) + [f"+graph:{s}" for s in sorted(contaminants)]
+    return "|".join(parts)
+
+
+def core_definitions_match(manifest_a: dict, manifest_b: dict) -> tuple[bool, str]:
+    """Do two runs share a core definition? Returns (ok, human reason)."""
+    fa, fb = core_fingerprint(manifest_a), core_fingerprint(manifest_b)
+    if fa == fb:
+        return True, "core definitions match"
+    only_a = set(fa.split("|")) - set(fb.split("|"))
+    only_b = set(fb.split("|")) - set(fa.split("|"))
+    bits = []
+    if only_b:
+        bits.append(f"newer run adds {', '.join(sorted(only_b))} to core")
+    if only_a:
+        bits.append(f"newer run drops {', '.join(sorted(only_a))} from core")
+    return False, ("core definitions DIFFER (" + "; ".join(bits) +
+                   ") — the core-vs-full delta is not comparable across "
+                   "these runs; the baseline moved, not necessarily the model")
 
 
 def full_feature_list(part: dict) -> list[str]:

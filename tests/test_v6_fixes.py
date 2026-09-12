@@ -204,3 +204,44 @@ def test_run_catalog_discovers_and_classifies(tmp_path):
     assert names["provider_features_runX"]["kind"] == "current"
     frozen_dirs = cataloged_run_dirs(tmp_path, kind="frozen")
     assert [Path(d).name for d in frozen_dirs] == ["frozen_2023-12_vX"]
+
+
+def test_core_fingerprint_detects_graph_contamination():
+    from src.model_a.feature_partition import (core_fingerprint,
+                                               core_definitions_match)
+    # v3-style: graph built from the core files only
+    man_v3 = {"sources_used": {"spending": [], "entity_graph": [],
+                               "partb": [], "label": []}}
+    # v6-style: the SAME core sources, but DocGraph referral edges entered
+    # the graph — an EXTRA source now feeding CORE features
+    man_v6 = {"sources_used": {"spending": [], "entity_graph": [],
+                               "partb": [], "label": [], "order_referring": []}}
+    assert core_fingerprint(man_v3) != core_fingerprint(man_v6)
+    assert "+graph:order_referring" in core_fingerprint(man_v6)
+    ok, why = core_definitions_match(man_v3, man_v6)
+    assert not ok and "not comparable" in why
+    ok2, _ = core_definitions_match(man_v3, dict(man_v3))
+    assert ok2
+
+
+def test_registry_suppresses_lift_drop_when_core_changed():
+    from src.model_a.run_registry import recommend
+    base = {"expectation_fails": 0, "network_verdict": "KEEP",
+            "ablation_lift_lo": 0.16}
+    champ = {**base, "tag": "v3", "decision": "PROMOTE",
+             "ablation_lift_delta": 0.659, "core_fingerprint": "entity_graph|spending"}
+    # same core definition -> the 0.18 drop is a real regression, HOLD names it
+    same = {**base, "tag": "v6", "ablation_lift_delta": 0.481,
+            "core_fingerprint": "entity_graph|spending"}
+    rec = recommend([champ, same])
+    assert rec["decision"] == "HOLD"
+    assert any("lift delta dropped" in r for r in rec["reasons"])
+    assert rec["core_comparability_note"] is None
+    # core definition CHANGED -> the rule is suppressed and explained instead
+    moved = {**base, "tag": "v6", "ablation_lift_delta": 0.481,
+             "core_fingerprint": "entity_graph|spending|+graph:order_referring"}
+    rec2 = recommend([champ, moved])
+    assert not any("lift delta dropped" in r for r in rec2["reasons"])
+    assert rec2["core_comparability_note"] is not None
+    assert "CORE DEFINITION CHANGED" in rec2["core_comparability_note"]
+    assert rec2["decision"] == "PROMOTE"      # no other reason to hold

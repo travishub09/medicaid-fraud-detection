@@ -115,6 +115,12 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             row["label"] = mj.get("label")
             subs = mj.get("graph_substrate") or {}
             row["substrate_frozen"] = bool(subs.get("address_layer_frozen"))
+            # WHAT 'core' meant for this run: two runs' core-vs-full deltas
+            # are only comparable when this matches (v6 lesson — DocGraph
+            # referral edges entered the graph, which is CORE, so the
+            # baseline moved and the delta shrank without the model changing)
+            from .feature_partition import core_fingerprint
+            row["core_fingerprint"] = core_fingerprint(mj)
         except Exception:
             pass
         row["manifest_path"] = str(man.resolve())
@@ -394,12 +400,28 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
         reasons.append("no ablation lift CI found")
     elif lo <= 0:
         reasons.append(f"ablation lift CI includes zero (lo={lo:+.3f})")
+    core_note = None
     if champion is not None:
         prev = champion.get("ablation_lift_delta")
         cur = latest.get("ablation_lift_delta")
+        fp_new = latest.get("core_fingerprint")
+        fp_old = champion.get("core_fingerprint")
+        comparable = not (fp_new and fp_old and fp_new != fp_old)
         if prev is not None and cur is not None and cur < prev - 0.15:
-            reasons.append(f"lift delta dropped {prev - cur:.2f} vs champion "
-                           f"'{champion.get('tag')}' (>0.15 threshold)")
+            if comparable:
+                reasons.append(f"lift delta dropped {prev - cur:.2f} vs champion "
+                               f"'{champion.get('tag')}' (>0.15 threshold)")
+            else:
+                # The yardstick moved, not necessarily the model: an extra
+                # source reached the CORE feature set (typically via the graph
+                # build), lifting the core-only baseline. Comparing deltas
+                # across different core definitions measures the partition.
+                core_note = (
+                    f"lift delta is {prev - cur:.2f} below champion "
+                    f"'{champion.get('tag')}', but the CORE DEFINITION CHANGED "
+                    f"between the runs ('{fp_old}' -> '{fp_new}'), so the "
+                    "delta is not comparable — the core-only baseline moved. "
+                    "Rule suppressed; compare absolute full-model lift instead.")
     for c in checks:
         if not c["ok"]:
             reasons.append(f"pre-registered check failed — {c['why']}")
@@ -413,7 +435,8 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
     return {"decision": decision, "reasons": reasons,
             "champion": (new_champion or {}).get("tag"),
             "champion_dir": (new_champion or {}).get("run_dir"),
-            "checks": checks, "unenforced_prereg": unenforced}
+            "checks": checks, "unenforced_prereg": unenforced,
+            "core_comparability_note": core_note}
 
 
 def _fmt(v, spec=""):
