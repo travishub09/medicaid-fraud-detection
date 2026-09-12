@@ -221,15 +221,28 @@ def resolve_unnamed(cons: pd.DataFrame, lookup=None, log=print) -> pd.DataFrame:
     target = (name.str.startswith(UNNAMED_PREFIX) | (name.str.strip() == "")) & \
         out["org_id"].astype(str).str.startswith("org:npi:")
     n_ok = 0
+    n_missing = 0
+    if "nppes_status" not in out.columns:
+        out["nppes_status"] = ""
     for i in out.index[target]:
         npi = str(out.at[i, "org_id"]).split(":")[-1]
         try:
             rec = lookup(npi)
         except Exception as e:  # noqa: BLE001 — network; keep going
             log(f"[consensus] NPPES lookup failed for {npi}: {e}")
-            rec = None
-        if not rec:
+            out.at[i, "nppes_status"] = "lookup_failed"
             continue
+        if not rec:
+            # the registry answered and has no record: a deactivated /
+            # retired NPI that is still in the billing fact. That is the
+            # invalid_identity pattern, not a data gap — name it so the row
+            # reads as the finding it is (Sept 2026: 10 such orgs over $10M/yr)
+            out.at[i, "org_name"] = (f"NPI NOT IN REGISTRY (deactivated?) "
+                                     f"{npi}")
+            out.at[i, "nppes_status"] = "not_in_registry"
+            n_missing += 1
+            continue
+        out.at[i, "nppes_status"] = f"active:{rec.get('status', '')}"
         if rec.get("org_name"):
             nm = rec["org_name"]
         elif rec.get("last_name"):
@@ -240,7 +253,9 @@ def resolve_unnamed(cons: pd.DataFrame, lookup=None, log=print) -> pd.DataFrame:
         loc = ", ".join(x for x in (rec.get("city", ""), rec.get("state", "")) if x)
         out.at[i, "org_name"] = nm + (f" [{loc}]" if loc else "")
         n_ok += 1
-    log(f"[consensus] resolved {n_ok}/{int(target.sum())} unnamed org(s) via NPPES")
+    log(f"[consensus] resolved {n_ok}/{int(target.sum())} unnamed org(s) via NPPES"
+        + (f"; {n_missing} NOT IN REGISTRY (deactivated NPIs still billing — "
+           f"invalid_identity leads)" if n_missing else ""))
     return out
 
 

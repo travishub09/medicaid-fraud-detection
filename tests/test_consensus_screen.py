@@ -124,3 +124,18 @@ def test_resolve_unnamed_keeps_named_rows():
                                                   "city": "", "state": ""},
                           log=lambda *_: None)
     assert list(out["org_name"]) == ["ACME LLC", "NAMED"]
+
+
+def test_resolve_unnamed_names_the_deactivated_npi_finding():
+    # the registry answers with no record: that IS the invalid_identity lead
+    cons = pd.DataFrame({"org_id": ["org:npi:1306961792", "org:npi:2"],
+                         "org_name": ["UNNAMED ORGANIZATION (x)", "UNNAMED ORGANIZATION (y)"]})
+    def lookup(n):
+        if n == "2":
+            raise RuntimeError("network down")
+        return None
+    out = resolve_unnamed(cons, lookup=lookup, log=lambda *_: None)
+    assert out["org_name"].iloc[0] == "NPI NOT IN REGISTRY (deactivated?) 1306961792"
+    assert out["nppes_status"].iloc[0] == "not_in_registry"
+    assert out["nppes_status"].iloc[1] == "lookup_failed"
+    assert out["org_name"].iloc[1].startswith("UNNAMED")   # untouched on failure
