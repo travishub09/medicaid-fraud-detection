@@ -162,7 +162,8 @@ def test_consensus_math_median_and_agreement():
                      ("org:b", "BETA", 0.15, 0.2, 2e7, "y", 3),
                      ("org:c", "GAMMA", 0.99, 0.99, 3e7, "z", 1)]),
     }
-    out = consensus_from_frames(frames, "v3", min_runs=2)
+    out, dropped = consensus_from_frames(frames, "v3", min_runs=2)
+    assert dropped == {}          # three healthy runs, nothing screened
     a = out[out["org_id"] == "org:a"].iloc[0]
     b = out[out["org_id"] == "org:b"].iloc[0]
     # median is the outlier removal: ALPHA médian 0.85 (agrees thrice)

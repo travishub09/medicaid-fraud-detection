@@ -304,6 +304,11 @@
    "key": "v7_launch:_the_v6-clean_night",
    "what": "v7_launch: the v6-clean night \u2014 run_v7.bat (as-of graph rebuilt WITH --asof-nppes so the address layer is frozen again; primary forward label = FCA-tier hard; all + hard+weak side rulers). Run ALONE, lid on Do nothing; morning: run_packet_v7.zip + dossier poll",
    "added": "2026-09-12"
+  },
+  {
+   "key": "consensus_names:_after_merging_bundle",
+   "what": "consensus_names: after merging bundle 156, refresh the consensus with names resolved from the NPI Registry (network, ~1 min, no rescoring): python -m src.model_a.consensus --recompute \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v3\\consensus_priority_list.csv\" --resolve-names ; then upload consensus_priority_list.csv + CONSENSUS.md again",
+   "added": "2026-09-12"
   }
  ]
 }

@@ -323,7 +323,10 @@ GOV_RE = (r"\b(?:STATE OF|COMMONWEALTH|COUNTY|CITY OF|CITY &|CITY AND|"
           r"HEALTH AND HOSPITALS|PUBLIC HEALTH|BOARD OF|"
           # v6 additions: instrumentality forms the first screen missed
           r"HOSPITAL DISTRICT|HEALTH DISTRICT|HOSPITAL AUTHORITY|"
-          r"REGENTS OF|BOARD OF REGENTS|PUBLIC BENEFIT)\b")
+          r"REGENTS OF|BOARD OF REGENTS|PUBLIC BENEFIT|"
+          # consensus-list addition: municipal corporations billing under
+          # the city's own name (MAYOR AND CITY COUNCIL OF BALTIMORE)
+          r"MAYOR|CITY COUNCIL|TOWN OF|VILLAGE OF|MUNICIPAL)\b")
 
 # Known public/instrumentality health systems whose enrollment names carry no
 # governmental cue — the Hennepin class (a county public corporation whose
