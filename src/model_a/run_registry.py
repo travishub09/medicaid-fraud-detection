@@ -111,9 +111,11 @@ def parse_run_dir(run_dir: str | Path) -> dict:
     if man.exists():
         try:
             mj = json.loads(_read(man))
-            row["asof_cutoff"] = mj.get("asof_cutoff")
-            row["label"] = mj.get("label")
             subs = mj.get("graph_substrate") or {}
+            # older manifests (v1-v6) carried the freeze only as the graph's
+            # as-of; fall back so the registry stops reporting null cutoffs
+            row["asof_cutoff"] = mj.get("asof_cutoff") or subs.get("asof")
+            row["label"] = mj.get("label")
             row["substrate_frozen"] = bool(subs.get("address_layer_frozen"))
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
@@ -145,6 +147,13 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             row["forward_positives"] = int(
                 (pd.to_numeric(f.get("is_prospective_positive"),
                                errors="coerce").fillna(0) == 1).sum())
+            # which ruler: 'all' (every exclusion, v1-v6) or an FCA tier
+            # policy from fca_relevance — lifts under different rulers are
+            # not comparable, so the row carries it
+            if "label_policy" in f.columns and len(f):
+                row["label_policy"] = str(f["label_policy"].iloc[0])
+            else:
+                row["label_policy"] = "all"
         except Exception:
             pass
         row["future_bans_path"] = str(fb.resolve())
@@ -280,6 +289,7 @@ CHECK_ALIASES = {
     "network": "network_verdict", "positives": "forward_positives",
     "sources_evaluated": "schemes_evaluated",
     "columns": "n_columns", "providers": "n_providers",
+    "frozen": "substrate_frozen", "policy": "label_policy",
 }
 _CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"
                        r"(>=|<=|==|!=|=|>|<)\s*(.+?)\s*$")

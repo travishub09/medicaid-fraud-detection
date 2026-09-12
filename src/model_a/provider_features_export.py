@@ -2369,6 +2369,10 @@ def main() -> None:
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.
     manifest["sources_audit"] = audit.records()
+    # The BILLING freeze is a top-level manifest fact (the registry and the run
+    # catalog read it; before this it lived only under graph_substrate.asof,
+    # which is the GRAPH's as-of and was null-reported as the run's cutoff).
+    manifest["asof_cutoff"] = args.asof_cutoff
 
     # §E: bake provider name / city / zip into the export natively (kills the
     # post-hoc make_scored_parquet join). IDENTIFIERS, never features — they land

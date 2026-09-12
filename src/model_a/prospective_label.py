@@ -53,16 +53,29 @@ def _cutoff_ts(cutoff: str) -> pd.Timestamp:
     return pd.Timestamp(s[:7] + "-01" if len(s) == 7 else s)
 
 
-def build_prospective_label(exclusion_nodes: pd.DataFrame, cutoff: str) -> pd.DataFrame:
+def build_prospective_label(exclusion_nodes: pd.DataFrame, cutoff: str,
+                            fca_tier: str = "all") -> pd.DataFrame:
     """One row per NPI, keyed to its EARLIEST exclusion, split by ``cutoff``.
 
     Returns columns: npi, first_excl_date, excl_type, entity_name,
-    is_prospective_positive, was_excluded_pre_cutoff, undated_exclusion.
+    is_prospective_positive, was_excluded_pre_cutoff, undated_exclusion,
+    fca_tier, fca_basis, label_policy.
     NPIs with a blank/missing NPI on the exclusion record are dropped (a name-only
     exclusion can't be joined to a billing provider).
+
+    ``fca_tier`` is the label policy ('all' | 'hard' | 'hard+weak', see
+    fca_relevance): a provider is a forward positive only when it has a
+    post-cutoff exclusion whose statute/reason sits in a kept tier. The
+    pre-cutoff drop still uses EVERY exclusion (a loan-default exclusion node
+    is a feature in the as-of graph regardless of policy, so that provider
+    can't be in the forward test either way). The row's fca_tier/fca_basis
+    describe the earliest KEPT record when one exists, else the earliest record.
     """
+    from .fca_relevance import classify_series, tier_mask
+
     cols = ["npi", "first_excl_date", "excl_type", "entity_name",
-            "is_prospective_positive", "was_excluded_pre_cutoff", "undated_exclusion"]
+            "is_prospective_positive", "was_excluded_pre_cutoff", "undated_exclusion",
+            "fca_tier", "fca_basis", "label_policy"]
     if exclusion_nodes is None or not len(exclusion_nodes):
         return pd.DataFrame(columns=cols)
 
@@ -73,29 +86,57 @@ def build_prospective_label(exclusion_nodes: pd.DataFrame, cutoff: str) -> pd.Da
         return pd.DataFrame(columns=cols)
 
     e["_excl_dt"] = pd.to_datetime(e.get("excl_date"), errors="coerce")
+    if "excl_type" not in e.columns:
+        e["excl_type"] = ""
+    e["excl_type"] = e["excl_type"].fillna("").astype(str)
+    tiers = classify_series(e["excl_type"])
+    e["fca_tier"] = tiers["fca_tier"].values
+    e["fca_basis"] = tiers["fca_basis"].values
+    e["_kept"] = tier_mask(e["fca_tier"], fca_tier).values
     # Earliest exclusion per NPI. Sort dated rows ahead of undated so a provider
-    # with any known date keeps that date as its first exclusion.
+    # with any known date keeps that date as its first exclusion; kept-tier rows
+    # ahead of dropped ones so the row's tier describes the record that counts.
     e["_undated"] = e["_excl_dt"].isna()
+    e["_dropped"] = ~e["_kept"]
     e = e.sort_values(["npi", "_undated", "_excl_dt"])
     first = e.groupby("npi", as_index=False).first()
+    kept_first = (e[e["_kept"]].sort_values(["npi", "_undated", "_excl_dt"])
+                  .groupby("npi", as_index=False).first()
+                  .set_index("npi"))
 
     cutoff_ts = _cutoff_ts(cutoff)
     undated = first["_excl_dt"].isna()
     dated = ~undated
+    has_kept = first["npi"].isin(kept_first.index)
+    tier_col = first["npi"].map(kept_first["fca_tier"]).where(has_kept, first["fca_tier"])
+    basis_col = first["npi"].map(kept_first["fca_basis"]).where(has_kept, first["fca_basis"])
     out = pd.DataFrame({
         "npi": first["npi"].astype(str),
         "first_excl_date": first["_excl_dt"].dt.strftime("%Y-%m-%d").where(dated, ""),
-        "excl_type": first.get("excl_type", pd.Series("", index=first.index)).fillna(""),
+        "excl_type": first["excl_type"],
         "entity_name": first.get("entity_name", pd.Series("", index=first.index)).fillna(""),
         # strictly AFTER the freeze instant: the as-of graph keeps exclusions dated
         # <= the cutoff, so a ban dated exactly at the cutoff is already a feature
-        # and must not also be a label (the one-day boundary leak).
-        "is_prospective_positive": (dated & (first["_excl_dt"] > cutoff_ts)).astype(int),
+        # and must not also be a label (the one-day boundary leak). Under a tier
+        # policy the provider must ALSO carry a kept-tier record (which is then
+        # necessarily post-cutoff, since its earliest record of any kind is).
+        "is_prospective_positive": (dated & (first["_excl_dt"] > cutoff_ts)
+                                    & has_kept).astype(int),
         "was_excluded_pre_cutoff": (dated & (first["_excl_dt"] <= cutoff_ts)).astype(int),
         "undated_exclusion": undated.astype(int),
+        "fca_tier": tier_col.values,
+        "fca_basis": basis_col.values,
+        "label_policy": (fca_tier or "all").lower(),
     })
     return out.sort_values(["is_prospective_positive", "first_excl_date"],
                            ascending=[False, True]).reset_index(drop=True)
+
+
+def dropped_by_policy(label: pd.DataFrame, cutoff: str) -> pd.DataFrame:
+    """Post-cutoff exclusions the policy did NOT count (the audit counsel reads)."""
+    cutoff_ts = _cutoff_ts(cutoff)
+    dt = pd.to_datetime(label["first_excl_date"], errors="coerce")
+    return label[(dt > cutoff_ts) & (label["is_prospective_positive"] == 0)]
 
 
 def _load(path: str) -> pd.DataFrame:
@@ -119,20 +160,54 @@ def main() -> None:
     ap.add_argument("--positives-only", action="store_true",
                     help="write only the forward positives (default writes the full "
                          "split so you can build the negative pool too).")
+    ap.add_argument("--fca-tier", default="all", choices=["all", "hard", "hard+weak"],
+                    help="label policy from fca_relevance: 'all' = every exclusion "
+                         "(the v1-v6 ruler); 'hard' = only statutes/reasons that look "
+                         "like an FCA case (fraud convictions, kickbacks, excessive "
+                         "claims, CIA breach, abuse of billing privileges); "
+                         "'hard+weak' adds misconduct that is not FCA on its face "
+                         "(license actions, patient abuse, derivative exclusions). "
+                         "Loan defaults, paperwork failures, not-operational "
+                         "revocations and OpenSanctions are never positives under a "
+                         "tier policy.")
+    ap.add_argument("--tier-report", default=None,
+                    help="write the per-tier/basis positive counts as Markdown "
+                         "(default: <out>.TIERS.md)")
     args = ap.parse_args()
 
-    label = build_prospective_label(_load(args.exclusion_nodes), args.cutoff)
+    from .fca_relevance import tier_report
+
+    nodes = _load(args.exclusion_nodes)
+    label = build_prospective_label(nodes, args.cutoff, fca_tier=args.fca_tier)
     pos = int(label["is_prospective_positive"].sum())
     pre = int(label["was_excluded_pre_cutoff"].sum())
     und = int(label["undated_exclusion"].sum())
+    dropped = dropped_by_policy(label, args.cutoff)
 
     written = label[label["is_prospective_positive"] == 1] if args.positives_only else label
     written.to_csv(args.out, index=False)
 
-    print(f"wrote {args.out} — {len(written):,} rows")
+    rep_path = Path(args.tier_report) if args.tier_report else Path(
+        str(args.out).rsplit(".", 1)[0] + ".TIERS.md")
+    rep = [f"# Forward-label tier report — policy `{args.fca_tier}`, cutoff {args.cutoff}",
+           "",
+           f"_{pos:,} forward positives; {len(dropped):,} post-cutoff exclusions NOT "
+           f"counted under this policy; {pre:,} excluded at/before the cutoff (dropped "
+           f"from the test); {und:,} undated. Tiers per `src/model_a/fca_relevance.py` "
+           f"— hard = looks like an FCA case, weak = misconduct not FCA on its face, "
+           f"excluded = not FCA-relevant (loan default, paperwork, not operational)._",
+           "", "## Positives counted", "", tier_report(label)]
+    if len(dropped):
+        rep += ["", "## Post-cutoff exclusions NOT counted (by policy)", "",
+                tier_report(dropped.assign(is_prospective_positive=1))]
+    rep_path.write_text("\n".join(rep) + "\n", encoding="utf-8")
+
+    print(f"wrote {args.out} — {len(written):,} rows  (label policy: {args.fca_tier})")
     print(f"  forward positives (first ban after {args.cutoff}): {pos:,}  <- the held-out label")
+    print(f"  post-cutoff exclusions not counted by policy:     {len(dropped):,}")
     print(f"  excluded at/before cutoff (drop from the test):    {pre:,}")
     print(f"  undated exclusions (not counted as positive):  {und:,}")
+    print(f"  tier report: {rep_path}")
     print("  Modelling label from public integrity events — leads for review, not accusations.")
     if pos == 0:
         # Fail LOUD and NONZERO: a zero-positive forward label means the exclusion

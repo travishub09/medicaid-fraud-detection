@@ -276,27 +276,6 @@
    "added": "2026-08-04"
   },
   {
-   "key": "run_packet__frozen_2023-12_v6",
-   "what": "Send the run packet for frozen_2023-12_v6 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-   "added": "2026-09-12",
-   "commands": [
-    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6",
-    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-    "REM then upload run_packet.zip to the chat",
-    "python -m src.reminders --done-task run_packet__frozen_2023-12_v6"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__frozen_2023-12_v6",
-   "what": "Build + dispatch the pursuit dossier for frozen_2023-12_v6 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-   "added": "2026-09-12",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v6"
-   ]
-  },
-  {
    "key": "dossier_poll__frozen_2023-12_v6",
    "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v6 dossier and send PURSUIT_DOSSIER.md",
    "added": "2026-09-12",
@@ -314,6 +293,16 @@
   {
    "key": "v7_design_(one_change",
    "what": "v7 design (one change per run): (1) filter forward label to fraud-related LEIE statutes via excl_type; (2) rolling-origin freezes (2022-06/2022-12/2023-06/2023-12) to end test-set reuse; (3) segment-matched labels: exclusions for operators, DOJ settlements for institutions; (4) calibrate scores before consensus; (5) hold the graph constant (referral edges in or out) across compared runs",
+   "added": "2026-09-12"
+  },
+  {
+   "key": "label_experiment:_after_the_consensus",
+   "what": "label_experiment: after the consensus job finishes and bundle 155 is merged, run run_label_experiment.bat (re-labels the v6 matrix under all / hard / hard+weak FCA-tier policies, 2-4 h) and upload LABEL_VARIANTS.md + future_bans_after_2023-12__hard.TIERS.md",
+   "added": "2026-09-12"
+  },
+  {
+   "key": "v7_launch:_the_v6-clean_night",
+   "what": "v7_launch: the v6-clean night \u2014 run_v7.bat (as-of graph rebuilt WITH --asof-nppes so the address layer is frozen again; primary forward label = FCA-tier hard; all + hard+weak side rulers). Run ALONE, lid on Do nothing; morning: run_packet_v7.zip + dossier poll",
    "added": "2026-09-12"
   }
  ]

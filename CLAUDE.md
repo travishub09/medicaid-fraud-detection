@@ -403,7 +403,25 @@ committed. Never let this file go stale: stale reminders are worse than none.
   logged by name with the unlock (download an archived earlier edition).
   The operator's owners_prior/ archive (2023-2026, six dataset families)
   powers current-day chains immediately.
-  Full suite: `pytest tests/` (697 tests).
+  FCA-RELEVANCE LABEL LAYER (`model_a/fca_relevance.py`): every exclusion /
+  revocation record is tiered from its statute or reason (`excl_type`) —
+  hard = looks like an FCA case (1128a1/a3/b1/b6/b7, BRCH CIA/SA, b16, abuse
+  or misuse of billing privileges, false/misleading enrollment, DOJ cases),
+  weak = misconduct not FCA on its face (license actions, patient abuse,
+  derivative exclusions, preclusion), excluded = never a positive (loan
+  default b14, paperwork b9-b13, non-compliance / not-operational
+  revocations, OpenSanctions, SAM without a healthcare cause). The forward
+  label takes `--fca-tier all|hard|hard+weak` (`prospective_label`), ships
+  `fca_tier`/`fca_basis`/`label_policy` columns + a `.TIERS.md` audit; the
+  registry records `label_policy` per row (lifts under different rulers are
+  not comparable) and `--check "policy = hard"` / `"frozen = True"` are
+  enforceable. `model_a/label_variants.py` reads the `__all` / `__hard` /
+  `__hard_weak` suffixed label + A/B + ablation reports off one run folder
+  into LABEL_VARIANTS.md (same matrix, three rulers). The manifest now carries
+  a top-level `asof_cutoff` (registry falls back to `graph_substrate.asof` for
+  v1-v6). v6 lesson encoded: the as-of graph rebuild MUST pass `--asof-nppes`
+  or `address_layer_frozen` is false and post-cutoff addresses leak.
+  Full suite: `pytest tests/` (771 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
