@@ -101,6 +101,7 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6
 ```
 
 - [ ] **registry_verdict__frozen_2023-12_v6** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v6 — close only when you have them (added 2026-09-12)
+- [ ] **v7_design_(one_change** — v7 design (one change per run): (1) filter forward label to fraud-related LEIE statutes via excl_type; (2) rolling-origin freezes (2022-06/2022-12/2023-06/2023-12) to end test-set reuse; (3) segment-matched labels: exclusions for operators, DOJ settlements for institutions; (4) calibrate scores before consensus; (5) hold the graph constant (referral edges in or out) across compared runs (added 2026-09-12)
 
 ## After ANY download session (standing rule)
 
