@@ -82,6 +82,13 @@ REVOCATION_RULES: list[tuple[str, str, str]] = [
     (r"prescrib", "weak", "prescribing abuses"),
     (r"exclusion|debar", "weak", "424.535(a)(2) derivative of exclusion/debarment"),
     (r"licen", "weak", "license action (basis unstated)"),
+    # the four reasons the first tier audit (Sept 2026) found unmapped
+    (r"affiliation", "weak", "424.535(a)(19) affiliation posing undue risk (derivative)"),
+    (r"program termination", "weak",
+     "424.535(a)(12) terminated by another program (basis unstated)"),
+    (r"supplier standards|provider and supplier", "weak",
+     "424.535(a)(23) provider/supplier standards violation"),
+    (r"treasury|debt", "excluded", "424.535(a)(17) debt referred to Treasury (collections)"),
     (r"non-?compliance|not operational|on-?site|failure to report|"
      r"failure to document|failure to provide access|screening|"
      r"reporting|address|cms.?855|application", "excluded",
