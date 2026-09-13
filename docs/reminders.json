@@ -252,6 +252,25 @@
     "Open the NUCC csv page (url above) \u2192 newest 'Health Care Provider Taxonomy Code Set' CSV",
     "Save as \"...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv\""
    ]
+  },
+  {
+   "key": "nppes_2021_12",
+   "what": "NPPES December-2021 monthly edition (freezes the address layer for the v7 2021-12 rolling-origin run; one-time)",
+   "where": "preclean/nppes/npidata_pfile_20050523-20211212.csv (extracted CSV, several GB; next to the 2023 edition)",
+   "url": "https://data.nber.org/npi/",
+   "every_months": 120,
+   "last_done": null,
+   "steps": [
+    "Open https://data.nber.org/npi/ (NBER archives every monthly NPPES release; CMS itself keeps only the current month)",
+    "Find the December 2021 full NPPES Data Dissemination (the zip whose main csv is named npidata_pfile_20050523-20211212.csv or the closest December-2021 date)",
+    "Download and EXTRACT the zip; keep only the big npidata_pfile_*.csv",
+    "Then paste the commands below (moves it next to the 2023 edition and marks the item done)"
+   ],
+   "commands": [
+    "move \"%USERPROFILE%\\Downloads\\npidata_pfile_20050523-2021*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\\"",
+    "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\npidata_pfile_*2021*.csv\"",
+    "python -m src.reminders --done nppes_2021_12"
+   ]
   }
  ],
  "tasks": [
@@ -291,33 +310,13 @@
    "added": "2026-09-12"
   },
   {
-   "key": "v7_design_(one_change",
-   "what": "v7 design (one change per run): (1) filter forward label to fraud-related LEIE statutes via excl_type; (2) rolling-origin freezes (2022-06/2022-12/2023-06/2023-12) to end test-set reuse; (3) segment-matched labels: exclusions for operators, DOJ settlements for institutions; (4) calibrate scores before consensus; (5) hold the graph constant (referral edges in or out) across compared runs",
-   "added": "2026-09-12"
-  },
-  {
-   "key": "label_experiment:_after_the_consensus",
-   "what": "label_experiment: after the consensus job finishes and bundle 155 is merged, run run_label_experiment.bat (re-labels the v6 matrix under all / hard / hard+weak FCA-tier policies, 2-4 h) and upload LABEL_VARIANTS.md + future_bans_after_2023-12__hard.TIERS.md",
-   "added": "2026-09-12"
-  },
-  {
-   "key": "v7_launch:_the_v6-clean_night",
-   "what": "v7_launch: the v6-clean night \u2014 run_v7.bat (as-of graph rebuilt WITH --asof-nppes so the address layer is frozen again; primary forward label = FCA-tier hard; all + hard+weak side rulers). Run ALONE, lid on Do nothing; morning: run_packet_v7.zip + dossier poll",
-   "added": "2026-09-12"
-  },
-  {
-   "key": "consensus_names:_after_merging_bundle",
-   "what": "consensus_names: after merging bundle 156, refresh the consensus with names resolved from the NPI Registry (network, ~1 min, no rescoring): python -m src.model_a.consensus --recompute \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v3\\consensus_priority_list.csv\" --resolve-names ; then upload consensus_priority_list.csv + CONSENSUS.md again",
-   "added": "2026-09-12"
-  },
-  {
    "key": "pi_facts_deep:_after_merging_bundle",
    "what": "pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins",
    "added": "2026-09-13"
   },
   {
-   "key": "label_lag:_after_merging_bundle",
-   "what": "label_lag: after merging bundle 158 run python -m src.model_a.label_lag --matrix \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\\provider_features_for_model.parquet\" --labels \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\\future_bans_after_2023-12__all.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\\future_bans_after_2023-12__hard.csv\" --cutoff 2023-12 ; upload LABEL_LAG.md (decides enforcement-lag vs model-never-learned-fraud)",
+   "key": "v7_redesign_2021-12",
+   "what": "v7 is REDESIGNED after LABEL_LAG (fraud-tier positives were 73% dormant at the 2023-12 freeze): rolling-origin freeze at 2021-12, hard ruler, address layer frozen with the Dec-2021 NPPES edition, production scorer on the hard-tier label. DO NOT launch the old run_v7.bat. Waits on: nppes_2021_12 download, then the new run_v7.bat from Claude",
    "added": "2026-09-13"
   }
  ]
