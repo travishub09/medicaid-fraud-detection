@@ -38,6 +38,86 @@ from src.model_a.network_ab import _fit_predict, _to_num
 RANDOM_STATE = 42
 
 
+# --- label policy for the PRODUCTION scorer ---------------------------------
+# The in-matrix PU label (provider_on_exclusion) is ~75% administrative and
+# weak events (Sept 2026 tier audit), so a scorer trained on it ranks
+# "likely to be revoked", not "fraud-shaped". A policy of hard / hard+weak
+# rebuilds the training label from the exclusion nodes' statutes via
+# fca_relevance without a matrix rebuild. Set once per process (CLI flag);
+# every scorer call site honours it and says so in its log line.
+_LABEL_POLICY: dict = {"tier": "all", "exclusion_nodes": None, "cutoff": None}
+
+
+def set_label_policy(tier: str = "all", exclusion_nodes: str | Path | None = None,
+                     cutoff: str | None = None) -> None:
+    tier = (tier or "all").lower()
+    if tier not in ("all", "hard", "hard+weak"):
+        raise ValueError(f"unknown label tier {tier!r}")
+    _LABEL_POLICY.update(tier=tier, exclusion_nodes=exclusion_nodes, cutoff=cutoff)
+
+
+def label_policy() -> dict:
+    return dict(_LABEL_POLICY)
+
+
+def default_exclusion_nodes(run_dir: str | Path, data_root: str | Path | None = None) -> Path:
+    """Where this run's exclusion nodes live: the as-of graph for a frozen run
+    (manifest graph_substrate.asof), the current graph otherwise."""
+    import os
+    root = Path(data_root or os.environ.get("MEDICAID_DATA_ROOT",
+                                            str(Path.home() / "Desktop/data")))
+    asof = None
+    man = Path(run_dir) / "feature_manifest.json"
+    if man.exists():
+        try:
+            mj = json.loads(man.read_text(encoding="utf-8"))
+            asof = mj.get("asof_cutoff") or (mj.get("graph_substrate") or {}).get("asof")
+        except Exception:
+            asof = None
+    if asof:
+        p = root / f"graph_asof_{asof}" / "nodes" / "exclusion_nodes.parquet"
+        if p.exists():
+            return p
+    return root / "graph" / "nodes" / "exclusion_nodes.parquet"
+
+
+def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
+               keep: str = "hard", cutoff: str | None = None) -> np.ndarray:
+    """0/1 per matrix row: the NPI has an exclusion record in a kept FCA tier
+    (dated on/before ``cutoff`` when given; undated records count for the
+    current-day scorer, never for a frozen one)."""
+    from .fca_relevance import classify_series, tier_mask
+    e = exclusion_nodes if isinstance(exclusion_nodes, pd.DataFrame) \
+        else pd.read_parquet(exclusion_nodes)
+    e = e.copy()
+    e["npi"] = e.get("npi").astype("string").str.strip()
+    e = e[e["npi"].notna() & (e["npi"] != "") & (e["npi"].str.lower() != "none")]
+    tiers = classify_series(e.get("excl_type", pd.Series("", index=e.index)).fillna("").astype(str))
+    e = e[tier_mask(tiers["fca_tier"], keep).values]
+    if cutoff:
+        dt = pd.to_datetime(e.get("excl_date"), errors="coerce")
+        e = e[dt.notna() & (dt <= pd.Timestamp(f"{cutoff[:7]}-01") + pd.offsets.MonthEnd(0))]
+    pos = set(e["npi"].astype(str))
+    return matrix["npi"].astype(str).isin(pos).astype(int).to_numpy()
+
+
+def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
+    """The scorer's y under the current label policy (see set_label_policy)."""
+    pol = _LABEL_POLICY
+    if pol["tier"] == "all" or not pol.get("exclusion_nodes"):
+        return _to_num(matrix[label_col])
+    y = tier_label(matrix, pol["exclusion_nodes"], keep=pol["tier"],
+                   cutoff=pol.get("cutoff"))
+    base = int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0
+    print(f"[company_list] training label policy '{pol['tier']}': "
+          f"{int(y.sum()):,} positives (in-matrix {label_col}: {base:,})")
+    if y.sum() < 50:
+        raise ValueError(f"label policy '{pol['tier']}' leaves {int(y.sum())} "
+                         f"positives in this matrix — too few to train; use "
+                         f"'hard+weak' or check --exclusion-nodes")
+    return y
+
+
 def oof_scores(matrix: pd.DataFrame, manifest: dict,
                label_col: str = "provider_on_exclusion",
                n_splits: int = 5) -> np.ndarray:
@@ -62,7 +142,8 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     # mechanical leak screen: the ban list is curated, but any single column
     # that near-perfectly separates the PU label on its own IS the label in
     # disguise, whatever it's called. Drop it and say so.
-    y_screen = _to_num(matrix[label_col])
+    y_train = _training_label(matrix, label_col)
+    y_screen = y_train
     if y_screen.sum() > 0 and y_screen.sum() < len(matrix):
         from sklearn.metrics import roc_auc_score
         leaked = []
@@ -79,7 +160,7 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
                   + ", ".join(f"{c} (single-column AUC {a})"
                               for c, a in leaked))
     X = matrix[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy()
-    y = _to_num(matrix[label_col])
+    y = y_train
     groups = (matrix["group_id"].to_numpy()
               if "group_id" in matrix.columns else None)
     scores = np.zeros(len(matrix))

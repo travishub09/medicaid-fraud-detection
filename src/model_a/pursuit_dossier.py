@@ -647,6 +647,15 @@ def main() -> None:
                          "(provider_priority_list.csv): every org, sorted by "
                          "fraud signal; government entities and sub-bar case "
                          "sizes are FILTERS, dollars never sort")
+    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+weak"],
+                    help="training label for the production scorer: 'all' = the "
+                         "in-matrix PU label (every exclusion source; ~75%% "
+                         "administrative/weak events); 'hard' = only FCA-lookalike "
+                         "statutes from the exclusion nodes (fraud-shaped ranking); "
+                         "'hard+weak' adds misconduct not FCA on its face")
+    ap.add_argument("--exclusion-nodes", default=None,
+                    help="exclusion_nodes.parquet for --label-tier (default: the "
+                         "run's as-of graph when frozen, else the current graph)")
     ap.add_argument("--mask-individuals", action="store_true",
                     help="priority list only: replace solo individuals' "
                          "enrollment names with NPI + city (default ships "
@@ -654,6 +663,19 @@ def main() -> None:
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
+    if args.label_tier != "all":
+        from .company_list import default_exclusion_nodes, set_label_policy
+        ex = Path(args.exclusion_nodes) if args.exclusion_nodes else \
+            default_exclusion_nodes(args.run_dir)
+        if not ex.exists():
+            raise SystemExit(f"--label-tier {args.label_tier} needs exclusion nodes; "
+                             f"not found at {ex} (pass --exclusion-nodes)")
+        mj = json.loads((Path(args.run_dir) / "feature_manifest.json").read_text(
+            encoding="utf-8"))
+        cutoff = mj.get("asof_cutoff") or (mj.get("graph_substrate") or {}).get("asof")
+        set_label_policy(args.label_tier, ex, cutoff)
+        print(f"[pursuit_dossier] production scorer label policy: {args.label_tier} "
+              f"from {ex}" + (f" (records <= {cutoff})" if cutoff else ""))
     if args.dispatch_file:
         d = Path(args.run_dir)
         info = dispatch_research(Path(args.dispatch_file),

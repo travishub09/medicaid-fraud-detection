@@ -189,6 +189,23 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             sum(1 for ln in tail[1].splitlines() if ln.startswith("- "))
             if len(tail) > 1 else 0)
 
+    lag = _read(d / "LABEL_LAG.md")
+    if lag:
+        # the ruler's visibility at the freeze (label_lag): share of hard-tier
+        # forward positives still billing in the six months before the cutoff.
+        # A ruler that cannot see its positives cannot grade a model — the v6
+        # lesson (27% visible at 2023-12); pre-register 'hard_visible >= 0.5'
+        # read the hard-RULER section (future_bans_*__hard.csv) when present,
+        # else the first section's hard tier
+        secs = [s for s in lag.split("\n## ") if "__hard.csv" in s.split("\n", 1)[0]]
+        src = secs[0] if secs else lag
+        row["hard_visible_share"] = _search(
+            r"\| hard \| [\d,]+ \| [\d,]+ \(\d+%\) \| (\d+)% \|", src,
+            lambda s: int(s) / 100.0)
+        row["hard_in_universe"] = _search(
+            r"\| hard \| [\d,]+ \| ([\d,]+) \(\d+%\) \|", src,
+            lambda s: int(s.replace(",", "")))
+
     srp = _read(d / "SOURCES_REPORT.md")
     if srp:
         row["sources_used"] = _search(r"_(\d+) source\(s\) contributed", srp, int)
@@ -290,6 +307,7 @@ CHECK_ALIASES = {
     "sources_evaluated": "schemes_evaluated",
     "columns": "n_columns", "providers": "n_providers",
     "frozen": "substrate_frozen", "policy": "label_policy",
+    "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
 }
 _CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"
                        r"(>=|<=|==|!=|=|>|<)\s*(.+?)\s*$")
