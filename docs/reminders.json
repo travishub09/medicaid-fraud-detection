@@ -314,6 +314,11 @@
    "key": "pi_facts_deep:_after_merging_bundle",
    "what": "pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins",
    "added": "2026-09-13"
+  },
+  {
+   "key": "label_lag:_after_merging_bundle",
+   "what": "label_lag: after merging bundle 158 run python -m src.model_a.label_lag --matrix \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\\provider_features_for_model.parquet\" --labels \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\\future_bans_after_2023-12__all.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\\future_bans_after_2023-12__hard.csv\" --cutoff 2023-12 ; upload LABEL_LAG.md (decides enforcement-lag vs model-never-learned-fraud)",
+   "added": "2026-09-13"
   }
  ]
 }
