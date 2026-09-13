@@ -107,6 +107,150 @@ FACT_COLS: dict[str, tuple[str, str]] = {
 }
 
 
+def _sql_str(p) -> str:
+    return str(p).replace("'", "''")
+
+
+def billing_facts(spending_path: str | Path, npis: list[str],
+                  minutes_csv: str | Path | None = None,
+                  top_codes: int = 8, work_days_per_month: int = 22,
+                  con=None) -> dict[str, dict]:
+    """The facts a PI can actually put to a witness, from the BILLING FACT
+    itself (processed/spending_fact.parquet), per billing NPI:
+
+      paid_by_year      the ramp: when the money started and how fast it grew
+      ramp_month        first month the run-rate crossed half of the peak month
+      top_codes         what the money is: code, paid, share, claim lines,
+                        patient-months (a witness can be asked what each is)
+      servicing_npis    distinct rendering clinicians under this billing NPI
+                        (48M through one biller and three clinicians is a question)
+      patient_months    sum of monthly patient counts; lines_per_patient_month
+      implied_hours     with a hcpcs->minutes map: claim lines x minutes, per
+                        working day, in the worst month and at the median
+                        (the "31 hours a day" contradiction), plus the share
+                        of paid dollars that sits on timed codes
+
+    Everything is computed only for the NPIs asked for (a WHERE IN over the
+    parquet), so a 238M-row fact answers in minutes, not hours. Values are
+    reported as billed; a fact is a question for the field, not a finding."""
+    import duckdb
+    own = con is None
+    con = con or duckdb.connect()
+    p = _sql_str(spending_path)
+    npis = [str(n) for n in npis if str(n).strip()]
+    if not npis:
+        return {}
+    con.execute("CREATE OR REPLACE TEMP TABLE want(npi VARCHAR)")
+    con.executemany("INSERT INTO want VALUES (?)", [(n,) for n in npis])
+    cols = [c[0] for c in con.execute(
+        f"DESCRIBE SELECT * FROM read_parquet('{p}')").fetchall()]
+    lines_sel = ("CAST(total_claim_lines AS DOUBLE)" if "total_claim_lines" in cols
+                 else "NULL")
+    pats_sel = ("CAST(total_patients AS DOUBLE)" if "total_patients" in cols
+                else "NULL")
+    srv_sel = ("CAST(servicing_npi AS VARCHAR)" if "servicing_npi" in cols
+               else "NULL")
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE s AS
+        SELECT CAST(billing_npi AS VARCHAR) npi,
+               UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs,
+               substr(CAST(service_month AS VARCHAR), 1, 7) ym,
+               CAST(total_paid AS DOUBLE) paid,
+               {lines_sel} AS lines, {pats_sel} AS pats, {srv_sel} AS srv
+        FROM read_parquet('{p}')
+        WHERE CAST(billing_npi AS VARCHAR) IN (SELECT npi FROM want)
+    """)
+    by_year = con.execute("""
+        SELECT npi, substr(ym, 1, 4) yr, SUM(paid) paid, SUM(lines) lines
+        FROM s GROUP BY npi, yr ORDER BY npi, yr""").df()
+    by_month = con.execute("""
+        SELECT npi, ym, SUM(paid) paid FROM s GROUP BY npi, ym ORDER BY npi, ym
+    """).df()
+    top = con.execute(f"""
+        SELECT * FROM (
+            SELECT npi, hcpcs, SUM(paid) paid, SUM(lines) lines, SUM(pats) pats,
+                   ROW_NUMBER() OVER (PARTITION BY npi ORDER BY SUM(paid) DESC) rn
+            FROM s GROUP BY npi, hcpcs)
+        WHERE rn <= {int(top_codes)} ORDER BY npi, rn""").df()
+    tot = con.execute("""
+        SELECT npi, SUM(paid) paid, SUM(lines) lines, SUM(pats) patient_months,
+               COUNT(DISTINCT hcpcs) n_codes, COUNT(DISTINCT ym) n_months,
+               COUNT(DISTINCT srv) n_servicing, MIN(ym) first_month, MAX(ym) last_month
+        FROM s GROUP BY npi""").df()
+
+    hours = {}
+    mins_p = Path(minutes_csv) if minutes_csv else None
+    if mins_p and mins_p.exists():
+        con.execute(f"""
+            CREATE OR REPLACE TEMP TABLE mins AS
+            SELECT UPPER(TRIM(CAST("hcpcs" AS VARCHAR))) AS hcpcs,
+                   CAST("minutes" AS DOUBLE) AS mins_per_line
+            FROM read_csv_auto('{_sql_str(mins_p)}', header=true)""")
+        hm = con.execute(f"""
+            SELECT s.npi, s.ym,
+                   SUM(s.lines * m.mins_per_line) / 60.0 / {int(work_days_per_month)} AS hours_per_day,
+                   SUM(s.paid) AS timed_paid
+            FROM s JOIN mins m ON s.hcpcs = m.hcpcs
+            GROUP BY s.npi, s.ym""").df()
+        for npi, g in hm.groupby("npi"):
+            g = g.dropna(subset=["hours_per_day"])
+            if not len(g):
+                continue
+            worst = g.loc[g["hours_per_day"].idxmax()]
+            hours[npi] = {
+                "worst_month": str(worst["ym"]),
+                "worst_hours_per_working_day": float(worst["hours_per_day"]),
+                "median_hours_per_working_day": float(g["hours_per_day"].median()),
+                "months_over_24h": int((g["hours_per_day"] > 24).sum()),
+                "timed_paid": float(g["timed_paid"].sum()),
+            }
+    if own:
+        con.close()
+
+    out: dict[str, dict] = {}
+    for _, t in tot.iterrows():
+        npi = str(t["npi"])
+        yrs = by_year[by_year["npi"] == npi]
+        months = by_month[by_month["npi"] == npi]
+        ramp = None
+        if len(months):
+            peak = float(months["paid"].max())
+            if peak > 0:
+                crossed = months[months["paid"] >= 0.5 * peak]
+                ramp = {"month": str(crossed["ym"].iloc[0]),
+                        "peak_month": str(months.loc[months["paid"].idxmax(), "ym"]),
+                        "peak_month_paid": peak}
+        tc = top[top["npi"] == npi]
+        paid_total = float(t["paid"] or 0)
+        pm = float(t["patient_months"]) if pd.notna(t["patient_months"]) else None
+        lines_total = float(t["lines"]) if pd.notna(t["lines"]) else None
+        rec = {
+            "paid_total": paid_total,
+            "paid_by_year": {str(r["yr"]): float(r["paid"]) for _, r in yrs.iterrows()},
+            "ramp": ramp,
+            "first_month": str(t["first_month"]), "last_month": str(t["last_month"]),
+            "active_months": int(t["n_months"]),
+            "n_codes": int(t["n_codes"]),
+            "n_servicing_npis": int(t["n_servicing"]) if pd.notna(t["n_servicing"]) else None,
+            "patient_months": pm,
+            "lines_total": lines_total,
+            "lines_per_patient_month": (lines_total / pm if pm and lines_total else None),
+            "top_codes": [{
+                "hcpcs": str(r["hcpcs"]), "paid": float(r["paid"]),
+                "share": (float(r["paid"]) / paid_total if paid_total else None),
+                "lines": (float(r["lines"]) if pd.notna(r["lines"]) else None),
+                "patient_months": (float(r["pats"]) if pd.notna(r["pats"]) else None),
+            } for _, r in tc.iterrows()],
+        }
+        if npi in hours:
+            h = dict(hours[npi])
+            h["timed_share_of_paid"] = (h["timed_paid"] / paid_total
+                                        if paid_total else None)
+            rec["implied_hours"] = h
+        out[npi] = rec
+    return out
+
+
 def extract(matrix: pd.DataFrame, org_ids: list[str]) -> dict:
     """Per-org, per-member fact sheets from the run matrix."""
     mkey = matrix["org_node_id"].astype(str)
@@ -148,27 +292,137 @@ def extract(matrix: pd.DataFrame, org_ids: list[str]) -> dict:
     return out
 
 
+def attach_billing_facts(res: dict, spending_path: str | Path,
+                         minutes_csv: str | Path | None = None,
+                         log=print) -> dict:
+    """Add billing_facts (from the spending fact) to every member in ``res``."""
+    npis = [m["npi"] for o in res.values() if "error" not in o
+            for m in o["members"] if m.get("npi")]
+    log(f"[pi_facts] billing facts for {len(npis):,} NPIs from {spending_path}"
+        + (f" (+ minutes map {Path(minutes_csv).name})" if minutes_csv else
+           " (no hcpcs minutes map: implied hours skipped)"))
+    bf = billing_facts(spending_path, npis, minutes_csv=minutes_csv)
+    for o in res.values():
+        if "error" in o:
+            continue
+        for m in o["members"]:
+            if m["npi"] in bf:
+                m["billing_facts"] = bf[m["npi"]]
+    return res
+
+
+def _org_level_split(members: list[dict]) -> tuple[dict, set]:
+    """Facts whose value is identical for every member are ORG-GRAIN scores
+    broadcast down to NPIs (growth level-shift, clinical implausibility...);
+    printing them 13 times as if each clinician earned them misleads the
+    reader. Returns (org_level facts, the column names to skip per member)."""
+    if len(members) < 2:
+        return {}, set()
+    org, skip = {}, set()
+    cols = set().union(*(m["facts"].keys() for m in members))
+    for c in cols:
+        vals = {(m["facts"].get(c) or {}).get("value") for m in members}
+        if len(vals) == 1 and None not in vals and all(c in m["facts"] for m in members):
+            org[c] = members[0]["facts"][c]
+            skip.add(c)
+    return org, skip
+
+
+def _money(v) -> str:
+    return f"${v:,.0f}" if v is not None else "—"
+
+
+def _billing_lines(bf: dict) -> list[str]:
+    L = []
+    yrs = bf.get("paid_by_year") or {}
+    if yrs:
+        L.append("- **paid by year**: " + " -> ".join(
+            f"{y} {_money(v)}" for y, v in sorted(yrs.items())))
+    r = bf.get("ramp")
+    if r:
+        L.append(f"- **ramp**: run-rate crossed half its peak in {r['month']}; "
+                 f"peak month {r['peak_month']} at {_money(r['peak_month_paid'])}")
+        L.append("  - field use: ask when this location opened, changed hands, "
+                 "or added staff; the month the money started is the month to "
+                 "reconcile against leases, licenses and payroll.")
+    ns = bf.get("n_servicing_npis")
+    if ns is not None:
+        L.append(f"- **rendering clinicians under this billing NPI**: {ns} "
+                 f"(across {bf.get('active_months')} active months, "
+                 f"{bf.get('n_codes')} distinct codes)")
+        L.append("  - field use: count the clinicians on site; the billing "
+                 "says how many rendered.")
+    pm = bf.get("patient_months")
+    if pm:
+        lpp = bf.get("lines_per_patient_month")
+        L.append(f"- **patient-months billed**: {pm:,.0f}"
+                 + (f"; claim lines per patient-month {lpp:,.1f}" if lpp else ""))
+        L.append("  - field use: ask how many patients a day and how many "
+                 "services each gets; compare.")
+    tc = bf.get("top_codes") or []
+    if tc:
+        L.append("- **what the money is (top codes)**:")
+        for c in tc:
+            bits = [f"{c['hcpcs']} {_money(c['paid'])}"]
+            if c.get("share") is not None:
+                bits.append(f"{c['share']:.0%} of paid")
+            if c.get("lines") is not None:
+                bits.append(f"{c['lines']:,.0f} lines")
+            if c.get("patient_months") is not None:
+                bits.append(f"{c['patient_months']:,.0f} patient-months")
+            L.append("  - " + ", ".join(bits))
+        L.append("  - field use: ask what each code is in their own words and "
+                 "who performs it; the answer must match the license, the "
+                 "equipment and the room.")
+    h = bf.get("implied_hours")
+    if h:
+        L.append(f"- **implied clinician hours per working day (timed codes)**: "
+                 f"worst month {h['worst_month']} = {h['worst_hours_per_working_day']:,.1f} h; "
+                 f"median month {h['median_hours_per_working_day']:,.1f} h; "
+                 f"{h['months_over_24h']} month(s) over 24 h"
+                 + (f"; timed codes are {h['timed_share_of_paid']:.0%} of paid"
+                    if h.get("timed_share_of_paid") is not None else ""))
+        L.append("  - field use: hours per day above what the staff on site "
+                 "could deliver is the contradiction no explanation survives; "
+                 "ask how many clinicians and what shifts.")
+    return L
+
+
 def to_markdown(res: dict) -> str:
     L = ["# PI FACT SHEETS — billed-reality numbers per target", "",
          "_Each fact is the operator-side half of a field contradiction: "
          "what the billing claims, so the investigator knows which innocent "
-         "answer is impossible. Values are from the run matrix; peer "
-         "percentile 0.98 = higher than 98% of comparable providers._", ""]
+         "answer is impossible. Model indicators (0 to 1) are from the run "
+         "matrix; peer percentile 0.98 = higher than 98% of comparable "
+         "providers. Billing facts are read straight from the paid-claims "
+         "fact, as billed. Every number is a question for the field, not a "
+         "finding; leads for counsel review, never accusations._", ""]
     for oid, o in res.items():
         if "error" in o:
             L.append(f"## {oid}: {o['error']}")
             continue
-        L.append(f"## {o['org_name']}  ({oid})")
+        L.append(f"## {o['org_name'] or oid}  ({oid})")
         L.append(f"- members: {o['n_members']} | Medicaid paid (window): "
                  f"${o['total_net_paid']:,.0f}"
                  + (f" | beds recorded: {o['total_beds_recorded']:.0f}"
                     if o.get("total_beds_recorded") else ""))
+        org_facts, skip = _org_level_split(o["members"])
+        if org_facts:
+            L.append("- **organization-level indicators** (same value for every "
+                     "member; scored at the org, not per clinician): " + "; ".join(
+                         f"{f['label']} {f['value']:,.2f}" for f in org_facts.values()
+                         if f.get("value") is not None))
         for mem in o["members"]:
-            if not mem["facts"]:
+            facts = {c: f for c, f in mem["facts"].items() if c not in skip}
+            bf = mem.get("billing_facts")
+            if not facts and not bf:
                 continue
-            L.append(f"### NPI {mem['npi']} — {mem['city']}, {mem['state']}")
+            who = f" {mem['name']}" if mem.get("name") and mem["name"] != o["org_name"] else ""
+            L.append(f"### NPI {mem['npi']}{who} — {mem['city']}, {mem['state']}")
+            if bf:
+                L += _billing_lines(bf)
             for col, f in sorted(
-                    mem["facts"].items(),
+                    facts.items(),
                     key=lambda kv: -(kv[1]["peer_percentile"] or 0)):
                 v = f["value"]
                 vtxt = (f"{v:,.2f}" if v is not None and abs(v) < 1e6
@@ -194,6 +448,18 @@ def main() -> None:
                     help="with a priority-list CSV in --orgs-file: only the "
                          "first N rows")
     ap.add_argument("--out-prefix", default="pi_facts")
+    ap.add_argument("--deep", action="store_true",
+                    help="also read the paid-claims fact for each member NPI: "
+                         "paid by year + ramp month, top codes with lines and "
+                         "patient-months, rendering-clinician count, and (with a "
+                         "hcpcs minutes map) implied clinician hours per working "
+                         "day — the facts a PI can put to a witness")
+    ap.add_argument("--spending", default=None,
+                    help="processed/spending_fact.parquet (default: under "
+                         "MEDICAID_DATA_ROOT or ~/Desktop/data)")
+    ap.add_argument("--minutes", default=None,
+                    help="hcpcs,minutes CSV for implied hours (default: the "
+                         "first preclean/hcpcs_time/hcpcs_minutes*.csv found)")
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     run_dir = Path(resolve_run_dir(args.run_dir))
@@ -216,6 +482,19 @@ def main() -> None:
 
     matrix = pd.read_parquet(run_dir / "provider_features_for_model.parquet")
     res = extract(matrix, org_ids)
+    if args.deep:
+        import os
+        root = Path(os.environ.get("MEDICAID_DATA_ROOT",
+                                   str(Path.home() / "Desktop/data")))
+        spending = Path(args.spending) if args.spending else \
+            root / "processed" / "spending_fact.parquet"
+        if not spending.exists():
+            raise SystemExit(f"--deep needs the paid-claims fact; not found at "
+                             f"{spending} (pass --spending)")
+        minutes = Path(args.minutes) if args.minutes else next(
+            iter(sorted((root / "preclean" / "hcpcs_time").glob("hcpcs_minutes*.csv"))),
+            None)
+        res = attach_billing_facts(res, spending, minutes_csv=minutes)
     jp = run_dir / f"{args.out_prefix}.json"
     mp = run_dir / f"{args.out_prefix.upper()}.md"
     jp.write_text(json.dumps(res, indent=1), encoding="utf-8")

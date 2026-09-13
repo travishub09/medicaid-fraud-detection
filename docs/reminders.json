@@ -309,6 +309,11 @@
    "key": "consensus_names:_after_merging_bundle",
    "what": "consensus_names: after merging bundle 156, refresh the consensus with names resolved from the NPI Registry (network, ~1 min, no rescoring): python -m src.model_a.consensus --recompute \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v3\\consensus_priority_list.csv\" --resolve-names ; then upload consensus_priority_list.csv + CONSENSUS.md again",
    "added": "2026-09-12"
+  },
+  {
+   "key": "pi_facts_deep:_after_merging_bundle",
+   "what": "pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins",
+   "added": "2026-09-13"
   }
  ]
 }

@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-09-12. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-09-13. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -88,6 +88,7 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6
 - [ ] **label_experiment:_after_the_consensus** — label_experiment: after the consensus job finishes and bundle 155 is merged, run run_label_experiment.bat (re-labels the v6 matrix under all / hard / hard+weak FCA-tier policies, 2-4 h) and upload LABEL_VARIANTS.md + future_bans_after_2023-12__hard.TIERS.md (added 2026-09-12)
 - [ ] **v7_launch:_the_v6-clean_night** — v7_launch: the v6-clean night — run_v7.bat (as-of graph rebuilt WITH --asof-nppes so the address layer is frozen again; primary forward label = FCA-tier hard; all + hard+weak side rulers). Run ALONE, lid on Do nothing; morning: run_packet_v7.zip + dossier poll (added 2026-09-12)
 - [ ] **consensus_names:_after_merging_bundle** — consensus_names: after merging bundle 156, refresh the consensus with names resolved from the NPI Registry (network, ~1 min, no rescoring): python -m src.model_a.consensus --recompute "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v3\consensus_priority_list.csv" --resolve-names ; then upload consensus_priority_list.csv + CONSENSUS.md again (added 2026-09-12)
+- [ ] **pi_facts_deep:_after_merging_bundle** — pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins (added 2026-09-13)
 
 ## After ANY download session (standing rule)
 
