@@ -234,6 +234,53 @@ _OOF_METRICS = (("roc_auc", roc_auc), ("pr_auc", pr_auc),
                 ("lift10", top_decile_lift))
 
 
+def peer_rank_scores(p: np.ndarray, matrix: pd.DataFrame,
+                     taxonomy_col: str = "primary_taxonomy",
+                     paid_col: str = "net_paid", bins: int = 5,
+                     min_group: int = 50) -> np.ndarray:
+    """Turn raw model scores into WITHIN-PEER percentiles.
+
+    The active-ruler pass (Sept 2026) showed the model separating future
+    fraud positives from size/specialty-MATCHED peers (ROC ~0.78) while
+    ranking them below chance in the open population (top-decile lift 0.3):
+    the absolute score is dominated by sector and size, so a mid-sized
+    home-health agency never outranks a large lab no matter how anomalous it
+    is among agencies. Ranking each provider against its own peer group
+    (taxonomy x paid-volume band) removes that offset — the same peer-relative
+    principle the scheme subscores already use. Groups smaller than
+    ``min_group`` fall back to the taxonomy alone, then to the whole universe.
+    NaN scores stay NaN."""
+    p = np.asarray(p, dtype=float)
+    out = np.full(len(p), np.nan)
+    tax = (matrix[taxonomy_col].fillna("").astype(str).str.strip().str[:10]
+           if taxonomy_col in matrix.columns else pd.Series("", index=matrix.index))
+    paid = (pd.to_numeric(matrix[paid_col], errors="coerce").fillna(0.0)
+            if paid_col in matrix.columns else pd.Series(0.0, index=matrix.index))
+    try:
+        band = pd.qcut(paid.rank(method="first"), q=bins, labels=False)
+    except ValueError:
+        band = pd.Series(0, index=matrix.index)
+    fine = tax + "|" + band.astype(int).astype(str)
+    coarse = tax
+    s = pd.Series(p)
+    valid = s.notna().to_numpy()
+    vidx = np.flatnonzero(valid)
+    for key_series in (fine, coarse, pd.Series("*", index=matrix.index)):
+        todo = valid & np.isnan(out)
+        if not todo.any():
+            break
+        # percentiles are computed over EVERY valid row of the group (a small
+        # leftover set is ranked against the whole population, not against
+        # itself), then written only for the rows still unassigned
+        keys = key_series.to_numpy()
+        df = pd.DataFrame({"k": keys[vidx], "p": p[vidx]}, index=vidx)
+        sizes = df.groupby("k")["p"].transform("size")
+        pct = df.groupby("k")["p"].rank(method="average", pct=True)
+        sel = ((sizes >= min_group) & todo[vidx]).to_numpy()
+        out[vidx[sel]] = pct.to_numpy()[sel]
+    return out
+
+
 def oof_predict(matrix, y, cols, groups, n_splits=5, seed=RANDOM_STATE):
     """Out-of-fold scores: every row predicted by a model that never saw it.
 
@@ -295,8 +342,14 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
                      future_label: pd.DataFrame | None = None,
                      n_splits: int = 5, n_boot: int = 400,
                      per_group: bool = False,
-                     additive: bool = False) -> dict:
+                     additive: bool = False,
+                     peer_rank: bool = False) -> dict:
     """Core vs full on POOLED out-of-fold predictions — the powered ablation.
+
+    ``peer_rank``: score every model's out-of-fold predictions as WITHIN-PEER
+    percentiles (taxonomy x paid band, see peer_rank_scores) before any
+    metric, for core and full alike. Answers "does the ranking work once
+    sector and size are taken out", which is how the lead list is read.
 
     Same question as ``run_source_ablation``, answered with every positive in the
     metric instead of the ~30% that land in one holdout, and with intervals on
@@ -308,13 +361,17 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
     part = partition_features(manifest)
     core, full = part["core"], full_feature_list(part)
 
-    p_core = oof_predict(m, y, core, groups, n_splits=n_splits)
-    p_full = oof_predict(m, y, full, groups, n_splits=n_splits)
+    _rank = (lambda p: peer_rank_scores(p, m)) if peer_rank else (lambda p: p)
+    p_core = _rank(oof_predict(m, y, core, groups, n_splits=n_splits))
+    p_full = _rank(oof_predict(m, y, full, groups, n_splits=n_splits))
     scored = ~(np.isnan(p_core) | np.isnan(p_full))
     y_s, pc, pf = y[scored], p_core[scored], p_full[scored]
     g_s = groups[scored] if groups is not None else None
 
-    res = {"label": label_name, "mode": "out-of-fold (pooled)",
+    res = {"label": label_name,
+           "mode": "out-of-fold (pooled)" + (", WITHIN-PEER percentile ranking "
+                                            "(taxonomy x paid band)" if peer_rank else ""),
+           "peer_rank": bool(peer_rank),
            "n": int(len(m)), "positives": int(y.sum()),
            "n_scored": int(scored.sum()), "positives_scored": int(y_s.sum()),
            "n_splits": n_splits, "n_boot": n_boot,
@@ -328,7 +385,7 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
         pg = {}
         for grp, cols in part["extra"].items():
             without = [c for c in full if c not in set(cols)]
-            p_wo = oof_predict(m, y, without, groups, n_splits=n_splits)
+            p_wo = _rank(oof_predict(m, y, without, groups, n_splits=n_splits))
             ok = scored & ~np.isnan(p_wo)
             pg[grp] = {
                 "n_features": len(cols),
@@ -347,7 +404,7 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
         ad = {}
         for grp, cols in part["extra"].items():
             with_grp = core + [c for c in cols if c not in set(core)]
-            p_ad = oof_predict(m, y, with_grp, groups, n_splits=n_splits)
+            p_ad = _rank(oof_predict(m, y, with_grp, groups, n_splits=n_splits))
             ok = scored & ~np.isnan(p_ad)
             ad[grp] = {
                 "n_features": len(cols),
@@ -531,6 +588,10 @@ def main() -> None:
                          "alike). A provider silent for years before the freeze is "
                          "nobody's target; see label_lag.")
     ap.add_argument("--cutoff", default=None, help="freeze YYYY-MM, for --active-within")
+    ap.add_argument("--peer-rank", action="store_true",
+                    help="score out-of-fold predictions as WITHIN-PEER percentiles "
+                         "(taxonomy x paid band) before the metrics — the ranking "
+                         "as the lead list reads it, with sector/size offsets removed")
     args = ap.parse_args()
     matrix = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
@@ -551,7 +612,8 @@ def main() -> None:
         res = run_oof_ablation(matrix, manifest, label_col=args.label_col,
                                future_label=fl, n_splits=max(args.splits, 5),
                                per_group=args.per_group,
-                               additive=args.additive)
+                               additive=args.additive,
+                               peer_rank=args.peer_rank)
         md = oof_to_markdown(res)
         if active_note:
             md = md.replace("\n\n", "\n\n" + active_note, 1)

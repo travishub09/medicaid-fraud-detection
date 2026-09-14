@@ -368,6 +368,11 @@
    "key": "registry_verdict__frozen_2021-12_v7",
    "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 \u2014 close only when you have them",
    "added": "2026-09-14"
+  },
+  {
+   "key": "peer_rank:_after_merging_bundle",
+   "what": "peer_rank: after merging bundle 166, run the two ACTIVE ablations again WITH --peer-rank (within-peer percentile ranking) and upload SOURCE_ABLATION_OOF_FULL__active_hard_peer.md + __active_all_peer.md",
+   "added": "2026-09-14"
   }
  ]
 }

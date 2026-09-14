@@ -139,6 +139,7 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 ```
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
+- [ ] **peer_rank:_after_merging_bundle** — peer_rank: after merging bundle 166, run the two ACTIVE ablations again WITH --peer-rank (within-peer percentile ranking) and upload SOURCE_ABLATION_OOF_FULL__active_hard_peer.md + __active_all_peer.md (added 2026-09-14)
 
 ## After ANY download session (standing rule)
 
