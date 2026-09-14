@@ -29,6 +29,12 @@ def test_tier_label_respects_tier_and_cutoff():
     m = pd.DataFrame({"npi": [f"10000000{i:02d}" for i in range(1, 8)]})
     y = cl.tier_label(m, _nodes(), keep="hard")
     assert list(y) == [1, 0, 0, 1, 1, 0, 0]          # a1, a3, b7 (undated counts)
+    # DOJ-case positives from the matrix provenance join the hard tier
+    m2 = m.assign(exclusion_label_sources=["", "", "", "", "", "leie;doj_case", "doj_case"])
+    y2 = cl.tier_label(m2, _nodes(), keep="hard", cutoff="2021-12")
+    assert list(y2) == [1, 0, 0, 0, 0, 1, 1]
+    m3 = m.assign(exclusion_label_sources=["", "", "", "", "", "leie", "sam"])
+    assert list(cl.tier_label(m3, _nodes(), keep="hard", cutoff="2021-12")) == [1, 0, 0, 0, 0, 0, 0]
     y = cl.tier_label(m, _nodes(), keep="hard+weak")
     assert list(y) == [1, 0, 1, 1, 1, 0, 0]          # + b4 license
     y = cl.tier_label(m, _nodes(), keep="hard", cutoff="2021-12")

@@ -98,7 +98,16 @@ def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
         dt = pd.to_datetime(e.get("excl_date"), errors="coerce")
         e = e[dt.notna() & (dt <= pd.Timestamp(f"{cutoff[:7]}-01") + pd.offsets.MonthEnd(0))]
     pos = set(e["npi"].astype(str))
-    return matrix["npi"].astype(str).isin(pos).astype(int).to_numpy()
+    y = matrix["npi"].astype(str).isin(pos).to_numpy()
+    # DOJ case labels (settlements: the only label institutions generate) live
+    # in the matrix's label provenance, not in the exclusion nodes; they are
+    # hard by construction (fca_relevance tiers 'doj' hard). The frozen export
+    # already time-boxes them to the run's freeze, so no date filter here.
+    if "exclusion_label_sources" in matrix.columns:
+        prov = matrix["exclusion_label_sources"].fillna("").astype(str)
+        doj = prov.str.split(";").apply(lambda xs: "doj_case" in xs).to_numpy()
+        y = y | doj
+    return y.astype(int)
 
 
 def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
@@ -109,8 +118,13 @@ def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
     y = tier_label(matrix, pol["exclusion_nodes"], keep=pol["tier"],
                    cutoff=pol.get("cutoff"))
     base = int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0
+    n_doj = 0
+    if "exclusion_label_sources" in matrix.columns:
+        n_doj = int(matrix["exclusion_label_sources"].fillna("").astype(str)
+                    .str.split(";").apply(lambda xs: "doj_case" in xs).sum())
     print(f"[company_list] training label policy '{pol['tier']}': "
-          f"{int(y.sum()):,} positives (in-matrix {label_col}: {base:,})")
+          f"{int(y.sum()):,} positives ({n_doj:,} of them DOJ-case; in-matrix "
+          f"{label_col}: {base:,})")
     if y.sum() < 50:
         raise ValueError(f"label policy '{pol['tier']}' leaves {int(y.sum())} "
                          f"positives in this matrix — too few to train; use "
