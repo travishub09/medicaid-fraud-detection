@@ -277,6 +277,11 @@ def write_report(cons: pd.DataFrame, run_tags: list[str], anchor_tag: str,
         f"anchor (filters + case sizes): {anchor_tag}",
         f"- {len(cons):,} organizations present in >= {min_runs} kept runs, over "
         f"the ${min_damages:,.0f}/yr case-size bar, non-government{filt}.",
+        (f"- **Label tier: `{cons['label_tier'].iloc[0]}`** — every run's scorer was "
+         f"trained on this FCA tier (fraud-shaped ranking), not the in-matrix PU label."
+         if "label_tier" in cons.columns and len(cons)
+         and str(cons["label_tier"].iloc[0]) != "all" else
+         "- Label: each run's in-matrix PU label (program-integrity ruler)."),
         "- **consensus_score** = MEDIAN dollar-weighted score across the KEPT runs "
         "(the median is the outlier removal: one aberrant run cannot drag a "
         "target up or down). **runs_hot** = in how many kept runs the org's "
@@ -313,24 +318,49 @@ def write_report(cons: pd.DataFrame, run_tags: list[str], anchor_tag: str,
     return csv_path, md
 
 
+def _run_tag(rd: str | Path) -> str:
+    """frozen_2023-12_v6 -> v6; frozen_2021-12_v7 -> 2021-12_v7 (the freeze
+    stays in the tag when it is not the original 2023-12 series)."""
+    name = Path(rd).name
+    if name.startswith("frozen_2023-12"):
+        return name.replace("frozen_2023-12", "").strip("_") or name
+    return name.replace("frozen_", "") or name
+
+
 def build(run_dirs: list[str], anchor: str, out_dir: str | None = None,
           min_damages: float = 10_000_000.0, min_runs: int = 2,
           exclude: list[str] | None = None, min_frac: float = 0.34,
-          resolve_names: bool = False) -> Path:
+          resolve_names: bool = False, label_tier: str = "all") -> Path:
     from .case_size import org_case_size
     from .pursuit_dossier import government_mask
+    from .company_list import default_exclusion_nodes, set_label_policy
 
     frames: dict[str, pd.DataFrame] = {}
     for rd in run_dirs:
-        tag = Path(rd).name.replace("frozen_2023-12", "").strip("_") or \
-            Path(rd).name
-        print(f"[consensus] scoring {tag} ({rd}) ...")
+        tag = _run_tag(rd)
+        if label_tier != "all":
+            # each run trains its scorer on the FCA tier rebuilt from ITS OWN
+            # as-of exclusion nodes (dated <= its freeze), so a fraud-shaped
+            # consensus never quietly falls back to the revocation label
+            ex = default_exclusion_nodes(rd)
+            if not ex.exists():
+                raise SystemExit(f"--label-tier {label_tier}: exclusion nodes not "
+                                 f"found for {rd} at {ex}")
+            mj = json.loads((Path(rd) / "feature_manifest.json").read_text(
+                encoding="utf-8"))
+            cutoff = mj.get("asof_cutoff") or (mj.get("graph_substrate") or {}).get("asof")
+            set_label_policy(label_tier, ex, cutoff)
+            print(f"[consensus] scoring {tag} ({rd}) on label tier '{label_tier}' "
+                  f"(nodes {ex.name}, records <= {cutoff}) ...")
+        else:
+            print(f"[consensus] scoring {tag} ({rd}) ...")
         frames[tag] = load_run_orgs(rd)
         print(f"[consensus]   {len(frames[tag]):,} orgs")
-    anchor_tag = Path(anchor).name.replace("frozen_2023-12", "").strip("_") \
-        or Path(anchor).name
+    set_label_policy("all")
+    anchor_tag = _run_tag(anchor)
     cons, dropped = consensus_from_frames(frames, anchor_tag, min_runs=min_runs,
                                          min_frac=min_frac, exclude=exclude)
+    cons["label_tier"] = label_tier
     for c, why in dropped.items():
         print(f"[consensus] DROPPED {c[3:]}: {why}")
 
@@ -440,6 +470,11 @@ def main() -> None:
     ap.add_argument("--resolve-names", action="store_true",
                     help="fill blank / UNNAMED single-NPI org names from the live "
                          "NPI Registry (network)")
+    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+weak"],
+                    help="train every run's scorer on this FCA tier (rebuilt from "
+                         "each run's own as-of exclusion nodes) before merging: "
+                         "'hard' = a fraud-shaped consensus; 'all' = the in-matrix "
+                         "PU label (the pre-v7 behaviour)")
     args = ap.parse_args()
 
     if args.recompute:
@@ -469,7 +504,7 @@ def main() -> None:
     build(runs, anchor, out_dir=args.out,
           min_damages=args.min_damages, min_runs=args.min_runs,
           exclude=args.exclude_runs, min_frac=args.min_run_health,
-          resolve_names=args.resolve_names)
+          resolve_names=args.resolve_names, label_tier=args.label_tier)
 
 
 if __name__ == "__main__":

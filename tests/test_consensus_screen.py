@@ -117,6 +117,24 @@ def test_government_screen_catches_municipal_corporations():
     assert list(m) == [True, True, False, True]
 
 
+def test_run_tag_keeps_non_2023_freeze_visible():
+    from src.model_a.consensus import _run_tag
+    assert _run_tag("/x/frozen_2023-12_v6") == "v6"
+    assert _run_tag("/x/frozen_2023-12") == "frozen_2023-12"
+    assert _run_tag("/x/frozen_2021-12_v7") == "2021-12_v7"
+
+
+def test_write_report_states_label_tier(tmp_path: Path):
+    from src.model_a.consensus import write_report
+    cons = pd.DataFrame({"consensus_rank": [1], "org_id": ["org:a"], "org_name": ["A"],
+                         "dw_v7": [0.9], "consensus_score": [0.9], "runs_hot": [1],
+                         "runs_present": [1], "score_max": [0.9], "case_size_yr": [2e7],
+                         "label_tier": ["hard"]})
+    _, md = write_report(cons, ["v7"], "v7", tmp_path, 1, 1e7, 0, 0, {})
+    text = md.read_text(encoding="utf-8")
+    assert "Label tier: `hard`" in text and "fraud-shaped" in text
+
+
 def test_resolve_unnamed_keeps_named_rows():
     cons = pd.DataFrame({"org_id": ["org:npi:1", "org:x"],
                          "org_name": ["", "NAMED"]})
