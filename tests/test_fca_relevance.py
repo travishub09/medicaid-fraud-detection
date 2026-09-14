@@ -24,7 +24,7 @@ from src.model_a.label_variants import collect, to_markdown
     ("medicare_revocation: Abuse of Billing Privileges", "hard"),
     ("medicare_revocation: False or Misleading Information", "hard"),
     ("medicare_revocation: Non-Compliance", "excluded"),
-    ("medicare_revocation: Not Operational", "excluded"),
+    ("medicare_revocation: Not Operational", "weak"),        # phantom-site indicator (re-tiered Sept 14)
     ("medicare_revocation: Felony", "weak"),
     ("medicare_revocation: License Suspension or Revocation", "weak"),
     ("medicare_revocation: 424.535(a)(19) Affiliation that Poses an Undue Risk", "weak"),

@@ -89,11 +89,28 @@ REVOCATION_RULES: list[tuple[str, str, str]] = [
     (r"supplier standards|provider and supplier", "weak",
      "424.535(a)(23) provider/supplier standards violation"),
     (r"treasury|debt", "excluded", "424.535(a)(17) debt referred to Treasury (collections)"),
-    (r"non-?compliance|not operational|on-?site|failure to report|"
+    # (a)(5): CMS visited the address on file and found no practice there
+    # while claims were flowing. A claim for a service at a site that does
+    # not exist is a false claim by definition — the phantom-site pattern
+    # (DME, home health, shell labs). NOT paperwork; weak until the billing
+    # fact confirms claims continued into the non-operational period.
+    (r"on-?site review|not operational|non-?operational", "weak",
+     "424.535(a)(5) not operational at the address on file (phantom-site indicator)"),
+    (r"dme standards|supplier standards", "weak",
+     "424.535(a)(1) DME supplier standards not met"),
+    (r"non-?compliance|failure to report|"
      r"failure to document|failure to provide access|screening|"
      r"reporting|address|cms.?855|application", "excluded",
      "administrative / operational revocation"),
 ]
+_TIER_RANK = {"hard": 2, "weak": 1, "excluded": 0}
+
+
+def _classify_reason(reason: str) -> tuple[str, str]:
+    for pat, tier, basis in REVOCATION_RULES:
+        if re.search(pat, reason):
+            return tier, basis
+    return "weak", f"revocation reason unmapped: {reason.strip()[:60]}"
 
 _NORM = re.compile(r"[^a-z0-9]")
 _CODES_LONGEST_FIRST = sorted(LEIE_STATUTES, key=len, reverse=True)
@@ -114,10 +131,13 @@ def fca_tier(excl_type) -> tuple[str, str]:
         return "weak", "Part D preclusion list"
     if t.startswith("medicare_revocation"):
         reason = t.split(":", 1)[1] if ":" in t else ""
-        for pat, tier, basis in REVOCATION_RULES:
-            if re.search(pat, reason):
-                return tier, basis
-        return "weak", f"revocation reason unmapped: {reason.strip()[:60]}"
+        # a revocation often cites SEVERAL grounds ("(a)(9) failure to
+        # report;(a)(3) felonies"): classify each and keep the strongest —
+        # a felony ground is not neutralized by a paperwork ground beside it
+        parts = [p.strip() for p in reason.split(";") if p.strip()] or [reason]
+        best = max((_classify_reason(p) for p in parts),
+                   key=lambda tb: _TIER_RANK.get(tb[0], -1))
+        return best
     if t.startswith("doj") or t.startswith("case"):
         return "hard", "DOJ / court case (direct tier)"
     # LEIE statute codes: normalize "1128(a)(1)", "1128 A1", "BRCH CIA" -> key

@@ -373,6 +373,11 @@
    "key": "peer_rank:_after_merging_bundle",
    "what": "peer_rank: after merging bundle 166, run the two ACTIVE ablations again WITH --peer-rank (within-peer percentile ranking) and upload SOURCE_ABLATION_OOF_FULL__active_hard_peer.md + __active_all_peer.md",
    "added": "2026-09-14"
+  },
+  {
+   "key": "tier_transitions:_after_merging_bundle",
+   "what": "tier_transitions: after merging bundle 167 run python -m src.model_a.tier_transitions --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" (1 min) and upload graph\\nodes\\TIER_TRANSITIONS.md \u2014 decides whether revocations are early fraud markers",
+   "added": "2026-09-14"
   }
  ]
 }
