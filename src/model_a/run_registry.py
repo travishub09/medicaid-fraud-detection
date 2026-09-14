@@ -139,8 +139,8 @@ def parse_run_dir(run_dir: str | Path) -> dict:
         row["network_matched_roc_delta"] = _search(
             r"delta ([+-]?\d+\.?\d*), CI", ab)
 
-    fb = d / "future_bans_after_2023-12.csv"
-    if fb.exists():
+    fb = future_bans_file(d)
+    if fb is not None and fb.exists():
         try:
             import pandas as pd
             f = pd.read_csv(fb, dtype=str)
@@ -225,6 +225,28 @@ def parse_run_dir(run_dir: str | Path) -> dict:
     return row
 
 
+def future_bans_file(run_dir: Path) -> Path | None:
+    """The run's PRIMARY forward label: future_bans_after_<cutoff>.csv (no
+    __variant suffix). v1-v6 were all 2023-12; v7 froze at 2021-12, so the
+    name is discovered, never assumed."""
+    d = Path(run_dir)
+    cands = sorted(p for p in d.glob("future_bans_after_*.csv")
+                   if "__" not in p.name)
+    if not cands:
+        return None
+    exact = d / "future_bans_after_2023-12.csv"
+    return exact if exact in cands else cands[-1]
+
+
+def dedupe_rows(rows: list[dict]) -> list[dict]:
+    """One row per tag, the LAST registration winning (a re-registration
+    after a code fix supersedes the earlier row; order is preserved)."""
+    last: dict[str, int] = {}
+    for i, r in enumerate(rows):
+        last[r.get("tag")] = i
+    return [r for i, r in enumerate(rows) if last.get(r.get("tag")) == i]
+
+
 def _capsule(run_dir: Path) -> dict:
     """Reproducibility capsule: enough to rebuild bit-for-bit or prove drift.
 
@@ -244,9 +266,10 @@ def _capsule(run_dir: Path) -> dict:
                 pass
     except Exception:
         pass
-    for name in ("feature_manifest.json", "future_bans_after_2023-12.csv"):
-        p = run_dir / name
-        if p.exists():
+    fbf = future_bans_file(run_dir)
+    for p in (run_dir / "feature_manifest.json", fbf):
+        if p is not None and p.exists():
+            name = p.name
             try:
                 cap["inputs"][name] = {
                     "sha256": hashlib.sha256(p.read_bytes()).hexdigest()[:16],
@@ -386,7 +409,7 @@ def champion_pointer(data_root: str | Path, series: str | None = None) -> dict |
     ever been promoted."""
     reg = Path(data_root) / "model_a" / "run_registry.jsonl"
     champ = None
-    for r in _load_jsonl(reg):
+    for r in dedupe_rows(_load_jsonl(reg)):
         if r.get("decision") == "PROMOTE" and (
                 series is None or run_series(r) == series):
             champ = r
@@ -661,10 +684,12 @@ def to_markdown(rows: list[dict], rec: dict,
     L.append("## Where the files live")
     L.append("")
     for r in reversed(rows):
-        L.append(f"- **{r.get('tag')}**: `{r.get('run_dir')}` — matrix "
+        fbname = Path(r["future_bans_path"]).name if r.get("future_bans_path") \
+            else f"future_bans_after_{r.get('asof_cutoff') or '<cutoff>'}.csv"
+        L.append(f"- **{r.get('tag')}** (series `{r.get('series') or run_series(r)}`): "
+                 f"`{r.get('run_dir')}` — matrix "
                  f"`provider_features_for_model.parquet`, manifest, "
-                 f"`future_bans_after_2023-12.csv`, and the report .md files "
-                 f"all inside this folder.")
+                 f"`{fbname}`, and the report .md files all inside this folder.")
     L.append("")
     L.append("## Terms")
     L.append("")
@@ -1201,6 +1226,10 @@ def main() -> None:
                          "dashboard, no clipboard KPIs)")
     # pre-registration (lock the goal BEFORE the run)
     ap.add_argument("--preregister", action="store_true")
+    ap.add_argument("--replace", action="store_true",
+                    help="with --preregister: supersede an existing entry for the "
+                         "tag (only before the run is registered; the old entry "
+                         "stays in the file marked superseded)")
     ap.add_argument("--goal", default=None,
                     help="with --preregister: the hypothesis in one sentence")
     ap.add_argument("--expected", default=None,
@@ -1228,8 +1257,8 @@ def main() -> None:
     reg_path = reg_dir / "run_registry.jsonl"
     pre_path = reg_dir / "preregistrations.jsonl"
     so_path = reg_dir / "signoffs.jsonl"
-    rows = _load_jsonl(reg_path)
-    prereg = _load_jsonl(pre_path)
+    rows = dedupe_rows(_load_jsonl(reg_path))
+    prereg = [p for p in _load_jsonl(pre_path) if not p.get("superseded")]
     signoffs = _load_jsonl(so_path)
 
     if args.champion:
@@ -1259,17 +1288,35 @@ def main() -> None:
     if args.preregister:
         if not (args.tag and args.goal and args.expected):
             raise SystemExit("--preregister needs --tag, --goal, --expected")
-        if any(p.get("tag") == args.tag for p in prereg):
+        if any(p.get("tag") == args.tag for p in prereg) and not args.replace:
             raise SystemExit(f"tag '{args.tag}' already pre-registered — "
-                             "pre-registrations are locked, pick a new tag")
+                             "pre-registrations are locked, pick a new tag "
+                             "(or --replace to supersede it BEFORE the run is "
+                             "registered; the old entry is kept in the file "
+                             "as superseded)")
         for c in (args.check or []):       # fail loudly on a typo, now, not later
             parse_check(c)
         entry = {"tag": args.tag, "goal": args.goal, "expected": args.expected,
                  "checks": list(args.check or []),
                  "declared_at": datetime.now(timezone.utc).isoformat(
                      timespec="seconds")}
-        _append_jsonl(pre_path, entry)
-        prereg.append(entry)
+        if args.replace and any(p.get("tag") == args.tag for p in prereg):
+            # keep the audit trail: the old entry stays in the file marked
+            # superseded; the live list uses the new one
+            kept = []
+            for p in prereg:
+                if p.get("tag") == args.tag and not p.get("superseded"):
+                    p = dict(p, superseded=True, superseded_at=entry["declared_at"])
+                kept.append(p)
+            kept.append(entry)
+            pre_path.write_text("".join(json.dumps(p) + "\n" for p in kept),
+                                encoding="utf-8")
+            prereg[:] = [p for p in kept if not p.get("superseded")]
+            print(f"[run_registry] pre-registration for '{args.tag}' REPLACED "
+                  "(old entry kept as superseded)")
+        else:
+            _append_jsonl(pre_path, entry)
+            prereg.append(entry)
         print(f"[run_registry] pre-registered '{args.tag}' — goal locked at "
               f"{entry['declared_at']}")
         if entry["checks"]:
