@@ -99,8 +99,33 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6
 
 - [ ] **registry_verdict__frozen_2023-12_v6** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v6 — close only when you have them (added 2026-09-12)
 - [ ] **pi_facts_deep:_after_merging_bundle** — pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins (added 2026-09-13)
-- [ ] **v7_redesign_2021-12** — v7 is REDESIGNED after LABEL_LAG (fraud-tier positives were 73% dormant at the 2023-12 freeze): rolling-origin freeze at 2021-12, hard ruler, address layer frozen with the Dec-2021 NPPES edition, production scorer on the hard-tier label. DO NOT launch the old run_v7.bat. Waits on: nppes_2021_12 download, then the new run_v7.bat from Claude (added 2026-09-13)
 - [ ] **active_ruler:_after_the_v7** — active_ruler: after the v7 night prints ALL DONE and bundle 160 is merged, run run_active_ruler.bat (re-grades the v7 matrix on providers billing within 12 months of the 2021-12 freeze, ~2-3 h) and upload SOURCE_ABLATION_OOF_FULL__active_hard.md + NETWORK_AB_REPORT__active_hard.md + SOURCE_ABLATION_OOF_FULL__active_all.md (added 2026-09-14)
+- [ ] **run_packet__frozen_2021-12_v7** — Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-09-14)
+
+```bat
+set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7
+powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
+REM then upload run_packet.zip to the chat
+python -m src.reminders --done-task run_packet__frozen_2021-12_v7
+```
+
+- [ ] **pursuit_dossier__frozen_2021-12_v7** — Build + dispatch the pursuit dossier for frozen_2021-12_v7 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) (added 2026-09-14)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --dispatch
+python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v7
+```
+
+- [ ] **dossier_poll__frozen_2021-12_v7** — ~30 min after dispatch: collect Manus research into the frozen_2021-12_v7 dossier and send PURSUIT_DOSSIER.md (added 2026-09-14)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --poll
+python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
+```
+
+- [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
 
 ## After ANY download session (standing rule)
 

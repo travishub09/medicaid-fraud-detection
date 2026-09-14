@@ -315,13 +315,44 @@
    "added": "2026-09-13"
   },
   {
-   "key": "v7_redesign_2021-12",
-   "what": "v7 is REDESIGNED after LABEL_LAG (fraud-tier positives were 73% dormant at the 2023-12 freeze): rolling-origin freeze at 2021-12, hard ruler, address layer frozen with the Dec-2021 NPPES edition, production scorer on the hard-tier label. DO NOT launch the old run_v7.bat. Waits on: nppes_2021_12 download, then the new run_v7.bat from Claude",
-   "added": "2026-09-13"
-  },
-  {
    "key": "active_ruler:_after_the_v7",
    "what": "active_ruler: after the v7 night prints ALL DONE and bundle 160 is merged, run run_active_ruler.bat (re-grades the v7 matrix on providers billing within 12 months of the 2021-12 freeze, ~2-3 h) and upload SOURCE_ABLATION_OOF_FULL__active_hard.md + NETWORK_AB_REPORT__active_hard.md + SOURCE_ABLATION_OOF_FULL__active_all.md",
+   "added": "2026-09-14"
+  },
+  {
+   "key": "run_packet__frozen_2021-12_v7",
+   "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
+   "added": "2026-09-14",
+   "commands": [
+    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7",
+    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
+    "REM then upload run_packet.zip to the chat",
+    "python -m src.reminders --done-task run_packet__frozen_2021-12_v7"
+   ]
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v7",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v7 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "added": "2026-09-14",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v7"
+   ]
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v7",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v7 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-09-14",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7"
+   ]
+  },
+  {
+   "key": "registry_verdict__frozen_2021-12_v7",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 \u2014 close only when you have them",
    "added": "2026-09-14"
   }
  ]
