@@ -334,11 +334,6 @@
    "added": "2026-09-13"
   },
   {
-   "key": "active_ruler:_after_the_v7",
-   "what": "active_ruler: after the v7 night prints ALL DONE and bundle 160 is merged, run run_active_ruler.bat (re-grades the v7 matrix on providers billing within 12 months of the 2021-12 freeze, ~2-3 h) and upload SOURCE_ABLATION_OOF_FULL__active_hard.md + NETWORK_AB_REPORT__active_hard.md + SOURCE_ABLATION_OOF_FULL__active_all.md",
-   "added": "2026-09-14"
-  },
-  {
    "key": "run_packet__frozen_2021-12_v7",
    "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
    "added": "2026-09-14",

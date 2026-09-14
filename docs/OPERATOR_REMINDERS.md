@@ -113,7 +113,6 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6
 
 - [ ] **registry_verdict__frozen_2023-12_v6** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v6 — close only when you have them (added 2026-09-12)
 - [ ] **pi_facts_deep:_after_merging_bundle** — pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins (added 2026-09-13)
-- [ ] **active_ruler:_after_the_v7** — active_ruler: after the v7 night prints ALL DONE and bundle 160 is merged, run run_active_ruler.bat (re-grades the v7 matrix on providers billing within 12 months of the 2021-12 freeze, ~2-3 h) and upload SOURCE_ABLATION_OOF_FULL__active_hard.md + NETWORK_AB_REPORT__active_hard.md + SOURCE_ABLATION_OOF_FULL__active_all.md (added 2026-09-14)
 - [ ] **run_packet__frozen_2021-12_v7** — Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-09-14)
 
 ```bat
