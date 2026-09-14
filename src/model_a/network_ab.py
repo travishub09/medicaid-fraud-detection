@@ -562,16 +562,34 @@ def main() -> None:
     ap.add_argument("--gap-months", type=int, default=6,
                     help="in-flight window for --robustness: drop forward positives "
                          "banned within this many months of the cutoff.")
+    ap.add_argument("--active-within", type=int, default=None, metavar="MONTHS",
+                    help="the ACTIVE ruler: keep only providers whose last billing "
+                         "month is within MONTHS of --cutoff (see label_lag)")
+    ap.add_argument("--cutoff", default=None, help="freeze YYYY-MM, for --active-within")
     args = ap.parse_args()
 
     matrix = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
     fut = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
+    active_note = ""
+    if args.active_within is not None:
+        if not args.cutoff:
+            raise SystemExit("--active-within needs --cutoff YYYY-MM")
+        from .label_lag import active_universe
+        matrix, st = active_universe(matrix, args.cutoff, args.active_within)
+        active_note = (f"- **ACTIVE ruler**: universe restricted to providers billing "
+                       f"within {st['active_within_months']} months of {st['cutoff']}: "
+                       f"{st['n_after']:,} of {st['n_before']:,} "
+                       f"({st['share_kept']:.0%}) kept, positives and negatives alike.\n")
+        print(f"[network_ab] active universe: {st['n_after']:,}/{st['n_before']:,} "
+              f"providers billing within {args.active_within} months of {args.cutoff}")
     out = run_network_ab(matrix, manifest, future_label=fut, n_boot=args.n_boot,
                          realistic_controls=args.realistic_controls,
                          n_splits=args.n_splits, robustness=args.robustness,
                          gap_months=args.gap_months)
     report = to_markdown(out)
+    if active_note:
+        report = report.replace("\n\n", "\n\n" + active_note, 1)
     Path(args.out).write_text(report, encoding="utf-8")
     print(report)
     print(f"\nwrote {args.out}")

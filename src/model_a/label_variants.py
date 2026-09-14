@@ -33,7 +33,7 @@ import pandas as pd
 
 from .run_registry import _NUM, _read, _search
 
-VARIANTS = ("all", "hard", "hard+weak")
+VARIANTS = ("all", "hard", "hard+weak", "active_hard", "active_all")
 
 
 def _slug(v: str) -> str:

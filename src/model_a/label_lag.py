@@ -59,6 +59,35 @@ def load_matrix_slim(matrix_path: str | Path) -> pd.DataFrame:
     return m
 
 
+def active_universe(matrix: pd.DataFrame, cutoff: str,
+                    months: int = 12) -> tuple[pd.DataFrame, dict]:
+    """Restrict a frozen matrix to providers BILLING within ``months`` of the
+    freeze (last_service_month >= cutoff - months).
+
+    This is the 'active' ruler: a provider silent for years before the freeze
+    is nobody's target, positive or negative, and grading a model on whether
+    it ranks ghosts is the error LABEL_LAG exposed (hard-tier positives 27%
+    visible at 2023-12, 33% at 2021-12). Positives and negatives are
+    restricted identically, so nothing is cherry-picked; the evaluation
+    simply asks the question the lead list actually answers — among the
+    providers billing when we looked, who gets caught next?
+
+    Returns (filtered matrix, stats) and raises if the matrix lacks
+    last_service_month (an old export) rather than silently returning the
+    full universe."""
+    if "last_service_month" not in matrix.columns:
+        raise ValueError("active_universe needs last_service_month in the matrix")
+    cut = pd.Timestamp(f"{cutoff[:7]}-01")
+    last = _ym(matrix["last_service_month"])
+    gap = _months_between(last, pd.Series(cut, index=matrix.index))
+    keep = last.notna() & (gap <= int(months)) & (gap >= 0)
+    out = matrix[keep].reset_index(drop=True)
+    stats = {"cutoff": cutoff, "active_within_months": int(months),
+             "n_before": int(len(matrix)), "n_after": int(len(out)),
+             "share_kept": float(keep.mean()) if len(matrix) else 0.0}
+    return out, stats
+
+
 def lag_table(label: pd.DataFrame, matrix: pd.DataFrame, cutoff: str,
               recent_months: int = 6, dormant_months: int = 24) -> pd.DataFrame:
     """Per fca_tier (plus ALL): visibility of the positives at the freeze."""

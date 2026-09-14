@@ -525,16 +525,37 @@ def main() -> None:
                          "standalone-value-over-core table (the honest frame "
                          "for 'which datasets beat the core-5 model')")
     ap.add_argument("--out", default="SOURCE_ABLATION.md")
+    ap.add_argument("--active-within", type=int, default=None, metavar="MONTHS",
+                    help="the ACTIVE ruler: keep only providers whose last billing "
+                         "month is within MONTHS of --cutoff (positives and negatives "
+                         "alike). A provider silent for years before the freeze is "
+                         "nobody's target; see label_lag.")
+    ap.add_argument("--cutoff", default=None, help="freeze YYYY-MM, for --active-within")
     args = ap.parse_args()
     matrix = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
     fl = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
+    active_note = ""
+    if args.active_within is not None:
+        if not args.cutoff:
+            raise SystemExit("--active-within needs --cutoff YYYY-MM")
+        from .label_lag import active_universe
+        matrix, st = active_universe(matrix, args.cutoff, args.active_within)
+        active_note = (f"- **ACTIVE ruler**: universe restricted to providers billing "
+                       f"within {st['active_within_months']} months of {st['cutoff']}: "
+                       f"{st['n_after']:,} of {st['n_before']:,} "
+                       f"({st['share_kept']:.0%}) kept, positives and negatives alike.\n")
+        print(f"[source_ablation] active universe: {st['n_after']:,}/{st['n_before']:,} "
+              f"providers billing within {args.active_within} months of {args.cutoff}")
     if args.oof:
         res = run_oof_ablation(matrix, manifest, label_col=args.label_col,
                                future_label=fl, n_splits=max(args.splits, 5),
                                per_group=args.per_group,
                                additive=args.additive)
-        Path(args.out).write_text(oof_to_markdown(res), encoding="utf-8")
+        md = oof_to_markdown(res)
+        if active_note:
+            md = md.replace("\n\n", "\n\n" + active_note, 1)
+        Path(args.out).write_text(md, encoding="utf-8")
         d = res["full_vs_core"]
         print(f"[source_ablation --oof] positives in metric: {res['positives_scored']:,}")
         print(f"  ROC delta  {d['roc_auc']['delta']:+.4f} "
