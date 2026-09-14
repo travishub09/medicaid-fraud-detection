@@ -271,6 +271,25 @@
     "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\npidata_pfile_*2021*.csv\"",
     "python -m src.reminders --done nppes_2021_12"
    ]
+  },
+  {
+   "key": "hospice_2021_archive",
+   "what": "Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)",
+   "where": "preclean/facility/Hospice_Provider_<yyyymm>.csv (keep the Nov-2023 file too; the export picks the edition by vintage)",
+   "url": "https://data.cms.gov/provider-data/archived-data/hospice-care",
+   "every_months": 120,
+   "last_done": null,
+   "steps": [
+    "Open https://data.cms.gov/provider-data/archived-data/hospice-care",
+    "Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip",
+    "Extract; keep the Hospice_Provider_*.csv (the provider-level file with live-discharge / GIP / NF-care measures)",
+    "Then paste the commands below"
+   ],
+   "commands": [
+    "move \"%USERPROFILE%\\Downloads\\Hospice_Provider*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\facility\\\"",
+    "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\facility\\Hospice_Provider*.csv\"",
+    "python -m src.reminders --done hospice_2021_archive"
+   ]
   }
  ],
  "tasks": [
