@@ -218,6 +218,7 @@ def parse_run_dir(run_dir: str | Path) -> dict:
     except Exception:
         row["git_commit"] = None
     row["eval_cohort"] = row.get("asof_cutoff")
+    row["series"] = run_series(row)
     row["capsule"] = _capsule(d)
     row["registered_at"] = datetime.now(timezone.utc).isoformat(
         timespec="seconds")
@@ -363,8 +364,20 @@ def check_prereg(row: dict, prereg_entry: dict | None) -> list[dict]:
     return [eval_check(c, row) for c in (prereg_entry.get("checks") or [])]
 
 
-def champion_pointer(data_root: str | Path) -> dict | None:
-    """The current champion run: the newest registry row recorded PROMOTE.
+def run_series(row: dict) -> str:
+    """The comparison series a run belongs to: <freeze>|<label policy>.
+
+    Lifts are only comparable inside a series. v1-v6 are '2023-12|all'
+    (the program-integrity ruler); v7 opens '2021-12|hard' (the fraud
+    ruler, an earlier freeze). A run in a new series is compared to nothing
+    and starts its own champion line — putting 2.4x next to 3.7x across
+    series would be reading two rulers as one."""
+    return f"{row.get('asof_cutoff') or '?'}|{row.get('label_policy') or 'all'}"
+
+
+def champion_pointer(data_root: str | Path, series: str | None = None) -> dict | None:
+    """The current champion run: the newest registry row recorded PROMOTE
+    (within ``series`` when given, e.g. '2021-12|hard').
 
     This is the run every consumer (dossiers, priority lists, Travis
     handoffs) should read from BY DEFAULT — 'latest' is a fact about the
@@ -374,7 +387,8 @@ def champion_pointer(data_root: str | Path) -> dict | None:
     reg = Path(data_root) / "model_a" / "run_registry.jsonl"
     champ = None
     for r in _load_jsonl(reg):
-        if r.get("decision") == "PROMOTE":
+        if r.get("decision") == "PROMOTE" and (
+                series is None or run_series(r) == series):
             champ = r
     return champ
 
@@ -385,18 +399,24 @@ def resolve_run_dir(run_dir: str, data_root: str | Path | None = None) -> str:
     '@champion' resolves through the release registry to the promoted run's
     folder — so operators rerun what VALIDATED best, not what is merely
     newest. Anything else passes through unchanged."""
-    if str(run_dir).strip().lower() != "@champion":
+    alias = str(run_dir).strip()
+    if not alias.lower().startswith("@champion"):
         return str(run_dir)
+    # '@champion' = newest promoted run of any series; '@champion:<series>'
+    # (e.g. '@champion:2021-12|hard') = newest promoted run of that series
+    series = alias.split(":", 1)[1] if ":" in alias else None
     root = data_root or os.environ.get("MEDICAID_DATA_ROOT",
                                        str(Path.home() / "Desktop/data"))
-    champ = champion_pointer(root)
+    champ = champion_pointer(root, series=series)
     if not champ or not champ.get("run_dir"):
         raise SystemExit(
-            "@champion: no promoted run in the registry yet "
-            f"({Path(root) / 'model_a' / 'run_registry.jsonl'}) — pass an "
+            f"{alias}: no promoted run in the registry"
+            + (f" for series '{series}'" if series else "")
+            + f" ({Path(root) / 'model_a' / 'run_registry.jsonl'}) — pass an "
             "explicit run folder, or promote a run first")
-    print(f"[run_registry] @champion -> '{champ.get('tag')}' "
-          f"({champ['run_dir']}, commit {champ.get('git_commit') or '?'})")
+    print(f"[run_registry] {alias} -> '{champ.get('tag')}' "
+          f"({champ['run_dir']}, series {run_series(champ)}, commit "
+          f"{champ.get('git_commit') or '?'})")
     return str(champ["run_dir"])
 
 
@@ -410,10 +430,25 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
     latest = rows[-1]
     pr_by_tag = {p.get("tag"): p for p in (prereg or [])}
     checks = check_prereg(latest, pr_by_tag.get(latest.get("tag")))
+    # the champion this run is judged against is the newest PROMOTE in the
+    # SAME series (freeze + label policy); a run that opens a new series has
+    # no champion to drop against and starts its own line
+    series = latest.get("series") or run_series(latest)
     champion = None
+    n_in_series = 0
     for r in rows[:-1]:
+        if (r.get("series") or run_series(r)) != series:
+            continue
+        n_in_series += 1
         if r.get("decision") == "PROMOTE":
             champion = r
+    series_note = None
+    if n_in_series == 0 and len(rows) > 1:
+        others = sorted({r.get("series") or run_series(r) for r in rows[:-1]})
+        series_note = (f"first run of series '{series}' — no lift-delta comparison; "
+                       f"champions of other series ({', '.join(others)}) are untouched. "
+                       "Lifts across series are NOT comparable (different freeze "
+                       "and/or label policy).")
     reasons = []
     fails = latest.get("expectation_fails")
     if fails is None:
@@ -463,6 +498,7 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
     return {"decision": decision, "reasons": reasons,
             "champion": (new_champion or {}).get("tag"),
             "champion_dir": (new_champion or {}).get("run_dir"),
+            "series": series, "series_note": series_note,
             "checks": checks, "unenforced_prereg": unenforced,
             "core_comparability_note": core_note}
 
@@ -494,12 +530,26 @@ def to_markdown(rows: list[dict], rec: dict,
              "champion run's folder below. Run folders are immutable — "
              "rollback is a pointer change, never a rebuild.")
     L.append("")
-    L.append(f"**Current champion:** `{rec.get('champion') or 'none yet'}`"
+    # one champion PER SERIES (freeze | label policy): lifts only compare
+    # inside a series, so each series keeps its own line
+    by_series: dict[str, dict] = {}
+    for r in rows:
+        if r.get("decision") == "PROMOTE":
+            by_series[r.get("series") or run_series(r)] = r
+    if by_series:
+        L.append("**Champions by series** (freeze | label policy): "
+                 + "; ".join(f"`{s}` → `{r.get('tag')}`"
+                             for s, r in sorted(by_series.items())))
+    L.append(f"**Champion of the latest run's series** (`{rec.get('series', '?')}`): "
+             f"`{rec.get('champion') or 'none yet'}`"
              + (f" — `{rec.get('champion_dir')}`" if rec.get("champion_dir")
                 else ""))
     L.append(f"**Latest run decision:** **{rec.get('decision')}**"
              + ("" if not rec.get("reasons")
                 else " — " + "; ".join(rec["reasons"])))
+    if rec.get("series_note"):
+        L.append("")
+        L.append(f"> ℹ {rec['series_note']}")
     if rec.get("unenforced_prereg"):
         L.append("")
         L.append("> ⚠ **The declared bar for this run is prose only.** Its "
@@ -514,10 +564,10 @@ def to_markdown(rows: list[dict], rec: dict,
                  + "; ".join(f"{c['expr']} → {'PASS' if c['ok'] else 'FAIL'}"
                              for c in rec["checks"]))
     L.append("")
-    L.append("| run | registered | providers×cols | fwd positives | expect "
+    L.append("| run | series | registered | providers×cols | fwd positives | expect "
              "FAILs | network | ablation lift Δ [CI] | full/core-only catches "
              "| reviewer | commit |")
-    L.append("|---|---|---|--:|--:|---|---|---|---|---|")
+    L.append("|---|---|---|---|--:|--:|---|---|---|---|---|")
     for r in reversed(rows):
         shape = (f"{_fmt(r.get('n_providers'), ',')}×"
                  f"{_fmt(r.get('n_columns'))}")
@@ -529,7 +579,8 @@ def to_markdown(rows: list[dict], rec: dict,
         so = so_by_tag.get(r.get("tag"))
         rev = ("UNREPRODUCED" if so is None else
                f"{so.get('status', '?').upper()} ({so.get('by', '?')})")
-        L.append(f"| {r.get('tag')} | {str(r.get('registered_at', ''))[:10]} "
+        L.append(f"| {r.get('tag')} | {r.get('series') or run_series(r)} "
+                 f"| {str(r.get('registered_at', ''))[:10]} "
                  f"| {shape} | {_fmt(r.get('forward_positives'), ',')} "
                  f"| {_fmt(r.get('expectation_fails'))} "
                  f"| {(r.get('network_verdict') or '—')[:14]} | {lift} "

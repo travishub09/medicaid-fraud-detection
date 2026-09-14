@@ -69,7 +69,7 @@ def test_hold_on_fails_and_degradation(tmp_path):
     assert any("dropped" in r for r in rec2["reasons"])
 
     md = to_markdown([champ, bad], rec)
-    assert "Current champion:** `v2`" in md
+    assert "series** (`" in md and "`v2`" in md      # champion of the series line
     assert "HOLD" in md and "rollback is a pointer change" in md.lower() or \
            "Rollback" in md or "pointer" in md
 
