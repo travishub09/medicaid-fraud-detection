@@ -26,6 +26,9 @@ def test_run_series_key():
     assert run_series({"asof_cutoff": "2021-12", "label_policy": "hard"}) == "2021-12|hard"
     assert run_series({"asof_cutoff": "2023-12"}) == "2023-12|all"
     assert run_series({}) == "?|all"
+    # pre-manifest rows: the freeze is in the folder name
+    assert run_series({"run_dir": r"C:\data\model_a\frozen_2023-12_v3"}) == "2023-12|all"
+    assert run_series({"run_dir": "/x/frozen_2023-12"}) == "2023-12|all"
 
 
 def test_new_series_is_not_compared_to_old_champion():

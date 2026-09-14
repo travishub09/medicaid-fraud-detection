@@ -395,7 +395,13 @@ def run_series(row: dict) -> str:
     ruler, an earlier freeze). A run in a new series is compared to nothing
     and starts its own champion line — putting 2.4x next to 3.7x across
     series would be reading two rulers as one."""
-    return f"{row.get('asof_cutoff') or '?'}|{row.get('label_policy') or 'all'}"
+    cutoff = row.get("asof_cutoff")
+    if not cutoff:
+        # rows registered before the manifest carried asof_cutoff (v1-v6):
+        # the freeze is in the folder name, frozen_<YYYY-MM>[_tag]
+        m = re.search(r"frozen_(\d{4}-\d{2})", str(row.get("run_dir") or ""))
+        cutoff = m.group(1) if m else "?"
+    return f"{cutoff}|{row.get('label_policy') or 'all'}"
 
 
 def champion_pointer(data_root: str | Path, series: str | None = None) -> dict | None:
@@ -1344,9 +1350,11 @@ def main() -> None:
         row = parse_run_dir(args.run_dir)
         if args.tag:
             row["tag"] = args.tag
-        rec_now = recommend(rows + [row], prereg)
+        # a re-registration of the same tag supersedes the earlier row for the
+        # decision and the report (the file stays append-only)
+        rec_now = recommend(dedupe_rows(rows + [row]), prereg)
         row["decision"] = rec_now["decision"]
-        rows.append(row)
+        rows = dedupe_rows(rows + [row])
         _append_jsonl(reg_path, row)
 
     # history: the file if the operator wrote one, else the baked-in curation
