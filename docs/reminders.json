@@ -322,7 +322,7 @@
     "Move it into preclean\\nppes with the second command; run_capacity.bat finds it automatically"
    ],
    "commands": [
-    "tar -xf \"%USERPROFILE%\\Downloads\\NPPES_Data_Dissemination_*.zip\" -C \"%USERPROFILE%\\Downloads\" \"pl_pfile_*.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\NPPES_Data_Dissemination_*.zip\") do tar -xf \"%f\" -C \"%USERPROFILE%\\Downloads\" \"pl_pfile_*.csv\"",
     "move \"%USERPROFILE%\\Downloads\\pl_pfile_*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\\"",
     "python -m src.reminders --done nppes_practice_locations"
    ]
