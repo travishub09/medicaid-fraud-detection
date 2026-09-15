@@ -214,9 +214,24 @@ def write_prompts(targets: pd.DataFrame, member_map: dict, out_dir: Path) -> Pat
     return p
 
 
+def _is_rate_limited(exc: Exception) -> bool:
+    resp = getattr(exc, "response", None)
+    return getattr(resp, "status_code", None) == 429 or "429" in str(exc)
+
+
 def dispatch_research(prompts_path: Path, registry_path: Path,
-                      transport=None) -> dict:
-    """Send one Manus task per prospect; re-attach for free on re-runs."""
+                      transport=None, max_new: int | None = None,
+                      backoff_s: tuple = (20, 40, 80), sleep=None) -> dict:
+    """Send one Manus task per prospect; re-attach for free on re-runs.
+
+    Resilient by construction: the registry is written after EVERY create
+    (a crash or rate limit half-way never orphans paid tasks), a 429 is
+    retried with backoff and, if it persists, the loop stops and reports
+    ``rate_limited`` so the operator re-runs later (the registry skips what
+    is already dispatched); ``max_new`` caps tasks per call for accounts
+    with a concurrency limit."""
+    import time as _time
+    sleep = sleep or _time.sleep
     if transport is None:
         from src.feeds.manus_research import ManusTransport
         key = os.environ.get(MANUS_KEY_ENV, "")
@@ -227,19 +242,46 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
         transport = ManusTransport(api_key=key)
     reg = (json.loads(registry_path.read_text(encoding="utf-8"))
            if registry_path.exists() else {})
-    n_new = 0
+    n_new, rate_limited, skipped = 0, False, 0
     for line in prompts_path.read_text(encoding="utf-8").splitlines():
         item = json.loads(line)
         oid = item["org_id"]
         if reg.get(oid, {}).get("task_id"):
             continue                                  # already dispatched
-        created = transport.create(item["prompt"])
+        if max_new is not None and n_new >= max_new:
+            skipped += 1
+            continue
+        created = None
+        for attempt, wait in enumerate((0,) + tuple(backoff_s)):
+            if wait:
+                sleep(wait)
+            try:
+                created = transport.create(item["prompt"])
+                break
+            except Exception as e:                    # noqa: BLE001
+                if _is_rate_limited(e) and attempt < len(backoff_s):
+                    continue
+                if _is_rate_limited(e):
+                    rate_limited = True
+                    break
+                registry_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
+                raise
+        if rate_limited:
+            break
         tid = (created.get("task_id") or created.get("id")
                or (created.get("task") or {}).get("id"))
         reg[oid] = {"task_id": tid, "org_name": item["org_name"]}
         n_new += 1
+        registry_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
     registry_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
-    return {"dispatched": n_new, "total": len(reg)}
+    out = {"dispatched": n_new, "total": len(reg)}
+    if rate_limited:
+        out["rate_limited"] = True
+        out["note"] = ("Manus returned 429 after retries — re-run --dispatch "
+                       "later; already-dispatched prospects are skipped")
+    if skipped:
+        out["remaining"] = skipped
+    return out
 
 
 def poll_research(registry_path: Path, out_path: Path, transport=None) -> dict:
