@@ -63,6 +63,11 @@ INNOCENT = {
     "facility_code_on_individual": "state Medicaid program that enrolls individuals as the "
                                    "billing entity for a facility service; a sole proprietor "
                                    "who owns the facility and bills under a Type-1 NPI",
+    "long_day": "a genuinely long clinic day; per-unit codes mapped as timed; a second clinician "
+                "not identified on the claims",
+    "group_billing_under_personal_npi": "a group practice or agency that bills its whole staff under "
+                                        "one clinician's Type-1 NPI (a state may permit it; most "
+                                        "require the rendering provider on the claim)",
 }
 
 
@@ -202,18 +207,26 @@ def impossible_days(spending_path: str | Path, npis: list[str], minutes_csv,
         h = ih.get("worst_hours_per_working_day")
         if not h or h < hours_per_day:
             continue
-        # months over the threshold: pi_facts reports months > 24h; recompute a
-        # threshold-aware count only when the map is present in its envelope
-        over = ih.get("months_over_24h", 0)
-        if h >= 24 and over < min_months:
-            continue
+        over = int(ih.get("months_over_24h", 0) or 0)
+        ns = b.get("n_servicing_npis")
+        # three classes: a per-se impossible day is ONE rendering NPI (or none
+        # recorded) above 24 hours in at least min_months months; several
+        # rendering NPIs under a personal NPI is a group billing under one
+        # person's number (a compliance lead, not an impossibility); 16-24
+        # hours, or 24+ in fewer months, is a long day (Tier B context)
+        if ns is not None and ns == ns and int(ns) >= 5:
+            cls = "group_billing_under_personal_npi"
+        elif h >= 24 and over >= min_months:
+            cls = "impossible_day"
+        else:
+            cls = "long_day"
         rows.append({"npi": npi, "worst_month": ih.get("worst_month"),
                      "worst_hours_per_working_day": float(h),
                      "median_hours_per_working_day": float(ih.get("median_hours_per_working_day") or 0),
-                     "months_over": int(over), "timed_paid": float(ih.get("timed_paid") or 0),
+                     "months_over": over, "timed_paid": float(ih.get("timed_paid") or 0),
                      "total_paid": float(b.get("paid_total") or 0),
-                     "n_servicing": b.get("n_servicing_npis")})
-    return pd.DataFrame(rows, columns=cols)
+                     "n_servicing": ns, "class_": cls})
+    return pd.DataFrame(rows, columns=cols + ["class_"])
 
 
 def facility_codes_on_individuals(matrix: pd.DataFrame,
@@ -242,7 +255,8 @@ def _names(m: pd.DataFrame) -> pd.Series:
 
 
 TIER = {"billing_after_exclusion": "A", "billing_after_deactivation": "A", "billing_after_death": "A",
-        "impossible_day": "A", "facility_code_on_individual": "B"}
+        "impossible_day": "A", "facility_code_on_individual": "B", "long_day": "B",
+        "group_billing_under_personal_npi": "B"}
 
 
 def assemble(post: pd.DataFrame, hours: pd.DataFrame, facility: pd.DataFrame,
@@ -280,7 +294,8 @@ def assemble(post: pd.DataFrame, hours: pd.DataFrame, facility: pd.DataFrame,
         who = (f"; {int(ns)} rendering NPIs on the claims (agency billing under a personal NPI?)"
                if ns is not None and ns == ns and int(ns) > 1 else "; one rendering NPI")
         rows.append({"npi": r.npi, "name": n or "(not in current registry)", "state": s, "entity_type": e,
-                     "contradiction": "impossible_day", "event_date": r.worst_month,
+                     "contradiction": getattr(r, "class_", "impossible_day") or "impossible_day",
+                     "event_date": r.worst_month,
                      "post_event_paid": float(r.timed_paid), "total_paid": float(r.total_paid),
                      "last_month": "", "months_after": int(r.months_over),
                      "detail": f"{r.worst_hours_per_working_day:,.0f} implied clinician-hours per working "
@@ -313,6 +328,40 @@ def assemble(post: pd.DataFrame, hours: pd.DataFrame, facility: pd.DataFrame,
     return out.sort_values(["tier", "post_event_paid"], ascending=[True, False]).reset_index(drop=True)
 
 
+def attach_deep_facts(t: pd.DataFrame, spending_path: str | Path, minutes_csv=None,
+                      top_n: int = 60, facts: dict | None = None) -> pd.DataFrame:
+    """For the top ``top_n`` Tier A rows, read the paid-claims fact and add what
+    each NPI actually billed: top code (plain English) and its share, active
+    span, rendering-NPI count, paid by year. A deactivated NPI has no registry
+    row, so this is the only way to say what it was. ``facts`` can be supplied
+    (tests); otherwise pi_facts.billing_facts runs on the spending file."""
+    from .hcpcs_descriptions import describe
+    if not len(t):
+        return t
+    top = t[t["tier"] == "A"].head(top_n)
+    npis = top["npi"].astype(str).unique().tolist()
+    if not npis:
+        return t
+    if facts is None:
+        from .pi_facts import billing_facts
+        facts = billing_facts(spending_path, npis, minutes_csv=minutes_csv)
+    for c in ("top_code", "top_code_share", "billed_span", "rendering_npis", "paid_by_year"):
+        if c not in t.columns:
+            t[c] = ""
+    for i in top.index:
+        b = facts.get(str(t.at[i, "npi"])) or {}
+        if not b:
+            continue
+        tc = (b.get("top_codes") or [{}])[0]
+        t.at[i, "top_code"] = describe(tc.get("hcpcs", "")) if tc.get("hcpcs") else ""
+        t.at[i, "top_code_share"] = f"{(tc.get('share') or 0):.0%}" if tc else ""
+        t.at[i, "billed_span"] = f"{b.get('first_month', '')} to {b.get('last_month', '')} ({b.get('active_months', '')} mo)"
+        t.at[i, "rendering_npis"] = str(b.get("n_servicing_npis") if b.get("n_servicing_npis") is not None else "")
+        pby = b.get("paid_by_year") or {}
+        t.at[i, "paid_by_year"] = "; ".join(f"{y}: ${v/1e6:,.1f}M" for y, v in sorted(pby.items()))
+    return t
+
+
 def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
     L = ["# TIER A CONTRADICTIONS — per-se facts, ranked by dollars at issue", "",
          "_Every row is a lead for counsel review, never an accusation. These are the facts "
@@ -331,12 +380,17 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
     L += ["", f"## Tier A: per-se contradictions (top 150 of {len(a):,}, ranked by dollars after the event)", "",
           "_Windows end at reinstatement or NPI reactivation where the record carries one; dollars after "
           "that are not counted._", "",
-          "| # | NPI | name | st | type | contradiction | event | $ after event | $ total | last billed | months after | detail |",
-          "|--:|---|---|---|---|---|---|--:|--:|---|--:|---|"]
+          "| # | NPI | name | st | type | contradiction | event | $ after event | $ total | last billed | months after | what it billed | detail |",
+          "|--:|---|---|---|---|---|---|--:|--:|---|--:|---|---|"]
+    has_deep = "top_code" in a.columns
     for i, r in enumerate(a.head(150).itertuples(), 1):
+        billed = ""
+        if has_deep and str(getattr(r, "top_code", "") or ""):
+            billed = (f"{r.top_code} ({r.top_code_share}); {r.billed_span}; rendering NPIs {r.rendering_npis}; "
+                      f"{r.paid_by_year}")
         L.append(f"| {i} | {r.npi} | {str(r.name)[:40]} | {r.state} | {r.entity_type} | {r.contradiction} | "
                  f"{r.event_date} | ${r.post_event_paid/1e6:,.2f}M | ${r.total_paid/1e6:,.1f}M | "
-                 f"{r.last_month} | {r.months_after} | {str(r.detail)[:120]} |")
+                 f"{r.last_month} | {r.months_after} | {billed[:160]} | {str(r.detail)[:120]} |")
     b = t[t["tier"] == "B"]
     if len(b):
         L += ["", f"## Tier B: facility-only codes on individual NPIs ({len(b):,} NPIs, "
@@ -377,6 +431,9 @@ def main() -> None:
                     help="scan individual NPIs with at least this much paid for impossible days")
     ap.add_argument("--min-post-paid", type=float, default=MIN_POST_PAID)
     ap.add_argument("--skip-hours", action="store_true")
+    ap.add_argument("--deep-top", type=int, default=60,
+                    help="attach paid-claims facts (top code, span, rendering NPIs, paid by year) "
+                         "to this many top Tier A rows; 0 disables")
     ap.add_argument("--out", required=True, help="output folder")
     a = ap.parse_args()
     root = Path(os.environ.get("MEDICAID_DATA_ROOT", str(Path.home() / "Desktop/data")))
@@ -419,9 +476,9 @@ def main() -> None:
     print(f"[contradictions] providers with any post-event billing: {(post['post_paid'] > 0).sum():,}")
 
     hours = pd.DataFrame(columns=["npi"])
+    minutes = Path(a.minutes) if a.minutes else next(
+        iter(sorted((root / "preclean" / "hcpcs_time").glob("hcpcs_minutes*.csv"))), None)
     if not a.skip_hours and matrix is not None and "entity_type" in matrix.columns:
-        minutes = Path(a.minutes) if a.minutes else next(
-            iter(sorted((root / "preclean" / "hcpcs_time").glob("hcpcs_minutes*.csv"))), None)
         cand = matrix[(matrix["entity_type"].astype(str).str.strip() == "1")
                       & (pd.to_numeric(matrix.get("net_paid"), errors="coerce").fillna(0) >= a.hours_min_paid)]
         print(f"[contradictions] impossible-day scan over {len(cand):,} individual NPIs "
@@ -431,6 +488,9 @@ def main() -> None:
     facility = facility_codes_on_individuals(matrix) if matrix is not None else pd.DataFrame(columns=["npi"])
 
     t = assemble(post, hours, facility, matrix, min_post_paid=a.min_post_paid, provider_dim=pdim)
+    if a.deep_top > 0 and len(t):
+        print(f"[contradictions] attaching paid-claims facts to the top {a.deep_top} Tier A rows ...")
+        t = attach_deep_facts(t, a.spending, minutes_csv=minutes, top_n=a.deep_top)
     t.to_csv(out / "contradictions.csv", index=False)
     inputs = {"spending": Path(a.spending).name, "exclusions": Path(a.exclusion_nodes).name if a.exclusion_nodes else "",
               "deactivation": Path(dp).name if dp else "", "matrix": Path(a.matrix).name if a.matrix else ""}

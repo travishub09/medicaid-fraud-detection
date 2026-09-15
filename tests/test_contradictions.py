@@ -8,8 +8,35 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.model_a.contradictions import (_events, assemble, facility_codes_on_individuals,
-                                        post_event_billing, to_markdown)
+from src.model_a.contradictions import (_events, assemble, attach_deep_facts,
+                                        facility_codes_on_individuals, post_event_billing,
+                                        to_markdown)
+
+
+def test_impossible_day_classes_and_deep_facts(tmp_path: Path):
+    hours = pd.DataFrame({
+        "npi": [A, B, C], "worst_month": ["2023-01"] * 3,
+        "worst_hours_per_working_day": [40.0, 18.0, 60.0], "median_hours_per_working_day": [30.0, 12.0, 40.0],
+        "months_over": [12, 0, 20], "timed_paid": [5e6, 2e6, 9e6], "total_paid": [6e6, 3e6, 9e6],
+        "n_servicing": [1, 1, 40], "class_": ["impossible_day", "long_day", "group_billing_under_personal_npi"]})
+    t = assemble(pd.DataFrame(columns=["npi", "event", "event_date", "end_date", "detail", "name", "post_paid",
+                                       "post_months", "first_post_month", "last_month", "total_paid"]),
+                 hours, pd.DataFrame(columns=["npi"]), _matrix())
+    by = dict(zip(t["npi"], zip(t["tier"], t["contradiction"])))
+    assert by[A] == ("A", "impossible_day")
+    assert by[B] == ("B", "long_day")
+    assert by[C] == ("B", "group_billing_under_personal_npi")
+    assert "40 rendering NPIs" in t[t["npi"] == C].iloc[0]["detail"]
+    facts = {A: {"top_codes": [{"hcpcs": "T1019", "share": 0.8}], "first_month": "2018-01",
+                 "last_month": "2024-12", "active_months": 84, "n_servicing_npis": 1,
+                 "paid_by_year": {"2023": 2.5e6, "2024": 3.5e6}}}
+    t2 = attach_deep_facts(t, tmp_path / "unused.parquet", top_n=10, facts=facts)
+    row = t2[t2["npi"] == A].iloc[0]
+    assert row["top_code"].startswith("T1019") and row["top_code_share"] == "80%"
+    assert row["billed_span"] == "2018-01 to 2024-12 (84 mo)" and "2024: $3.5M" in row["paid_by_year"]
+    assert t2[t2["npi"] == B].iloc[0]["top_code"] == ""            # Tier B rows are not enriched
+    md = to_markdown(t2, {})
+    assert "what it billed" in md and "T1019" in md
 
 A, B, C, D = "1003000209", "1003000415", "1003000126", "1003000308"
 
