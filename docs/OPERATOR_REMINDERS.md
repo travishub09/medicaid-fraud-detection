@@ -99,6 +99,37 @@ move "%USERPROFILE%\Downloads\cia_list.csv" "C:\Users\treyr\OneDrive\Desktop\dat
 python -m src.reminders --done oig_cia
 ```
 
+- **nppes_practice_locations** — NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
+  - save to: preclean/nppes/pl_pfile_<dates>.csv  |  https://download.cms.gov/nppes/NPI_Files.html
+  - due: freshness unknown
+  - step 1: Open https://download.cms.gov/nppes/NPI_Files.html and download the 'NPPES Data Dissemination' monthly zip (the full file, ~1 GB zipped) if you do not already have this month's
+  - step 2: Extract ONLY the practice-location file from the zip with the first command below (the zip is huge; do not unzip everything)
+  - step 3: Move it into preclean\nppes with the second command; run_capacity.bat finds it automatically
+
+```bat
+tar -xf "%USERPROFILE%\Downloads\NPPES_Data_Dissemination_*.zip" -C "%USERPROFILE%\Downloads" "pl_pfile_*.csv"
+move "%USERPROFILE%\Downloads\pl_pfile_*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes\"
+python -m src.reminders --done nppes_practice_locations
+```
+
+- **state_capacity_rosters** — State licensed-facility rosters with LICENSED CAPACITY (beds/slots) for waiver group homes, residential habilitation, adult day, assisted living, hospice houses: the capacity side of the Nick Shirley check for providers the CMS POS file never covers. Priority states: RI (the lead case), FL, ME, MO, CO; then whatever the Tier A facility-code rows name
+  - save to: preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)  |  https://health.ri.gov/licenses/
+  - due: freshness unknown
+  - step 1: RI: https://health.ri.gov/licenses/ -> Health Care Facilities -> the licensed facility list/search; export or copy the table (hospice, assisted living, group homes) with the licensed bed/capacity column; save as RI_<type>.csv
+  - step 2: FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type (Adult Day Care, Assisted Living, Hospice) -> Download; keep the capacity/beds column; save as FL_<type>.csv
+  - step 3: ME: https://www.maine.gov/dhhs/dlc -> licensed facilities lists (assisted housing, residential care, group homes) -> export; save as ME_<type>.csv
+  - step 4: MO: https://health.mo.gov/safety/showmelongtermcare/ -> facility list with licensed beds (residential care, assisted living, ICF); save as MO_<type>.csv
+  - step 5: CO: https://cdphe.colorado.gov/health-facilities -> 'find and compare' facility data download (assisted living, group homes, adult day); save as CO_<type>.csv
+  - step 6: Any state: the file needs a facility name, street address, city, zip and a capacity/beds column under any common header; unusual headers are fine, tell Claude and a column map is added
+  - step 7: Then build the capacity table with the commands below
+
+```bat
+mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\state_capacity"
+move "%USERPROFILE%\Downloads\*_*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\state_capacity\"
+python -m src.ingest_cms.licensed_capacity --rosters "C:\Users\treyr\OneDrive\Desktop\data\preclean\state_capacity" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\licensed_capacity.parquet"
+python -m src.reminders --done state_capacity_rosters
+```
+
 
 ## COMING UP (30 days)
 
@@ -158,6 +189,20 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 ```bat
 python -m src.model_a.label_audit --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --matrix "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\provider_features_for_model.parquet" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --org-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\org_nodes.parquet" --cutoff 2021-12 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\LABEL_AUDIT.md"
 python -m src.reminders --done-task label_audit
+```
+
+- [ ] **tier_a_run** — Run run_contradictions.bat (Tier A per-se contradictions) and upload detection\tier_a\CONTRADICTIONS.md + contradictions.csv (added 2026-09-15)
+
+```bat
+"C:\Users\treyr\medicaid-fraud-detection\run_contradictions.bat"
+python -m src.reminders --done-task tier_a_run
+```
+
+- [ ] **capacity_run** — Run run_capacity.bat (Nick Shirley capacity check) and upload detection\capacity\CAPACITY.md + capacity.csv; rerun after the practice-location file and state rosters land (added 2026-09-15)
+
+```bat
+"C:\Users\treyr\medicaid-fraud-detection\run_capacity.bat"
+python -m src.reminders --done-task capacity_run
 ```
 
 

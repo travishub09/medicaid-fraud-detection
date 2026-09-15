@@ -175,10 +175,28 @@ def site_counts(npis: list[str], practice_locations: pd.DataFrame | None) -> pd.
 # the table
 # --------------------------------------------------------------------------- #
 
+def merge_licensed(beds: pd.Series, licensed_by_npi: pd.DataFrame | None) -> tuple[pd.Series, pd.Series]:
+    """Combine POS certified beds with state licensed capacity (max of the two);
+    returns (beds, source) where source is 'pos', 'licensed', 'pos+licensed' or ''."""
+    src = pd.Series(np.where(beds.notna(), "pos", ""), index=beds.index, dtype=object)
+    if licensed_by_npi is None or not len(licensed_by_npi):
+        return beds, src
+    lic = licensed_by_npi.copy()
+    lic["npi"] = lic["npi"].astype(str)
+    lc = beds.index.to_series().map(dict(zip(lic["npi"], pd.to_numeric(lic["licensed_capacity"], errors="coerce"))))
+    both = beds.notna() & lc.notna()
+    out = beds.where(~lc.notna() | both, lc)
+    out[both] = np.maximum(beds[both], lc[both])
+    src[lc.notna() & ~both] = "licensed"
+    src[both] = "pos+licensed"
+    return out, src
+
+
 def capacity_table(facts: dict, counts: pd.DataFrame, beds: pd.Series, sites: pd.Series,
-                   names: dict | None = None) -> pd.DataFrame:
+                   names: dict | None = None, bed_source: pd.Series | None = None) -> pd.DataFrame:
     """One row per NPI with demand, capacity, ratios and flags."""
     names = names or {}
+    bed_source = bed_source if bed_source is not None else pd.Series("", index=beds.index, dtype=object)
     c = counts.set_index("npi")
     rows = []
     for npi, bf in facts.items():
@@ -228,6 +246,7 @@ def capacity_table(facts: dict, counts: pd.DataFrame, beds: pd.Series, sites: pd
             "n_servicing": ns, "n_reassign": n_re, "n_colocated": n_co,
             "documented_clinicians": doc, "clinician_basis": basis,
             "sites": int(sites.get(npi, 1)) if len(sites) else 1, "beds": b,
+            "beds_source": str(bed_source.get(npi, "")) if len(bed_source) else "",
             "per_diem_days_per_month": pd_days_month,
             "hours_per_clinician_day": hpc, "patients_per_clinician_day": ppc, "occupancy": occ,
             "flags": ";".join(flags),
@@ -300,6 +319,8 @@ def main() -> None:
     ap.add_argument("--pos-dir", default=None, help="preclean/pos (Provider of Services csv, rglob)")
     ap.add_argument("--ccn-crosswalk", default=None, help="processed/ccn_npi_crosswalk.parquet")
     ap.add_argument("--practice-locations", default=None, help="NPPES pl_pfile csv (secondary practice locations)")
+    ap.add_argument("--licensed-capacity", default=None,
+                    help="processed/licensed_capacity_by_npi.parquet (state rosters via ingest_cms.licensed_capacity)")
     ap.add_argument("--minutes", default=None)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -365,12 +386,18 @@ def main() -> None:
 
     counts = clinician_counts(npis, pdim, n2o, edges)
     beds = bed_counts(npis, pos_cap, ccn_xw)
+    lic_p = Path(a.licensed_capacity) if a.licensed_capacity else root / "processed" / "licensed_capacity_by_npi.parquet"
+    lic = pd.read_parquet(lic_p) if lic_p.exists() else None
+    beds, bed_source = merge_licensed(beds, lic)
+    print(f"[capacity] licensed capacity (state rosters) {'ok: ' + format(len(lic), ',') + ' NPIs' if lic is not None else 'MISSING'}; "
+          f"beds known for {int(beds.notna().sum()):,} NPIs")
     sites = site_counts(npis, pl)
-    t = capacity_table(facts, counts, beds, sites, names)
+    t = capacity_table(facts, counts, beds, sites, names, bed_source)
     t.to_csv(out / "capacity.csv", index=False)
     inputs = {"spending": Path(a.spending).name, "universe": f"{len(npis):,} NPIs",
               "provider_dim": "yes" if pdim is not None else "no", "reassignment": "yes" if edges is not None else "no",
               "pos_beds": "yes" if pos_cap is not None else "no", "practice_locations": "yes" if pl is not None else "no",
+              "licensed_capacity": f"{len(lic):,} NPIs" if lic is not None else "no",
               "minutes": minutes.name if minutes else "no"}
     (out / "CAPACITY.md").write_text(to_markdown(t, inputs), encoding="utf-8")
     (out / "capacity_summary.json").write_text(json.dumps({

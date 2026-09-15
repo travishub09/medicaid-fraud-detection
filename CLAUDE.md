@@ -433,7 +433,27 @@ committed. Never let this file go stale: stale reminders are worse than none.
   against the official roster of FCA settlers) → LABEL_AUDIT.md + label_audit.json
   with a severity-ranked findings list, each with its fix. `enforcement/cia.py`
   is now implemented (normalize_cia + cia_case_rows; file at preclean/cia/cia_list.csv).
-  Full suite: `pytest tests/` (811 tests).
+  TIER A CONTRADICTIONS (`model_a/contradictions.py`, current-day, no model
+  run): the per-se facts ranked by dollars at issue — paid service months
+  on/after the provider's own first exclusion (exclusion nodes), after NPPES
+  deactivation (deactivation file), after recorded death (matrix flag),
+  individual NPIs with impossible days (minutes map via pi_facts), and
+  facility-only codes on individual NPIs (the Rhode Island shape) →
+  CONTRADICTIONS.md + contradictions.csv with the innocent explanations to
+  rule out first. A model rank is never the reason a PI is sent; a Tier A row is.
+  CAPACITY CHECK (`model_a/capacity.py`, the Nick Shirley test): per billing
+  NPI, billing-implied demand (patients/day, implied clinician-hours/day,
+  per-diem patient-days) against documented capacity (largest of rendering
+  NPIs on claims / PECOS reassigners / same-address individuals; an individual
+  NPI is one person; NPPES practice locations as sites; POS certified beds via
+  the CCN crosswalk; state licensed capacity via
+  `ingest_cms/licensed_capacity.py` → `processed/licensed_capacity_by_npi.parquet`),
+  flagged on the RATIOS (hours per clinician ≥ 12 long / ≥ 24 impossible,
+  ≥ 40 patients per clinician for clinics, occupancy > 100%); labs, transport,
+  DME and HCBS reported but not flagged on clinician ratios. Inputs to procure:
+  the NPPES pl_pfile (inside the monthly zip) and state rosters
+  (`preclean/state_capacity/<ST>_<what>.csv`; reminders carry the steps).
+  Full suite: `pytest tests/` (832 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
