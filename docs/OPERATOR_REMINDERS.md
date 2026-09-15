@@ -86,6 +86,19 @@ dir "C:/Users/treyr/OneDrive/Desktop/data\preclean\facility\Hospice_Provider*.cs
 python -m src.reminders --done hospice_2021_archive
 ```
 
+- **oig_cia** — OIG Corporate Integrity Agreement list (official roster of orgs that settled an FCA matter; the recall benchmark for the DOJ case DB + a Model A risk prior)
+  - save to: preclean/cia/cia_list.csv  |  https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
+  - due: freshness unknown
+  - step 1: Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
+  - step 2: Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link
+  - step 3: Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)
+
+```bat
+mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia"
+move "%USERPROFILE%\Downloads\cia_list.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia\cia_list.csv"
+python -m src.reminders --done oig_cia
+```
+
 
 ## COMING UP (30 days)
 
@@ -140,6 +153,13 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
 - [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
+- [ ] **label_audit** — Run the LABEL AUDIT on the v7 run (is the answer key complete, accurate, keyed right?) and upload LABEL_AUDIT.md; add --cia once cia_list.csv is saved (added 2026-09-15)
+
+```bat
+python -m src.model_a.label_audit --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --matrix "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\provider_features_for_model.parquet" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --org-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\org_nodes.parquet" --cutoff 2021-12 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\LABEL_AUDIT.md"
+python -m src.reminders --done-task label_audit
+```
+
 
 ## After ANY download session (standing rule)
 

@@ -421,7 +421,19 @@ committed. Never let this file go stale: stale reminders are worse than none.
   a top-level `asof_cutoff` (registry falls back to `graph_substrate.asof` for
   v1-v6). v6 lesson encoded: the as-of graph rebuild MUST pass `--asof-nppes`
   or `address_layer_frozen` is false and post-cutoff addresses leak.
-  Full suite: `pytest tests/` (771 tests).
+  LABEL AUDIT (`model_a/label_audit.py`, run before every pre-registration and
+  after any label-source download): grades every label source on identifier
+  (valid Luhn NPI vs name-only), date (undated / future / pre-1977 / placed vs
+  cutoff), FCA relevance (hard/weak/excluded + the statutes the tier table does
+  NOT know, which silently default to weak), and reach (NPI in the scored
+  universe / ever billed); checks the matrix label join (unexplained positives,
+  missed exclusions, billing-to-exclusion lag), the DOJ case DB (parse rates,
+  duplicates, NPI-in-source, and RECALL = cases resolved to a scored NPI plus the
+  unresolved settlement dollars), and the OIG CIA list (recall of the harvest
+  against the official roster of FCA settlers) → LABEL_AUDIT.md + label_audit.json
+  with a severity-ranked findings list, each with its fix. `enforcement/cia.py`
+  is now implemented (normalize_cia + cia_case_rows; file at preclean/cia/cia_list.csv).
+  Full suite: `pytest tests/` (811 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
