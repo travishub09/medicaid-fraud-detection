@@ -137,6 +137,32 @@ def test_audit_case_db_precision_and_recall():
     assert c["resolved_cases"] == 2 and c["resolved_share"] == pytest.approx(2 / 3)
     assert c["unresolved_dollars"] == 20_000_000.0
     assert c["top_unresolved"][0]["case_id"] == "c3"
+    assert c["unresolved_by_sector"] == {"lab": 20_000_000.0}
+    assert c["unresolved_cases_by_sector"] == {"lab": 1}
+    assert c["near_dup_pairs"] == 0                # the usable=0 duplicate was filtered first
+
+
+def test_near_duplicate_cases_and_label_concentration():
+    cdb = _case_db()
+    # the two-press-releases-one-settlement pattern: same $, same year, shared token
+    cdb.loc[3, ["case_id", "defendant_name", "defendant_name_key", "usable"]] = \
+        ["c3b", "Gamma Labs Inc (sentencing)", "gamma labs", "1"]
+    c = audit_case_db(cdb, _matrix())
+    assert c["near_dup_pairs"] == 1 and c["near_dup_dollars"] == 20_000_000.0
+    assert {c["near_dup_sample"][0]["case_a"], c["near_dup_sample"][0]["case_b"]} == {"c3", "c3b"}
+    f = findings(audit_exclusions(_nodes()), None, c, None, None)
+    assert any("harvested twice" in x["finding"] for x in f)
+    # concentration: one case supplying most of the DOJ positives
+    m = _matrix()
+    m.loc[[0, 1, 3], ["provider_on_exclusion", "exclusion_label_sources", "label_basis",
+                      "case_ids", "conduct_start", "conduct_end"]] = \
+        [1, "doj_case", "org_billing", "c9", 2018, 2020]
+    mx = audit_matrix(m, _nodes(), None)
+    assert mx["doj_positives"] == 4 and mx["doj_cases_labelling"] == 3
+    assert mx["doj_top_cases"][0] == {"case_id": "c9", "npis": 3}
+    assert mx["doj_top5_case_share"] == 1.0                    # every DOJ positive sits in a top-5 case
+    f2 = findings(audit_exclusions(_nodes()), mx, None, None, None)
+    assert any("Label concentration" in x["finding"] for x in f2)
 
 
 def test_cia_normalize_and_case_rows_and_recall():

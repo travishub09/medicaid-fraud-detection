@@ -284,6 +284,21 @@ def audit_matrix(matrix: pd.DataFrame, nodes: pd.DataFrame | None = None,
             sch = doj["fraud_scheme"].fillna("").astype(str)
             out["doj_scheme_unknown_share"] = _share(
                 sch.isin(["", "unknown"]).sum(), len(doj))
+        # label CONCENTRATION: an org-billing broadcast labels every billing
+        # NPI of a settled org, so one system-wide settlement can supply
+        # hundreds of "fraud" positives that share a single conduct finding
+        if "case_ids" in doj.columns and len(doj):
+            ids = doj["case_ids"].fillna("").astype(str).str.split(";").explode().str.strip()
+            ids = ids[ids != ""]
+            vc = ids.value_counts()
+            out["doj_cases_labelling"] = int(len(vc))
+            out["doj_npis_per_case_median"] = float(vc.median()) if len(vc) else 0.0
+            top5 = set(vc.head(5).index)
+            in_top = doj["case_ids"].fillna("").astype(str).map(
+                lambda s: any(x.strip() in top5 for x in s.split(";")))
+            out["doj_top5_case_share"] = _share(in_top.sum(), len(doj))
+            out["doj_top_cases"] = [{"case_id": str(k)[:70], "npis": int(v)}
+                                    for k, v in vc.head(10).items()]
 
     paid = pd.to_numeric(pos.get("net_paid"), errors="coerce").fillna(0)
     out["positives_zero_billing"] = int((paid <= 0).sum())
@@ -378,6 +393,30 @@ def audit_case_db(case_db: pd.DataFrame, matrix: pd.DataFrame | None = None) -> 
         out["primary_source_share"] = _share(
             u.str.contains(r"justice\.gov|oig\.hhs\.gov|\.gov/|courtlistener", regex=True).sum(), n)
 
+    # NEAR-DUPLICATE cases: same dollar amount, same announcement year, and a
+    # defendant-name token in common (the two-press-releases-one-settlement
+    # pattern: DOJ national + USAO local, or the sentencing re-announcement).
+    # They double-count dollars and double-weight the label.
+    d = pd.DataFrame({"case_id": c.get("case_id", pd.Series("", index=c.index)).astype(str),
+                      "defendant": c.get("defendant_name", pd.Series("", index=c.index)).fillna("").astype(str),
+                      "amt": amt, "yr": ad.dt.year, "key": key})
+    d = d[(d["amt"] > 0) & d["yr"].notna()]
+    pairs: list[dict] = []
+    for (a, y), g in d.groupby(["amt", "yr"]):
+        if len(g) < 2:
+            continue
+        rows_g = list(g.itertuples())
+        toks = [set(_TOKEN.findall(str(r.key).lower())) for r in rows_g]
+        for i in range(len(rows_g)):
+            for j in range(i + 1, len(rows_g)):
+                if toks[i] & toks[j]:
+                    pairs.append({"case_a": rows_g[i].case_id[:60], "case_b": rows_g[j].case_id[:60],
+                                  "defendant": rows_g[i].defendant[:60], "amount_usd": float(a),
+                                  "year": int(y)})
+    out["near_dup_pairs"] = len(pairs)
+    out["near_dup_dollars"] = float(sum(p["amount_usd"] for p in pairs))
+    out["near_dup_sample"] = sorted(pairs, key=lambda p: -p["amount_usd"])[:15]
+
     if matrix is not None and "case_ids" in matrix.columns and "case_id" in c.columns:
         ids = (matrix["case_ids"].dropna().astype(str).str.split(";").explode()
                .str.strip())
@@ -388,6 +427,15 @@ def audit_case_db(case_db: pd.DataFrame, matrix: pd.DataFrame | None = None) -> 
         out["resolved_share"] = _share(hit.sum(), n)
         out["resolved_dollar_share"] = _share(amt[hit].fillna(0).sum(), amt.fillna(0).sum())
         out["unresolved_dollars"] = float(amt[~hit].fillna(0).sum())
+        # which SECTORS hold the unresolved dollars: pharma / device / health
+        # plan defendants never bill as a provider NPI (unreachable by design);
+        # hospital / SNF / physician-group defendants should resolve
+        if "sector" in c.columns:
+            sec = c["sector"].fillna("").astype(str).str.lower().replace("", "unknown")
+            by = amt[~hit].fillna(0).groupby(sec[~hit]).sum().sort_values(ascending=False)
+            out["unresolved_by_sector"] = {str(k): float(v) for k, v in by.head(12).items()}
+            cnt = sec[~hit].value_counts()
+            out["unresolved_cases_by_sector"] = {str(k): int(cnt.get(k, 0)) for k in by.head(12).index}
         top = c[~hit].assign(_amt=amt[~hit].fillna(0)).sort_values("_amt", ascending=False)
         keep = [k for k in ("case_id", "defendant_name", "announced_date", "sector", "scheme")
                 if k in top.columns]
@@ -546,6 +594,15 @@ def findings(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
                 "drops them, a current run cannot time-box them.",
                 "Fill conduct_start/conduct_end from the complaint or settlement text "
                 "(case_qc); it is the single most valuable field per case.")
+        t5 = mx.get("doj_top5_case_share")
+        if t5 is not None and t5 > 0.4:
+            add("medium",
+                f"Label concentration: the top 5 DOJ cases supply {t5:.0%} of the "
+                f"{mx.get('doj_positives', 0):,} DOJ positives (org-billing broadcast labels "
+                "every billing NPI of a settled system with one conduct finding).",
+                "Cap the org_billing broadcast per case (max_org_members on tier 2, as tier 3 "
+                "already has) or weight each positive 1/n per case in training, so a single "
+                "hospital-system settlement cannot dominate the fraud label.")
         if mx.get("doj_conduct_window_incoherent"):
             add("low", f"{mx['doj_conduct_window_incoherent']:,} DOJ rows have conduct_start "
                 "after conduct_end.", "Fix in the case file (case_corrections).")
@@ -571,6 +628,14 @@ def findings(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
         if cdb.get("dup_case_id"):
             add("medium", f"{cdb['dup_case_id']:,} duplicate case_ids in the case DB.",
                 "De-duplicate; a duplicate double-weights its case.")
+        if cdb.get("near_dup_pairs"):
+            add("medium",
+                f"{cdb['near_dup_pairs']:,} case pairs share the same amount, year and a "
+                f"defendant-name token (one settlement harvested twice: DOJ national plus the "
+                f"local USAO release, or a sentencing re-announcement); "
+                f"${cdb.get('near_dup_dollars', 0)/1e6:,.0f}M is double-counted.",
+                "Mark the second row of each pair usable=0 in the case file (case_qc / "
+                "case_corrections); the 'Near-duplicate cases' table lists them.")
         if cdb.get("with_npi_share", 1) < 0.1 and cdb.get("rows", 0) >= 50:
             add("medium",
                 f"Only {cdb['with_npi_share']:.0%} of cases carry an NPI in the source; every "
@@ -710,7 +775,8 @@ def to_markdown(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
         L += ["| check | value |", "|---|--:|"]
         for k in ("rows", "positives", "positive_rate", "multi_source_positives", "no_source_tag",
                   "doj_positives", "doj_conduct_start_missing_share", "doj_scheme_unknown_share",
-                  "doj_conduct_window_incoherent", "positives_zero_billing",
+                  "doj_conduct_window_incoherent", "doj_cases_labelling",
+                  "doj_npis_per_case_median", "doj_top5_case_share", "positives_zero_billing",
                   "positives_zero_billing_share", "excluded_in_matrix", "missed_positives",
                   "unexplained_positives", "lag_n", "lag_median_months", "lag_over_24m_share",
                   "billed_after_exclusion"):
@@ -726,6 +792,11 @@ def to_markdown(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
             L += ["", "DOJ positives by match basis:", "", "| basis | providers |", "|---|--:|"]
             for k, v in mx["doj_by_basis"].items():
                 L.append(f"| {k} | {v:,} |")
+        if mx.get("doj_top_cases"):
+            L += ["", "DOJ cases supplying the most positives (org-billing broadcast):", "",
+                  "| case_id | NPIs labelled |", "|---|--:|"]
+            for r in mx["doj_top_cases"]:
+                L.append(f"| {r['case_id']} | {r['npis']:,} |")
         for k in ("unexplained_sample", "missed_sample"):
             if mx.get(k):
                 L += ["", f"{k}: {', '.join(mx[k])}"]
@@ -738,7 +809,8 @@ def to_markdown(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
                   "amount_parsed_share", "amount_total_usd", "date_parsed_share", "year_min",
                   "year_max", "dup_case_id", "qui_tam_stated_share", "qui_tam_yes",
                   "intervened_stated_share", "intervened_yes", "scheme_known_share",
-                  "sector_known_share", "primary_source_share", "resolved_cases",
+                  "sector_known_share", "primary_source_share", "near_dup_pairs",
+                  "near_dup_dollars", "resolved_cases",
                   "resolved_share", "resolved_dollar_share", "unresolved_dollars"):
             if k in cdb:
                 v = cdb[k]
@@ -759,6 +831,20 @@ def to_markdown(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
                 amt = float(r.get("amount_usd", 0) or 0)
                 L.append(f"| {str(r.get('case_id', ''))[:50]} | {str(r.get('defendant_name', ''))[:60]} | "
                          f"{r.get('announced_date', '')} | ${amt/1e6:,.1f}M |")
+        if cdb.get("unresolved_by_sector"):
+            L += ["", "### Unresolved dollars by sector (pharma / device / health-plan defendants "
+                  "never bill as a provider NPI, so those are unreachable by design; provider "
+                  "sectors are the recall gap to work)", "",
+                  "| sector | unresolved $ | cases |", "|---|--:|--:|"]
+            cnt = cdb.get("unresolved_cases_by_sector", {})
+            for k, v in cdb["unresolved_by_sector"].items():
+                L.append(f"| {k} | ${v/1e6:,.0f}M | {cnt.get(k, 0):,} |")
+        if cdb.get("near_dup_sample"):
+            L += ["", "### Near-duplicate cases (same amount, same year, shared defendant token)", "",
+                  "| case a | case b | defendant | year | amount |", "|---|---|---|---|--:|"]
+            for p in cdb["near_dup_sample"]:
+                L.append(f"| {p['case_a']} | {p['case_b']} | {p['defendant']} | {p['year']} | "
+                         f"${p['amount_usd']/1e6:,.1f}M |")
         L += [""]
 
     if cia and cia.get("parties"):
