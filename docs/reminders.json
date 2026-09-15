@@ -335,6 +335,8 @@
    "every_months": 3,
    "last_done": null,
    "steps": [
+    "NY (two files, joined on Facility ID by the loader; the old Adult Care Facility Directory was retired in 2022): beds = https://health.data.ny.gov/api/views/2g9y-7kqm/rows.csv?accessType=DOWNLOAD (Health Facility Certification Information; downloads as Health_Facility_Certification_Information*.csv) and addresses = https://health.data.ny.gov/api/views/vn5v-hh5r/rows.csv?accessType=DOWNLOAD (Health Facility General Information; downloads as Health_Facility_General_Information*.csv); the copy lines below name them NY_certification.csv / NY_facilities.csv",
+    "NJ: hospitals with licensed beds = https://data.nj.gov/api/views/mrzk-zrvp/rows.csv?accessType=DOWNLOAD (Acute-Care Facilities; downloads as Acute-Care_Facilities*.csv -> NJ_acute_care.csv). Nursing homes are already covered by the CMS POS file; NJ assisted living / residential has no CSV export (https://healthapps.nj.gov/facilities/fssearch.aspx is a search form), so skip it unless a table is copied by hand",
     "IL: https://dph.illinois.gov/topics-services/health-care-regulation/health-care-facilities -> facility directories (community integrated living arrangements, intermediate care facilities, assisted living); export or copy with the licensed capacity column; save as IL_<type>.csv",
     "RI: https://health.ri.gov/licenses/ -> Health Care Facilities -> the licensed facility list/search; export or copy the table (hospice, assisted living, group homes) with the licensed bed/capacity column; save as RI_<type>.csv",
     "FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type (Adult Day Care, Assisted Living, Hospice) -> Download; keep the capacity/beds column; save as FL_<type>.csv",
@@ -346,8 +348,10 @@
    ],
    "commands": [
     "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\"",
-    "move \"%USERPROFILE%\\Downloads\\*_*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\\"",
-    "python -m src.ingest_cms.licensed_capacity --rosters \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\licensed_capacity.parquet\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\Health_Facility_Certification_Information*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_certification.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\Health_Facility_General_Information*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_facilities.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\Acute-Care_Facilities*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NJ_acute_care.csv\"",
+    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_licensed_capacity.bat\"",
     "python -m src.reminders --done state_capacity_rosters"
    ]
   }

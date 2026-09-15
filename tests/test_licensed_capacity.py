@@ -46,6 +46,45 @@ def test_merge_rosters_state_prefix_or_folder_and_skips_bad_files(tmp_path: Path
     assert "notes.csv" in out and "TX_bad.csv" in out
 
 
+def test_ny_hfis_pair_joins_beds_to_addresses_on_facility_id(tmp_path: Path, capsys):
+    # General Information: addresses, no capacity -> the link table
+    _write(tmp_path, "NY_facilities.csv", pd.DataFrame({
+        "Facility ID": ["101", "102", "103"],
+        "Facility Name": ["Sunrise Adult Home", "Metro Hospital", "Empty Site"],
+        "Short Description": ["ACF", "HOSP", "ACF"], "Description": ["Adult Home", "Hospital", "Adult Home"],
+        "Facility Address 1": ["10 Main St", "1 Hospital Dr", "3 Nowhere Ln"],
+        "Facility City": ["Albany", "Buffalo", "Utica"], "Facility State": ["NY", "NY", "NY"],
+        "Facility Zip Code": ["12207", "14203", "13501"], "Operator Name": ["Op A", "Op B", "Op C"]}))
+    # Certification Information: long format, BED + SERVICE rows per Facility ID
+    _write(tmp_path, "NY_certification.csv", pd.DataFrame({
+        "Facility ID": ["101", "101", "101", "102", "102", "999"],
+        "Facility Name": ["Sunrise Adult Home"] * 3 + ["Metro Hospital"] * 2 + ["Orphan Beds"],
+        "Attribute Type": ["BED", "BED", "SERVICE", "BED", "SERVICE", "BED"],
+        "Attribute Value": ["Adult Home Beds", "Assisted Living Program", "Adult Day Care", "Medical/Surgical",
+                            "Emergency Department", "Adult Home Beds"],
+        "Measure Value": ["40", "20", "1", "250", "1", "12"]}))
+    r = merge_rosters(tmp_path)
+    by = r.set_index("facility_id")
+    assert by.loc["101", "capacity"] == 60 and by.loc["101", "addr_key"] == "10 MAIN ST ALBANY NY 12207"
+    assert by.loc["101", "license_type"] == "Adult Home"
+    assert by.loc["102", "capacity"] == 250 and by.loc["102", "city"] == "Buffalo"
+    assert "103" not in by.index                                 # no beds -> not a roster row
+    assert by.loc["999", "capacity"] == 12 and by.loc["999", "addr_key"] == ""   # beds without a directory row still count by name
+    assert "address directory for NY" in capsys.readouterr().out
+
+
+def test_nj_open_data_headers_resolve(tmp_path: Path):
+    p = _write(tmp_path, "NJ_acute_care.csv", pd.DataFrame({
+        "facid": ["7001"], "facility_type": ["General Acute Care Hospital"], "lic": ["NJ-1"],
+        "licensed_name": ["Garden State Medical Center"], "address": ["100 Route 1"], "fac_addr_2": [""],
+        "fac_city": ["Newark"], "fac_st": ["NJ"], "zip": ["07102"], "county": ["Essex"],
+        "hospbedtotal": ["312"], "licensed_owner": ["GSMC LLC"]}))
+    r = load_roster(p, "nj")
+    row = r.iloc[0]
+    assert row["capacity"] == 312 and row["addr_key"] == "100 ROUTE 1 NEWARK NJ 07102"
+    assert row["license_type"] == "General Acute Care Hospital" and row["license_number"] == "NJ-1"
+
+
 def test_capacity_by_npi_address_then_name(tmp_path: Path):
     roster = pd.DataFrame({
         "state": ["FL", "FL", "FL", "ME"], "facility_name": ["A", "A", "B", "C"],

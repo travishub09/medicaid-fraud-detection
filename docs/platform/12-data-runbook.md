@@ -258,7 +258,7 @@ are in [16-data-expansion.md](16-data-expansion.md). Build order: NUCC first.
 | CMS Change-of-Ownership (CHOW) | `chow/chow_<type>.csv` | `ownership_integrity` / A7 churn (`chow.py`) |
 | OIG Corporate Integrity Agreements | `cia/cia_list.csv` | Model A risk prior + Model C labels (`enforcement/cia.py`) |
 | NPPES Practice Location file (`pl_pfile_*.csv`, inside the monthly NPPES zip; extract only that member) | `nppes/pl_pfile_*.csv` | secondary practice sites per NPI → `sites` in the capacity check (`model_a/capacity.py`) |
-| State licensed-facility rosters with licensed capacity (waiver group homes, residential habilitation, adult day, assisted living, hospice houses; RI, FL, ME, MO, CO first) | `state_capacity/<ST>_<what>.csv` | beds/slots for providers the POS file never covers → occupancy in the capacity check (`ingest_cms/licensed_capacity.py` → `processed/licensed_capacity_by_npi.parquet`) |
+| State licensed-facility rosters with licensed capacity (waiver group homes, residential habilitation, adult day, assisted living, hospice houses; IL, NY, CA, MA, FL, NJ, RI first). NY is a pair of Socrata exports joined on Facility ID by the loader: `2g9y-7kqm` (Certification Information: BED rows summed per site) + `vn5v-hh5r` (General Information: addresses); NJ hospitals: `data.nj.gov` `mrzk-zrvp` (`hospbedtotal`) | `state_capacity/<ST>_<what>.csv` (`NY_certification.csv` + `NY_facilities.csv`, `NJ_acute_care.csv`) | beds/slots for providers the POS file never covers → occupancy in the capacity check (`ingest_cms/licensed_capacity.py` → `processed/licensed_capacity_by_npi.parquet`) |
 
 **Flag to Brad (licensed):** OpenSanctions commercial license is the biggest
 gated win — the adapter is already built and it delivers ~45 state Medicaid
