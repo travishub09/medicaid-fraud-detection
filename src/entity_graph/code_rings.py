@@ -28,6 +28,16 @@ from __future__ import annotations
 
 import pandas as pd
 
+def _tune(con) -> None:
+    """16 GB laptop, other jobs running: cap DuckDB's RAM, drop insertion-order
+    preservation (the big spiller), keep threads modest. Override with
+    DUCKDB_MEMORY_LIMIT / DUCKDB_THREADS."""
+    import os
+    con.execute(f"SET memory_limit='{os.environ.get('DUCKDB_MEMORY_LIMIT', '6GB')}'")
+    con.execute(f"SET threads={int(os.environ.get('DUCKDB_THREADS', '4'))}")
+    con.execute("SET preserve_insertion_order=false")
+
+
 _RING_COLS = ["hcpcs", "practice_state", "n_members", "total_paid",
               "code_org_share", "n_office_clusters", "max_shared_office",
               "member_npis"]
@@ -164,17 +174,23 @@ def build_provider_code(spending_path: str, provider_dim_path: str,
     if "addr_key" not in d.columns:
         d["addr_key"] = ""
     con.register("dim", d)
-    out = con.execute(f"""
+    _tune(con)
+    # aggregate the fact FIRST (npi x code), then join the small dimension:
+    # joining 238M rows to the dimension before grouping spilled ~70 GB to
+    # disk on a 16 GB box and died; the grouped table is a few million rows
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE agg AS
         SELECT CAST(s."{npi_c}" AS VARCHAR)      AS npi,
                CAST(s."{code_c}" AS VARCHAR)     AS hcpcs,
-               SUM(CAST(s."{paid_c}" AS DOUBLE)) AS paid,
-               ANY_VALUE(dim.entity_type)        AS entity_type,
-               ANY_VALUE(dim.practice_state)     AS practice_state,
-               ANY_VALUE(dim.addr_key)           AS addr_key
+               SUM(CAST(s."{paid_c}" AS DOUBLE)) AS paid
         FROM read_parquet('{spending_path}') s
-        JOIN dim ON CAST(s."{npi_c}" AS VARCHAR) = dim.npi
         GROUP BY 1, 2
         HAVING SUM(CAST(s."{paid_c}" AS DOUBLE)) >= {float(min_paid)}
+    """)
+    out = con.execute("""
+        SELECT agg.npi, agg.hcpcs, agg.paid,
+               dim.entity_type, dim.practice_state, dim.addr_key
+        FROM agg JOIN dim ON agg.npi = dim.npi
     """).df()
     con.close()
     out["entity_type"] = out["entity_type"].astype(str).str.strip()
@@ -214,28 +230,39 @@ def compute_facility_code_share(spending_path: str,
     if not (npi_c and code_c and paid_c):
         raise ValueError(f"spending fact missing npi/code/paid columns; saw {fact_cols[:12]}")
 
+    _tune(con)
+    # aggregate the fact FIRST (npi x code [x entity_type when the fact carries
+    # it]), then attach entity_type from the small dimension — never join the
+    # 238M-row fact before grouping (that spilled ~70 GB and died)
     if ent_c:
-        ent_expr = f'CAST(s."{ent_c}" AS VARCHAR)'
-        join = ""
+        con.execute(f"""
+            CREATE OR REPLACE TEMP TABLE pc AS
+            SELECT CAST(s."{npi_c}" AS VARCHAR)  AS npi,
+                   CAST(s."{code_c}" AS VARCHAR) AS hcpcs,
+                   TRIM(CAST(s."{ent_c}" AS VARCHAR)) AS entity_type,
+                   SUM(CAST(s."{paid_c}" AS DOUBLE)) AS paid
+            FROM read_parquet('{spending_path}') s
+            GROUP BY 1, 2, 3""")
     else:
         if not provider_dim_path:
             raise ValueError("spending fact has no entity_type — pass provider_dim_path")
         dim = pd.read_parquet(provider_dim_path)[["npi", "entity_type"]]
         dim["npi"] = dim["npi"].astype(str)
         con.register("dim", dim)
-        ent_expr = "CAST(dim.entity_type AS VARCHAR)"
-        join = f'JOIN dim ON CAST(s."{npi_c}" AS VARCHAR) = dim.npi'
-
-    out = con.execute(f"""
-        WITH pc AS (
+        con.execute(f"""
+            CREATE OR REPLACE TEMP TABLE agg AS
             SELECT CAST(s."{npi_c}" AS VARCHAR)  AS npi,
                    CAST(s."{code_c}" AS VARCHAR) AS hcpcs,
-                   TRIM({ent_expr})              AS entity_type,
                    SUM(CAST(s."{paid_c}" AS DOUBLE)) AS paid
-            FROM read_parquet('{spending_path}') s {join}
-            GROUP BY 1, 2, 3
-        ),
-        code_stat AS (
+            FROM read_parquet('{spending_path}') s
+            GROUP BY 1, 2""")
+        con.execute("""
+            CREATE OR REPLACE TEMP TABLE pc AS
+            SELECT agg.npi, agg.hcpcs, TRIM(CAST(dim.entity_type AS VARCHAR)) AS entity_type, agg.paid
+            FROM agg JOIN dim ON agg.npi = dim.npi""")
+
+    out = con.execute(f"""
+        WITH code_stat AS (
             SELECT hcpcs, SUM(paid) AS code_total,
                    SUM(CASE WHEN entity_type = '2' THEN paid ELSE 0 END) AS org_paid
             FROM pc GROUP BY 1
