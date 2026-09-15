@@ -173,7 +173,7 @@ def test_findings_flag_the_real_defects_with_fixes():
     assert "fail the Luhn check" in text
     assert "dated in the future" in text
     assert "tier table does not know" in text
-    assert "more than one distinct name" in text
+    assert "share no token" in text
     assert "in NO exclusion source" in text
     assert all(x["fix"] for x in f)
     assert f[0]["severity"] == "high" or any(x["severity"] == "high" for x in f)

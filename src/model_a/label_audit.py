@@ -59,6 +59,7 @@ _MATRIX_COLS = ["npi", "net_paid", "last_service_month", "first_service_month",
                 "provider_on_exclusion", "exclusion_label_sources", "label_basis",
                 "case_ids", "fraud_scheme", "conduct_start", "conduct_end"]
 UNMAPPED_RE = re.compile(r"^(LEIE statute unmapped|unrecognized source)")
+_TOKEN = re.compile(r"[a-z]{3,}")
 
 
 # --------------------------------------------------------------------------- #
@@ -71,7 +72,7 @@ def label_source(excl_type) -> str:
     t = str(excl_type or "").strip().lower()
     if not t:
         return "(blank excl_type)"
-    head = re.split(r"[:\s]", t, 1)[0]
+    head = re.split(r"[:\s]", t, maxsplit=1)[0]
     for src in ("opensanctions", "medicare_revocation", "preclusion", "sam",
                 "state_board", "state_term", "mfcu"):
         if head.startswith(src):
@@ -194,13 +195,22 @@ def audit_exclusions(nodes: pd.DataFrame, cutoff: str | None = None,
 
     # identity collisions: one NPI, several distinct normalized names across
     # records (a mis-keyed NPI puts someone else's exclusion on a provider)
+    # Two thresholds: 'variants' = more than one distinct normalized name on an
+    # NPI (middle initials, maiden names, re-listings: usually benign), and
+    # 'collisions' = two records on one NPI that share NO name token of 3+
+    # letters (DOE JOHN vs ROE JANE: a different person on the same NPI).
     v = e[e["npi_ok"] & e.get("name_key", pd.Series("", index=e.index)).fillna("").ne("")]
+    n_variants = 0
     if len(v) and "name_key" in v.columns:
         names = v.groupby("npi")["name_key"].agg(lambda s: sorted(set(s)))
-        coll = names[names.map(len) > 1]
-        collisions = pd.DataFrame({"npi": coll.index,
-                                   "n_names": coll.map(len).values,
-                                   "names": coll.map(lambda xs: " | ".join(xs[:4])).values})
+        multi = names[names.map(len) > 1]
+        n_variants = int(len(multi))
+        rows_c = []
+        for npi, xs in multi.items():
+            toks = [set(_TOKEN.findall(str(x).lower())) for x in xs]
+            if any(not (a & b) for i, a in enumerate(toks) for b in toks[i + 1:]):
+                rows_c.append({"npi": npi, "n_names": len(xs), "names": " | ".join(xs[:4])})
+        collisions = pd.DataFrame(rows_c, columns=["npi", "n_names", "names"])
     else:
         collisions = pd.DataFrame(columns=["npi", "n_names", "names"])
 
@@ -214,6 +224,7 @@ def audit_exclusions(nodes: pd.DataFrame, cutoff: str | None = None,
         "future_dated": int(e["future"].sum()),
         "unmapped_rows": int(e["unmapped"].sum()),
         "dup_rows": int(e["dup"].sum()),
+        "name_variants": n_variants,
         "collisions": int(len(collisions)),
         "hard_npi": int(e.loc[e["npi_ok"] & (e["tier"] == "hard"), "npi"].nunique()),
     }
@@ -504,8 +515,9 @@ def findings(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
                     "but do not count them as missed positives.")
     if t.get("collisions"):
         add("medium",
-            f"{t['collisions']:,} NPIs carry more than one distinct name across exclusion "
-            "records (possible mis-keyed NPI: someone else's exclusion on a provider).",
+            f"{t['collisions']:,} NPIs carry two names that share no token across exclusion "
+            f"records (a different person on the same NPI; {t.get('name_variants', 0):,} "
+            "NPIs have benign name variants such as initials or re-listings).",
             "Review the 'Identity collisions' sample; confirm against NPPES before use.")
 
     if mx:
@@ -681,7 +693,10 @@ def to_markdown(ex: dict, mx: dict | None, cdb: dict | None, cia: dict | None,
         L += ["_none — every statute and reason is tiered._"]
     L += [""]
     co = ex.get("collisions")
-    L += ["### Identity collisions (one NPI, several names)", ""]
+    L += ["### Identity collisions (one NPI, two names with no token in common)", "",
+          f"_{t.get('name_variants', 0):,} NPIs carry more than one name spelling (initials, "
+          "maiden names, re-listings: benign); the collisions below are the subset where "
+          "the names share nothing._", ""]
     if co is not None and len(co):
         L += [f"_{len(co):,} NPIs; first 15._", "", "| npi | names |", "|---|---|"]
         for r in co.head(15).itertuples():
