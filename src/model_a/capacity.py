@@ -373,8 +373,12 @@ def main() -> None:
                 print(f"  [pos] {pf.name} skipped: {e}")
         if caps:
             pos_cap = pd.concat(caps, ignore_index=True).groupby("ccn", as_index=False)["bed_count"].max()
-    xw_p = Path(a.ccn_crosswalk) if a.ccn_crosswalk else root / "processed" / "ccn_npi_crosswalk.parquet"
-    ccn_xw = pd.read_parquet(xw_p) if xw_p.exists() else None
+    # the export writes processed/ccn_to_npi.parquet (ingest_cms.ccn_npi_crosswalk --out);
+    # accept an explicit path or either conventional name
+    cands = ([Path(a.ccn_crosswalk)] if a.ccn_crosswalk else []) + [
+        root / "processed" / "ccn_to_npi.parquet", root / "processed" / "ccn_npi_crosswalk.parquet"]
+    xw_p = next((p for p in cands if p.exists()), None)
+    ccn_xw = pd.read_parquet(xw_p) if xw_p is not None else None
     print(f"[capacity] POS beds {'ok' if pos_cap is not None else 'MISSING'}; CCN crosswalk "
           f"{'ok' if ccn_xw is not None else 'MISSING'}")
     pl = read_csv_text(a.practice_locations) if a.practice_locations else None

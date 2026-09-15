@@ -385,8 +385,9 @@ def main() -> None:
 
     excl = pd.read_parquet(a.exclusion_nodes) if a.exclusion_nodes else None
     deact = None
-    dp = Path(a.deactivation) if a.deactivation else next(
-        iter(sorted((root / "preclean" / "nppes_deactivation").glob("*.*"))), None)
+    # newest deactivation file wins (the report is cumulative; names carry the date)
+    dfiles = sorted((root / "preclean" / "nppes_deactivation").glob("*.*"))
+    dp = Path(a.deactivation) if a.deactivation else (dfiles[-1] if dfiles else None)
     if dp and Path(dp).exists():
         from src.ingest_cms import nppes_deactivation as nd
         deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
