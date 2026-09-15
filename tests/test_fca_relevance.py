@@ -25,10 +25,10 @@ from src.model_a.label_variants import collect, to_markdown
     ("medicare_revocation: False or Misleading Information", "hard"),
     ("medicare_revocation: Non-Compliance", "excluded"),
     ("medicare_revocation: Not Operational", "weak"),        # phantom-site indicator (re-tiered Sept 14)
-    ("medicare_revocation: Felony", "weak"),
+    ("medicare_revocation: Felony", "hard"),               # 20% convert to a fraud-tier event (tier_transitions)
     ("medicare_revocation: License Suspension or Revocation", "weak"),
     ("medicare_revocation: 424.535(a)(19) Affiliation that Poses an Undue Risk", "weak"),
-    ("medicare_revocation: 424.535(a)(12) Other Program Termination (Medicaid)", "weak"),
+    ("medicare_revocation: 424.535(a)(12) Other Program Termination (Medicaid)", "hard"),   # 17% convert
     ("medicare_revocation: 424.535(a)(23) Violation of Provider and Supplier Standards", "weak"),
     ("medicare_revocation: 424.535(a)(17) Debt Referred to Treasury", "excluded"),
     ("opensanctions:us_ofac", "excluded"),

@@ -78,15 +78,19 @@ REVOCATION_RULES: list[tuple[str, str, str]] = [
     (r"misuse of billing", "hard", "424.535(a)(7) misuse of billing number"),
     (r"false|misleading", "hard", "424.535(a)(4) false or misleading information"),
     (r"fraud|kickback|false claim", "hard", "felony: healthcare fraud"),
-    (r"felon", "weak", "424.535(a)(3) felony (basis unstated)"),
+    # tier_transitions (Sept 2026, full exclusion nodes): 20.4% of (a)(3)
+    # felony revocations and 16.6% of (a)(12) program terminations are
+    # followed by a fraud-tier event within ~14-18 months; no other
+    # revocation ground exceeds 5%. They are the front edge of a case.
+    (r"felon", "hard", "424.535(a)(3) felony (20% convert to a fraud-tier event, median 14 mo)"),
+    (r"program termination", "hard",
+     "424.535(a)(12) terminated by another program (17% convert to a fraud-tier event, median 18 mo)"),
     (r"prescrib", "weak", "prescribing abuses"),
     (r"exclusion|debar", "weak", "424.535(a)(2) derivative of exclusion/debarment"),
     (r"licen", "weak", "license action (basis unstated)"),
     # the four reasons the first tier audit (Sept 2026) found unmapped
     (r"affiliation", "weak", "424.535(a)(19) affiliation posing undue risk (derivative)"),
-    (r"program termination", "weak",
-     "424.535(a)(12) terminated by another program (basis unstated)"),
-    (r"supplier standards|provider and supplier", "weak",
+    (r"provider and supplier", "weak",
      "424.535(a)(23) provider/supplier standards violation"),
     (r"treasury|debt", "excluded", "424.535(a)(17) debt referred to Treasury (collections)"),
     # (a)(5): CMS visited the address on file and found no practice there
@@ -96,7 +100,8 @@ REVOCATION_RULES: list[tuple[str, str, str]] = [
     # fact confirms claims continued into the non-operational period.
     (r"on-?site review|not operational|non-?operational", "weak",
      "424.535(a)(5) not operational at the address on file (phantom-site indicator)"),
-    (r"dme standards|supplier standards", "weak",
+    # DME supplier standards: 0.1% convert (tier_transitions) — paperwork
+    (r"dme standards|supplier standards", "excluded",
      "424.535(a)(1) DME supplier standards not met"),
     (r"non-?compliance|failure to report|"
      r"failure to document|failure to provide access|screening|"

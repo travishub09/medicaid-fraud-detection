@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-09-14. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-09-15. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -139,8 +139,7 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 ```
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
-- [ ] **peer_rank:_after_merging_bundle** — peer_rank: after merging bundle 166, run the two ACTIVE ablations again WITH --peer-rank (within-peer percentile ranking) and upload SOURCE_ABLATION_OOF_FULL__active_hard_peer.md + __active_all_peer.md (added 2026-09-14)
-- [ ] **tier_transitions:_after_merging_bundle** — tier_transitions: after merging bundle 167 run python -m src.model_a.tier_transitions --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" (1 min) and upload graph\nodes\TIER_TRANSITIONS.md — decides whether revocations are early fraud markers (added 2026-09-14)
+- [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
 
 ## After ANY download session (standing rule)
 

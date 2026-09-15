@@ -10,7 +10,7 @@ from src.model_a.tier_transitions import transitions, to_markdown
 
 
 def test_multi_ground_revocation_keeps_the_strongest_ground():
-    assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report;424.535(a)(3) felonies")[0] == "weak"
+    assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report;424.535(a)(3) felonies")[0] == "hard"
     assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report;"
                     "424.535(a)(8)(ii) abuse of billing privileges: pattern or practice")[0] == "hard"
     assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report")[0] == "excluded"
@@ -20,7 +20,7 @@ def test_not_operational_is_a_phantom_site_indicator_not_paperwork():
     t, basis = fca_tier("medicare_revocation: 424.535(a)(5) on-site review;424.535(a)(9) failure to report")
     assert t == "weak" and "phantom-site" in basis
     t2, b2 = fca_tier("medicare_revocation: 424.535(a)(1) noncompliance (dme standards not met)")
-    assert t2 == "weak" and "DME supplier standards" in b2
+    assert t2 == "excluded" and "DME supplier standards" in b2      # 0.1% convert: paperwork
     assert fca_tier("medicare_revocation: 424.535(a)(1) noncompliance (not professionally licensed)")[0] == "weak"
 
 
