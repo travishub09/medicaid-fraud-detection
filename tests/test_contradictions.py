@@ -68,6 +68,31 @@ def test_facility_codes_only_individuals_over_thresholds():
     assert list(f["npi"]) == [D]                               # C is an organization, B too small
 
 
+def test_windows_end_at_reinstatement_and_reactivation(tmp_path: Path):
+    sp = _spending(tmp_path)
+    excl = _excl()
+    excl["reinstate_date"] = [None, None, None, None]
+    excl.loc[0, "reinstate_date"] = "2022-06-01"          # A reinstated before its 2022-09 billing
+    pdim = pd.DataFrame({"npi": [B], "reactivation_date": ["2022-12-01"]})   # B reactivated before 2023-01
+    ev = _events(excl, _deact(), pdim)
+    a = ev[(ev["npi"] == A) & (ev["event"] == "billing_after_exclusion")].iloc[0]
+    assert str(a["end_date"])[:10] == "2022-06-01" and "reinstated" in a["detail"]
+    b = ev[ev["npi"] == B].iloc[0]
+    assert str(b["end_date"])[:10] == "2022-12-01" and "reactivated" in b["detail"]
+    post = post_event_billing(sp, ev).set_index("npi")
+    assert post.loc[A, "post_paid"] == 50_000.0 and post.loc[A, "post_months"] == 1   # 2022-03 only
+    assert post.loc[B, "post_paid"] == 0.0                                            # 2023-01 is after reactivation
+    # A later record without a reinstatement is a second, open window; the
+    # merged row keeps the earliest start, an open end, and says "2 windows"
+    excl2 = _excl(); excl2["reinstate_date"] = ["2022-06-01", None, None, None]
+    ev2 = _events(excl2, None)
+    wins = ev2[ev2["npi"] == A]
+    assert len(wins) == 2 and wins["end_date"].isna().sum() == 1
+    post2 = post_event_billing(sp, ev2).set_index("npi")
+    assert str(post2.loc[A, "event_date"])[:10] == "2022-01-15" and pd.isna(post2.loc[A, "end_date"])
+    assert "2 windows" in post2.loc[A, "detail"] and post2.loc[A, "post_paid"] == 50_000.0
+
+
 def test_assemble_ranks_by_dollars_and_filters_noise(tmp_path: Path):
     sp = _spending(tmp_path)
     post = post_event_billing(sp, _events(_excl(), _deact()))
@@ -77,8 +102,11 @@ def test_assemble_ranks_by_dollars_and_filters_noise(tmp_path: Path):
     assert kinds[f"{D}|facility_code_on_individual"] == 720_000.0
     assert kinds[f"{D}|billing_after_death"] == 90_000.0
     assert f"{B}|billing_after_deactivation" not in kinds        # $10 tail below the floor
-    assert t.iloc[0]["npi"] == D and t.iloc[0]["contradiction"] == "facility_code_on_individual"
+    # Tier A rows first (death $90k, then exclusion $80k); the facility row is Tier B
+    assert list(t["tier"]) == ["A", "A", "B"]
+    assert t.iloc[0]["contradiction"] == "billing_after_death" and t.iloc[1]["npi"] == A
     assert t[t["npi"] == A].iloc[0]["name"] == "DOE, JOHN"        # exclusion record name wins
     md = to_markdown(t, {"spending": "spending_fact.parquet"})
-    assert "TIER A CONTRADICTIONS" in md and "| billing_after_exclusion | 1 |" in md
+    assert "TIER A CONTRADICTIONS" in md and "| A | billing_after_exclusion | 1 |" in md
+    assert "## Tier A" in md and "## Tier B" in md and "STATE CONVENTION" in md
     assert "Innocent explanations" in md and "never accusations" in md
