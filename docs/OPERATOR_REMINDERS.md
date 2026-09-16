@@ -178,7 +178,7 @@ python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desk
 python -m src.reminders --done-task post_download_checks
 ```
 
-- [ ] **state_letter:_every_named** — State letter: every named deactivated-NPI biller (6 of 6 so far: Mariners Inn MI, Kidz Medical FL, CCS Medical FL, Memorial Hospital of Tampa psych unit FL, Community Programs/Meridian MI, Miami Personal Management FL) is a live organization paid under an old NPI. Draft the program-integrity letters per state (MI, FL) once the last three names land; not a PI matter (added 2026-09-16)
+- [ ] **state_letter:_every_named** — State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter (added 2026-09-16)
 
 ## After ANY download session (standing rule)
 
