@@ -43,7 +43,8 @@ import pandas as pd
 from src.attempt_2.clean_data import _normalize_name, _resolve_columns, _standardize_address, read_csv_text
 
 ROSTER_COLS = {
-    "facility_name": ["facility name", "facility_name", "provider name", "provider_name", "name",
+    "facility_name": ["facility name", "facility_name", "licensed facility name", "provider name",
+                      "provider_name", "name",
                       "licensed name", "licensed_name", "licensee", "legal name", "dba", "business name",
                       "program name", "entity name", "agency name", "organization name"],
     "addr_line1": ["address", "address 1", "address1", "street", "street address", "addr_line1",
@@ -64,9 +65,10 @@ ROSTER_COLS = {
                  "bed_count", "licensed_capacity", "capacity (beds)", "occupancy limit",
                  "total capacity", "certified capacity", "licensed bed count", "bed capacity",
                  "total licensed beds", "approved capacity", "certified bed count", "number of slots",
-                 "hospbedtotal", "hosp bed total", "licensed bed total", "bed total", "total licensed",
-                 "ltc beds", "nursing beds", "measure value", "measure_value"],
-    "license_number": ["license number", "license #", "license no", "license", "licence number",
+                 "hospbedtotal", "hosp bed total", "hospital bed total", "licensed bed total", "bed total",
+                 "total licensed", "ltc beds", "nursing beds", "lic_beds_slots", "licensed beds/slots",
+                 "beds/slots", "beds slots", "measure value", "measure_value"],
+    "license_number": ["license number", "license #", "license no", "lic#", "license", "licence number",
                        "permit number", "lic", "operating certificate number", "id"],
     "status": ["status", "license status", "active"],
     # site identifier shared by a state's split exports (NY HFIS: beds live in the
@@ -170,7 +172,8 @@ def load_roster(path: str | Path, state: str, column_map: dict[str, str] | None 
     out = pd.DataFrame({
         "state": state.upper(),
         "facility_name": col("facility_name"),
-        "addr_line1": col("addr_line1"),
+        # NJ LTC packs "street \n city, ST zip" into one cell: keep the street line
+        "addr_line1": col("addr_line1").str.split(r"[\r\n]+", regex=True).str[0].str.strip(),
         "city": col("city"),
         "zip": col("zip").str.replace(r"\D", "", regex=True).str.slice(0, 5),
         "license_type": col("license_type"),

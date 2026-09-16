@@ -74,15 +74,39 @@ def test_ny_hfis_pair_joins_beds_to_addresses_on_facility_id(tmp_path: Path, cap
 
 
 def test_nj_open_data_headers_resolve(tmp_path: Path):
+    # the Socrata CSV export (display headers, as downloaded)
     p = _write(tmp_path, "NJ_acute_care.csv", pd.DataFrame({
-        "facid": ["7001"], "facility_type": ["General Acute Care Hospital"], "lic": ["NJ-1"],
-        "licensed_name": ["Garden State Medical Center"], "address": ["100 Route 1"], "fac_addr_2": [""],
-        "fac_city": ["Newark"], "fac_st": ["NJ"], "zip": ["07102"], "county": ["Essex"],
-        "hospbedtotal": ["312"], "licensed_owner": ["GSMC LLC"]}))
+        "Facility ID": ["7001"], "Facility Type": ["General Acute Care Hospital"], "License Number": ["NJ-1"],
+        "Licensed Facility Name": ["Garden State Medical Center"], "Address": ["100 Route 1"], "Address 2": [""],
+        "City": ["Newark"], "State": ["NJ"], "Zip Code": ["07102"], "County": ["Essex"],
+        "Hospital Bed Total": ["312"], "Licensed Owner": ["GSMC LLC"], "Georeference": ["POINT (1 2)"]}))
     r = load_roster(p, "nj")
     row = r.iloc[0]
     assert row["capacity"] == 312 and row["addr_key"] == "100 ROUTE 1 NEWARK NJ 07102"
     assert row["license_type"] == "General Acute Care Hospital" and row["license_number"] == "NJ-1"
+    # the SODA field names (API export)
+    p2 = _write(tmp_path, "NJ_api.csv", pd.DataFrame({
+        "facid": ["7001"], "facility_type": ["General Acute Care Hospital"], "lic": ["NJ-1"],
+        "licensed_name": ["Garden State Medical Center"], "address": ["100 Route 1"],
+        "fac_city": ["Newark"], "fac_st": ["NJ"], "zip": ["07102"], "hospbedtotal": ["312"]}))
+    assert load_roster(p2, "nj").iloc[0]["capacity"] == 312
+
+
+def test_nj_ltc_workbook_headers_and_multiline_address(tmp_path: Path):
+    p = tmp_path / "NJ_ltc.xlsx"
+    pd.DataFrame({
+        "FACILITY_TYPE": ["ADULT DAY HEALTH SERVICES FACILITY", "ASSISTED LIVING RESIDENCE"],
+        "FacID": ["2CPTS8", "AB12CD"], "LIC#": ["2CPTS8", "AB12CD"],
+        "LICENSED_NAME": ["JUST HOME MEDICAL ADULT DAY (2CPTS8)", "SUNRISE OF EDISON (AB12CD)"],
+        "ALPHA_NAME": ["JUST HOME, INC.", "SUNRISE LLC"],
+        "ADDRESS": ["7 EDGEBORO ROAD \nEAST BRUNSWICK, NJ 08816", "1 MAIN ST\nEDISON, NJ 08817"],
+        "FAC_ADDR_2": ["(blank)", "(blank)"], "FAC_CITY": ["EAST BRUNSWICK", "EDISON"], "FAC_ST": ["NJ", "NJ"],
+        "ZIP": ["08816", "08817"], "Lic_Beds_Slots": ["200", "96"], "ADMIN": ["x", "y"]}).to_excel(p, index=False)
+    r = load_roster(p, "nj").set_index("facility_id")
+    assert r.loc["2CPTS8", "capacity"] == 200
+    assert r.loc["2CPTS8", "addr_line1"] == "7 EDGEBORO ROAD"
+    assert r.loc["2CPTS8", "addr_key"] == "7 EDGEBORO ROAD EAST BRUNSWICK NJ 08816"   # city line dropped
+    assert r.loc["AB12CD", "license_type"] == "ASSISTED LIVING RESIDENCE" and r.loc["AB12CD", "capacity"] == 96
 
 
 def test_capacity_by_npi_address_then_name(tmp_path: Path):
