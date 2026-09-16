@@ -159,16 +159,6 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
 - [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
-- [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus): shortlist 20/20 and tier-2 7/7 done and folded into PI Packet v7; all-cases set (v7_research_all_prompts.jsonl) 15 of 23 fetched and folded into PI Packet v8. EIGHT prompts were never dispatched (Talk Active, Perspectives, Brooklyn/Flushing primary care, CTW/212 Therapy, Physicians Group Labs, Hope Pediatrics, Park Ave Center, Phoenix Home Care). Run dispatch --batch 4 twice, poll until 23/23 completed, --fetch, upload v7_research_all_results.json for PI Packet v9. (added 2026-09-16)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python field_research.py --poll --prompts v7_research_all_prompts.jsonl
-python field_research.py --dispatch --batch 4 --prompts v7_research_all_prompts.jsonl
-python field_research.py --fetch --prompts v7_research_all_prompts.jsonl
-python -m src.reminders --done-task v7_research_(manus,_20_prompts
-```
-
 - [ ] **post_download_checks** — New files landed — run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-09-16)
 
 ```bat
@@ -179,6 +169,12 @@ python -m src.reminders --done-task post_download_checks
 ```
 
 - [ ] **state_letter:_every_named** — State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter (added 2026-09-16)
+- [ ] **pi_packet_v9_feedback** — PI Packet v9 (final for this round, 2026-09-16) sent to Trey: 9 Tier 1 + 7 Tier 2 + 2 Tier 3 + 6 national + 1 desk-first, 19 do-not-send rows, all 50 cards reviewed. OPEN until the PIs' feedback comes back and is folded into v10 (or Trey confirms no changes). Next capacity pass to-dos recorded in the packet: minutes map H2035=60; find the pre-2020 Hope Pediatrics NPI in the spending fact; Special Homes billed residential days vs 76 licensed places. (added 2026-09-16)
+
+```bat
+(no command: paste the PIs' notes into the chat)
+```
+
 
 ## After ANY download session (standing rule)
 
