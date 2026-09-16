@@ -192,27 +192,6 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
 - [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
-- [ ] **label_audit** — Run the LABEL AUDIT on the v7 run (is the answer key complete, accurate, keyed right?) and upload LABEL_AUDIT.md; add --cia once cia_list.csv is saved (added 2026-09-15)
-
-```bat
-python -m src.model_a.label_audit --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --matrix "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\provider_features_for_model.parquet" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --org-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\org_nodes.parquet" --cutoff 2021-12 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\LABEL_AUDIT.md"
-python -m src.reminders --done-task label_audit
-```
-
-- [ ] **tier_a_run** — Run run_contradictions.bat (Tier A per-se contradictions) and upload detection\tier_a\CONTRADICTIONS.md + contradictions.csv (added 2026-09-15)
-
-```bat
-"C:\Users\treyr\medicaid-fraud-detection\run_contradictions.bat"
-python -m src.reminders --done-task tier_a_run
-```
-
-- [ ] **capacity_run** — Run run_capacity.bat (Nick Shirley capacity check) and upload detection\capacity\CAPACITY.md + capacity.csv; rerun after the practice-location file and state rosters land (added 2026-09-15)
-
-```bat
-"C:\Users\treyr\medicaid-fraud-detection\run_capacity.bat"
-python -m src.reminders --done-task capacity_run
-```
-
 - [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus, 20 prompts off the Tier A shortlist): 4 dispatched 2026-09-16, 16 waiting. Loop until 20/20 completed, then --fetch and upload v7_research_results.json to Claude (added 2026-09-16)
 
 ```bat

@@ -443,38 +443,6 @@
    "added": "2026-09-15"
   },
   {
-   "key": "label_audit",
-   "what": "Run the LABEL AUDIT on the v7 run (is the answer key complete, accurate, keyed right?) and upload LABEL_AUDIT.md; add --cia once cia_list.csv is saved",
-   "added": "2026-09-15",
-   "steps": [
-    "Merge bundle 169 first (merge_bundle.bat)",
-    "Run the command below (reads existing files only; a few minutes; safe alongside a running job)",
-    "Upload C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\\LABEL_AUDIT.md to Claude"
-   ],
-   "commands": [
-    "python -m src.model_a.label_audit --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --matrix \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\\provider_features_for_model.parquet\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --org-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\org_nodes.parquet\" --cutoff 2021-12 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\\LABEL_AUDIT.md\"",
-    "python -m src.reminders --done-task label_audit"
-   ]
-  },
-  {
-   "key": "tier_a_run",
-   "what": "Run run_contradictions.bat (Tier A per-se contradictions) and upload detection\\tier_a\\CONTRADICTIONS.md + contradictions.csv",
-   "added": "2026-09-15",
-   "commands": [
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_contradictions.bat\"",
-    "python -m src.reminders --done-task tier_a_run"
-   ]
-  },
-  {
-   "key": "capacity_run",
-   "what": "Run run_capacity.bat (Nick Shirley capacity check) and upload detection\\capacity\\CAPACITY.md + capacity.csv; rerun after the practice-location file and state rosters land",
-   "added": "2026-09-15",
-   "commands": [
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_capacity.bat\"",
-    "python -m src.reminders --done-task capacity_run"
-   ]
-  },
-  {
    "key": "v7_research_(manus,_20_prompts",
    "what": "v7_research (Manus, 20 prompts off the Tier A shortlist): 4 dispatched 2026-09-16, 16 waiting. Loop until 20/20 completed, then --fetch and upload v7_research_results.json to Claude",
    "added": "2026-09-16",
