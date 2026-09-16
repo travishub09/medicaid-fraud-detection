@@ -102,6 +102,35 @@ def is_per_diem(code: str) -> bool:
     return bool(_REV_ROOM.match(c)) or "per diem" in d or "room and board" in d
 
 
+# Sectors whose clinicians never appear on the record we hold: a school district
+# bills its therapists under the district NPI, a hospital's facility claim carries
+# no rendering NPI and its physicians reassign to the medical group, not the
+# hospital. For them the clinician ratio measures the record, not the site, so
+# they are set aside (counted, listed, never flagged on the ratio).
+_SCHOOL_RE = re.compile(r"\b(SCHOOL|SCHOOLS|ISD|CUSD|USD \d|UNIFIED|BOARD OF EDUCATION|DEPT OF EDUCATION|"
+                        r"DEPARTMENT OF EDUCATION|COUNTY|CITY OF|STATE OF|DEPT OF|DEPARTMENT OF|"
+                        r"PUBLIC HEALTH|HEALTH DEPARTMENT|MUNICIPAL)\b", re.I)
+_HOSPITAL_RE = re.compile(r"\b(HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|HEALTHCARE SYSTEM|"
+                          r"UNIVERSITY|INFIRMARY|KAISER|DIGNITY HEALTH|PRISMA|REGIONAL MEDICAL)\b", re.I)
+_FACILITY_CODE_RE = re.compile(r"^(9928[1-5]|9922[1-9]|9923[1-9]|99291|9946\d|G0378|G0379|0\d{3})$")
+
+
+def sector(name: str, top_code: str = "") -> str:
+    """'government' (schools, counties, state agencies), 'hospital' (name form
+    or facility-only top code: ED / inpatient / NICU / revenue codes), else ''."""
+    n = str(name or "")
+    try:
+        from .pursuit_dossier import government_mask
+        gov = bool(government_mask(pd.Series([n])).iloc[0])
+    except Exception:  # noqa: BLE001
+        gov = False
+    if gov or _SCHOOL_RE.search(n):
+        return "government"
+    if _HOSPITAL_RE.search(n) or _FACILITY_CODE_RE.match(str(top_code or "").upper()):
+        return "hospital"
+    return ""
+
+
 # --------------------------------------------------------------------------- #
 # capacity inputs
 # --------------------------------------------------------------------------- #
@@ -229,8 +258,13 @@ def capacity_table(facts: dict, counts: pd.DataFrame, beds: pd.Series, sites: pd
         occ = (pd_days_month / (b * DAYS_PER_MONTH)) if (b and b > 0 and pd_days_month == pd_days_month) else np.nan
         hpc = (h_worst / doc) if h_worst else np.nan
         ppc = (patients_day / doc) if patients_day == patients_day else np.nan
+        sec = sector(names.get(npi, ""), top)
+        depth = "individual" if et == "1" else ("documented" if doc >= 2 else "no staff on record")
         flags = []
-        if fam in ("clinic", "facility", "other") or et == "1":
+        if sec:
+            if hpc == hpc and hpc >= HOURS_LONG:
+                flags.append("capacity_not_in_record")     # informational: staff never on this record
+        elif fam in ("clinic", "facility", "other") or et == "1":
             if hpc == hpc and hpc >= HOURS_IMPOSSIBLE:
                 flags.append("impossible_hours")
             elif hpc == hpc and hpc >= HOURS_LONG:
@@ -241,6 +275,7 @@ def capacity_table(facts: dict, counts: pd.DataFrame, beds: pd.Series, sites: pd
             flags.append("occupancy_over_100")
         rows.append({
             "npi": npi, "name": names.get(npi, ""), "entity_type": et, "family": fam, "top_code": top,
+            "sector": sec, "record_depth": depth,
             "paid_total": float(bf.get("paid_total") or 0), "active_months": am,
             "patients_per_day": patients_day, "hours_per_day_worst": h_worst, "hours_per_day_median": h_med,
             "n_servicing": ns, "n_reassign": n_re, "n_colocated": n_co,
@@ -254,8 +289,11 @@ def capacity_table(facts: dict, counts: pd.DataFrame, beds: pd.Series, sites: pd
     t = pd.DataFrame(rows)
     if not len(t):
         return t
+    # documented staff that cannot deliver the hours outranks an org with no staff
+    # on record (the latter is a "who works here?" question, the former a contradiction)
     t["severity"] = (t["flags"].str.contains("impossible|occupancy").astype(int) * 2
-                     + t["flags"].str.contains("long|patients_per").astype(int))
+                     + t["flags"].str.contains("long|patients_per").astype(int)
+                     + (t["flags"].str.contains("impossible") & (t["record_depth"] == "documented")).astype(int))
     return t.sort_values(["severity", "paid_total"], ascending=[False, False]).reset_index(drop=True)
 
 
@@ -276,19 +314,50 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
           f"({int(t['flags'].str.contains('impossible').sum()):,} impossible hours, "
           f"{int(t['flags'].str.contains('long').sum()):,} long hours, "
           f"{int(t['flags'].str.contains('patients_per').sum()):,} patients per clinician, "
-          f"{int(t['flags'].str.contains('occupancy').sum()):,} occupancy over 100%).", ""]
-    L += ["## Flagged (ranked by severity, then dollars)", "",
-          "| # | NPI | name | type | family | paid | patients/day | hours/day (worst) | documented clinicians (basis) | "
-          "hours per clinician | patients per clinician | beds | occupancy | flags |",
-          "|--:|---|---|---|---|--:|--:|--:|---|--:|--:|--:|--:|---|"]
-
+          f"{int(t['flags'].str.contains('occupancy').sum()):,} occupancy over 100%; "
+          f"{int(t['flags'].str.contains('capacity_not_in_record').sum()):,} government/hospital rows set aside).", ""]
     def f(v, fmt):
         return fmt.format(v) if isinstance(v, (int, float)) and v == v else ""
-    for i, r in enumerate(fl.head(150).itertuples(), 1):
-        L.append(f"| {i} | {r.npi} | {str(r.name)[:36]} | {r.entity_type} | {r.family} | ${r.paid_total/1e6:,.1f}M | "
-                 f"{f(r.patients_per_day, '{:,.0f}')} | {f(r.hours_per_day_worst, '{:,.0f}')} | "
-                 f"{r.documented_clinicians} ({str(r.clinician_basis)[:40]}) | {f(r.hours_per_clinician_day, '{:,.1f}')} | "
-                 f"{f(r.patients_per_clinician_day, '{:,.0f}')} | {f(r.beds, '{:,.0f}')} | {f(r.occupancy, '{:.0%}')} | {r.flags} |")
+
+    def table(rows, n):
+        out = ["| # | NPI | name | type | family | paid | patients/day | hours/day (worst / median) | documented clinicians (basis) | "
+               "hours per clinician | patients per clinician | sites | beds (source) | occupancy | flags |",
+               "|--:|---|---|---|---|--:|--:|--:|---|--:|--:|--:|--:|--:|---|"]
+        for i, r in enumerate(rows.head(n).itertuples(), 1):
+            out.append(f"| {i} | {r.npi} | {str(r.name)[:36]} | {r.entity_type} | {r.family} | ${r.paid_total/1e6:,.1f}M | "
+                       f"{f(r.patients_per_day, '{:,.0f}')} | {f(r.hours_per_day_worst, '{:,.0f}')} / {f(r.hours_per_day_median, '{:,.0f}')} | "
+                       f"{r.documented_clinicians} ({str(r.clinician_basis)[:40]}) | {f(r.hours_per_clinician_day, '{:,.1f}')} | "
+                       f"{f(r.patients_per_clinician_day, '{:,.0f}')} | {r.sites} | {f(r.beds, '{:,.0f}')}"
+                       f"{(' (' + str(r.beds_source) + ')') if r.beds == r.beds and r.beds_source else ''} | "
+                       f"{f(r.occupancy, '{:.0%}')} | {r.flags} |")
+        return out
+
+    imp = fl["flags"].str.contains("impossible|occupancy")
+    a_ = fl[imp & (fl["record_depth"] == "documented")]
+    b_ = fl[imp & (fl["record_depth"] == "no staff on record")]
+    c_ = fl[imp & (fl["record_depth"] == "individual")]
+    o_ = fl[fl["flags"].str.contains("occupancy")].sort_values("occupancy", ascending=False)
+    set_aside = t[t["sector"] != ""]
+    L += ["## A. Documented staff that cannot deliver the hours (the strongest capacity leads)", "",
+          "_Two or more clinicians on the public record, and the billing still implies 24+ hours per clinician per "
+          "working day. The visit counts the staff and the rooms._", ""] + table(a_, 60)
+    L += ["", "## B. No staff on the record at all", "",
+          "_One rendering NPI, no PECOS reassignments, no other individual at the address, yet the billing implies "
+          "24+ clinician-hours a day. The question is who works here; a state license or a staff roster answers it "
+          "before anyone drives._", ""] + table(b_, 60)
+    L += ["", "## C. Individual NPIs (one person by definition)", "",
+          "_These duplicate the Tier A impossible-day list; listed here for the site facts (sites, address)._", ""] + table(c_, 40)
+    L += ["", "## D. More patient-days billed than beds (occupancy over 100%)", "",
+          "_Per-diem residential codes against certified (POS) or state-licensed beds. Where the bed count comes from "
+          "POS alone, it covers only the certified facility (an ICF/IID); waiver group homes are licensed by the "
+          "state and need that state's roster before this ratio means anything._", ""] + table(o_, 40)
+    L += ["", f"## E. Set aside: {len(set_aside):,} government/school and hospital billers", "",
+          f"_{int((t['sector'] == 'government').sum()):,} government or school-district NPIs and "
+          f"{int((t['sector'] == 'hospital').sum()):,} hospital or facility-claim NPIs are not scored on the clinician ratio: "
+          "their clinicians never appear on this record (school therapists bill under the district; a facility claim "
+          "carries no rendering NPI and hospital physicians reassign to the medical group). Their rows carry "
+          "`capacity_not_in_record` where the hours would have flagged._", ""]
+    L += table(set_aside[set_aside["flags"].str.contains("capacity_not_in_record")].sort_values("paid_total", ascending=False), 25)
     L += ["", "## Innocent explanations to rule out first", ""]
     L += [f"- {x}." for x in INNOCENT]
     L += ["", "_Full table with every NPI scanned: capacity.csv._",
@@ -407,7 +476,10 @@ def main() -> None:
     (out / "capacity_summary.json").write_text(json.dumps({
         "rows": int(len(t)), "flagged": int((t["flags"] != "").sum()) if len(t) else 0,
         "by_flag": {k: int(t["flags"].str.contains(k).sum()) for k in
-                    ("impossible_hours", "long_hours", "patients_per_clinician", "occupancy_over_100")} if len(t) else {}},
+                    ("impossible_hours", "long_hours", "patients_per_clinician", "occupancy_over_100",
+                     "capacity_not_in_record")} if len(t) else {},
+        "by_depth": {k: int(((t["flags"].str.contains("impossible|occupancy")) & (t["record_depth"] == k)).sum())
+                     for k in ("documented", "no staff on record", "individual")} if len(t) else {}},
         indent=2), encoding="utf-8")
     print(f"[capacity] {len(t):,} rows, {(t['flags'] != '').sum() if len(t) else 0:,} flagged -> {out / 'CAPACITY.md'}")
 

@@ -86,3 +86,33 @@ def test_capacity_table_ratios_and_flags():
     assert order.index(ORG) > max(order.index(DOC), order.index(SNF))
     md = to_markdown(capacity_table(_facts(), counts, beds, sites, {ORG: "BIG CLINIC"}), {"spending": "x"})
     assert "3 of 4 NPIs flagged" in md and "occupancy_over_100" in md and "never accusations" in md
+
+
+def test_sector_set_aside_and_record_depth():
+    from src.model_a.capacity import sector
+    assert sector("HOUSTON ISD", "T1019") == "government"
+    assert sector("THE BOARD OF EDUCATION OF THE CITY OF NEW YORK", "92507") == "government"
+    assert sector("YALE NEW HAVEN HOSPITAL", "0450") == "hospital"
+    assert sector("AGH LAVEEN LLC", "99284") == "hospital"          # freestanding ED: facility claim
+    assert sector("CTW HOME HEALTH, LLC", "92507") == ""
+    SCH, HOSP, AGENCY = "1003000456", "1003000530", "1003000613"
+    facts = {k: {"paid_total": 20e6, "patient_months": 21 * 100 * 12, "active_months": 12,
+                 "implied_hours": {"worst_hours_per_working_day": 200.0, "median_hours_per_working_day": 150.0},
+                 "n_servicing_npis": 1, "top_codes": [{"hcpcs": code, "lines": 100}]}
+             for k, code in ((SCH, "92508"), (HOSP, "99284"), (AGENCY, "92507"))}
+    counts = pd.DataFrame({"npi": [SCH, HOSP, AGENCY], "entity_type": "2", "addr_key": "", "org_node_id": "",
+                           "n_reassign": [0, 0, 2], "n_colocated": [0, 0, 0]})
+    beds = pd.Series({SCH: float("nan"), HOSP: float("nan"), AGENCY: float("nan")})
+    sites = pd.Series({SCH: 1, HOSP: 1, AGENCY: 1})
+    t = capacity_table(facts, counts, beds, sites,
+                       {SCH: "SPRINGFIELD PUBLIC SCHOOLS", HOSP: "AGH LAVEEN LLC", AGENCY: "CTW HOME HEALTH, LLC"}).set_index("npi")
+    assert t.loc[SCH, "sector"] == "government" and t.loc[SCH, "flags"] == "capacity_not_in_record"
+    assert t.loc[HOSP, "sector"] == "hospital" and t.loc[HOSP, "flags"] == "capacity_not_in_record"
+    assert t.loc[AGENCY, "sector"] == "" and t.loc[AGENCY, "record_depth"] == "documented"
+    assert "impossible_hours" in t.loc[AGENCY, "flags"]
+    # documented staff that cannot deliver the hours outranks the set-aside rows
+    order = list(t.sort_values("severity", ascending=False).index)
+    assert order[0] == AGENCY
+    md = to_markdown(t.reset_index(), {"spending": "x"})
+    assert "## A. Documented staff" in md and "CTW HOME HEALTH" in md.split("## B.")[0]
+    assert "## E. Set aside" in md and "SPRINGFIELD PUBLIC SCHOOLS" in md.split("## E.")[1]
