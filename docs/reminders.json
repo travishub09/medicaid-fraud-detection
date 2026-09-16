@@ -353,7 +353,8 @@
     "for %f in (\"%USERPROFILE%\\Downloads\\Acute-Care_Facilities*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NJ_acute_care.csv\"",
     "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_licensed_capacity.bat\"",
     "python -m src.reminders --done state_capacity_rosters"
-   ]
+   ],
+   "progress": "2026-09-16: NY (Certification + General Information) and NJ (Acute-Care + All_LTC_NJ.xlsx) loaded: 2,335 licensed sites, 19,075 NPIs matched. Next: IL, CA, MA, FL, RI."
   }
  ],
  "tasks": [

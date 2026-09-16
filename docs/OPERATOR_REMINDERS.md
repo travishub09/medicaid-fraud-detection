@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-09-15. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-09-16. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
