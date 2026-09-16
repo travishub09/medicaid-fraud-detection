@@ -107,8 +107,12 @@ def _events(exclusion_nodes: pd.DataFrame | None,
                 end = r.end
                 rows.append({"npi": r.npi, "event": "billing_after_exclusion",
                              "event_date": r.date, "end_date": end,
+                             # a Medicare revocation's end date is the re-enrollment-bar expiry
+                             # (a future date), not a reinstatement; label it honestly
                              "detail": f"{r.excl_type} (tier {r.tier})"
-                                       + (f"; reinstated {end.date()}" if pd.notna(end) else ""),
+                                       + ((f"; re-enrollment bar until {end.date()}"
+                                           if str(r.excl_type).lower().startswith("medicare_revocation")
+                                           else f"; reinstated {end.date()}") if pd.notna(end) else ""),
                              "name": str(getattr(r, "entity_name", "") or "")})
     if deactivations is not None and len(deactivations) and "npi" in deactivations.columns:
         d = deactivations.copy()
