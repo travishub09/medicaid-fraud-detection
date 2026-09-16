@@ -446,15 +446,16 @@
   },
   {
    "key": "v7_research_(manus,_20_prompts",
-   "what": "v7_research (Manus, 20 prompts off the Tier A shortlist): 4 dispatched 2026-09-16, 16 waiting. Loop until 20/20 completed, then --fetch and upload v7_research_results.json to Claude",
+   "what": "v7_research (Manus): shortlist 20/20 and tier-2 7/7 are fetched and folded into PI Packet v7. The all-cases set (v7_research_all_prompts.jsonl, 23 prompts) is 11 of 23 dispatched and fetched; 12 were never sent. Loop poll -> dispatch --batch 4 -> poll until 23/23 completed, then --fetch and upload v7_research_all_results.json to Claude for PI Packet v8.",
    "added": "2026-09-16",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python field_research.py --poll --prompts v7_research_prompts.jsonl",
-    "python field_research.py --dispatch --batch 4 --prompts v7_research_prompts.jsonl",
-    "python field_research.py --fetch --prompts v7_research_prompts.jsonl",
+    "python field_research.py --poll --prompts v7_research_all_prompts.jsonl",
+    "python field_research.py --dispatch --batch 4 --prompts v7_research_all_prompts.jsonl",
+    "python field_research.py --fetch --prompts v7_research_all_prompts.jsonl",
     "python -m src.reminders --done-task v7_research_(manus,_20_prompts"
-   ]
+   ],
+   "progress_2026-09-16": "27 of 27 shortlist+tier2 reports in; all-cases 11/23"
   },
   {
    "key": "post_download_checks",

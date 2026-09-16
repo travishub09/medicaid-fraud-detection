@@ -159,13 +159,13 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
 - [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
-- [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus, 20 prompts off the Tier A shortlist): 4 dispatched 2026-09-16, 16 waiting. Loop until 20/20 completed, then --fetch and upload v7_research_results.json to Claude (added 2026-09-16)
+- [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus): shortlist 20/20 and tier-2 7/7 are fetched and folded into PI Packet v7. The all-cases set (v7_research_all_prompts.jsonl, 23 prompts) is 11 of 23 dispatched and fetched; 12 were never sent. Loop poll -> dispatch --batch 4 -> poll until 23/23 completed, then --fetch and upload v7_research_all_results.json to Claude for PI Packet v8. (added 2026-09-16)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-python field_research.py --poll --prompts v7_research_prompts.jsonl
-python field_research.py --dispatch --batch 4 --prompts v7_research_prompts.jsonl
-python field_research.py --fetch --prompts v7_research_prompts.jsonl
+python field_research.py --poll --prompts v7_research_all_prompts.jsonl
+python field_research.py --dispatch --batch 4 --prompts v7_research_all_prompts.jsonl
+python field_research.py --fetch --prompts v7_research_all_prompts.jsonl
 python -m src.reminders --done-task v7_research_(manus,_20_prompts
 ```
 
@@ -196,3 +196,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+
