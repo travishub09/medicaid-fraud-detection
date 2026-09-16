@@ -464,6 +464,11 @@
     "python -m src.reminders --done-task post_download_checks"
    ],
    "added": "2026-09-16"
+  },
+  {
+   "key": "state_letter:_every_named",
+   "what": "State letter: every named deactivated-NPI biller (6 of 6 so far: Mariners Inn MI, Kidz Medical FL, CCS Medical FL, Memorial Hospital of Tampa psych unit FL, Community Programs/Meridian MI, Miami Personal Management FL) is a live organization paid under an old NPI. Draft the program-integrity letters per state (MI, FL) once the last three names land; not a PI matter",
+   "added": "2026-09-16"
   }
  ]
 }
