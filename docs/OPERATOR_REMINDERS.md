@@ -86,7 +86,7 @@ dir "C:/Users/treyr/OneDrive/Desktop/data\preclean\facility\Hospice_Provider*.cs
 python -m src.reminders --done hospice_2021_archive
 ```
 
-- **oig_cia** — OIG Corporate Integrity Agreement list (official roster of orgs that settled an FCA matter; the recall benchmark for the DOJ case DB + a Model A risk prior)
+- **oig_cia** — LOW PRIORITY: OIG Corporate Integrity Agreement list (recall benchmark for the DOJ case DB in the label audit + a mild risk prior; changes no PI lead). Five-minute copy from the 'CIA Documents' table page, not the overview page; never worth Manus money
   - save to: preclean/cia/cia_list.csv  |  https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
   - due: freshness unknown
   - step 1: Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
@@ -99,7 +99,7 @@ move "%USERPROFILE%\Downloads\cia_list.csv" "C:\Users\treyr\OneDrive\Desktop\dat
 python -m src.reminders --done oig_cia
 ```
 
-- **state_capacity_rosters** — State licensed-facility rosters with LICENSED CAPACITY (beds/slots) for waiver group homes, residential habilitation, adult day, assisted living, hospice houses: the capacity side of the Nick Shirley check for providers the CMS POS file never covers. Priority (2026-09-16, PI team is Northeast + Florida): FL AHCA (PPEC, assisted living, adult day: puts licensed numbers on the Florida cards), NJ DHS/DDD group homes (Special Homes of NJ), IL ($507M on facility codes), then IN and DC only to retire the twelve occupancy-artifact rows (POS lists one certified ICF, not the group homes), then TX HCSSA, CA, MA, RI
+- **state_capacity_rosters** — LOW PRIORITY (2026-09-16: the Northeast PI packet is clinics and therapy offices; a roster only moves a bed-based check). State licensed-facility rosters with LICENSED CAPACITY for waiver group homes, residential habilitation, adult day, assisted living, hospice houses. The one Northeast item that moves a current card: NJ DHS/DDD group homes (Special Homes of NJ). Everything else (FL AHCA, IL, IN, DC, TX, CA, MA, RI) is for a future capacity pass
   - save to: preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)  |  https://health.ri.gov/licenses/
   - due: freshness unknown
   - step 1: FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type PPEC (prescribed pediatric extended care), then Assisted Living, then Adult Day Care -> Download/Export with the licensed capacity column; save as FL_ppec.csv, FL_assisted_living.csv, FL_adult_day.csv
