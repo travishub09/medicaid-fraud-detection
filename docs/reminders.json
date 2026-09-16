@@ -329,12 +329,15 @@
   },
   {
    "key": "state_capacity_rosters",
-   "what": "State licensed-facility rosters with LICENSED CAPACITY (beds/slots) for waiver group homes, residential habilitation, adult day, assisted living, hospice houses: the capacity side of the Nick Shirley check for providers the CMS POS file never covers. Priority from the Tier A facility-code table: IL ($507M on facility codes, 885 individual NPIs), NY, CA, MA, FL, NJ, RI (the lead case), then TX, AZ, MO",
+   "what": "State licensed-facility rosters with LICENSED CAPACITY (beds/slots) for waiver group homes, residential habilitation, adult day, assisted living, hospice houses: the capacity side of the Nick Shirley check for providers the CMS POS file never covers. Priority after the capacity run of 2026-09-16: IN and DC first (the occupancy-over-100% table is Indiana and DC waiver residential providers whose POS beds cover only the certified ICF), then IL ($507M on facility codes), TX (pediatric therapy home-health agencies: therapist headcount on the HHSC license), CA, MA, FL, RI",
    "where": "preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)",
    "url": "https://health.ri.gov/licenses/",
    "every_months": 3,
    "last_done": null,
    "steps": [
+    "IN: https://www.in.gov/fssa/ddrs/ -> Bureau of Developmental Disabilities Services -> provider search / licensed group homes and supervised group living list (export or copy with capacity); save as IN_group_homes.csv",
+    "DC: https://dhcf.dc.gov/ or https://dds.dc.gov/ -> DDS provider directory / licensed community residence facilities (DC Health licensing list with bed capacity); save as DC_residential.csv",
+    "TX: https://www.hhs.texas.gov/providers/long-term-care-providers -> home and community support services agencies (HCSSA) directory export; save as TX_hcssa.csv (no capacity column: the agency list still names the license and address)",
     "NY (two files, joined on Facility ID by the loader; the old Adult Care Facility Directory was retired in 2022): beds = https://health.data.ny.gov/api/views/2g9y-7kqm/rows.csv?accessType=DOWNLOAD (Health Facility Certification Information; downloads as Health_Facility_Certification_Information*.csv) and addresses = https://health.data.ny.gov/api/views/vn5v-hh5r/rows.csv?accessType=DOWNLOAD (Health Facility General Information; downloads as Health_Facility_General_Information*.csv); the copy lines below name them NY_certification.csv / NY_facilities.csv",
     "NJ: hospitals with licensed beds = https://data.nj.gov/api/views/mrzk-zrvp/rows.csv?accessType=DOWNLOAD (Acute-Care Facilities; downloads as Acute-Care_Facilities*.csv -> NJ_acute_care.csv). Nursing homes are already covered by the CMS POS file; NJ assisted living / residential has no CSV export (https://healthapps.nj.gov/facilities/fssearch.aspx is a search form), so skip it unless a table is copied by hand",
     "IL: https://dph.illinois.gov/topics-services/health-care-regulation/health-care-facilities -> facility directories (community integrated living arrangements, intermediate care facilities, assisted living); export or copy with the licensed capacity column; save as IL_<type>.csv",
