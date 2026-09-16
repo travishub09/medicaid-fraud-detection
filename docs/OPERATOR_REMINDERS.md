@@ -182,6 +182,33 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -m src.model_a.scheme_triage --run "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7"
 ```
 
+- [ ] **vintage_rerun_after_172** — Rerun vintage_inspect + scheme_discovery AFTER bundle 172 merges (the 2026-09-16 reports came from pre-merge code: saturation/opais 8-digit dates, nadac/nucc/iQIES column checks all flagged falsely). Expected after the rerun: re-download list drops to the genuinely undated reference files (PECOS.csv, hud, nucc, opensanctions); no WRONG-FILE rows. Upload both .md again. (added 2026-09-16)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.vintage_inspect --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+```
+
+- [ ] **editions_undated_reference** — LOW: fill EDITIONS.csv data_period for the reference files that carry no date inside or in their name (PECOS.csv, hud/zip_county.*, nucc/*, opensanctions/targets.simple.csv): the download date is the period. Operator entries are never overwritten. (added 2026-09-16)
+
+```bat
+notepad "C:\Users\treyr\OneDrive\Desktop\data\preclean\EDITIONS.csv"
+```
+
+- [ ] **preclean_orphans_2026_09** — Operator's call (nothing runs on them): preclean/pecos/enrollment.csv is a 321 MB duplicate of PECOS.csv; preclean/nppes/npi_deactivation.csv is an unreadable 8 MB orphan (the wired file is nppes_deactivation/deactivation_20260608.zip). Delete or move both to free space; no adapter reads either. (added 2026-09-16)
+
+```bat
+dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\pecos" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes"
+```
+
+- [ ] **nppes_2021_12_locate** — The 2026-09-16 inventory has no npidata_pfile_20050523-20211212.csv under preclean (only nppes_history/...20231210). The deactivated-NPI names were looked up in it, so it exists somewhere. Find it and move it next to the 2023 edition (closes the nppes_2021_12 reminder). (added 2026-09-16)
+
+```bat
+dir /s /b "C:\Users\treyr\OneDrive\Desktop\data\npidata_pfile_20050523-2021*.csv" "C:\Users\treyr\Downloads\npidata_pfile_20050523-2021*.csv"
+```
+
+- [ ] **build_ready_to_wire_schemes** — CLAUDE build queue from SCHEME_DISCOVERY 2026-09-16: three READY TO WIRE (nh_ownership_stakes from NH_Ownership_Nov2023 Ownership Percentage/Role; nh_penalties from NH_Penalties_Nov2023 Fine Amount; pbj_weekend_staffing from pbj_daily_staffing Hrs_RN by WorkDate weekday); the six hospice candidates need the long-format Measure Code pivot (facility.py already pivots hospice, so the discovery check should read the pivoted view); new idea: HCRIS HHA discipline visit counts (RN/LPN/PT/OT/SLP visits, Medicaid Title XIX) as a home-health capacity check (visits per licensed nurse). No operator action. (added 2026-09-16)
 
 ## After ANY download session (standing rule)
 
