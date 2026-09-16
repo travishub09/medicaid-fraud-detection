@@ -209,7 +209,9 @@ def merge_rosters(dir_path: str | Path) -> pd.DataFrame:
         try:
             if is_link_table(p):
                 links.setdefault(st, []).append(load_link_table(p))
-                print(f"  [licensed_capacity] {p.name}: address directory for {st} (joined on facility id)")
+                hdr = list(_read(p).columns)[:20]
+                print(f"  [licensed_capacity] {p.name}: address directory for {st} (joined on facility id); "
+                      f"no capacity column recognised among headers {hdr}")
                 continue
         except Exception as e:  # noqa: BLE001
             skipped.append((p.name, str(e)[:120]))
