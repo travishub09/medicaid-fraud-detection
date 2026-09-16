@@ -99,19 +99,6 @@ move "%USERPROFILE%\Downloads\cia_list.csv" "C:\Users\treyr\OneDrive\Desktop\dat
 python -m src.reminders --done oig_cia
 ```
 
-- **nppes_practice_locations** — NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
-  - save to: preclean/nppes/pl_pfile_<dates>.csv  |  https://download.cms.gov/nppes/NPI_Files.html
-  - due: freshness unknown
-  - step 1: Open https://download.cms.gov/nppes/NPI_Files.html and download the 'NPPES Data Dissemination' monthly zip (the full file, ~1 GB zipped) if you do not already have this month's
-  - step 2: Extract ONLY the practice-location file from the zip with the first command below (the zip is huge; do not unzip everything)
-  - step 3: Move it into preclean\nppes with the second command; run_capacity.bat finds it automatically
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\NPPES_Data_Dissemination_*.zip") do tar -xf "%f" -C "%USERPROFILE%\Downloads" "pl_pfile_*.csv"
-move "%USERPROFILE%\Downloads\pl_pfile_*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes\"
-python -m src.reminders --done nppes_practice_locations
-```
-
 - **state_capacity_rosters** — State licensed-facility rosters with LICENSED CAPACITY (beds/slots) for waiver group homes, residential habilitation, adult day, assisted living, hospice houses: the capacity side of the Nick Shirley check for providers the CMS POS file never covers. Priority after the capacity run of 2026-09-16: IN and DC first (the occupancy-over-100% table is Indiana and DC waiver residential providers whose POS beds cover only the certified ICF), then IL ($507M on facility codes), TX (pediatric therapy home-health agencies: therapist headcount on the HHSC license), CA, MA, FL, RI
   - save to: preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)  |  https://health.ri.gov/licenses/
   - due: freshness unknown
@@ -141,7 +128,7 @@ python -m src.reminders --done state_capacity_rosters
 
 ## COMING UP (30 days)
 
-Nothing in the next 30 days.
+- nppes_practice_locations — due 2026-10-16: NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
 
 ## STANDING TASK QUEUE
 
@@ -200,6 +187,15 @@ python field_research.py --poll --prompts v7_research_prompts.jsonl
 python field_research.py --dispatch --batch 4 --prompts v7_research_prompts.jsonl
 python field_research.py --fetch --prompts v7_research_prompts.jsonl
 python -m src.reminders --done-task v7_research_(manus,_20_prompts
+```
+
+- [ ] **post_download_checks** — New files landed — run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-09-16)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.vintage_inspect --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+python -m src.reminders --done-task post_download_checks
 ```
 
 

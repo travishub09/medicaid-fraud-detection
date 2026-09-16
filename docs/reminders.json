@@ -315,7 +315,7 @@
    "where": "preclean/nppes/pl_pfile_<dates>.csv",
    "url": "https://download.cms.gov/nppes/NPI_Files.html",
    "every_months": 1,
-   "last_done": null,
+   "last_done": "2026-09-16",
    "steps": [
     "Open https://download.cms.gov/nppes/NPI_Files.html and download the 'NPPES Data Dissemination' monthly zip (the full file, ~1 GB zipped) if you do not already have this month's",
     "Extract ONLY the practice-location file from the zip with the first command below (the zip is huge; do not unzip everything)",
@@ -453,6 +453,17 @@
     "python field_research.py --fetch --prompts v7_research_prompts.jsonl",
     "python -m src.reminders --done-task v7_research_(manus,_20_prompts"
    ]
+  },
+  {
+   "key": "post_download_checks",
+   "what": "New files landed \u2014 run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.vintage_inspect --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "python -m src.model_a.scheme_discovery --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "python -m src.reminders --done-task post_download_checks"
+   ],
+   "added": "2026-09-16"
   }
  ]
 }
