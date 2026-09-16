@@ -7,7 +7,7 @@
    "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
    "url": "https://oig.hhs.gov/exclusions/exclusions_list.asp",
    "every_months": 1,
-   "last_done": null,
+   "last_done": "2026-09-16",
    "steps": [
     "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
     "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
@@ -41,7 +41,7 @@
    "where": "preclean/sam/",
    "url": "https://sam.gov/data-services",
    "every_months": 1,
-   "last_done": null,
+   "last_done": "2026-09-16",
    "steps": [
     "Open https://sam.gov/data-services and pick 'Exclusions' \u2192 'Public V2' current extract (CSV)",
     "No login needed for the public extract"

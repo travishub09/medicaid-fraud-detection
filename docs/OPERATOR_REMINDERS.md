@@ -6,19 +6,6 @@ _As of 2026-09-16. Regenerate/update: `python -m src.reminders` (`--done <key>` 
 
 _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
 
-- **leie** — OIG LEIE exclusion list (THE label source — new bans are training labels)
-  - save to: preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)  |  https://oig.hhs.gov/exclusions/exclusions_list.asp
-  - due: freshness unknown
-  - step 1: Open https://oig.hhs.gov/exclusions/exclusions_list.asp
-  - step 2: Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)
-  - step 3: Then paste the commands below (they back up the old file, then swap in the new one)
-
-```bat
-copy "C:\Users\treyr\OneDrive\Desktop\data\preclean\caught.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\caught_%date:~10,4%%date:~4,2%.csv.bak"
-move "%USERPROFILE%\Downloads\UPDATED.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\caught.csv"
-python -m src.reminders --done leie
-```
-
 - **nppes_deactivation** — CMS Deactivated NPI Report (invalid_identity scheme)
   - save to: preclean/nppes_deactivation/ (keep as the .zip; loader unzips)  |  https://download.cms.gov/nppes/NPI_Files.html
   - due: freshness unknown
@@ -28,17 +15,6 @@ python -m src.reminders --done leie
 ```bat
 move "%USERPROFILE%\Downloads\NPPES_Deactivated_*.zip" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes_deactivation\"
 python -m src.reminders --done nppes_deactivation
-```
-
-- **sam_exclusions** — SAM.gov exclusions extract (widens the PU label)
-  - save to: preclean/sam/  |  https://sam.gov/data-services
-  - due: freshness unknown
-  - step 1: Open https://sam.gov/data-services and pick 'Exclusions' → 'Public V2' current extract (CSV)
-  - step 2: No login needed for the public extract
-
-```bat
-move "%USERPROFILE%\Downloads\SAM_Exclusions*.CSV" "C:\Users\treyr\OneDrive\Desktop\data\preclean\sam\sam_exclusions_%date:~10,4%%date:~4,2%.csv"
-python -m src.reminders --done sam_exclusions
 ```
 
 - **owner_snapshot** — make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
@@ -130,6 +106,8 @@ python -m src.reminders --done state_capacity_rosters
 
 ## COMING UP (30 days)
 
+- leie — due 2026-10-16: OIG LEIE exclusion list (THE label source — new bans are training labels)
+- sam_exclusions — due 2026-10-16: SAM.gov exclusions extract (widens the PU label)
 - nppes_practice_locations — due 2026-10-16: NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
 
 ## STANDING TASK QUEUE
