@@ -40,8 +40,16 @@ import pandas as pd
 DATE_NAME_RE = re.compile(
     r"date|month|year|period|_dt$|updated|processing|survey|effective|"
     r"thru|through|start|end|asof|as_of|deactivat", re.IGNORECASE)
-# formats tried, most specific first (DuckDB strptime patterns)
-DATE_FMTS = ["%Y-%m-%d", "%m/%d/%Y", "%Y%m%d", "%Y-%m", "%m/%d/%y", "%Y/%m/%d"]
+# money / count columns whose names happen to contain a date-ish token
+# ("Less Total Operating Expenses (sum of lines 4 through 16)") are never
+# dates: parsing them yields years like 1000 or 9905 and poisons the period
+NOT_DATE_NAME_RE = re.compile(
+    r"expense|cost|charge|amount|amt|revenue|payment|paid|dollar|"
+    r"visits|days|count|cnt|total|sum of|lines? \d", re.IGNORECASE)
+# formats tried, most specific first (DuckDB strptime patterns);
+# '%b %d, %Y' is the SAM exclusions export ("Dec 05, 2019")
+DATE_FMTS = ["%Y-%m-%d", "%m/%d/%Y", "%Y%m%d", "%Y-%m", "%m/%d/%y", "%Y/%m/%d",
+             "%b %d, %Y", "%d-%b-%Y"]
 YEAR_RE = re.compile(r"(?<!\d)(20[0-9]{2})(?!\d)")
 # 8-digit YYYYMMDD stamps (e.g. 'Report 20260608.xlsx') — YEAR_RE can't see
 # the year inside these because of its no-adjacent-digit guards
@@ -129,7 +137,8 @@ def _read_header(p: Path) -> list[str] | None:
 def _date_minmax(p: Path, cols: list[str]) -> dict[str, tuple[str, str]]:
     """MIN/MAX of every date-named column, streamed via DuckDB try_strptime.
     Returns {col: (min, max)} for columns where any format parsed."""
-    cand = [c for c in cols if DATE_NAME_RE.search(str(c))]
+    cand = [c for c in cols
+            if DATE_NAME_RE.search(str(c)) and not NOT_DATE_NAME_RE.search(str(c))]
     if not cand or p.suffix.lower() not in (".csv", ".txt", ".parquet"):
         # xlsx are small: pandas fallback
         if cand and p.suffix.lower() in (".xlsx", ".xls"):

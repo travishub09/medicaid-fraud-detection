@@ -162,3 +162,35 @@ def test_orphan_folders_listed(data_root):
     orphans = md.split("## Orphans")[1].split("## Full inventory")[0]
     assert "misc/myfile.csv" in orphans          # `misc` is not a wired source
     assert "partb/" not in orphans               # `partb` is a wired source
+
+
+def test_money_columns_with_date_words_are_not_dates(tmp_path: Path):
+    """HCRIS: 'Less Total Operating Expenses (sum of lines 4 through 16)' matched
+    'through' and parsed dollar amounts as years 1000..9905 (first real run)."""
+    pre = tmp_path / "preclean" / "hcris"
+    pre.mkdir(parents=True)
+    (pre / "CostReport_hha.csv").write_text(
+        "Provider CCN,Fiscal Year Begin Date,Fiscal Year End Date,"
+        "Less Total Operating Expenses (sum of lines 4 through 16),Total Costs\n"
+        "123456,2022-10-01,2023-09-30,10000708,5\n"
+        "123457,2023-01-01,2023-12-31,98090907,6\n")
+    rows = _by_file(inspect_tree(tmp_path))
+    rec = rows["hcris/CostReport_hha.csv"]
+    assert rec["verdict"] == "PERIOD FOUND INSIDE"
+    assert rec["inferred_period"] == "2022-10-01 to 2023-12-31"
+    assert not any("Expenses" in k for k in rec["date_cols"])
+
+
+def test_sam_month_name_dates_parse(tmp_path: Path):
+    """SAM exports dates as 'Dec 05, 2019'; the file must not land on the
+    re-download list for want of that format."""
+    pre = tmp_path / "preclean" / "sam"
+    pre.mkdir(parents=True)
+    (pre / "sam_exclusions.CSV").write_text(
+        "Name,Activation Date,Termination Date\n"
+        "ACME,\"Dec 05, 2019\",\"Indefinite\"\n"
+        "BETA,\"Jan 20, 2024\",\"Jan 19, 2027\"\n")
+    rows = _by_file(inspect_tree(tmp_path))
+    rec = rows["sam/sam_exclusions.CSV"]
+    assert rec["verdict"] == "PERIOD FOUND INSIDE"
+    assert rec["inferred_period"].startswith("2019-12-05")
