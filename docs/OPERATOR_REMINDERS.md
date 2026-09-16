@@ -210,6 +210,16 @@ python -m src.reminders --done-task tier_a_run
 python -m src.reminders --done-task capacity_run
 ```
 
+- [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus, 20 prompts off the Tier A shortlist): 4 dispatched 2026-09-16, 16 waiting. Loop until 20/20 completed, then --fetch and upload v7_research_results.json to Claude (added 2026-09-16)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python field_research.py --poll --prompts v7_research_prompts.jsonl
+python field_research.py --dispatch --batch 4 --prompts v7_research_prompts.jsonl
+python field_research.py --fetch --prompts v7_research_prompts.jsonl
+python -m src.reminders --done-task v7_research_(manus,_20_prompts
+```
+
 
 ## After ANY download session (standing rule)
 
