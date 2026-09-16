@@ -159,7 +159,7 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 
 - [ ] **registry_verdict__frozen_2021-12_v7** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 — close only when you have them (added 2026-09-14)
 - [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
-- [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus): shortlist 20/20 and tier-2 7/7 are fetched and folded into PI Packet v7. The all-cases set (v7_research_all_prompts.jsonl, 23 prompts) is 11 of 23 dispatched and fetched; 12 were never sent. Loop poll -> dispatch --batch 4 -> poll until 23/23 completed, then --fetch and upload v7_research_all_results.json to Claude for PI Packet v8. (added 2026-09-16)
+- [ ] **v7_research_(manus,_20_prompts** — v7_research (Manus): shortlist 20/20 and tier-2 7/7 done and folded into PI Packet v7; all-cases set (v7_research_all_prompts.jsonl) 15 of 23 fetched and folded into PI Packet v8. EIGHT prompts were never dispatched (Talk Active, Perspectives, Brooklyn/Flushing primary care, CTW/212 Therapy, Physicians Group Labs, Hope Pediatrics, Park Ave Center, Phoenix Home Care). Run dispatch --batch 4 twice, poll until 23/23 completed, --fetch, upload v7_research_all_results.json for PI Packet v9. (added 2026-09-16)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection

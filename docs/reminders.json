@@ -446,7 +446,7 @@
   },
   {
    "key": "v7_research_(manus,_20_prompts",
-   "what": "v7_research (Manus): shortlist 20/20 and tier-2 7/7 are fetched and folded into PI Packet v7. The all-cases set (v7_research_all_prompts.jsonl, 23 prompts) is 11 of 23 dispatched and fetched; 12 were never sent. Loop poll -> dispatch --batch 4 -> poll until 23/23 completed, then --fetch and upload v7_research_all_results.json to Claude for PI Packet v8.",
+   "what": "v7_research (Manus): shortlist 20/20 and tier-2 7/7 done and folded into PI Packet v7; all-cases set (v7_research_all_prompts.jsonl) 15 of 23 fetched and folded into PI Packet v8. EIGHT prompts were never dispatched (Talk Active, Perspectives, Brooklyn/Flushing primary care, CTW/212 Therapy, Physicians Group Labs, Hope Pediatrics, Park Ave Center, Phoenix Home Care). Run dispatch --batch 4 twice, poll until 23/23 completed, --fetch, upload v7_research_all_results.json for PI Packet v9.",
    "added": "2026-09-16",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -455,7 +455,7 @@
     "python field_research.py --fetch --prompts v7_research_all_prompts.jsonl",
     "python -m src.reminders --done-task v7_research_(manus,_20_prompts"
    ],
-   "progress_2026-09-16": "27 of 27 shortlist+tier2 reports in; all-cases 11/23"
+   "progress_2026-09-16": "27/27 shortlist+tier2; all-cases 15/23 fetched, 8 never dispatched"
   },
   {
    "key": "post_download_checks",
