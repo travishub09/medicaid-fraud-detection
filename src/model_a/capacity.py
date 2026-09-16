@@ -264,7 +264,9 @@ def capacity_table(facts: dict, counts: pd.DataFrame, beds: pd.Series, sites: pd
         if sec:
             if hpc == hpc and hpc >= HOURS_LONG:
                 flags.append("capacity_not_in_record")     # informational: staff never on this record
-        elif fam in ("clinic", "facility", "other") or et == "1":
+        elif fam in ("clinic", "other") or et == "1":
+            # residential per-diem billers ("facility") are judged on occupancy, never on
+            # clinician hours: a per-day code carries no clinician time
             if hpc == hpc and hpc >= HOURS_IMPOSSIBLE:
                 flags.append("impossible_hours")
             elif hpc == hpc and hpc >= HOURS_LONG:
