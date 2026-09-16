@@ -157,3 +157,43 @@ def test_resolve_unnamed_names_the_deactivated_npi_finding():
     assert out["nppes_status"].iloc[0] == "not_in_registry"
     assert out["nppes_status"].iloc[1] == "lookup_failed"
     assert out["org_name"].iloc[1].startswith("UNNAMED")   # untouched on failure
+
+
+def test_build_creates_out_dir_and_caches_each_run(tmp_path: Path, monkeypatch):
+    """The v2_clean-era crash: hours of scoring, then OSError because the
+    output folder did not exist. build() now creates it first and caches
+    every run's org frame as it is scored, so a rerun skips finished runs."""
+    import json
+    import src.model_a.consensus as C
+
+    runs = []
+    for tag in ("frozen_2023-12_v5", "frozen_2023-12_v6"):
+        rd = tmp_path / tag
+        rd.mkdir()
+        (rd / "feature_manifest.json").write_text(json.dumps({"asof_cutoff": "2023-12-31"}))
+        pd.DataFrame({"npi": ["1"], "net_paid": [1.0]}).to_parquet(rd / "provider_features_for_model.parquet")
+        runs.append(str(rd))
+    calls = []
+
+    def fake_load(rd):
+        calls.append(Path(rd).name)
+        return pd.DataFrame({"org_id": ["org:a", "org:b"], "org_name": ["A", "B"],
+                             "score_dollar_weighted": [0.9, 0.7], "score_max": [0.9, 0.7],
+                             "total_billed": [3e7, 2e7], "top_schemes": ["x", "y"], "n_providers": [2, 1]})
+
+    monkeypatch.setattr(C, "load_run_orgs", fake_load)
+    monkeypatch.setattr("src.model_a.case_size.org_case_size",
+                        lambda m: pd.DataFrame({"org_id": ["org:a", "org:b"], "case_size_yr": [2e7, 2e7]}))
+    monkeypatch.setattr("src.model_a.pursuit_dossier.government_mask",
+                        lambda names: pd.Series(False, index=names.index))
+    out = tmp_path / "nested" / "consensus_fraud"          # does not exist yet
+    csv = C.build(runs, runs[0], out_dir=str(out), min_damages=1e7)
+    assert csv.exists() and (out / "CONSENSUS.md").exists()
+    assert sorted(calls) == ["frozen_2023-12_v5", "frozen_2023-12_v6"]
+    assert (out / "_run_cache" / "v5__all.parquet").exists()
+    # second build: nothing rescored
+    calls.clear()
+    C.build(runs, runs[0], out_dir=str(out), min_damages=1e7)
+    assert calls == []
+    C.build(runs, runs[0], out_dir=str(out), min_damages=1e7, use_cache=False)
+    assert len(calls) == 2

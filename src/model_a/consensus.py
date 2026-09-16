@@ -327,17 +327,34 @@ def _run_tag(rd: str | Path) -> str:
     return name.replace("frozen_", "") or name
 
 
+def _run_cache_path(out_dir: Path, tag: str, label_tier: str) -> Path:
+    return out_dir / "_run_cache" / f"{tag}__{label_tier}.parquet"
+
+
 def build(run_dirs: list[str], anchor: str, out_dir: str | None = None,
           min_damages: float = 10_000_000.0, min_runs: int = 2,
           exclude: list[str] | None = None, min_frac: float = 0.34,
-          resolve_names: bool = False, label_tier: str = "all") -> Path:
+          resolve_names: bool = False, label_tier: str = "all",
+          use_cache: bool = True) -> Path:
     from .case_size import org_case_size
     from .pursuit_dossier import government_mask
     from .company_list import default_exclusion_nodes, set_label_policy
 
+    # the output folder exists BEFORE hours of scoring, and every run's org
+    # frame is cached the moment it is scored, so a crash at the write step
+    # (or a killed window) restarts from the last finished run, not from zero
+    d = Path(out_dir or anchor)
+    d.mkdir(parents=True, exist_ok=True)
     frames: dict[str, pd.DataFrame] = {}
     for rd in run_dirs:
         tag = _run_tag(rd)
+        cache = _run_cache_path(d, tag, label_tier)
+        if use_cache and cache.exists():
+            frames[tag] = pd.read_parquet(cache)
+            frames[tag]["org_id"] = frames[tag]["org_id"].astype(str)
+            print(f"[consensus] {tag}: {len(frames[tag]):,} orgs from cache {cache} "
+                  f"(delete the file to rescore)")
+            continue
         if label_tier != "all":
             # each run trains its scorer on the FCA tier rebuilt from ITS OWN
             # as-of exclusion nodes (dated <= its freeze), so a fraud-shaped
@@ -356,6 +373,10 @@ def build(run_dirs: list[str], anchor: str, out_dir: str | None = None,
             print(f"[consensus] scoring {tag} ({rd}) ...")
         frames[tag] = load_run_orgs(rd)
         print(f"[consensus]   {len(frames[tag]):,} orgs")
+        if use_cache:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            frames[tag].to_parquet(cache, index=False)
+            print(f"[consensus]   cached -> {cache}")
     set_label_policy("all")
     anchor_tag = _run_tag(anchor)
     cons, dropped = consensus_from_frames(frames, anchor_tag, min_runs=min_runs,
@@ -383,11 +404,13 @@ def build(run_dirs: list[str], anchor: str, out_dir: str | None = None,
     if resolve_names:
         cons = resolve_unnamed(cons)
 
-    d = Path(out_dir or anchor)
     csv_path, md = write_report(cons, list(frames), anchor_tag, d, min_runs,
                                 min_damages, n_gov, n_small, dropped)
     print(f"[consensus] {len(cons):,} orgs -> {csv_path}")
     print(f"[consensus] report -> {md}")
+    if use_cache:
+        print(f"[consensus] per-run caches kept under {d / '_run_cache'} (reused by the "
+              f"next build with the same label tier; delete to rescore)")
     return csv_path
 
 
@@ -470,6 +493,8 @@ def main() -> None:
     ap.add_argument("--resolve-names", action="store_true",
                     help="fill blank / UNNAMED single-NPI org names from the live "
                          "NPI Registry (network)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="rescore every run even when <out>/_run_cache/<run>__<tier>.parquet exists")
     ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+weak"],
                     help="train every run's scorer on this FCA tier (rebuilt from "
                          "each run's own as-of exclusion nodes) before merging: "
@@ -504,7 +529,8 @@ def main() -> None:
     build(runs, anchor, out_dir=args.out,
           min_damages=args.min_damages, min_runs=args.min_runs,
           exclude=args.exclude_runs, min_frac=args.min_run_health,
-          resolve_names=args.resolve_names, label_tier=args.label_tier)
+          resolve_names=args.resolve_names, label_tier=args.label_tier,
+          use_cache=not args.no_cache)
 
 
 if __name__ == "__main__":
