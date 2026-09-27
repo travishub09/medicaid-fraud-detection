@@ -553,11 +553,16 @@
   },
   {
    "key": "defendant_resolver_run",
-   "what": "BUILT 2026-09-27 (bundles 179-181): enforcement/defendant_resolver.py resolves DOJ case defendants (people and businesses) to NPIs. First real run (bundle 180): 456 mentions -> 427 distinct NPIs across 454 cases; 970 mentions had no state, multi-person fields and chains inflated the research list. Bundle 181 reads the state off the source URL, splits multi-person fields, settles ties by middle name, and marks chains. OPERATOR: after merging bundle 181, rerun the resolver (commands below) and upload DEFENDANT_RESOLUTION.md + case_defendants_unresolved.csv (processed folder). The residual list is the Manus queue: do NOT dispatch until Claude has read the report and you have agreed a task count.",
+   "what": "DONE-ish 2026-09-27: resolver run 3 (bundle 182) = 744 mentions -> 695 NPIs / 696 cases; SE 218 NPIs. Operator approved Manus tiers 1 and 2. OPERATOR (after merging bundle 183): rerun the resolver (comma-separated people now split), build the research batch, REVIEW processed\\defendant_research\\defendant_research_batch.csv, then dispatch, then poll a day later and upload DEFENDANT_RESOLUTION.md. Expected ~275 tasks (tier 1 ~39, tier 2 ~236 at the $2M floor); use --cap to spend less.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --mfcu-prompts \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\mfcu_sweep_prompts.jsonl\"",
+    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
+    "python -m src.enforcement.defendant_research --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --tiers 1,2",
+    "REM review defendant_research_batch.csv, then:",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --dispatch",
+    "REM a day later:",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --poll --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
     "python -m src.reminders --done-task defendant_resolver_run"
    ]
   }

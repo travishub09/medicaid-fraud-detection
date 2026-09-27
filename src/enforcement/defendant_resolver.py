@@ -137,13 +137,20 @@ _PERSON_SPLIT = re.compile(r"\s*;\s*|\s*,?\s+and\s+|\s*&\s*", re.I)
 def _split_persons(name: str) -> list[str]:
     """'Jorge Perez and Ricardo Perez' / 'A Rose Sr.; B Rose; C Sanders' → one name each,
     but ONLY when every part looks like a person (an org name keeps its 'and')."""
-    if ";" not in name and not re.search(r"\s(?:and|&)\s", name, re.I):
+    if ";" not in name and "," not in name and not re.search(r"\s(?:and|&)\s", name, re.I):
         return [name]
     parts = [p.strip(" ,") for p in _PERSON_SPLIT.split(name) if p.strip(" ,")]
     if len(parts) >= 2 and all(classify_defendant(p) == "person" for p in parts):
         return parts
     if ";" in name:
         return [p.strip(" ,") for p in name.split(";") if p.strip(" ,")]
+    # "Karel Felipe, Tamara Quicutis" / "Patrick Boyd, Charles Boyd, Adam Brosius":
+    # comma-separated PEOPLE (every part 2-3 capitalised tokens, no legal suffix)
+    if "," in name:
+        cparts = [p.strip() for p in name.split(",") if p.strip()]
+        if len(cparts) >= 2 and all(2 <= len(p.split()) <= 3 and classify_defendant(p) == "person"
+                                    and not _PERSON_SUFFIX.search(p) for p in cparts):
+            return cparts
     return [name]
 
 

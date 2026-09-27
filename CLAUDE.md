@@ -474,7 +474,15 @@ committed. Never let this file go stale: stale reminders are worse than none.
   auto-loads it from processed/. `--mfcu-prompts` writes the state-MFCU sweep
   research prompts (9 SE states × 2020-2025) whose reviewed CSVs load through
   research_evidence.load_mfcu_cases. Prosecuted providers are labels, never leads.
-  Full suite: `pytest tests/` (897 tests).
+  DEFENDANT RESEARCH (`enforcement/defendant_research.py`): the residue the resolver
+  cannot settle → a tiered, de-duplicated Manus batch (tier 1 ambiguous people + small
+  orgs; tier 2 unmatched on cases ≥ --min-amount; chains / fragments / role phrases /
+  national corporations / place names never sent), written for REVIEW first
+  (defendant_research_batch.csv + prompts jsonl), then `--dispatch` through the
+  pursuit-dossier Manus plumbing (own registry), then `--poll --resolved` folds answers
+  back: Luhn-valid NPI + high/medium confidence → status resolved / match_level
+  research_<conf>; low → research_low; none → research_no_npi (a non-provider).
+  Full suite: `pytest tests/` (900 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

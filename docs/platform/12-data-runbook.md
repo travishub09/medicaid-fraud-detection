@@ -432,3 +432,16 @@ Control Unit sweep prompts (nine Southeast states × 2020-2025; the reviewed CSV
 `research_evidence.load_mfcu_cases`). The provider export picks `processed/case_defendant_npis.parquet`
 up automatically and labels those NPIs with basis `resolved_defendant`. Prosecuted providers are
 training and validation positives, never leads (public disclosure, first-to-file).
+
+Research queue for the residue (`enforcement/defendant_research.py`): build the tiered batch, review
+the CSV, dispatch, poll. Tier 1 = ambiguous people and small orgs; tier 2 = unmatched mentions on cases
+at or above `--min-amount` (default $2M); chains, fragments, role phrases, national corporations and
+place names are never sent.
+
+```bash
+python -m src.enforcement.defendant_research --resolved processed/case_defendant_npis.parquet \
+    --out-dir processed/defendant_research --tiers 1,2 --states FL,GA,AL,MS,TN,NC,SC,LA,KY
+python -m src.enforcement.defendant_research --out-dir processed/defendant_research --dispatch   # $MANUS_API_KEY
+python -m src.enforcement.defendant_research --out-dir processed/defendant_research --poll \
+    --resolved processed/case_defendant_npis.parquet
+```
