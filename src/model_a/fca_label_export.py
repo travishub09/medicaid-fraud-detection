@@ -221,6 +221,14 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
             "announced_date", "conduct_start", "conduct_end", "state", "basis", "match_level", "defendant",
             "kind", "entity_type", "flags", "source_url"]
     labels = pd.DataFrame(rows, columns=cols).drop_duplicates(["npi", "case_id"]).reset_index(drop=True)
+    # the same case harvested twice (DOJ national + local USAO release, or a sentencing
+    # re-announcement): one row per NPI per (year, amount); the first source kept
+    if len(labels):
+        yr = labels["announced_date"].fillna("").astype(str).str[:4]
+        amt = pd.to_numeric(labels["amount_usd"], errors="coerce").round(0).astype("string")
+        key = labels["npi"] + "|" + labels["label_tier"] + "|" + yr + "|" + amt.fillna("na")
+        dup = key.duplicated() & amt.notna()
+        labels = labels[~dup].reset_index(drop=True)
     return labels, pd.DataFrame(quar)
 
 

@@ -233,9 +233,15 @@ def reclassify(df: pd.DataFrame) -> pd.DataFrame:
     # amounts: recomputed from the stored text with the boilerplate filter; a row whose
     # text yields nothing keeps what it had
     if "summary" in out.columns:
-        fresh_amt = out["summary"].fillna("").astype(str).map(_extract_amount)
+        summ = out["summary"].fillna("").astype(str)
+        fresh_amt = summ.map(_extract_amount)
         old_amt = pd.to_numeric(out.get("amount_usd"), errors="coerce") if "amount_usd" in out.columns else pd.Series(pd.NA, index=out.index)
-        out["amount_usd"] = fresh_amt.where(fresh_amt.notna(), old_amt)
+        # an OLD amount at/above $1B whose stored text never says 'billion' is the national
+        # boilerplate figure that survived a short summary; anything above $20B is not a case
+        says_billion = summ.str.contains(r"\bbillion\b", case=False, regex=True)
+        old_ok = old_amt.where(~((old_amt >= 1e9) & ~says_billion))
+        amt = fresh_amt.where(fresh_amt.notna(), old_ok)
+        out["amount_usd"] = amt.where(~(amt > 2e10))
     return out
 
 

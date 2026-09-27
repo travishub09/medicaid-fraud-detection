@@ -208,6 +208,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             float(amt) if pd.notna(amt) else 0.0
 
     rows = []
+    n_guarded_org = 0
     # tier 1: NPIs named in the case file itself — the strongest basis
     npi_col = next((c for c in ("npi_in_source", "npi") if c in case_db.columns),
                    None)
@@ -244,7 +245,11 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         c = cases.loc[cid]
         scheme, sector, start, end, amt = _case_fields(c)
         oid = str(s.org_node_id)
-        for npi in org_to_npis.get(oid, []):                  # tier 2
+        members = org_to_npis.get(oid, [])
+        if len(members) > max_org_members:                    # a chain: one finding is not
+            n_guarded_org += 1                                # evidence against 2,000 NPIs
+            continue
+        for npi in members:                                   # tier 2
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt, "label_basis": "org_billing",
@@ -255,6 +260,9 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                          "amount_usd": amt,
                          "label_basis": "affiliated_individual",
                          "label_source": _case_source(c)})
+    if n_guarded_org:
+        print(f"    [case_labels] {n_guarded_org:,} settled-org billing broadcasts suppressed "
+              f"(> {max_org_members} billing NPIs — a chain, not individual evidence)")
     if not rows:
         return pd.DataFrame(columns=cols)
     df = pd.DataFrame(rows)

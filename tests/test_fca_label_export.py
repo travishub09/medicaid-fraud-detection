@@ -132,3 +132,34 @@ def test_amount_ignores_doj_boilerplate_and_reclassify_recomputes():
                        {"case_id": "b", "case_type": "civil_fca", "summary": "Acme agreed to pay to resolve allegations.", "scheme": "", "amount_usd": "250000"}])
     out = reclassify(df)
     assert float(out.loc[0, "amount_usd"]) == 4_500_000 and float(out.loc[1, "amount_usd"]) == 250_000   # kept when text yields nothing
+
+
+def test_old_boilerplate_amounts_dropped_and_duplicate_cases_collapsed():
+    from src.enforcement.case_db import reclassify
+    df = pd.DataFrame([{"case_id": "a", "case_type": "criminal_hcf", "summary": "Sentenced for health care fraud.", "scheme": "", "amount_usd": "19000000000"},
+                       {"case_id": "b", "case_type": "civil_fca", "summary": "Acme agreed to pay $2.1 billion to resolve False Claims Act allegations.", "scheme": "", "amount_usd": "2100000000"},
+                       {"case_id": "c", "case_type": "criminal_hcf", "summary": "Sentenced; ordered to pay restitution.", "scheme": "", "amount_usd": "8153727000000"}])
+    out = reclassify(df)
+    assert pd.isna(out.loc[0, "amount_usd"]) and float(out.loc[1, "amount_usd"]) == 2.1e9 and pd.isna(out.loc[2, "amount_usd"])
+    cases, dn, pdim, ex = _fixture()
+    twin = cases.iloc[:1].copy()
+    twin["case_id"] = "https://www.justice.gov/opa/pr/a-national"; twin["source_url"] = twin["case_id"]
+    cases2 = pd.concat([cases, twin], ignore_index=True)
+    dn2 = pd.concat([dn, pd.DataFrame([{"case_id": "https://www.justice.gov/opa/pr/a-national", "npi": "1679576722", "status": "resolved",
+                                        "match_level": "name_state", "kind": "org", "state": "FL", "defendant": "Acme Home Health LLC", "mention": "primary_defendant"}])], ignore_index=True)
+    labels, _ = build_strict_labels(cases2, dn2, pdim, "strict_plus_criminal")
+    assert (labels["npi"] == "1679576722").sum() == 1            # one row, not two, for the twice-harvested case
+
+
+def test_org_billing_broadcast_is_capped():
+    from src.model_a.case_labels import build_case_labels
+    cases = pd.DataFrame([{"case_id": "u1", "announced_date": "2024-01-01", "defendant_name": "Big Chain Pharmacy",
+                           "defendant_name_key": "BIG CHAIN PHARMACY", "sector": "pharmacy", "scheme": "billing_fraud",
+                           "amount_usd": "100000000", "qui_tam": "1", "intervened": "1", "jurisdiction": "", "source_url": "u",
+                           "summary": "Big Chain Pharmacy agreed to pay $100 million from 2019 through 2022.", "case_type": "civil_fca"}])
+    org_nodes = pd.DataFrame({"org_node_id": ["org:chain"], "org_name": ["Big Chain Pharmacy"], "aliases": [""]})
+    npi_to_org = pd.DataFrame({"npi": [str(1000000000 + i) for i in range(200)], "org_node_id": ["org:chain"] * 200})
+    capped = build_case_labels(cases, org_nodes, npi_to_org, fuzzy_threshold=None, max_org_members=150)
+    assert len(capped) == 0
+    small = build_case_labels(cases, org_nodes, npi_to_org.head(20), fuzzy_threshold=None, max_org_members=150)
+    assert len(small) == 20
