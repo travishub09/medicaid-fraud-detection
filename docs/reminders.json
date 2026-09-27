@@ -550,6 +550,17 @@
    "key": "fl_la_state_lists",
    "what": "Florida and Louisiana state Medicaid termination lists are still not loaded (the operator prefers to keep searching for a downloadable file). Florida: the AHCA search screen and the Provider Master List on the FLMMIS portal; a records request for the for-cause list goes to PublicRecordsReq@ahca.myflorida.com. Louisiana: LDH adverse actions is a search screen only. When a file lands: save it in Downloads with the state name in the filename, run the sorter dry run then --apply, rerun the loader and the census (state_terminations cadence commands), and upload STATE_TERMINATIONS_REPORT.md.",
    "added": "2026-09-27"
+  },
+  {
+   "key": "defendant_resolver_run",
+   "what": "BUILT 2026-09-27 (bundle 179): enforcement/defendant_resolver.py resolves DOJ case defendants (people and businesses) to NPIs so the DOJ label line stops being empty. OPERATOR: after merging bundle 179, run the resolver on doj_cases_v3.csv (commands below), then rerun the census with label_census_se_v4.py, and upload DEFENDANT_RESOLUTION.md (processed folder) and the new LABEL_CENSUS_SE file. The residual list case_defendants_unresolved.csv is the Manus queue: do NOT dispatch until Claude has read the report and you have agreed a task count.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --mfcu-prompts \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\mfcu_sweep_prompts.jsonl\"",
+    "python label_census_se.py --nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --extra \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\exclusions_state_terminations.parquet\"",
+    "python -m src.reminders --done-task defendant_resolver_run"
+   ]
   }
  ]
 }

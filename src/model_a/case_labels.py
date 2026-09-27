@@ -89,14 +89,18 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       medicaid_only: bool = False,
                       asof_cutoff: str | None = None,
                       affiliations: pd.DataFrame | None = None,
-                      max_org_members: int = 150) -> pd.DataFrame:
+                      max_org_members: int = 150,
+                      defendant_npis: pd.DataFrame | None = None) -> pd.DataFrame:
     """Per-NPI DOJ-case labels: npi, fraud_label, fraud_scheme, conduct_start,
     conduct_end, case_ids, amount_usd, label_source, label_basis. One row per NPI
     (a provider in multiple cases takes the union of schemes, the widest window,
     summed dollars).
 
-    THREE broadcast tiers, strongest first, recorded in ``label_basis``:
+    FOUR broadcast tiers, strongest first, recorded in ``label_basis``:
       named_npi              the case file names this NPI directly
+      resolved_defendant     a defendant (person or business) named in the case
+                             text, resolved to a UNIQUE NPPES record by name +
+                             state (+ city) — ``enforcement/defendant_resolver``
       org_billing            billing NPIs of the settled organization
       affiliated_individual  individual clinicians whose reassignment edge
                              points at the settled org — the bridge that puts
@@ -116,6 +120,9 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     after the freeze, or whose conduct window is unknown, are dropped from a
     frozen label — otherwise the model would be graded on conduct it could not
     have seen. Current-day runs pass None and keep every resolved case.
+
+    ``defendant_npis``: the resolver's output (case_id, npi, status); only rows
+    with status == "resolved" are used.
 
     ``fuzzy_threshold`` adds a conservative difflib second pass for defendants the
     exact name-key join missed (None disables — Run 2 §F). ``medicaid_only`` keeps
@@ -212,6 +219,18 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                          "case_sector": sector, "conduct_start": start,
                          "conduct_end": end, "case_ids": str(r.case_id),
                          "amount_usd": amt, "label_basis": "named_npi"})
+    # tier 1b: defendants resolved to a unique NPPES record by the resolver
+    if defendant_npis is not None and len(defendant_npis):
+        ok = defendant_npis[(defendant_npis.get("status", "resolved") == "resolved")
+                            & defendant_npis["npi"].astype(str).str.fullmatch(r"\d{10}").fillna(False)]
+        for r in ok.drop_duplicates(["case_id", "npi"]).itertuples():
+            cid = str(r.case_id)
+            if cid not in cases.index:
+                continue
+            scheme, sector, start, end, amt = _case_fields(cases.loc[cid])
+            rows.append({"npi": str(r.npi), "fraud_scheme": scheme, "case_sector": sector,
+                         "conduct_start": start, "conduct_end": end, "case_ids": cid,
+                         "amount_usd": amt, "label_basis": "resolved_defendant"})
     for s in settled.itertuples():
         cid = str(s.matched_case_id)
         if cid not in cases.index:
@@ -246,7 +265,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             tags.update(t.strip() for t in str(v or "").split(";") if t.strip())
         return ";".join(sorted(tags))
 
-    _BASIS_RANK = {"named_npi": 0, "org_billing": 1, "affiliated_individual": 2}
+    _BASIS_RANK = {"named_npi": 0, "resolved_defendant": 1, "org_billing": 2,
+                   "affiliated_individual": 3}
     out_rows = []
     for npi, g in df.groupby("npi"):
         starts = g["conduct_start"].dropna()

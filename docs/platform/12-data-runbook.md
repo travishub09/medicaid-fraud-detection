@@ -408,3 +408,27 @@ provider terminations. Florida (s.409.913 terminated-for-cause list) and Louisia
 actions) are search screens; request the file from the agency. Tiering: the state's stated reason
 only (`fca_relevance.STATE_TERM_RULES`); 'terminated' alone is weak, never hard. The report
 `STATE_TERMINATIONS_REPORT.md` lists every reason the tier table does not know.
+
+## DOJ case defendants → NPIs (labels; no research spend)
+
+DOJ press releases never print NPIs and the case→org join only lands on an enrolled organization's
+exact name, so cases against individuals and trade-name businesses never became labels. The resolver
+reads every "<name>, of <city>, <state>" / "<city>, <state>-based" / "located in" mention in the case
+text (plus the primary defendant with the district's state), matches people on FIRST LAST and
+businesses on the graph's org key within the state (city narrows; generic names never match; a unique
+hit only), and writes the resolved NPIs plus the residual research list:
+
+```bash
+python -m src.enforcement.defendant_resolver --case-db enforcement/doj_cases_v3.csv \
+    --provider-dim processed/provider_dim.parquet --out processed/case_defendant_npis.parquet \
+    --mfcu-prompts processed/mfcu_sweep_prompts.jsonl
+```
+
+Outputs: `case_defendant_npis.parquet` (every mention with status resolved / ambiguous / unmatched /
+generic_name / no_state), `case_defendants_unresolved.csv` + `case_defendant_research_prompts.jsonl`
+(the Manus / hand-research queue, ambiguous first, then unmatched by case dollars above
+`--min-amount`), `DEFENDANT_RESOLUTION.md`, and with `--mfcu-prompts` the state Medicaid Fraud
+Control Unit sweep prompts (nine Southeast states × 2020-2025; the reviewed CSVs load through
+`research_evidence.load_mfcu_cases`). The provider export picks `processed/case_defendant_npis.parquet`
+up automatically and labels those NPIs with basis `resolved_defendant`. Prosecuted providers are
+training and validation positives, never leads (public disclosure, first-to-file).

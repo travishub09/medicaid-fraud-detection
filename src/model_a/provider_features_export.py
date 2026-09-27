@@ -1873,6 +1873,9 @@ def main() -> None:
     ap.add_argument("--case-db", default=None,
                     help="DOJ/qui tam case DB (csv/parquet) → scheme-typed, "
                          "time-boxed positives folded into the label")
+    ap.add_argument("--defendant-npis", default=None,
+                    help="enforcement/defendant_resolver output (case_defendant_npis.parquet); "
+                         "default: <processed>/case_defendant_npis.parquet when present")
     ap.add_argument("--geocode", action="store_true",
                     help="live-geocode billing addresses (Census, free) → "
                          "addr_geocoded / addr_no_match (network; off by default)")
@@ -2273,9 +2276,18 @@ def main() -> None:
             # frozen runs box case positives to conduct that STARTED pre-cutoff
             aff_p = Path(args.graph_dir) / "edges" / "reassigns_to_edges.parquet"
             affiliations = pd.read_parquet(aff_p) if aff_p.exists() else None
+            dn_p = Path(args.defendant_npis) if args.defendant_npis else processed / "case_defendant_npis.parquet"
+            defendant_npis = pd.read_parquet(dn_p) if dn_p.exists() else None
+            if defendant_npis is not None:
+                audit(f"    [doj_case] defendant resolver: {int((defendant_npis['status'] == 'resolved').sum()):,} "
+                      f"resolved defendant NPIs from {dn_p.name}")
+            else:
+                audit("    [doj_case] no case_defendant_npis.parquet — run "
+                      "python -m src.enforcement.defendant_resolver to resolve defendants to NPIs")
             case_lbls = build_case_labels(cdb, org_nodes, npi_to_org,
                                           asof_cutoff=args.asof_cutoff,
-                                          affiliations=affiliations)
+                                          affiliations=affiliations,
+                                          defendant_npis=defendant_npis)
             n_aff = int((case_lbls["label_basis"] == "affiliated_individual"
                          ).sum()) if len(case_lbls) else 0
             audit(f"    [doj_case] {len(case_lbls):,} NPIs labeled from "

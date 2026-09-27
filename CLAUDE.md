@@ -460,7 +460,21 @@ committed. Never let this file go stale: stale reminders are worse than none.
   (`fca_relevance.STATE_TERM_RULES`: fraud-shaped = hard; license / derivative /
   bare 'terminated' = weak). They are the Medicaid-side labels that lead the LEIE by
   years; the operator's sorter files them under preclean/state_terminations/.
-  Full suite: `pytest tests/` (875 tests).
+  DEFENDANT RESOLVER (`enforcement/defendant_resolver.py`): DOJ case defendants,
+  people AND businesses, → NPIs. Press releases never print NPIs and the case→org
+  join only lands on an enrolled org's exact name, so the DOJ label line was empty
+  by construction. The resolver pulls every "<name>, of <city>, <state>" /
+  "<city>, <state>-based" / "located in" mention (+ the primary defendant with the
+  district's state), matches people on FIRST LAST and businesses on norm_org_name
+  within the state (city narrows; generic names never match; unique hit only), and
+  writes processed/case_defendant_npis.parquet + the residual research list
+  (case_defendants_unresolved.csv + prompts jsonl, ambiguous first) +
+  DEFENDANT_RESOLUTION.md. `case_labels.build_case_labels(defendant_npis=...)` adds
+  the `resolved_defendant` basis (below named_npi, above org_billing); the export
+  auto-loads it from processed/. `--mfcu-prompts` writes the state-MFCU sweep
+  research prompts (9 SE states × 2020-2025) whose reviewed CSVs load through
+  research_evidence.load_mfcu_cases. Prosecuted providers are labels, never leads.
+  Full suite: `pytest tests/` (894 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
