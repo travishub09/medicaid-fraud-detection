@@ -138,7 +138,7 @@ STATE_TERM_RULES = [
     (r"quality of care|standard of care|professional (mis)?conduct|unprofessional", "weak",
      "state termination on a quality-of-care or professional-conduct ground"),
     (r"oig|leie|federal exclusion|1128|hhs exclusion|medicare exclusion|sam\b|reciprocal|"
-     r"another state|other state|derivative", "weak",
+     r"another state|other state|other (agenc|program)|derivative", "weak",
      "state action derivative of a federal or other-state exclusion (the underlying record sets the tier)"),
     (r"licens|board action|certification|credential|revok|surrender", "weak",
      "state termination on a license or credential action"),
