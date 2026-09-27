@@ -386,7 +386,8 @@
     "python sort_state_lists.py --apply",
     "python -m src.reminders --done state_terminations"
    ],
-   "key": "state_terminations"
+   "key": "state_terminations",
+   "every_months": 3
   }
  ],
  "tasks": [
