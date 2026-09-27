@@ -584,6 +584,16 @@
     "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
     "python -m src.reminders --done-task case_harvest_sources_1_6"
    ]
+  },
+  {
+   "key": "fca_strict_label_export",
+   "what": "BUILT 2026-09-27 (bundle 189): model_a/fca_label_export.py writes the strict FCA label for the PurpleLab join (labels_fca_strict.csv + quarantine + 30-row verification sample + FCA_LABEL_EXPORT.md). OPERATOR: after merging bundle 189 run it (command below), upload FCA_LABEL_EXPORT.md and verification_sample.csv, and hand-check the 30 sample rows against their source URLs before any upload to the clean room. Re-run after every resolver run and after research answers are folded in.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.fca_label_export --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --policy fca_shaped --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\"",
+    "python -m src.reminders --done-task fca_strict_label_export"
+   ]
   }
  ]
 }

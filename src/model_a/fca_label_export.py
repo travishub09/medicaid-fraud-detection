@@ -1,0 +1,276 @@
+"""
+fca_label_export.py — the STRICT False Claims Act label, one NPI per row, for the
+PurpleLab proof of concept (or any claims-data join).
+
+"Strict" is a written policy this module enforces, not a judgment call per row:
+
+  Tier fca_civil     a RESOLVED civil False Claims Act outcome: case_type civil_fca AND
+                     an outcome signal (a dollar amount, a stated intervention, or
+                     settle / judgment / consent / agreed-to-pay wording). Filed-but-
+                     unresolved cases, dockets and allegations never qualify.
+  Tier hcf_criminal  a criminal health-care-fraud CONVICTION or PLEA (case_type
+                     criminal_hcf AND sentenced / pleaded guilty / convicted / jury
+                     wording). Charged / indicted only → excluded.
+  Tier excl_statute  an exclusion-list statute that is fraud on its face
+                     (1128a1, 1128a3, 1128b1, 1128b6, 1128b7, BRCH CIA / SA, 1128b16),
+                     with the statute on the row. Optional (--policy with_exclusions).
+
+Identifier rules (every tier): a Luhn-valid 10-digit NPI; the case→NPI basis is on
+the row (named_npi, resolved_defendant with its match level, or research with high
+or medium confidence); the NPI exists in NPPES; entity type agrees with the
+defendant kind; the NPI was not deactivated before the conduct began. Rows that
+fail a rule are written to the QUARANTINE file with the reason, never dropped.
+
+Time-boxing: announced_date plus the conduct window from the case text
+(``case_labels.extract_conduct_window``); ``window_inferred`` says when the text
+named no period and a lookback was used.
+
+Provenance: source URL, case type, outcome words, amount, basis, match level on
+every row, and a 30-row random sample (verification_sample.csv) for a human check
+against the public document before upload. Leads for counsel review, never
+accusations: every row here is an already-prosecuted matter used as a label.
+
+  python -m src.model_a.fca_label_export --case-db enforcement/doj_cases_v3.csv \
+      --defendant-npis processed/case_defendant_npis.parquet --provider-dim processed/provider_dim.parquet \
+      --out-dir processed/fca_label [--exclusion-nodes graph/nodes/exclusion_nodes.parquet --policy with_exclusions]
+"""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pandas as pd
+
+from src.attempt_2.clean_data import is_valid_npi
+from src.enforcement.defendant_resolver import district_state, url_state, text_state
+from src.model_a.case_labels import extract_conduct_window
+from src.model_a.fca_relevance import LEIE_STATUTES, _NORM
+
+POLICIES = ("strict", "strict_plus_criminal", "with_exclusions", "fca_shaped")
+# fca_shaped = everything above PLUS fraud that COULD have been a False Claims Act
+# matter but was handled another way: state Medicaid terminations for a fraud-shaped
+# cause (fca_relevance hard tier: criminal conduct, financial integrity, fraud
+# conviction, false statements) and state attorney-general / MFCU case outcomes.
+_STATE_FRAUD = re.compile(r"fraud|false claim|kickback|false (?:statement|record|document)|misrepresent|"
+                          r"criminal conduct|financial integrity|convict|guilty|theft|embezzl|overbill|upcod|"
+                          r"billing (?:abuse|irregularit)|abuse of billing", re.I)
+_CIVIL_OUTCOME = re.compile(r"agree[sd]?\s+to\s+pay|settle|settlement|judgment|consent\s+(?:decree|judgment)|"
+                            r"resolve[sd]?\s+(?:the\s+)?(?:allegations|claims)|will\s+pay|has\s+paid|paid\s+\$", re.I)
+_CRIMINAL_OUTCOME = re.compile(r"sentenced|pleaded\s+guilty|pled\s+guilty|plead\s+guilty|convicted|jury\s+(?:found|returned)|"
+                               r"found\s+guilty|guilty\s+plea|guilty\s+verdict", re.I)
+_CHARGED_ONLY = re.compile(r"\b(?:charged|indicted|indictment|arrested|complaint\s+filed|accused)\b", re.I)
+STRICT_STATUTES = {"1128a1", "1128a3", "1128b1", "1128b6", "1128b7", "brchcia", "brchsa", "1128b16"}
+OK_MATCH_LEVELS = {"name_state", "name_city_state", "name_state_middle", "name_city_state_middle",
+                   "research_high", "research_medium"}
+
+
+def outcome_tier(case_type: str, text: str, amount) -> tuple[str, str]:
+    """(tier, outcome_words) for a case row; tier '' when it does not qualify."""
+    t = str(text or "")
+    ct = str(case_type or "")
+    amt = pd.to_numeric(pd.Series([amount]), errors="coerce").iloc[0]
+    if ct == "civil_fca":
+        m = _CIVIL_OUTCOME.search(t)
+        if m or (pd.notna(amt) and float(amt) > 0):
+            return "fca_civil", (m.group(0) if m else "amount stated")
+        return "", "civil_fca without a resolved outcome"
+    if ct == "criminal_hcf":
+        m = _CRIMINAL_OUTCOME.search(t)
+        if m:
+            return "hcf_criminal", m.group(0)
+        return "", "charged only" if _CHARGED_ONLY.search(t) else "criminal_hcf without an outcome"
+    if ct.startswith("docket"):
+        return "", "docket (allegation)"
+    # a state AG / MFCU / research-loaded case with no case_type: fraud-shaped words + an outcome
+    if not ct and _STATE_FRAUD.search(t) and (_CRIMINAL_OUTCOME.search(t) or _CIVIL_OUTCOME.search(t)
+                                              or (pd.notna(amt) and float(amt) > 0)):
+        m = _CRIMINAL_OUTCOME.search(t) or _CIVIL_OUTCOME.search(t)
+        return "state_case", (m.group(0) if m else "amount stated")
+    return "", f"case_type {ct or 'blank'}"
+
+
+def _row_state(c) -> str:
+    return (district_state(c.get("jurisdiction", "")) or url_state(c.get("source_url", ""))
+            or text_state(c.get("summary", "")))
+
+
+def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, provider_dim: pd.DataFrame,
+                        policy: str = "strict_plus_criminal",
+                        exclusion_nodes: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Returns (labels, quarantine). Both carry a ``reason``-style column set."""
+    assert policy in POLICIES, policy
+    cases = case_db.drop_duplicates("case_id").set_index("case_id")
+    pd_ = provider_dim[["npi"] + [c for c in ("entity_type", "deactivation_date", "addr_state") if c in provider_dim.columns]].copy()
+    pd_["npi"] = pd_["npi"].astype(str)
+    pd_ = pd_.drop_duplicates("npi").set_index("npi")
+
+    rows, quar = [], []
+    dn = defendant_npis[defendant_npis["status"].astype(str) == "resolved"].copy()
+    for r in dn.itertuples(index=False):
+        d = r._asdict()
+        cid = str(d.get("case_id", ""))
+        if cid not in cases.index:
+            quar.append({**d, "reason": "case_id not in the case table"})
+            continue
+        c = cases.loc[cid]
+        tier, words = outcome_tier(c.get("case_type", ""), f"{c.get('summary', '')} {c.get('scheme', '')}", c.get("amount_usd"))
+        if tier == "hcf_criminal" and policy == "strict":
+            quar.append({**d, "reason": "criminal tier excluded by policy strict"})
+            continue
+        if tier == "state_case" and policy != "fca_shaped":
+            quar.append({**d, "reason": f"state-case tier excluded by policy {policy}"})
+            continue
+        if not tier:
+            quar.append({**d, "reason": f"no qualifying outcome: {words}"})
+            continue
+        npi = str(d.get("npi", ""))
+        if not (len(npi) == 10 and is_valid_npi(npi)):
+            quar.append({**d, "reason": "NPI fails Luhn / length"})
+            continue
+        ml = str(d.get("match_level", ""))
+        basis = "named_npi" if str(d.get("mention", "")) == "named_npi" else "resolved_defendant"
+        if basis == "resolved_defendant" and ml not in OK_MATCH_LEVELS:
+            quar.append({**d, "reason": f"match level not accepted: {ml or 'blank'}"})
+            continue
+        start, end = extract_conduct_window(c.get("summary", ""), str(c.get("announced_date", "")))
+        inferred = not bool(re.search(r"\b(19\d{2}|20\d{2})\b", str(c.get("summary", ""))))
+        flags = []
+        if npi not in pd_.index:
+            quar.append({**d, "reason": "NPI not in NPPES (provider_dim)"})
+            continue
+        p = pd_.loc[npi]
+        et = str(p.get("entity_type", "") or "")
+        kind = str(d.get("kind", ""))
+        if et and kind and ((kind == "person" and et == "2") or (kind == "org" and et == "1")):
+            quar.append({**d, "reason": f"entity type {et} disagrees with defendant kind {kind}"})
+            continue
+        deact = pd.to_datetime(p.get("deactivation_date"), errors="coerce") if "deactivation_date" in p else pd.NaT
+        if pd.notna(deact) and start and deact.year < int(start):
+            quar.append({**d, "reason": f"NPI deactivated {deact.date()} before conduct began {start}"})
+            continue
+        if inferred:
+            flags.append("window_inferred")
+        rows.append({
+            "npi": npi, "label_tier": tier, "policy": policy, "case_id": cid,
+            "source": "oig" if "oig.hhs.gov" in cid else ("doj" if "justice.gov" in cid else "other"),
+            "case_type": c.get("case_type", ""), "outcome_words": words,
+            "amount_usd": c.get("amount_usd"), "announced_date": c.get("announced_date", ""),
+            "conduct_start": start, "conduct_end": end,
+            "state": d.get("state") or _row_state(c), "basis": basis, "match_level": ml,
+            "defendant": d.get("defendant", ""), "kind": kind, "entity_type": et,
+            "flags": ";".join(flags), "source_url": c.get("source_url", cid),
+        })
+
+    if policy in ("with_exclusions", "fca_shaped") and exclusion_nodes is not None and len(exclusion_nodes):
+        e = exclusion_nodes.copy()
+        e["npi"] = e["npi"].fillna("").astype(str).str.strip()
+        for r in e.itertuples(index=False):
+            npi = str(r.npi)
+            if not (len(npi) == 10 and is_valid_npi(npi)):
+                continue
+            et_raw = str(getattr(r, "excl_type", "") or "")
+            if policy == "fca_shaped" and et_raw.lower().startswith("state_term"):
+                # a state Medicaid termination for a FRAUD-SHAPED cause (the state's own words)
+                body = re.sub(r"\|name_match$", "", et_raw.split(":", 2)[2] if et_raw.count(":") >= 2 else "")
+                if not _STATE_FRAUD.search(body) or npi not in pd_.index:
+                    continue
+                d = pd.to_datetime(getattr(r, "excl_date", None), errors="coerce")
+                st = et_raw.split(":")[1].upper() if et_raw.count(":") >= 2 else ""
+                rows.append({
+                    "npi": npi, "label_tier": "state_fraud", "policy": policy,
+                    "case_id": f"state_term:{st}:{npi}", "source": f"state_{st.lower()}", "case_type": "state_termination",
+                    "outcome_words": body[:80], "amount_usd": None,
+                    "announced_date": d.strftime("%Y-%m-%d") if pd.notna(d) else "",
+                    "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
+                    "state": st, "basis": "npi_on_list" if "name_match" not in et_raw else "name_match",
+                    "match_level": "exact" if "name_match" not in et_raw else "unique_in_state",
+                    "defendant": "", "kind": "", "entity_type": str(pd_.loc[npi].get("entity_type", "") or ""),
+                    "flags": "window_inferred", "source_url": "",
+                })
+                continue
+            key = _NORM.sub("", et_raw.lower())
+            code = next((k for k in sorted(LEIE_STATUTES, key=len, reverse=True) if key.startswith(k)), "")
+            if code not in STRICT_STATUTES:
+                continue
+            if npi not in pd_.index:
+                quar.append({"npi": npi, "case_id": str(getattr(r, "excl_type", "")), "reason": "NPI not in NPPES (provider_dim)"})
+                continue
+            d = pd.to_datetime(getattr(r, "excl_date", None), errors="coerce")
+            rows.append({
+                "npi": npi, "label_tier": "excl_statute", "policy": policy,
+                "case_id": f"leie:{npi}:{code}", "source": "leie", "case_type": "exclusion",
+                "outcome_words": LEIE_STATUTES[code][1], "amount_usd": None,
+                "announced_date": d.strftime("%Y-%m-%d") if pd.notna(d) else "",
+                "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
+                "state": str(pd_.loc[npi].get("addr_state", "") or ""), "basis": "npi_on_list", "match_level": "exact",
+                "defendant": "", "kind": "", "entity_type": str(pd_.loc[npi].get("entity_type", "") or ""),
+                "flags": "window_inferred", "source_url": "https://oig.hhs.gov/exclusions/",
+            })
+
+    cols = ["npi", "label_tier", "policy", "case_id", "source", "case_type", "outcome_words", "amount_usd",
+            "announced_date", "conduct_start", "conduct_end", "state", "basis", "match_level", "defendant",
+            "kind", "entity_type", "flags", "source_url"]
+    labels = pd.DataFrame(rows, columns=cols).drop_duplicates(["npi", "case_id"]).reset_index(drop=True)
+    return labels, pd.DataFrame(quar)
+
+
+def report(labels: pd.DataFrame, quar: pd.DataFrame, policy: str) -> str:
+    L = [f"# STRICT FCA LABEL EXPORT (policy: {policy})", "",
+         "_One NPI per row per case. Every row is an already-prosecuted matter with its public source; leads for counsel review, never accusations._", "",
+         f"- label rows: **{len(labels):,}**; distinct NPIs: **{labels['npi'].nunique():,}**; distinct cases: **{labels['case_id'].nunique():,}**",
+         f"- quarantined (kept with a reason, never dropped): **{len(quar):,}**", ""]
+    if len(labels):
+        L += ["## By tier", ""] + [f"- {t}: {n:,} rows, {labels[labels.label_tier == t]['npi'].nunique():,} NPIs"
+                                   for t, n in labels["label_tier"].value_counts().items()]
+        L += ["", "## Distinct NPIs by state (top 20)", ""] + [f"- {s or '(none)'}: {n:,}"
+                                                             for s, n in labels.groupby("state")["npi"].nunique().sort_values(ascending=False).head(20).items()]
+        yrs = labels["announced_date"].fillna("").astype(str).str[:4].value_counts().sort_index()
+        L += ["", "## By announcement year", ""] + [f"- {y}: {n:,}" for y, n in yrs.items() if y]
+        L += ["", "## Basis and match level", ""] + [f"- {b} / {m or '-'}: {n:,}"
+                                                   for (b, m), n in labels.groupby(["basis", "match_level"]).size().items()]
+        L += ["", f"- rows with an inferred conduct window: {int(labels['flags'].fillna('').str.contains('window_inferred').sum()):,}"]
+    if len(quar):
+        L += ["", "## Quarantine reasons", ""] + [f"- {r}: {n:,}" for r, n in quar["reason"].value_counts().head(20).items()]
+    L += ["", "## The written policy", "",
+          "- fca_civil: case_type civil_fca AND (amount > 0 OR settle/judgment/consent/agreed-to-pay wording).",
+          "- hcf_criminal: case_type criminal_hcf AND sentenced/pleaded guilty/convicted/jury wording; charged-only excluded.",
+          "- excl_statute (with_exclusions / fca_shaped): LEIE 1128a1/a3/b1/b6/b7, BRCH CIA/SA, b16, statute on the row.",
+          "- state_case / state_fraud (fca_shaped only): fraud that could have been an FCA matter but was handled by a state:",
+          "  a state AG / MFCU outcome with fraud-shaped words, or a state Medicaid termination whose stated cause is fraud-shaped.",
+          "- identifier: Luhn-valid NPI; basis named_npi or resolved_defendant at an accepted match level or research high/medium;",
+          "  NPI present in NPPES; entity type agrees with defendant kind; not deactivated before the conduct began.",
+          "- time: announced_date + conduct window from the text (window_inferred flag when a lookback was used).",
+          "- dockets, allegations, license and paperwork actions, chains and broadcast-to-employees: never."]
+    return "\n".join(L)
+
+
+def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--case-db", required=True)
+    ap.add_argument("--defendant-npis", required=True)
+    ap.add_argument("--provider-dim", required=True)
+    ap.add_argument("--exclusion-nodes", default=None)
+    ap.add_argument("--policy", default="strict_plus_criminal", choices=POLICIES)
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--sample", type=int, default=30)
+    a = ap.parse_args()
+    cdb = pd.read_csv(a.case_db, dtype=str) if a.case_db.endswith(".csv") else pd.read_parquet(a.case_db)
+    dn = pd.read_parquet(a.defendant_npis)
+    pdim = pd.read_parquet(a.provider_dim)
+    ex = pd.read_parquet(a.exclusion_nodes) if a.exclusion_nodes else None
+    labels, quar = build_strict_labels(cdb, dn, pdim, a.policy, ex)
+    out = Path(a.out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    labels.to_csv(out / "labels_fca_strict.csv", index=False)
+    quar.to_csv(out / "labels_fca_quarantine.csv", index=False)
+    if len(labels):
+        labels.sample(min(a.sample, len(labels)), random_state=7).to_csv(out / "verification_sample.csv", index=False)
+    rep = out / "FCA_LABEL_EXPORT.md"
+    rep.write_text(report(labels, quar, a.policy), encoding="utf-8")
+    print(f"strict FCA label ({a.policy}): {len(labels):,} rows, {labels['npi'].nunique():,} NPIs, "
+          f"{len(quar):,} quarantined -> {out / 'labels_fca_strict.csv'}\n  report: {rep}\n  verify by hand: {out / 'verification_sample.csv'}")
+
+
+if __name__ == "__main__":
+    main()

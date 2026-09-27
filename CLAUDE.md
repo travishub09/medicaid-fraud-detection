@@ -499,7 +499,16 @@ committed. Never let this file go stale: stale reminders are worse than none.
   semiannual reports, state MFCU sweeps) → --dispatch / --poll (answers saved for
   review; loaded only via research_evidence mfcu-cases). `feeds.client.
   default_fetch_text` is the HTML counterpart of the JSON client.
-  Full suite: `pytest tests/` (912 tests).
+  STRICT FCA LABEL EXPORT (`model_a/fca_label_export.py`, `labels_fca_strict.csv`): the
+  written label policy for claims-data joins (PurpleLab), enforced per row: tiers
+  fca_civil (resolved civil FCA outcome), hcf_criminal (conviction / plea),
+  excl_statute (LEIE fraud statutes), and under `--policy fca_shaped` state_case /
+  state_fraud (fraud that could have been FCA but a state handled it); identifier
+  rules (Luhn NPI, stated basis + accepted match level, in NPPES, entity type agrees,
+  not deactivated before conduct), time-boxing (conduct window + window_inferred),
+  provenance on every row, a quarantine file with reasons, a 30-row verification
+  sample for a human check, FCA_LABEL_EXPORT.md with the policy text.
+  Full suite: `pytest tests/` (915 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

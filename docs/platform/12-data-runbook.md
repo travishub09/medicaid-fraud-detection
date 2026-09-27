@@ -466,6 +466,21 @@ python -m src.enforcement.research_evidence mfcu-cases --in <reviewed.csv> --sta
 python -m src.enforcement.case_db --into enforcement/doj_cases_v3.csv --add feeds/enforcement/doj_cases.csv feeds/enforcement/oig_cases.csv
 ```
 
+## The strict FCA label for a claims-data join (PurpleLab)
+
+```bash
+python -m src.model_a.fca_label_export --case-db enforcement/doj_cases_v3.csv \
+    --defendant-npis processed/case_defendant_npis.parquet --provider-dim processed/provider_dim.parquet \
+    --exclusion-nodes graph/nodes/exclusion_nodes.parquet --policy fca_shaped --out-dir processed/fca_label
+```
+
+Policies: `strict` (resolved civil FCA outcomes only), `strict_plus_criminal` (+ health-care-fraud convictions
+and pleas), `with_exclusions` (+ LEIE fraud statutes), `fca_shaped` (+ state AG / MFCU outcomes and state
+Medicaid terminations for a fraud-shaped cause: fraud that could have been an FCA matter but a state handled
+it). Every row: NPI, tier, case id and source URL, outcome words, amount, announcement date, conduct window,
+basis and match level. `labels_fca_quarantine.csv` keeps every rejected row with its reason;
+`verification_sample.csv` is the 30-row human check before anything is uploaded.
+
 Then rerun the defendant resolver on the merged case CSV. Docket-only cases are allegations: they enter
 the label as source `docket_case` (weak) and never flip the hard label; a settlement or judgment for the
 same case (press release, OIG action, reviewed research) upgrades it to `doj_case`.
