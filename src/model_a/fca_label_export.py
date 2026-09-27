@@ -79,6 +79,16 @@ def outcome_tier(case_type: str, text: str, amount) -> tuple[str, str]:
         if m:
             return "hcf_criminal", m.group(0)
         return "", "charged only" if _CHARGED_ONLY.search(t) else "criminal_hcf without an outcome"
+    if ct == "not_fraud":
+        return "", "OIG action that is not billing fraud (EMTALA / excluded employee)"
+    if ct == "oig_cmp":
+        # fraud-shaped conduct settled under the CMP law: fca_shaped only
+        if _STATE_FRAUD.search(t) or re.search(r"submitting\s+(?:false\s+)?claims|not\s+(?:provided|rendered)|"
+                                               r"remuneration|medically\s+unnecessary|unlicensed|not\s+covered|"
+                                               r"misidentified|improper\s+claims", t, re.I):
+            m = _CIVIL_OUTCOME.search(t)
+            return "oig_cmp", (m.group(0) if m else "CMP settlement")
+        return "", "CMP settlement without fraud-shaped conduct"
     if ct.startswith("docket"):
         return "", "docket (allegation)"
     # a state AG / MFCU / research-loaded case with no case_type: fraud-shaped words + an outcome
@@ -117,8 +127,8 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
         if tier == "hcf_criminal" and policy == "strict":
             quar.append({**d, "reason": "criminal tier excluded by policy strict"})
             continue
-        if tier == "state_case" and policy != "fca_shaped":
-            quar.append({**d, "reason": f"state-case tier excluded by policy {policy}"})
+        if tier in ("state_case", "oig_cmp") and policy != "fca_shaped":
+            quar.append({**d, "reason": f"{tier} tier excluded by policy {policy}"})
             continue
         if not tier:
             quar.append({**d, "reason": f"no qualifying outcome: {words}"})
@@ -235,6 +245,8 @@ def report(labels: pd.DataFrame, quar: pd.DataFrame, policy: str) -> str:
           "- fca_civil: case_type civil_fca AND (amount > 0 OR settle/judgment/consent/agreed-to-pay wording).",
           "- hcf_criminal: case_type criminal_hcf AND sentenced/pleaded guilty/convicted/jury wording; charged-only excluded.",
           "- excl_statute (with_exclusions / fca_shaped): LEIE 1128a1/a3/b1/b6/b7, BRCH CIA/SA, b16, statute on the row.",
+          "- oig_cmp (fca_shaped only): an OIG civil-monetary-penalty settlement for fraud-shaped conduct (claims not provided,",
+          "  remuneration, medically unnecessary, unlicensed); EMTALA and excluded-employee CMPs are never fraud labels.",
           "- state_case / state_fraud (fca_shaped only): fraud that could have been an FCA matter but was handled by a state:",
           "  a state AG / MFCU outcome with fraud-shaped words, or a state Medicaid termination whose stated cause is fraud-shaped.",
           "- identifier: Luhn-valid NPI; basis named_npi or resolved_defendant at an accepted match level or research high/medium;",

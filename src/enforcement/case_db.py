@@ -44,11 +44,24 @@ _CRIMINAL_RE = re.compile(r"sentenced|pleaded\s+guilty|pled\s+guilty|indict|conv
                           r"anti-?kickback\s+statute|conspiracy\s+to\s+commit", re.I)
 
 
+_CMP_RE = re.compile(r"civil\s+monetary\s+penalt(?:y|ies)\s+law|\bCMP\b|self-?disclos", re.I)
+_NOT_FRAUD_RE = re.compile(r"patient\s+dumping|EMTALA|emergency\s+medical\s+treatment\s+and\s+labor|"
+                           r"employ(?:ing|ed)\s+(?:an?\s+|two\s+|\d+\s+)?(?:individuals?|persons?)\s+(?:who\s+(?:was|were)\s+)?excluded|"
+                           r"excluded\s+(?:individual|person|employee)", re.I)
+
+
 def classify_case_type(text: str) -> str:
     """civil_fca (an FCA / qui tam resolution), criminal_hcf (a health-care-fraud
-    prosecution), or '' when the text says neither. Both are prosecution-grade
-    labels; the type is kept so evaluations can stratify."""
+    prosecution), oig_cmp (an OIG civil-monetary-penalty settlement: fraud-shaped
+    conduct resolved administratively, never a strict FCA outcome), not_fraud
+    (EMTALA / employing an excluded person: an OIG action that is not billing
+    fraud), or '' when the text says none. The type is kept so evaluations and the
+    strict label policy can stratify."""
     t = str(text or "")
+    if _NOT_FRAUD_RE.search(t) and not re.search(r"false\s+claims\s+act", t, re.I):
+        return "not_fraud"
+    if _CMP_RE.search(t) and not re.search(r"false\s+claims\s+act", t, re.I) and not _CRIMINAL_RE.search(t):
+        return "oig_cmp"
     civ, crim = bool(_CIVIL_RE.search(t)), bool(_CRIMINAL_RE.search(t))
     if civ and not crim:
         return "civil_fca"
@@ -196,14 +209,31 @@ def merge_case_files(primary: pd.DataFrame, secondary: pd.DataFrame) -> pd.DataF
     return build_case_db(pd.concat([p, s[keep]], ignore_index=True))
 
 
+def reclassify(df: pd.DataFrame) -> pd.DataFrame:
+    """Re-stamp case_type from the stored text with the CURRENT rules (docket rows keep
+    theirs). Run after any change to classify_case_type so old harvests agree."""
+    out = df.copy()
+    ct = out["case_type"].fillna("").astype(str) if "case_type" in out.columns else pd.Series("", index=out.index)
+    text = out["summary"].fillna("").astype(str) + " " + out.get("scheme", pd.Series("", index=out.index)).fillna("").astype(str)
+    fresh = text.map(classify_case_type)
+    out["case_type"] = ct.where(ct.str.startswith("docket"), fresh)
+    return out
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="merge case files: rows of --into win; --add rows join when their announcement is new")
     ap.add_argument("--into", required=True, help="the case CSV to extend (rewritten in place)")
-    ap.add_argument("--add", required=True, nargs="+", help="case CSVs to fold in")
+    ap.add_argument("--add", nargs="*", default=[], help="case CSVs to fold in")
+    ap.add_argument("--reclassify", action="store_true", help="re-stamp case_type on every row with the current rules")
     a = ap.parse_args()
     primary = pd.read_csv(a.into, dtype=str)
     n0 = len(primary)
+    if a.reclassify:
+        before = primary["case_type"].fillna("").value_counts().to_dict() if "case_type" in primary.columns else {}
+        primary = reclassify(primary)
+        after = primary["case_type"].fillna("").value_counts().to_dict()
+        print(f"  reclassified: {before} -> {after}")
     for path in a.add:
         sec = pd.read_csv(path, dtype=str)
         primary = merge_case_files(primary, sec)

@@ -469,6 +469,8 @@ python -m src.enforcement.case_db --into enforcement/doj_cases_v3.csv --add feed
 ## The strict FCA label for a claims-data join (PurpleLab)
 
 ```bash
+# after any change to case_db.classify_case_type, re-stamp case_type on the stored rows first
+python -m src.enforcement.case_db --into enforcement/doj_cases_v3.csv --reclassify
 python -m src.model_a.fca_label_export --case-db enforcement/doj_cases_v3.csv \
     --defendant-npis processed/case_defendant_npis.parquet --provider-dim processed/provider_dim.parquet \
     --exclusion-nodes graph/nodes/exclusion_nodes.parquet --policy fca_shaped --out-dir processed/fca_label

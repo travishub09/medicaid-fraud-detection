@@ -94,3 +94,28 @@ def test_fca_shaped_adds_state_tiers():
     assert tiers["state_fraud"] == {"1245319599"}                     # MS criminal conduct, not KY policy
     assert tiers["excl_statute"] == {"1234567893"}
     assert shaped[shaped.label_tier == "state_fraud"]["source"].iloc[0] == "state_ms"
+
+
+def test_oig_cmp_and_not_fraud_classification_and_reclassify():
+    from src.enforcement.case_db import classify_case_type, reclassify
+    cmp_ = "Acme agreed to pay $100,000 for allegedly violating the civil monetary penalties law by submitting claims for services not provided as claimed."
+    emtala = "Hospital agreed to pay $200,000 for allegedly violating patient dumping statute by failing to provide appropriate medical screening examinations"
+    excl = "Clinic agreed to pay $50,000 for allegedly violating the civil monetary penalties law by employing an individual excluded from Illinois Medicaid"
+    assert classify_case_type(cmp_) == "oig_cmp" and classify_case_type(emtala) == "not_fraud" and classify_case_type(excl) == "not_fraud"
+    assert outcome_tier("oig_cmp", cmp_, 100000)[0] == "oig_cmp"
+    assert outcome_tier("not_fraud", emtala, 200000)[0] == ""
+    old = pd.DataFrame([{"case_id": "a", "case_type": "civil_fca", "summary": cmp_, "scheme": ""},
+                        {"case_id": "b", "case_type": "docket_fca", "summary": "United States ex rel. X v. Y", "scheme": ""}])
+    new = reclassify(old)
+    assert new["case_type"].tolist() == ["oig_cmp", "docket_fca"]
+    # policy: oig_cmp rows only under fca_shaped
+    cases, dn, pdim, ex = _fixture()
+    cases = pd.concat([cases, pd.DataFrame([{"case_id": "https://oig.hhs.gov/fraud/enforcement/cmp/", "case_type": "oig_cmp",
+                                             "announced_date": "2024-01-01", "amount_usd": "100000", "summary": cmp_,
+                                             "jurisdiction": "", "source_url": "https://oig.hhs.gov/fraud/enforcement/cmp/", "scheme": ""}])], ignore_index=True)
+    dn = pd.concat([dn, pd.DataFrame([{"case_id": "https://oig.hhs.gov/fraud/enforcement/cmp/", "npi": "1497758544", "status": "resolved",
+                                       "match_level": "name_state", "kind": "person", "state": "FL", "defendant": "Acme", "mention": "primary_defendant"}])], ignore_index=True)
+    strict, q = build_strict_labels(cases, dn, pdim, "strict_plus_criminal")
+    assert "oig_cmp" not in set(strict["label_tier"]) and any("oig_cmp tier excluded" in r for r in q["reason"])
+    shaped, _ = build_strict_labels(cases, dn, pdim, "fca_shaped")
+    assert "oig_cmp" in set(shaped["label_tier"])
