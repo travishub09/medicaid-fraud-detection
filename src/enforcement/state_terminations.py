@@ -65,6 +65,10 @@ FIELD_ALIASES: dict[str, list[str]] = {
                r"^excl\.? ?type", r"^exclusion type", r"^cause", r"^grounds", r"^violation", r"^offense",
                r"^category", r"^sanction type", r"^excluded/terminated", r"^action$", r"^type of action",
                r"^basis"],
+    # a SECOND cause column (MS: 'Termination Reason' + 'Sanction Type' = 'F-Individual or
+    # Entity Convicted of Fraud'); folded into the reason text so the tier sees both
+    "reason2": [r"^sanction type", r"^sanction source", r"^type of (sanction|action)", r"^action type",
+                r"^sanction category", r"^basis"],
     "provider_type": [r"provider type", r"^general$", r"provider category", r"profession", r"^role$",
                       r"specialty"],
     "state": [r"^state$", r"^st$"],
@@ -176,6 +180,14 @@ def _dates(s: pd.Series) -> pd.Series:
 def normalize_state_list(df: pd.DataFrame, fields: dict, state: str,
                          source_file: str = "") -> pd.DataFrame:
     """One state's frame → exclusions schema rows (NPI may be blank; name always present)."""
+    # A cell can hold several NPIs ("1104213446\n1174644850", "1053318444; 1881846780"):
+    # one row per valid NPI, so neither identifier is lost. Rows with no valid NPI stay
+    # one row with a blank NPI (name match may still fill it).
+    if "npi" in fields:
+        found = df[fields["npi"]].fillna("").astype(str).str.findall(r"(?<!\d)\d{10}(?!\d)")
+        found = found.map(lambda L: [x for x in L if is_valid_npi(x)] or [""])
+        df = df.assign(_npi=found).explode("_npi").reset_index(drop=True)
+        fields = {**fields, "npi": "_npi"}
     g = lambda f: df[fields[f]].fillna("").astype(str).str.strip() if f in fields else pd.Series("", index=df.index)
     org, last, first, mid = g("org_name"), g("last_name"), g("first_name"), g("middle_name")
     person = (last + ", " + (first + " " + mid).str.strip()).str.strip(", ").str.strip()
@@ -187,6 +199,9 @@ def normalize_state_list(df: pd.DataFrame, fields: dict, state: str,
     npi = npi_raw.where(npi_raw.str.len() == 10, "")
     npi = npi.where(npi.map(lambda s: is_valid_npi(s) if s else False), "")
     reason = g("reason").str.replace(r"\s+", " ", regex=True).str.strip()
+    reason2 = g("reason2").str.replace(r"\s+", " ", regex=True).str.strip()
+    both = (reason != "") & (reason2 != "") & (reason != reason2)
+    reason = reason.where(~both, reason + " / " + reason2).where(reason != "", reason2)
     ptype = g("provider_type")
     excl_date = _dates(g("excl_date")) if "excl_date" in fields else pd.Series(pd.NaT, index=df.index)
     rein = _dates(g("reinstate_date")) if "reinstate_date" in fields else pd.Series(pd.NaT, index=df.index)
@@ -286,6 +301,9 @@ def load_all(in_dir: Path, provider_dim: pd.DataFrame | None = None) -> tuple[pd
             invalid_samples = raw_npi[bad].value_counts().head(6).to_dict()
         top_reasons = (df[fields["reason"]].fillna("").astype(str).str.strip().replace("", "(blank)")
                        .value_counts().head(6).to_dict() if "reason" in fields else {})
+        if "reason2" in fields:
+            top_reasons.update({f"[2] {k}": v for k, v in df[fields["reason2"]].fillna("").astype(str).str.strip()
+                                .replace("", "(blank)").value_counts().head(6).to_dict().items()})
         # low-cardinality columns NO field consumed: the place a cause hides under an odd header
         unused: dict = {}
         for c in df.columns:

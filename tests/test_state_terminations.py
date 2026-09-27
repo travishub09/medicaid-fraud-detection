@@ -233,3 +233,23 @@ def test_report_lists_invalid_npi_samples_and_unused_columns(tmp_path, provider_
     assert "Ownership" in r["unused_categoricals"]
     rep = report(rows, log)
     assert "invalid NPI samples" in rep and "unused column 'Ownership'" in rep
+
+
+def test_multi_npi_cells_explode_and_second_cause_column_folds_in():
+    """KY/SC put two NPIs in one cell; MS carries the cause across 'Termination Reason' AND
+    'Sanction Type' (the fraud conviction sits in the second one)."""
+    df = pd.DataFrame({
+        "Provider Organization Name": ["A CLINIC", "B LLC", "C INC"],
+        "NPI": ["1104213446\n1174644850", "1053318444; 1881846780", "Not Found"],
+        "Termination Reason": ["Licensing Problems", "Criminal Conduct", "Licensing Problems"],
+        "Sanction Type": ["F-Individual or Entity Convicted of Fraud", "OIG-OIG Exclusion", "LB-Licensing Board"],
+        "Termination Effective Date": ["2021-01-01"] * 3,
+    })
+    f = resolve_fields(list(df.columns))
+    assert f["reason"] == "Termination Reason" and f["reason2"] == "Sanction Type"
+    out = normalize_state_list(df, f, "MS", "ms.xlsx")
+    assert out["npi"].tolist() == ["1104213446", "1174644850", "1053318444", "1881846780", ""]
+    assert out["entity_name"].tolist()[:2] == ["A CLINIC", "A CLINIC"]
+    assert out["excl_type"].iloc[0] == "state_term:MS:Licensing Problems / F-Individual or Entity Convicted of Fraud"
+    tiers = classify_series(out["excl_type"])["fca_tier"].tolist()
+    assert tiers == ["hard", "hard", "hard", "hard", "weak"]
