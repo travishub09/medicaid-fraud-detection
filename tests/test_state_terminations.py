@@ -184,6 +184,14 @@ def test_sentinel_and_far_dates_never_overflow_on_concat():
     ("state_term:NC:Criminal Conduct [Suppliers]", "hard", "fraud-shaped"),
     ("state_term:NC:Financial Integrity Issues [Agencies]", "hard", "fraud-shaped"),
     ("state_term:NC:Quality of Care [Physician]", "weak", "quality"),
+    ("state_term:KY:Termed by Medicare", "weak", "Medicare termination"),
+    ("state_term:TN:Violation of the terms of the contract.", "weak", "contract"),
+    ("state_term:KY:Violation of KMAP Pollicy", "weak", "policy"),
+    ("state_term:KY:KBML Treatment Order", "weak", "licensing-board"),
+    ("state_term:NC:OIG/STATE", "weak", "authority"),
+    ("state_term:MS:Criminal Conduct [Physician]", "hard", "fraud-shaped"),
+    ("state_term:TN:Making false statements or misrepresentation of material facts", "hard", "fraud-shaped"),
+    ("state_term:TN:TennCare Fraud conviction", "hard", "fraud-shaped"),
 ])
 def test_state_reasons_seen_in_the_real_lists(excl_type, tier, basis_part):
     t, b = fca_tier(excl_type)
@@ -204,3 +212,24 @@ def test_report_shows_field_map_and_npi_diagnostics(in_dir, provider_dim):
     rep = report(rows, log)
     assert "## Field map per file" in rep and "- map: {" in rep and "NPI cells non-blank" in rep
     assert any(r.get("npi_invalid") is not None for r in log if r.get("rows"))
+
+
+def test_report_lists_invalid_npi_samples_and_unused_columns(tmp_path, provider_dim):
+    """SC-shaped file: NPI column full of non-NPI text, plus a categorical column no field consumed."""
+    df = pd.DataFrame({
+        "Individual//Entity": ["ACME CLINIC", "BETA LLC", "GAMMA INC"],
+        "NPI": ["Not Available", "1234567893", "Pending"],
+        "State": ["SC", "SC", "SC"],
+        "Excluded/Terminated": ["Excluded", "Terminated for Cause", "Excluded"],
+        "Action Date": ["2021-01-01", "2022-02-02", "2023-03-03"],
+        "Ownership": ["Individual", "Entity", "Individual"],
+    })
+    df.to_excel(tmp_path / "SC_terminations_202609.xlsx", index=False)
+    from src.enforcement.state_terminations import report
+    rows, log = load_all(tmp_path, provider_dim)
+    r = [x for x in log if x["file"].startswith("SC")][0]
+    assert r["npi_nonblank"] == 3 and r["npi_invalid"] == 2
+    assert set(r["invalid_npi_samples"]) == {"Not Available", "Pending"}
+    assert "Ownership" in r["unused_categoricals"]
+    rep = report(rows, log)
+    assert "invalid NPI samples" in rep and "unused column 'Ownership'" in rep

@@ -126,10 +126,15 @@ STATE_TERM_RULES = [
      r"phantom|false (record|statement|document)|health ?care (fraud|offense)|"
      r"criminal conduct|financial integrity", "hard",
      "state termination for a fraud-shaped cause"),
-    (r"^(state|federal)$", "weak",
+    (r"^(state|federal|oig)([/ ,&]+(state|federal|oig))*$", "weak",
      "state list records only the sanctioning authority, not a cause"),
-    (r"policy violation|vi[a-z]*lation of [a-z ]*polic|program violation|vi[a-z]*lation of [a-z ]*(rule|regulation|requirement)s?$", "weak",
-     "state termination for a program-policy violation (cause unstated beyond the policy)"),
+    (r"termed by medicare|medicare (term|revoc)|terminated by (medicare|cms)", "weak",
+     "state action derivative of a Medicare termination (the revocation record sets the tier)"),
+    (r"policy violation|vi[a-z]*lation of [a-z ]*pol+ic|program violation|"
+     r"vi[a-z]*lation of [a-z ]*(rule|regulation|requirement|contract|agreement|term)s?", "weak",
+     "state termination for a program-policy or contract violation (cause unstated beyond the policy)"),
+    (r"\bkbml\b|board of (medical|nursing|pharmacy|dental)|medical board|board order|treatment order", "weak",
+     "state termination tied to a licensing-board order"),
     (r"quality of care|standard of care|professional (mis)?conduct|unprofessional", "weak",
      "state termination on a quality-of-care or professional-conduct ground"),
     (r"oig|leie|federal exclusion|1128|hhs exclusion|medicare exclusion|sam\b|reciprocal|"

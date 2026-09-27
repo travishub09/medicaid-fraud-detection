@@ -273,21 +273,34 @@ def load_all(in_dir: Path, provider_dim: pd.DataFrame | None = None) -> tuple[pd
         out = normalize_state_list(df, fields, st, p.name)
         out = match_names_to_nppes(out, provider_dim) if provider_dim is not None else out.assign(match_basis="npi_on_list")
         frames.append(out)
-        # NPI diagnostics on the RAW column: blank vs present-but-invalid (length/Luhn)
+        # NPI diagnostics on the RAW column: blank vs present-but-invalid (length/Luhn),
+        # with samples of the invalid values so a formatting problem is visible
         npi_nonblank = npi_invalid = 0
+        invalid_samples: dict = {}
         if "npi" in fields:
             raw_npi = df[fields["npi"]].fillna("").astype(str).str.strip()
             digits = raw_npi.str.replace(r"\D", "", regex=True)
             nb = raw_npi != ""
-            npi_nonblank = int(nb.sum())
-            npi_invalid = int((nb & ~digits.map(lambda s: len(s) == 10 and is_valid_npi(s))).sum())
+            bad = nb & ~digits.map(lambda s: len(s) == 10 and is_valid_npi(s))
+            npi_nonblank, npi_invalid = int(nb.sum()), int(bad.sum())
+            invalid_samples = raw_npi[bad].value_counts().head(6).to_dict()
         top_reasons = (df[fields["reason"]].fillna("").astype(str).str.strip().replace("", "(blank)")
                        .value_counts().head(6).to_dict() if "reason" in fields else {})
+        # low-cardinality columns NO field consumed: the place a cause hides under an odd header
+        unused: dict = {}
+        for c in df.columns:
+            if c in fields.values():
+                continue
+            v = df[c].fillna("").astype(str).str.strip()
+            v = v[v != ""]
+            if len(v) and 1 < v.nunique() <= 25:
+                unused[str(c)] = v.value_counts().head(6).to_dict()
         log.append({"file": p.name, "state": st, "sheet": sheet, "rows": int(len(out)),
                     "with_npi": int((out["npi"] != "").sum()),
                     "name_matched": int((out["match_basis"] == "name_match").sum()),
                     "dated": int(out["excl_date"].notna().sum()),
                     "npi_nonblank": npi_nonblank, "npi_invalid": npi_invalid,
+                    "invalid_npi_samples": invalid_samples, "unused_categoricals": unused,
                     "header": [str(c) for c in df.columns][:16], "top_reasons": top_reasons,
                     "fields": {k: v for k, v in fields.items()}, "note": ""})
     if not frames:
@@ -314,6 +327,10 @@ def report(rows: pd.DataFrame, log: list[dict]) -> str:
         L.append(f"- map: {r.get('fields', {})}")
         if r.get("top_reasons"):
             L.append("- top reason values: " + "; ".join(f"{k[:50]} ({v})" for k, v in r["top_reasons"].items()))
+        if r.get("invalid_npi_samples"):
+            L.append("- invalid NPI samples: " + "; ".join(f"{k[:30]!r} ({v})" for k, v in r["invalid_npi_samples"].items()))
+        for col, vals in (r.get("unused_categoricals") or {}).items():
+            L.append(f"- unused column {col!r}: " + "; ".join(f"{k[:40]} ({v})" for k, v in vals.items()))
         L.append("")
     if len(rows):
         t = classify_series(rows["excl_type"])
