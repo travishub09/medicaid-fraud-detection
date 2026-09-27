@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 from datetime import date
 from pathlib import Path
@@ -219,6 +220,18 @@ def _is_rate_limited(exc: Exception) -> bool:
     return getattr(resp, "status_code", None) == 429 or "429" in str(exc)
 
 
+def _is_transient(exc: Exception) -> bool:
+    """429 (rate limit) or a 5xx (the research service's own error, seen live as
+    'HTTP 500 for /v2/task.create'): retry with backoff, then stop cleanly with the
+    registry intact so a re-run resumes — never a traceback that hides how many
+    paid tasks already exist."""
+    if _is_rate_limited(exc):
+        return True
+    resp = getattr(exc, "response", None)
+    code = getattr(resp, "status_code", None)
+    return code is not None and 500 <= int(code) < 600     # a bare RuntimeError still raises
+
+
 def dispatch_research(prompts_path: Path, registry_path: Path,
                       transport=None, max_new: int | None = None,
                       backoff_s: tuple = (20, 40, 80), sleep=None) -> dict:
@@ -242,7 +255,7 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
         transport = ManusTransport(api_key=key)
     reg = (json.loads(registry_path.read_text(encoding="utf-8"))
            if registry_path.exists() else {})
-    n_new, rate_limited, skipped = 0, False, 0
+    n_new, rate_limited, skipped, last_error = 0, False, 0, ""
     for line in prompts_path.read_text(encoding="utf-8").splitlines():
         item = json.loads(line)
         oid = item["org_id"]
@@ -259,10 +272,11 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
                 created = transport.create(item["prompt"])
                 break
             except Exception as e:                    # noqa: BLE001
-                if _is_rate_limited(e) and attempt < len(backoff_s):
+                if _is_transient(e) and attempt < len(backoff_s):
                     continue
-                if _is_rate_limited(e):
+                if _is_transient(e):
                     rate_limited = True
+                    last_error = str(e)[:200]
                     break
                 registry_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
                 raise
@@ -277,8 +291,8 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
     out = {"dispatched": n_new, "total": len(reg)}
     if rate_limited:
         out["rate_limited"] = True
-        out["note"] = ("Manus returned 429 after retries — re-run --dispatch "
-                       "later; already-dispatched prospects are skipped")
+        out["note"] = ("the research service refused after retries (" + (last_error or "429") +
+                       ") — re-run --dispatch later; already-dispatched prospects are skipped")
     if skipped:
         out["remaining"] = skipped
     return out

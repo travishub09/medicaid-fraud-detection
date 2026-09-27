@@ -233,3 +233,38 @@ def test_priority_list_entity_segment(tmp_path):
                    "entity_segment"].iloc[0] == "institutional"
     assert (out.loc[out["org_name"].str.startswith("COMPANY"),
                     "entity_segment"] == "operator").all()
+
+
+def test_dispatch_stops_cleanly_on_server_error(tmp_path):
+    """A 5xx from task.create (seen live) retries with backoff, then stops with the
+    registry intact instead of a traceback; a re-run resumes from the registry."""
+    import json
+    from src.model_a.pursuit_dossier import dispatch_research
+
+    class _Resp:
+        status_code = 500
+
+    class _Err(Exception):
+        response = _Resp()
+
+    calls = {"n": 0}
+
+    class _T:
+        def create(self, prompt):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return {"task_id": "t1"}
+            raise _Err("500 Server Error")
+
+    pj = tmp_path / "p.jsonl"
+    pj.write_text('\n'.join(json.dumps({"org_id": f"o{i}", "org_name": f"n{i}", "prompt": "x"}) for i in range(3)) + "\n")
+    reg = tmp_path / "reg.json"
+    out = dispatch_research(pj, reg, transport=_T(), sleep=lambda s: None)
+    assert out["dispatched"] == 1 and out.get("rate_limited") and "500" in out["note"]
+    assert json.loads(reg.read_text())["o0"]["task_id"] == "t1"
+    # resume: o0 is skipped, o1 is retried
+    class _OK:
+        def create(self, prompt):
+            return {"task_id": "t2"}
+    out2 = dispatch_research(pj, reg, transport=_OK(), sleep=lambda s: None)
+    assert out2["dispatched"] == 2 and out2["total"] == 3

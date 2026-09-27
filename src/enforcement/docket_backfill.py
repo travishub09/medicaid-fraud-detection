@@ -145,6 +145,11 @@ def main() -> None:
     ap.add_argument("--merge-into", default=None, help="an existing case CSV to append the docket rows to")
     ap.add_argument("--max-pages", type=int, default=2000)
     a = ap.parse_args()
+    import os
+    if not os.environ.get("COURTLISTENER_TOKEN"):
+        raise SystemExit("CourtListener's API refuses anonymous requests (HTTP 401). Make a free account at "
+                         "https://www.courtlistener.com/sign-in/, open your profile page, copy the API token, "
+                         "then in this window:  set COURTLISTENER_TOKEN=<the token>  and re-run.")
     cases = run_backfill(a.since, max_pages=a.max_pages)
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)

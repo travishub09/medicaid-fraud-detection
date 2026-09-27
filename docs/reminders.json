@@ -568,13 +568,12 @@
   },
   {
    "key": "case_harvest_sources_1_6",
-   "what": "BUILT 2026-09-27 (bundle 184): six more sources of prosecuted cases for the DOJ label. OPERATOR, in order, each independent of the others: (1) DOJ ten-year backfill with the widened filter (network, can run an hour; light on the machine); (2) CourtListener FCA docket backfill since 2015 (set COURTLISTENER_TOKEN if you have one; otherwise it runs slower); (3) OIG enforcement harvest since 2020 for the nine Southeast states; (4-6) build the research prompt sets, review case_harvest_batch.csv, dispatch, poll a day later, review each CSV under results/, load the ones you accept with research_evidence mfcu-cases. After 1-3 (and after any loaded research), rerun the defendant resolver on doj_cases_v3.csv and upload DEFENDANT_RESOLUTION.md.",
+   "what": "BUILT 2026-09-27 (bundle 184): six more sources of prosecuted cases for the DOJ label. OPERATOR, in order, each independent of the others: (1) DOJ ten-year backfill with the widened filter (network, can run an hour; light on the machine); (2) SKIPPED by operator decision 2026-09-27: the CourtListener docket backfill needs an API token and the operator is not opening an account (code stays built); (3) OIG enforcement harvest since 2020 for the nine Southeast states; (4-6) build the research prompt sets, review case_harvest_batch.csv, dispatch, poll a day later, review each CSV under results/, load the ones you accept with research_evidence mfcu-cases. After 1-3 (and after any loaded research), rerun the defendant resolver on doj_cases_v3.csv and upload DEFENDANT_RESOLUTION.md.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
     "python -m src.enforcement.fetch --backfill-years 10 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\"",
-    "python -m src.enforcement.docket_backfill --since 2015-01-01 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\fca_dockets.csv\" --merge-into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
     "python -m src.enforcement.oig_enforcement --since 2020-01-01 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --states FL,GA,AL,MS,TN,NC,SC,LA,KY --merge-into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
     "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --sets mfcu,takedown,yir,hcfac,oig_sar",
     "REM review case_harvest_batch.csv, then:",
