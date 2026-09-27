@@ -139,3 +139,34 @@ def test_scales_without_per_group_frames():
     _, peak = tracemalloc.get_traced_memory(); tracemalloc.stop()
     assert time.time() - t0 < 30 and peak < 400 * 1024 * 1024
     assert (out["status"] == "resolved").sum() >= 10                             # the FL-resident ones
+
+
+def test_url_state_person_split_parens_middle_and_chain(pdim):
+    from src.enforcement.defendant_resolver import url_state, _split_persons, _clean_name, CHAIN_MIN_CANDIDATES
+    assert url_state("https://www.justice.gov/usao-mdfl/pr/x") == "FL"
+    assert url_state("https://www.justice.gov/usao-sc/pr/x") == "SC" and url_state("https://www.justice.gov/opa/pr/x") == ""
+    assert url_state("https://www.mass.gov/news/x") == "MA"
+    assert _split_persons("Jorge Perez and Ricardo Perez") == ["Jorge Perez", "Ricardo Perez"]
+    assert _split_persons("A Rose Sr.; B Rose; C Sanders") == ["A Rose Sr.", "B Rose", "C Sanders"]
+    assert _split_persons("Evercare Hospice and Palliative Care") == ["Evercare Hospice and Palliative Care"]
+    assert _clean_name("Kaiser Foundation Health Plan (collectively Kaiser)") == "Kaiser Foundation Health Plan"
+    assert _clean_name("Evercare Hospice (now known as Optum Palliative and Hospice Care)") == "Evercare Hospice"
+    # state from the URL when the district is blank; two people in one field -> two mentions
+    ms = extract_defendants("", "Jorge Perez and Ricardo Perez", "", "https://www.justice.gov/usao-mdfl/pr/x")
+    assert [m["defendant"] for m in ms] == ["Jorge Perez", "Ricardo Perez"] and all(m["state"] == "FL" for m in ms)
+    # middle name settles a two-way tie; a chain is not a research target
+    big = pd.concat([pdim, pd.DataFrame({
+        "npi": ["1114567893", "1124567891"] + [str(1300000000 + i) for i in range(CHAIN_MIN_CANDIDATES)],
+        "entity_type": ["1", "1"] + ["2"] * CHAIN_MIN_CANDIDATES,
+        "provider_name": ["BROWN, RAYMOND SEAN", "BROWN, RAYMOND T"] + ["WALGREENS"] * CHAIN_MIN_CANDIDATES,
+        "name_key": ["BROWN RAYMOND SEAN", "BROWN RAYMOND T"] + ["WALGREENS"] * CHAIN_MIN_CANDIDATES,
+        "addr_state": ["TN"] * (2 + CHAIN_MIN_CANDIDATES), "addr_city": ["CLEVELAND"] * (2 + CHAIN_MIN_CANDIDATES)})],
+        ignore_index=True)
+    m = pd.DataFrame([{"case_id": "c1", "announced_date": "", "amount_usd": "", "scheme": "", "defendant": "Dr. Raymond Sean Brown",
+                       "kind": "person", "city": "", "state": "TN", "mention": "primary_defendant"},
+                      {"case_id": "c2", "announced_date": "", "amount_usd": "", "scheme": "", "defendant": "Walgreens",
+                       "kind": "org", "city": "", "state": "TN", "mention": "primary_defendant"}])
+    out = resolve_defendants(m, big)
+    assert out["npi"].iloc[0] == "1114567893" and out["match_level"].iloc[0] == "name_state_middle"
+    assert out["status"].iloc[1] == "chain_org"
+    assert "Walgreens" not in set(residuals(out)["defendant"])

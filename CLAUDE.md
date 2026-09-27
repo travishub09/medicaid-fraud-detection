@@ -474,7 +474,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   auto-loads it from processed/. `--mfcu-prompts` writes the state-MFCU sweep
   research prompts (9 SE states × 2020-2025) whose reviewed CSVs load through
   research_evidence.load_mfcu_cases. Prosecuted providers are labels, never leads.
-  Full suite: `pytest tests/` (895 tests).
+  Full suite: `pytest tests/` (896 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

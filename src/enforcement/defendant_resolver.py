@@ -81,6 +81,56 @@ def district_state(jurisdiction: str) -> str:
     return ""
 
 
+_USAO_URL = re.compile(r"usao-(?:[nsewcm]d)?([a-z]{2})\b")
+_STATE_GOV_URL = re.compile(r"(?:^|[./])(?:ag|oag|attorneygeneral|governor|myfloridalegal|law)?\.?([a-z]{2})\.gov\b")
+_URL_STATE_HINTS = {"myfloridalegal.com": "FL", "ag.idaho.gov": "ID", "mass.gov": "MA", "hawaii.gov": "HI",
+                    "ag.ky.gov": "KY", "law.georgia.gov": "GA", "oag.ca.gov": "CA", "ag.ny.gov": "NY",
+                    "texasattorneygeneral.gov": "TX", "ag.state.la.us": "LA", "ago.mo.gov": "MO",
+                    "tn.gov": "TN", "ncdoj.gov": "NC", "scag.gov": "SC", "alabamaag.gov": "AL",
+                    "ag.ms.gov": "MS", "michigan.gov": "MI", "illinoisattorneygeneral.gov": "IL",
+                    "ohioattorneygeneral.gov": "OH", "attorneygeneral.gov": "PA", "oag.dc.gov": "DC",
+                    "atg.wa.gov": "WA", "doj.state.or.us": "OR", "coag.gov": "CO", "azag.gov": "AZ",
+                    "ag.nv.gov": "NV", "nj.gov": "NJ", "ag.state.mn.us": "MN", "iowaattorneygeneral.gov": "IA",
+                    "in.gov": "IN", "ky.gov": "KY", "virginia.gov": "VA", "wvago.gov": "WV",
+                    "doj.state.wi.us": "WI", "ag.nebraska.gov": "NE", "ag.ks.gov": "KS", "oag.ok.gov": "OK",
+                    "arkansasag.gov": "AR", "ag.utah.gov": "UT", "riag.ri.gov": "RI", "ct.gov": "CT",
+                    "maine.gov": "ME", "doj.nh.gov": "NH", "ago.vermont.gov": "VT", "marylandattorneygeneral.gov": "MD",
+                    "attorneygeneral.delaware.gov": "DE", "nmag.gov": "NM", "dojmt.gov": "MT",
+                    "ag.nd.gov": "ND", "atg.sd.gov": "SD", "law.alaska.gov": "AK", "wyoming.gov": "WY"}
+
+
+def url_state(source_url: str) -> str:
+    """'https://www.justice.gov/usao-mdfl/pr/...' → 'FL'; state AG domains via a hint table."""
+    u = str(source_url or "").lower()
+    if not u:
+        return ""
+    m = _USAO_URL.search(u)
+    if m:
+        st = m.group(1).upper()
+        if st in _NAME_TO_ABBR.values():
+            return st
+    for host, st in _URL_STATE_HINTS.items():
+        if host in u:
+            return st
+    return ""
+
+
+_PERSON_SPLIT = re.compile(r"\s*;\s*|\s*,?\s+and\s+|\s*&\s*", re.I)
+
+
+def _split_persons(name: str) -> list[str]:
+    """'Jorge Perez and Ricardo Perez' / 'A Rose Sr.; B Rose; C Sanders' → one name each,
+    but ONLY when every part looks like a person (an org name keeps its 'and')."""
+    if ";" not in name and not re.search(r"\s(?:and|&)\s", name, re.I):
+        return [name]
+    parts = [p.strip(" ,") for p in _PERSON_SPLIT.split(name) if p.strip(" ,")]
+    if len(parts) >= 2 and all(classify_defendant(p) == "person" for p in parts):
+        return parts
+    if ";" in name:
+        return [p.strip(" ,") for p in name.split(";") if p.strip(" ,")]
+    return [name]
+
+
 # ---- defendant mention extraction -----------------------------------------------------
 _HONORIFIC = re.compile(r"^(?:dr|mr|mrs|ms|nurse|pharmacist)\.?\s+", re.I)
 _PERSON_SUFFIX = re.compile(r",?\s*\b(?:jr|sr|ii|iii|iv|m\.?d|d\.?o|d\.?d\.?s|d\.?m\.?d|d\.?p\.?m|"
@@ -122,6 +172,10 @@ def _clean_name(raw: str) -> str:
     keep only the trailing run of capitalised tokens (connectors like 'of'/'and' allowed
     inside), cut at any sentence boundary, then strip leading role words."""
     s = re.sub(r"\s+", " ", str(raw or "")).strip(" ,;:")
+    s = re.sub(r"\((?:collectively|together|now known as|formerly|f/k/a|a/k/a|the)[^)]*\)?", " ", s, flags=re.I)
+    s = re.sub(r"\b(?:now known as|formerly known as|f/k/a|a/k/a)\b.*$", " ", s, flags=re.I)
+    s = s.replace("(", " ").replace(")", " ").replace('"', " ").replace("\u201c", " ").replace("\u201d", " ")
+    s = re.sub(r"\s+", " ", s).strip(" ,;:")
     # last sentence only, but "Dr. John A. Smith" / "Acme Inc. of" are not sentence ends
     protected = _ABBREV_DOT.sub(lambda m: m.group(1) + "\x00", s)
     s = protected.split(". ")[-1].replace("\x00", ".")
@@ -165,20 +219,23 @@ def _split_dba(name: str) -> list[str]:
     return [p.strip(" ,") for p in parts if p.strip(" ,")]
 
 
-def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str = "") -> list[dict]:
+def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str = "",
+                       source_url: str = "") -> list[dict]:
     """Every defendant mention with (name, kind, city, state). The primary defendant
-    always appears (state from the district when the text names none)."""
+    always appears (state from the district, else from the source URL, when the text
+    names none)."""
     text = re.sub(r"\s+", " ", str(summary or ""))
     found: dict[tuple, dict] = {}
 
     def _add(name, city, state, source):
-        for n in _split_dba(_clean_name(name)):
-            if len(n) < 3:
-                continue
-            key = (n.upper(), (city or "").upper(), state)
-            if key not in found:
-                found[key] = {"defendant": n, "kind": classify_defendant(n),
-                              "city": city or "", "state": state, "mention": source}
+        for n0 in _split_dba(_clean_name(name)):
+            for n in _split_persons(n0):
+                if len(n) < 3:
+                    continue
+                key = (n.upper(), (city or "").upper(), state)
+                if key not in found:
+                    found[key] = {"defendant": n, "kind": classify_defendant(n),
+                                  "city": city or "", "state": state, "mention": source}
 
     for pat, src in ((_OF_PATTERN, "of_city_state"), (_BASED_PATTERN, "city_state_based"),
                      (_LOCATED_PATTERN, "located_in")):
@@ -188,19 +245,20 @@ def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str
 
     primary = _clean_name(defendant_name)
     if primary:
-        dst = district_state(jurisdiction)
+        dst = district_state(jurisdiction) or url_state(source_url)
         # if the text already located the primary defendant, keep that (city-bearing) row
         already = any(k[0] == primary.upper() or k[0] in primary.upper() for k in found)
         if not already:
-            for n in _split_dba(primary):
-                # the primary defendant's state: from the text if a mention shares its
-                # name tokens, else the district
-                st = next((v["state"] for v in found.values()
-                           if v["defendant"].upper() in n.upper() or n.upper() in v["defendant"].upper()), dst)
-                key = (n.upper(), "", st)
-                if key not in found:
-                    found[key] = {"defendant": n, "kind": classify_defendant(n), "city": "",
-                                  "state": st, "mention": "primary_defendant"}
+            for n0 in _split_dba(primary):
+                for n in _split_persons(n0):
+                    # the primary defendant's state: from the text if a mention shares its
+                    # name tokens, else the district / URL
+                    st = next((v["state"] for v in found.values()
+                               if v["defendant"].upper() in n.upper() or n.upper() in v["defendant"].upper()), dst)
+                    key = (n.upper(), "", st)
+                    if key not in found:
+                        found[key] = {"defendant": n, "kind": classify_defendant(n), "city": "",
+                                      "state": st, "mention": "primary_defendant"}
     return list(found.values())
 
 
@@ -249,7 +307,9 @@ def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
         pk = _nppes_person_key(name[is_person])
         hit = pk[pk.isin(person_keys)]
         for idx, k in hit.items():
-            people.setdefault((k, st[idx]), []).append((npi[idx], city[idx]))
+            full = name[idx].upper()
+            middle = full.split(",", 1)[1].strip().split(" ")[1:] if "," in full else []
+            people.setdefault((k, st[idx]), []).append((npi[idx], city[idx], " ".join(middle)))
     orgs: dict = {}
     if org_keys:
         if "name_key" in p.columns:
@@ -258,8 +318,18 @@ def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
             ok = name[~is_person].map(norm_org_name)
         hit = ok[ok.isin(org_keys)]
         for idx, k in hit.items():
-            orgs.setdefault((k, st[idx]), []).append((npi[idx], city[idx]))
+            orgs.setdefault((k, st[idx]), []).append((npi[idx], city[idx], ""))
     return people, orgs
+
+
+CHAIN_MIN_CANDIDATES = 5   # an org name with this many NPIs in one state is a chain, not a target
+
+
+def _middle_tokens(defendant: str) -> list[str]:
+    s = _HONORIFIC.sub("", str(defendant or "").strip())
+    s = _PERSON_SUFFIX.sub("", s).strip(" ,")
+    toks = [t.strip(".") for t in re.split(r"\s+", re.sub(r"[^A-Za-z' .\-]", " ", s).upper()) if t.strip(".")]
+    return toks[1:-1] if len(toks) > 2 else []
 
 
 def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.DataFrame:
@@ -308,16 +378,26 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             continue
         level = "name_state"
         city = str(r.get("city") or "").upper()
-        if len({n for n, _ in cands}) > 1 and city:
-            narrowed = [(n, c) for n, c in cands if c == city]
+        if len({c[0] for c in cands}) > 1 and city:
+            narrowed = [c for c in cands if c[1] == city]
             if narrowed:
                 cands, level = narrowed, "name_city_state"
-        uniq = sorted({n for n, _ in cands})
+        if len({c[0] for c in cands}) > 1 and out.at[i, "kind"] == "person":
+            # a middle name / initial in the case text settles a two-way tie
+            mids = _middle_tokens(r["defendant"])
+            if mids:
+                narrowed = [c for c in cands if c[2] and any(
+                    (len(m) == 1 and c[2].startswith(m)) or (len(m) > 1 and m in c[2].split()) for m in mids)]
+                if narrowed:
+                    cands, level = narrowed, level + "_middle"
+        uniq = sorted({c[0] for c in cands})
         out.at[i, "n_candidates"] = len(uniq)
         if len(uniq) == 1:
             out.at[i, "npi"] = uniq[0]
             out.at[i, "match_level"] = level
             out.at[i, "status"] = "resolved"
+        elif out.at[i, "kind"] == "org" and len(uniq) >= CHAIN_MIN_CANDIDATES:
+            out.at[i, "status"] = "chain_org"        # the org_billing tier covers enrolled chains
         else:
             out.at[i, "status"] = "ambiguous"
     out = out.drop(columns=["_pk", "_ok"])
@@ -329,7 +409,8 @@ def mentions_from_case_db(case_db: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for c in case_db.itertuples(index=False):
         d = c._asdict()
-        for m in extract_defendants(d.get("summary", ""), d.get("defendant_name", ""), d.get("jurisdiction", "")):
+        for m in extract_defendants(d.get("summary", ""), d.get("defendant_name", ""), d.get("jurisdiction", ""),
+                                    d.get("source_url", "")):
             rows.append({"case_id": str(d.get("case_id", "")), "announced_date": d.get("announced_date", ""),
                          "amount_usd": d.get("amount_usd", ""), "scheme": d.get("scheme", ""), **m})
     return pd.DataFrame(rows, columns=["case_id", "announced_date", "amount_usd", "scheme", "defendant",
@@ -378,11 +459,16 @@ def mfcu_sweep_prompts(states: list[str] | None = None, years: list[int] | None 
             for st in states for y in years]
 
 
-def residuals(resolved: pd.DataFrame, min_amount: float = 0.0) -> pd.DataFrame:
+def residuals(resolved: pd.DataFrame, min_amount: float = 0.0, states: list[str] | None = None) -> pd.DataFrame:
+    """The research queue: ambiguous PEOPLE first (a docket settles them), then ambiguous
+    small orgs, then unmatched mentions above the dollar floor; chains never appear."""
     r = resolved[resolved["status"].isin(["ambiguous", "unmatched"])].copy()
+    if states:
+        r = r[r["state"].isin([s.upper() for s in states])]
     r["amount_num"] = pd.to_numeric(r["amount_usd"], errors="coerce").fillna(0.0)
     r = r[(r["status"] == "ambiguous") | (r["amount_num"] >= float(min_amount))]
-    r["priority"] = r["status"].map({"ambiguous": 0, "unmatched": 1})
+    r["priority"] = [0 if (s == "ambiguous" and k == "person") else 1 if s == "ambiguous" else 2
+                     for s, k in zip(r["status"], r["kind"])]
     return r.sort_values(["priority", "amount_num"], ascending=[True, False]).drop(columns=["priority"])
 
 
@@ -400,8 +486,10 @@ def report(resolved: pd.DataFrame, res: pd.DataFrame) -> str:
          "_Training and validation positives only. Prosecuted providers are never leads (public disclosure, first-to-file)._", ""]
     n_cases = resolved["case_id"].nunique() if len(resolved) else 0
     by = resolved["status"].value_counts().to_dict() if len(resolved) else {}
+    src = resolved["mention"].value_counts().to_dict() if len(resolved) else {}
     L += [f"- cases with at least one defendant mention: **{n_cases:,}**; mentions: **{len(resolved):,}**",
           "- mention status: " + ", ".join(f"{k} {v:,}" for k, v in by.items()),
+          "- where mentions came from: " + ", ".join(f"{k} {v:,}" for k, v in src.items()),
           f"- cases with at least one RESOLVED NPI: **{resolved[resolved['status'] == 'resolved']['case_id'].nunique():,}**; "
           f"distinct NPIs: **{resolved[resolved['status'] == 'resolved']['npi'].nunique():,}**", ""]
     if len(resolved):
@@ -427,6 +515,8 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="processed/case_defendant_npis.parquet")
     ap.add_argument("--min-amount", type=float, default=250_000.0,
                     help="unmatched mentions below this case amount are left out of the research list")
+    ap.add_argument("--research-states", default=None,
+                    help="comma list; restrict the research list to these states (e.g. the Southeast)")
     ap.add_argument("--mfcu-prompts", default=None,
                     help="also write state-MFCU sweep research prompts (jsonl) for the Southeast, 2020-2025")
     a = ap.parse_args()
@@ -442,7 +532,8 @@ def main() -> None:
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     resolved.to_parquet(out, index=False)
-    res = residuals(resolved, a.min_amount)
+    res = residuals(resolved, a.min_amount,
+                    [x.strip() for x in a.research_states.split(",")] if a.research_states else None)
     res.to_csv(out.with_name("case_defendants_unresolved.csv"), index=False)
     with open(out.with_name("case_defendant_research_prompts.jsonl"), "w", encoding="utf-8") as fh:
         for p in research_prompts(res):
