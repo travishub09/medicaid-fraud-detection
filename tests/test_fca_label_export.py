@@ -119,3 +119,16 @@ def test_oig_cmp_and_not_fraud_classification_and_reclassify():
     assert "oig_cmp" not in set(strict["label_tier"]) and any("oig_cmp tier excluded" in r for r in q["reason"])
     shaped, _ = build_strict_labels(cases, dn, pdim, "fca_shaped")
     assert "oig_cmp" in set(shaped["label_tier"])
+
+
+def test_amount_ignores_doj_boilerplate_and_reclassify_recomputes():
+    from src.enforcement.case_db import _extract_amount, reclassify
+    t = ("Three men were sentenced for laundering the proceeds of a $4.5 million Medicare fraud scheme. "
+         "Since its inception in March 2007, the Medicare Fraud Strike Force has charged more than 4,200 defendants who "
+         "collectively have billed the Medicare program for approximately $19 billion.")
+    assert _extract_amount(t) == 4_500_000
+    assert _extract_amount("Health care fraud costs the nation $60 billion each year.") is None
+    df = pd.DataFrame([{"case_id": "a", "case_type": "criminal_hcf", "summary": t, "scheme": "", "amount_usd": "19000000000"},
+                       {"case_id": "b", "case_type": "civil_fca", "summary": "Acme agreed to pay to resolve allegations.", "scheme": "", "amount_usd": "250000"}])
+    out = reclassify(df)
+    assert float(out.loc[0, "amount_usd"]) == 4_500_000 and float(out.loc[1, "amount_usd"]) == 250_000   # kept when text yields nothing

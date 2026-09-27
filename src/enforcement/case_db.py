@@ -105,8 +105,21 @@ _SCHEME_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+# DOJ boilerplate that names a NATIONAL cumulative figure, never the case's own:
+# "... has charged more than 4,200 defendants who collectively have billed the
+# Medicare program for approximately $19 billion", "health care fraud costs ...
+# $60 billion each year". Sentences that match are ignored by the amount parser.
+_BOILERPLATE = re.compile(r"since (?:its|the) inception|strike force|collectively (?:have )?billed|"
+                          r"nationwide|across the country|each year|annually|per year|a year\b|"
+                          r"defendants who|the program has|task force", re.I)
+
+
+def _case_sentences(text: str) -> str:
+    return " ".join(sent for sent in re.split(r"(?<=[.!?])\s+", str(text or "")) if not _BOILERPLATE.search(sent))
+
+
 def _extract_amount(text: str) -> float | None:
-    hits = _AMOUNT.findall(text)
+    hits = _AMOUNT.findall(_case_sentences(text))
     if not hits:
         return None
     best = 0.0
@@ -217,6 +230,12 @@ def reclassify(df: pd.DataFrame) -> pd.DataFrame:
     text = out["summary"].fillna("").astype(str) + " " + out.get("scheme", pd.Series("", index=out.index)).fillna("").astype(str)
     fresh = text.map(classify_case_type)
     out["case_type"] = ct.where(ct.str.startswith("docket"), fresh)
+    # amounts: recomputed from the stored text with the boilerplate filter; a row whose
+    # text yields nothing keeps what it had
+    if "summary" in out.columns:
+        fresh_amt = out["summary"].fillna("").astype(str).map(_extract_amount)
+        old_amt = pd.to_numeric(out.get("amount_usd"), errors="coerce") if "amount_usd" in out.columns else pd.Series(pd.NA, index=out.index)
+        out["amount_usd"] = fresh_amt.where(fresh_amt.notna(), old_amt)
     return out
 
 
