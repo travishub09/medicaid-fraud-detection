@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time as time_module
 import os
 from datetime import date
 from pathlib import Path
@@ -270,6 +271,28 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
                     "note": f"{MANUS_KEY_ENV} not set — prompts written, "
                             "research pending (not silently skipped)"}
         transport = ManusTransport(api_key=key)
+    # ONE dispatcher per registry: two running at once each send what the other
+    # has not yet written (seen live: 280 + 270 + 178 creates for a 280-prompt
+    # batch, ~450 paid duplicates). A lock file younger than 6 hours refuses.
+    lock = registry_path.with_suffix(".lock")
+    if lock.exists():
+        age_h = (time_module.time() - lock.stat().st_mtime) / 3600.0
+        if age_h < 6:
+            return {"dispatched": 0, "refused": True,
+                    "note": f"another dispatch of this batch is running or ended abnormally {age_h:.1f}h ago "
+                            f"({lock.name}); wait for it, or delete the lock file if no other window is dispatching"}
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    try:
+        return _dispatch_locked(prompts_path, registry_path, transport, max_new, backoff_s, sleep)
+    finally:
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _dispatch_locked(prompts_path: Path, registry_path: Path, transport, max_new, backoff_s, sleep) -> dict:
     reg = (json.loads(registry_path.read_text(encoding="utf-8"))
            if registry_path.exists() else {})
     n_new, rate_limited, skipped, last_error, no_id_streak = 0, False, 0, "", 0

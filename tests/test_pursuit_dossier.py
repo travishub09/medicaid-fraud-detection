@@ -296,3 +296,23 @@ def test_dispatch_never_counts_or_stores_a_create_without_an_id(tmp_path):
             return {"task_id": "t2"}
     out2 = dispatch_research(pj, reg, transport=_OK(), sleep=lambda s: None)
     assert out2["dispatched"] == 5 and out2["total"] == 6
+
+
+def test_dispatch_refuses_a_second_concurrent_run(tmp_path):
+    import json
+    from src.model_a.pursuit_dossier import dispatch_research
+
+    class _T:
+        def create(self, prompt):
+            return {"task_id": "t"}
+
+    pj = tmp_path / "p.jsonl"
+    pj.write_text(json.dumps({"org_id": "o0", "org_name": "n", "prompt": "x"}) + "\n")
+    reg = tmp_path / "reg.json"
+    lock = reg.with_suffix(".lock")
+    lock.write_text("123")
+    out = dispatch_research(pj, reg, transport=_T(), sleep=lambda s: None)
+    assert out["dispatched"] == 0 and out.get("refused") and "another dispatch" in out["note"]
+    lock.unlink()
+    out2 = dispatch_research(pj, reg, transport=_T(), sleep=lambda s: None)
+    assert out2["dispatched"] == 1 and not lock.exists()          # lock released after a normal run

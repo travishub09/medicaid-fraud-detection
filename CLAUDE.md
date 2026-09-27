@@ -499,7 +499,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   semiannual reports, state MFCU sweeps) → --dispatch / --poll (answers saved for
   review; loaded only via research_evidence mfcu-cases). `feeds.client.
   default_fetch_text` is the HTML counterpart of the JSON client.
-  Full suite: `pytest tests/` (911 tests).
+  Full suite: `pytest tests/` (912 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
