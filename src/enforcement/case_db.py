@@ -229,15 +229,15 @@ def main() -> None:
     a = ap.parse_args()
     primary = pd.read_csv(a.into, dtype=str)
     n0 = len(primary)
-    if a.reclassify:
-        before = primary["case_type"].fillna("").value_counts().to_dict() if "case_type" in primary.columns else {}
-        primary = reclassify(primary)
-        after = primary["case_type"].fillna("").value_counts().to_dict()
-        print(f"  reclassified: {before} -> {after}")
     for path in a.add:
         sec = pd.read_csv(path, dtype=str)
         primary = merge_case_files(primary, sec)
         print(f"  + {path}: {len(sec):,} rows -> {len(primary) - n0:,} new so far")
+    if a.reclassify:                       # AFTER the adds, so appended rows get the current rules too
+        before = primary["case_type"].fillna("").value_counts().to_dict() if "case_type" in primary.columns else {}
+        primary = reclassify(primary)
+        after = primary["case_type"].fillna("").value_counts().to_dict()
+        print(f"  reclassified: {before} -> {after}")
     primary.to_csv(a.into, index=False)
     print(f"case db: {n0:,} -> {len(primary):,} cases in {a.into}")
 
