@@ -130,12 +130,42 @@ def state_from_filename(path: Path) -> str:
     return m.group(1).upper() if m else ""
 
 
+DATE_FMTS = ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d %H:%M:%S", "%m-%d-%Y", "%d-%b-%Y", "%b %d, %Y")
+DATE_LO, DATE_HI = pd.Timestamp("1900-01-01"), pd.Timestamp("2200-01-01")
+
+
 def _dates(s: pd.Series) -> pd.Series:
-    d = pd.to_datetime(s, errors="coerce")
+    """Text/serial dates → datetime64[ns]. Sentinel 'open' dates (2999-12-31, 9999-..)
+    and pre-1900 values become NaT; a far date otherwise arrives as a coarser unit
+    and overflows when the per-state frames are concatenated."""
+    def _ns(x: pd.Series) -> pd.Series:
+        # clamp in whatever unit pandas chose, THEN force nanoseconds
+        x = x.where((x >= DATE_LO) & (x < DATE_HI))
+        return x.astype("datetime64[ns]")
+
+    txt = s.fillna("").astype(str).str.strip()
+    d = pd.Series(pd.NaT, index=s.index, dtype="datetime64[ns]")
+    for fmt in DATE_FMTS:
+        miss = d.isna() & (txt != "")
+        if not miss.any():
+            break
+        try:
+            d.loc[miss] = _ns(pd.to_datetime(txt[miss], format=fmt, errors="coerce"))
+        except (ValueError, OverflowError, TypeError):
+            continue
+    miss = d.isna() & (txt != "")
+    if miss.any():
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            try:
+                d.loc[miss] = _ns(pd.to_datetime(txt[miss], errors="coerce"))
+            except (ValueError, OverflowError, TypeError):
+                pass
     # Excel serials that arrived as text
-    ser = pd.to_numeric(s, errors="coerce")
-    fill = pd.to_datetime(ser, unit="D", origin="1899-12-30", errors="coerce")
-    return d.fillna(fill)
+    ser = pd.to_numeric(txt.where(txt != "", None), errors="coerce")
+    fill = _ns(pd.to_datetime(ser, unit="D", origin="1899-12-30", errors="coerce"))
+    return d.fillna(fill).astype("datetime64[ns]")
 
 
 def normalize_state_list(df: pd.DataFrame, fields: dict, state: str,

@@ -145,3 +145,30 @@ def test_read_state_file_picks_the_list_sheet(tmp_path):
                       "Effective Date": ["2024-01-01"] * 3, "Reason": ["fraud"] * 3}).to_excel(w, sheet_name="Terminated", index=False)
     df, fields, sheet = read_state_file(p)
     assert sheet == "Terminated" and fields["npi"] == "NPI" and len(df) == 3
+
+
+def test_sentinel_and_far_dates_never_overflow_on_concat():
+    """A '2999-12-31' open-ended reinstatement (KY/SC style) parsed by dateutil lands in a
+    coarser unit and blew up pd.concat with OutOfBoundsDatetime; sentinels become NaT
+    and every frame is datetime64[ns]."""
+    from src.enforcement.state_terminations import _dates
+    a = normalize_state_list(
+        pd.DataFrame({"NPI": ["1234567893"], "Provider Name": ["ACME CLINIC"],
+                      "Termination Date": ["03/01/2021"], "Reinstatement Date": ["2999-12-31"],
+                      "Reason": ["fraud"]}),
+        {"npi": "NPI", "org_name": "Provider Name", "excl_date": "Termination Date",
+         "reinstate_date": "Reinstatement Date", "reason": "Reason"}, "KY", "ky.xlsx")
+    b = normalize_state_list(
+        pd.DataFrame({"NPI": ["1234567893"], "Provider Name": ["BETA LLC"],
+                      "Termination Date": ["2020-06-15 00:00:00"], "Reinstatement Date": [""],
+                      "Reason": ["abuse of billing privileges"]}),
+        {"npi": "NPI", "org_name": "Provider Name", "excl_date": "Termination Date",
+         "reinstate_date": "Reinstatement Date", "reason": "Reason"}, "SC", "sc.xlsx")
+    both = pd.concat([a, b], ignore_index=True)
+    assert str(both["reinstate_date"].dtype) == "datetime64[ns]"
+    assert both["reinstate_date"].isna().all()
+    assert both["currently_active"].tolist() == [1, 1]
+    assert both["excl_date"].dt.year.tolist() == [2021, 2020]
+    got = _dates(pd.Series(["9999-12-31", "44927", "12/31/1899", "Jan 5, 2022", None]))
+    assert got.isna().tolist() == [True, False, True, False, True]
+    assert got.iloc[1].year == 2023 and got.iloc[3].month == 1
