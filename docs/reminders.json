@@ -363,9 +363,7 @@
   },
   {
    "what": "State Medicaid terminated/excluded provider lists for the Southeast (Medicaid-side FCA labels that lead the LEIE by years and carry NPIs). Seven download; Florida and Louisiana need a records request. Tier by stated reason when loading (fraud/abuse/conviction/program integrity = hard; license/paperwork = weak).",
-   "cadence": "quarterly",
    "last_done": "2026-09-26",
-   "save_to": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)",
    "url": "https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list",
    "steps": [
     "Georgia: https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list -> List of Excluded Individuals (xlsx)",
@@ -387,7 +385,8 @@
     "python -m src.reminders --done state_terminations"
    ],
    "key": "state_terminations",
-   "every_months": 3
+   "every_months": 3,
+   "where": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)"
   }
  ],
  "tasks": [
