@@ -141,6 +141,7 @@ def main() -> None:
     ap.add_argument("--states", default=",".join(SE_STATES))
     ap.add_argument("--dispatch", action="store_true")
     ap.add_argument("--max-new", type=int, default=None)
+    ap.add_argument("--status", action="store_true", help="show the registry: tasks with ids, without, completed")
     ap.add_argument("--poll", action="store_true")
     a = ap.parse_args()
     out_dir = Path(a.out_dir)
@@ -148,6 +149,15 @@ def main() -> None:
     prompts = out_dir / "case_harvest_prompts.jsonl"
     registry = out_dir / "case_harvest_tasks.json"
     results_p = out_dir / "case_harvest_results.json"
+    if a.status:
+        reg = json.loads(registry.read_text(encoding="utf-8")) if registry.exists() else {}
+        res = json.loads(results_p.read_text(encoding="utf-8")) if results_p.exists() else {}
+        with_id = sum(1 for v in reg.values() if v.get("task_id"))
+        done = sum(1 for v in res.values() if v.get("status") == "completed")
+        n_prompts = sum(1 for l in prompts.read_text(encoding="utf-8").splitlines() if l.strip()) if prompts.exists() else 0
+        print(f"registry: {len(reg)} entries, {with_id} with a task id, {len(reg) - with_id} without; "
+              f"prompts in batch: {n_prompts}; completed answers on file: {done}")
+        return
     if a.dispatch:
         from src.model_a.pursuit_dossier import dispatch_research
         info = dispatch_research(prompts, registry, max_new=a.max_new)

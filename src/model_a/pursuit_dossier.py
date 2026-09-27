@@ -220,6 +220,23 @@ def _is_rate_limited(exc: Exception) -> bool:
     return getattr(resp, "status_code", None) == 429 or "429" in str(exc)
 
 
+def _task_id_from(created) -> str:
+    """The task id from any response shape the service has used: top-level
+    task_id / id, task.id, or data.task_id / data.id."""
+    if not isinstance(created, dict):
+        return ""
+    for k in ("task_id", "id"):
+        if created.get(k):
+            return str(created[k])
+    for holder in ("task", "data", "result"):
+        inner = created.get(holder)
+        if isinstance(inner, dict):
+            for k in ("task_id", "id"):
+                if inner.get(k):
+                    return str(inner[k])
+    return ""
+
+
 def _is_transient(exc: Exception) -> bool:
     """429 (rate limit) or a 5xx (the research service's own error, seen live as
     'HTTP 500 for /v2/task.create'): retry with backoff, then stop cleanly with the
@@ -255,12 +272,14 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
         transport = ManusTransport(api_key=key)
     reg = (json.loads(registry_path.read_text(encoding="utf-8"))
            if registry_path.exists() else {})
-    n_new, rate_limited, skipped, last_error = 0, False, 0, ""
+    n_new, rate_limited, skipped, last_error, no_id_streak = 0, False, 0, "", 0
     for line in prompts_path.read_text(encoding="utf-8").splitlines():
         item = json.loads(line)
         oid = item["org_id"]
         if reg.get(oid, {}).get("task_id"):
             continue                                  # already dispatched
+        if oid in reg and not reg[oid].get("task_id"):
+            reg[oid] = {**reg[oid], "note": "earlier create returned no id; retried"}
         if max_new is not None and n_new >= max_new:
             skipped += 1
             continue
@@ -282,8 +301,20 @@ def dispatch_research(prompts_path: Path, registry_path: Path,
                 raise
         if rate_limited:
             break
-        tid = (created.get("task_id") or created.get("id")
-               or (created.get("task") or {}).get("id"))
+        tid = _task_id_from(created)
+        if not tid:
+            # A 200 without a task id is NOT a created task (the service answers
+            # quota / concurrency refusals in the body). Never count it, never
+            # store a None id (a None id made re-runs re-create the same task —
+            # seen live: 280 -> 270 -> 178 "dispatched" on three runs), and stop
+            # after a few in a row so the operator sees the body.
+            no_id_streak += 1
+            last_error = f"create returned no task id: {json.dumps(created)[:200]}"
+            if no_id_streak >= 3:
+                rate_limited = True
+                break
+            continue
+        no_id_streak = 0
         reg[oid] = {"task_id": tid, "org_name": item["org_name"]}
         n_new += 1
         registry_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")

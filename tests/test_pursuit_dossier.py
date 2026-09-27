@@ -268,3 +268,31 @@ def test_dispatch_stops_cleanly_on_server_error(tmp_path):
             return {"task_id": "t2"}
     out2 = dispatch_research(pj, reg, transport=_OK(), sleep=lambda s: None)
     assert out2["dispatched"] == 2 and out2["total"] == 3
+
+
+def test_dispatch_never_counts_or_stores_a_create_without_an_id(tmp_path):
+    import json
+    from src.model_a.pursuit_dossier import dispatch_research, _task_id_from
+    assert _task_id_from({"data": {"task_id": "d1"}}) == "d1" and _task_id_from({"code": 429, "msg": "busy"}) == ""
+
+    class _T:
+        def __init__(self):
+            self.n = 0
+
+        def create(self, prompt):
+            self.n += 1
+            return {"task_id": "t1"} if self.n == 1 else {"code": 429, "msg": "concurrency limit"}
+
+    pj = tmp_path / "p.jsonl"
+    pj.write_text("\n".join(json.dumps({"org_id": f"o{i}", "org_name": f"n{i}", "prompt": "x"}) for i in range(6)) + "\n")
+    reg = tmp_path / "reg.json"
+    out = dispatch_research(pj, reg, transport=_T(), sleep=lambda s: None)
+    assert out["dispatched"] == 1 and out.get("rate_limited") and "no task id" in out["note"]
+    r = json.loads(reg.read_text())
+    assert list(r) == ["o0"] and r["o0"]["task_id"] == "t1"          # nothing stored without an id
+    # a re-run skips o0 and tries o1 again
+    class _OK:
+        def create(self, prompt):
+            return {"task_id": "t2"}
+    out2 = dispatch_research(pj, reg, transport=_OK(), sleep=lambda s: None)
+    assert out2["dispatched"] == 5 and out2["total"] == 6
