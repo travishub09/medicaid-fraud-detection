@@ -360,6 +360,33 @@
     "python -m src.reminders --done state_capacity_rosters"
    ],
    "progress": "2026-09-16: NY (Certification + General Information) and NJ (Acute-Care + All_LTC_NJ.xlsx) loaded: 2,335 licensed sites, 19,075 NPIs matched. Next: IL, CA, MA, FL, RI."
+  },
+  {
+   "what": "State Medicaid terminated/excluded provider lists for the Southeast (Medicaid-side FCA labels that lead the LEIE by years and carry NPIs). Seven download; Florida and Louisiana need a records request. Tier by stated reason when loading (fraud/abuse/conviction/program integrity = hard; license/paperwork = weak).",
+   "cadence": "quarterly",
+   "last_done": "2026-09-26",
+   "save_to": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)",
+   "url": "https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list",
+   "steps": [
+    "Georgia: https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list -> List of Excluded Individuals (xlsx)",
+    "Alabama: https://www.medicaid.alabama.gov/content/8.0_Fraud/8.7_Suspended_Providers.aspx -> Provider Sanction List (xlsx or pdf; name-only)",
+    "Tennessee: https://www.tn.gov/tenncare/fraud-and-abuse/program-integrity.html -> Terminated Provider List",
+    "North Carolina: https://medicaid.ncdhhs.gov/providers/excluded-providers -> State Excluded Provider List (monthly xlsx)",
+    "South Carolina: https://www.scdhhs.gov/fraud-waste-and-abuse -> Excluded/Terminated Providers (xlsx)",
+    "Kentucky: https://www.chfs.ky.gov/agencies/dms/dpi/pe/Pages/terminated.aspx -> Terminated and Excluded Provider List (xlsx)",
+    "Mississippi: https://medicaid.ms.gov/providers/provider-terminations/ -> Sanctioned Providers List (xlsx)",
+    "Florida: no bulk list. Provider Master List at https://portal.flmmis.com/FLPublic/Provider_ManagedCare/Provider_ManagedCare_Registration/tabId/77/Default.aspx?linkid=pml plus a records request to PublicRecordsReq@ahca.myflorida.com for the s.409.913 terminated-for-cause list with NPI, reason, effective date",
+    "Louisiana: search screen only (https://adverseactions.ldh.la.gov/SelSearch); records request to LDH Program Integrity for the adverse actions list as a file",
+    "Leave the downloads in Downloads with the state name in the filename, then run the sorter (dry run, then --apply); it checks headers and files them"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
+    "python sort_state_lists.py",
+    "python sort_state_lists.py --apply",
+    "python -m src.reminders --done state_terminations"
+   ],
+   "key": "state_terminations"
   }
  ],
  "tasks": [
@@ -517,6 +544,12 @@
    "key": "build_ready_to_wire_schemes",
    "what": "CLAUDE build queue from SCHEME_DISCOVERY 2026-09-16: three READY TO WIRE (nh_ownership_stakes from NH_Ownership_Nov2023 Ownership Percentage/Role; nh_penalties from NH_Penalties_Nov2023 Fine Amount; pbj_weekend_staffing from pbj_daily_staffing Hrs_RN by WorkDate weekday); the six hospice candidates need the long-format Measure Code pivot (facility.py already pivots hospice, so the discovery check should read the pivoted view); new idea: HCRIS HHA discipline visit counts (RN/LPN/PT/OT/SLP visits, Medicaid Title XIX) as a home-health capacity check (visits per licensed nurse). No operator action.",
    "added": "2026-09-16",
+   "commands": []
+  },
+  {
+   "key": "state_terminations_loader",
+   "what": "BUILD (Claude, awaiting operator go): src/enforcement/state_terminations.py loader into the exclusions schema for the seven filed lists (GA/KY/MS/NC/SC/TN with NPI; AL name-only via NPPES name match; Alabama merged header at row 32 with two SUSPENSION date columns; MS has termination reason + sanction type; KY reason + timeframe; NC reason; SC excluded/terminated flag; GA no reason), a per-state reason-to-FCA-tier table, dedupe against LEIE, then rerun label_census_se.py and re-upload LABEL_CENSUS_SE.md. Filed 2026-09-26 under preclean/state_terminations.",
+   "added": "2026-09-26",
    "commands": []
   }
  ]
