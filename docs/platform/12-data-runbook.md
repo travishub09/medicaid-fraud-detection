@@ -455,8 +455,8 @@ python -m src.enforcement.fetch --backfill-years 10 --max-pages 1500 --out feeds
 python -m src.enforcement.docket_backfill --since 2015-01-01 --out feeds/enforcement/fca_dockets.csv \
     --merge-into enforcement/doj_cases_v3.csv
 # 3. HHS-OIG enforcement actions (no API; listing + action pages, cached raw)
-python -m src.enforcement.oig_enforcement --since 2020-01-01 --out feeds/enforcement/oig_cases.csv \
-    --states FL,GA,AL,MS,TN,NC,SC,LA,KY --merge-into enforcement/doj_cases_v3.csv
+python -m src.enforcement.oig_enforcement --since 2015-01-01 --out feeds/enforcement/oig_cases.csv \
+    --states FL,GA,AL,MS,TN,NC,SC,LA,KY      # follows each action's 'Read more' link to the full release; cached pages are reused
 # 4-6. research prompt sets (takedown pages, year in review, HCFAC, OIG semiannual, MFCU sweeps)
 python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --sets mfcu,takedown,yir,hcfac,oig_sar
 python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --dispatch   # $MANUS_API_KEY

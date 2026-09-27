@@ -262,7 +262,9 @@ def main() -> None:
     ap.add_argument("--case-db", required=True)
     ap.add_argument("--defendant-npis", required=True)
     ap.add_argument("--provider-dim", required=True)
-    ap.add_argument("--exclusion-nodes", default=None)
+    ap.add_argument("--exclusion-nodes", default=None, nargs="+",
+                    help="exclusion_nodes.parquet and/or processed/exclusions_*.parquet (several allowed; "
+                         "pass the state-terminations file directly until the graph is rebuilt)")
     ap.add_argument("--policy", default="strict_plus_criminal", choices=POLICIES)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--sample", type=int, default=30)
@@ -270,7 +272,7 @@ def main() -> None:
     cdb = pd.read_csv(a.case_db, dtype=str) if a.case_db.endswith(".csv") else pd.read_parquet(a.case_db)
     dn = pd.read_parquet(a.defendant_npis)
     pdim = pd.read_parquet(a.provider_dim)
-    ex = pd.read_parquet(a.exclusion_nodes) if a.exclusion_nodes else None
+    ex = pd.concat([pd.read_parquet(x) for x in a.exclusion_nodes], ignore_index=True) if a.exclusion_nodes else None
     labels, quar = build_strict_labels(cdb, dn, pdim, a.policy, ex)
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)

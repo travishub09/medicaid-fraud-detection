@@ -66,3 +66,48 @@ def test_action_pages_become_cases_and_window_and_state_filter(tmp_path):
 def test_action_to_case_skips_non_healthcare():
     assert action_to_case("https://oig.hhs.gov/fraud/enforcement/x/", "OIG Names New Deputy",
                           "2025-01-01", "<p>Personnel announcement.</p>") is None
+
+
+def test_live_shapes_abbreviated_dates_meta_agency_and_read_more(tmp_path):
+    """The live site (fitted from cached pages): 'Sept. 24, 2026' listing dates ~420 chars
+    after the link; action pages carry article:published_time, an Agency line and a
+    'Read more on www.justice.gov' link whose USAO path gives the state."""
+    from src.enforcement.oig_enforcement import action_meta, run_oig_feed
+    listing = """<ul class="usa-card-group">
+    <li class="usa-card"><div class="usa-card__container"><header class="usa-card__header">
+    <h2 class="usa-card__heading"><a href="/fraud/enforcement/florida-doctor-sentenced-for-making-false-statements-in-connection-with-multi-million-dollar-health-care-fraud-scheme/">Florida Doctor Sentenced for Making False Statements in Connection with Multi-Million-Dollar Health Care Fraud Scheme</a></h2>
+    <div class="font-body-sm margin-top-1">                    <span class="text-base-dark padding-right-105">Sept. 24, 2026</span><ul class="display-inline add-list-reset"><li class="display-inline-block usa-tag">Criminal and Civil Actions</li></ul></div>
+    </header></div></li>
+    <li><a href="/fraud/enforcement/about/">About Enforcement Actions</a></li></ul>"""
+    action = """<html><head><meta property="article:published_time" content="2026-09-24T08:08:11.843073-04:00" /></head><body>
+    <nav>Home Fraud Texas Ohio</nav><article><h1>Florida Doctor Sentenced for Making False Statements</h1>
+    <p>A Florida doctor was sentenced for making false statements in a health care fraud scheme.</p>
+    <p><a class="text-bold" href="https://www.justice.gov/usao-mdfl/pr/florida-doctor-sentenced" rel="noopener">Read more on www.justice.gov</a></p>
+    <h2>Action Details</h2><ul><li><span class="padding-right-2 text-base">Date:</span>Sept. 24, 2026, midnight</li>
+    <li><span class="padding-right-2 text-base">Agency:</span>U.S. Department of Justice</li></ul></article></body></html>"""
+    linked = """<html><body><article><p>Dr. Jane Q. Roe, 51, of Tampa, Florida, was sentenced today to 36 months in prison for
+    making false statements in connection with a $4 million health care fraud scheme.</p></article></body></html>"""
+    pages = {"https://oig.hhs.gov/fraud/enforcement/": listing,
+             "https://oig.hhs.gov/fraud/enforcement/florida-doctor-sentenced-for-making-false-statements-in-connection-with-multi-million-dollar-health-care-fraud-scheme/": action,
+             "https://www.justice.gov/usao-mdfl/pr/florida-doctor-sentenced": linked}
+
+    def fetch_text(url, params=None):
+        if params and params.get("page", 1) > 1:
+            return "<html></html>"
+        return pages[url]
+
+    meta = action_meta(action)
+    assert meta["date"] == "2026-09-24" and meta["agency"] == "U.S. Department of Justice" and "usao-mdfl" in meta["read_more"]
+    cases = run_oig_feed("2020-01-01", fetch_text=fetch_text, sleep_s=0, raw_root=tmp_path)
+    assert len(cases) == 1
+    c = cases.iloc[0]
+    assert c["announced_date"] == "2026-09-24" and c["jurisdiction"] == "FL" and c["case_type"] == "criminal_hcf"
+    assert c["defendant_name"] == "Dr. Jane Q. Roe" and c["source_url"].startswith("https://www.justice.gov/usao-mdfl")
+    assert "[agency: U.S. Department of Justice]" in c["summary"] and "Texas" not in c["summary"]
+    # second run: everything served from the cache, nothing re-fetched
+    calls = []
+    def fetch_count(url, params=None):
+        calls.append(url)
+        return fetch_text(url, params)
+    run_oig_feed("2020-01-01", fetch_text=fetch_count, sleep_s=0, raw_root=tmp_path)
+    assert all("/fraud/enforcement/" in u and u.endswith("enforcement/") for u in calls)   # only listing pages

@@ -36,11 +36,16 @@ FEED_NAME = "oig_enforcement"
 
 _ANCHOR = re.compile(r'<a\s[^>]*href="(?P<href>(?:https?://oig\.hhs\.gov)?/fraud/enforcement/(?P<slug>[a-z0-9\-]+)/?)"[^>]*>(?P<text>.*?)</a>',
                      re.I | re.S)
-_DATE_LONG = re.compile(r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b")
+_DATE_LONG = re.compile(r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},\s+\d{4}\b")
+_PUBLISHED = re.compile(r'article:published_time"\s+content="(\d{4}-\d{2}-\d{2})')
+_DATE_LINE = re.compile(r"Date:\s*</span>\s*([A-Z][a-z]+\.?\s+\d{1,2},\s+\d{4})")
+_READ_MORE = re.compile(r'<a[^>]+href="(https?://[^"]+)"[^>]*>\s*Read more on', re.I)
+_AGENCY = re.compile(r"Agency:\s*</span>\s*([^<]{3,80})")
 _DATE_ISO = re.compile(r"\b(20\d{2})-(\d{2})-(\d{2})\b")
 _DATE_US = re.compile(r"\b(\d{1,2})/(\d{1,2})/(20\d{2})\b")
 _TAG = re.compile(r"<[^>]+>")
-_SKIP_SLUGS = {"page", "rss", "feed", "search", "criminal-and-civil-actions", "state-enforcement-actions"}
+_SKIP_SLUGS = {"page", "rss", "feed", "search", "criminal-and-civil-actions", "state-enforcement-actions",
+               "about", "civil-monetary-penalty-authorities"}
 
 
 def _strip(html_text: str) -> str:
@@ -57,12 +62,13 @@ def _fmt(m) -> str:
     if m.re is _DATE_US:
         return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
     try:
-        return pd.Timestamp(m.group(0)).strftime("%Y-%m-%d")
+        txt = re.sub(r"^Sept\b\.?", "Sep", m.group(0)).replace(".", "")
+        return pd.Timestamp(txt).strftime("%Y-%m-%d")
     except Exception:  # noqa: BLE001
         return ""
 
 
-def _date_near(html_text: str, pos: int, window: int = 400) -> str:
+def _date_near(html_text: str, pos: int, window: int = 900) -> str:
     """The date closest AFTER the anchor (the item's own date line), else the closest
     before it; never a date that belongs to the next item further down."""
     after = html_text[pos: pos + window]
@@ -94,13 +100,42 @@ def parse_listing(html_text: str) -> list[dict]:
     return out
 
 
-def action_to_case(url: str, title: str, date: str, page_html: str) -> dict | None:
-    text = _strip(page_html)
+def action_meta(page_html: str) -> dict:
+    """date (published_time meta or the Action Details Date line), agency, and the
+    'Read more on ...' link to the full release (DOJ / USAO / state AG)."""
+    h = str(page_html or "")
+    date = ""
+    m = _PUBLISHED.search(h)
+    if m:
+        date = m.group(1)
+    else:
+        m = _DATE_LINE.search(h)
+        if m:
+            date = _fmt(_DATE_LONG.search(m.group(1))) if _DATE_LONG.search(m.group(1)) else ""
+    ag = _AGENCY.search(h)
+    rm = _READ_MORE.search(h)
+    return {"date": date, "agency": ag.group(1).strip() if ag else "", "read_more": rm.group(1) if rm else ""}
+
+
+def _article_text(page_html: str) -> str:
+    """The article body only (OIG pages: <article> ... </article>); the whole page
+    otherwise. Keeps nav / footer state names out of the case text."""
+    m = re.search(r"<article\b.*?</article>", str(page_html or ""), re.S | re.I)
+    return _strip(m.group(0) if m else page_html)
+
+
+def action_to_case(url: str, title: str, date: str, page_html: str, linked_html: str = "") -> dict | None:
+    meta = action_meta(page_html)
+    text = _article_text(page_html)
     body = text
+    if linked_html:
+        # the full release (DOJ / USAO / state AG) names the defendant, city and state;
+        # a sentence break keeps the OIG boilerplate out of a captured name
+        body = text.rstrip(". ") + ". " + _article_text(linked_html)[:6000]
     if not (FCA_PATTERN.search(title) or FCA_PATTERN.search(body) or re.search(r"medicaid|medicare", body, re.I)):
         return None
     if not date:
-        date = _date_near(page_html, 0, window=4000)
+        date = meta["date"] or _date_near(page_html, 0, window=4000)
     defendant = _defendant_from_title(title) or ""
     if not defendant:
         for m in extract_defendants(body):
@@ -114,15 +149,41 @@ def action_to_case(url: str, title: str, date: str, page_html: str) -> dict | No
         mm = re.match(r"^(?:[A-Z][\w.'\-]+\s+){1,4}", first.strip())
         defendant = mm.group(0).strip() if mm and len(mm.group(0).split()) >= 2 else ""
     row = parse_press_release(f"{title}\n\n{body}", source_url=url, announced_date=date, defendant_name=defendant)
+    if meta["read_more"]:
+        row["source_url"] = meta["read_more"]           # the primary document; case_id stays the OIG URL
     if not row.get("jurisdiction"):
-        st = url_state(url) or text_state(body)
+        st = url_state(meta["read_more"]) or url_state(url) or text_state(body)
         if st:
             row["jurisdiction"] = st          # a bare state code: district_state() passes it through
+    if meta["agency"]:
+        row["summary"] = f"[agency: {meta['agency']}] " + str(row.get("summary", ""))
     return row
 
 
+def _cache_name(url: str) -> str:
+    return re.sub(r"\W+", "_", url)[-120:]
+
+
+def _cached_html(name: str, raw_root: Path | None) -> str:
+    """A page already fetched on an earlier run (any date folder) — never re-fetched."""
+    import json as _json
+    from src.feeds.client import RAW_ROOT
+    base = (raw_root or RAW_ROOT) / FEED_NAME
+    if not base.exists():
+        return ""
+    for day in sorted(base.iterdir(), reverse=True):
+        f = day / f"{name}.json"
+        if f.exists():
+            try:
+                return str(_json.loads(f.read_text(encoding="utf-8")).get("html") or "")
+            except Exception:  # noqa: BLE001
+                return ""
+    return ""
+
+
 def run_oig_feed(since: str, fetch_text=default_fetch_text, max_pages: int = 400, sleep_s: float = 1.0,
-                 states: list[str] | None = None, raw_root: Path | None = None) -> pd.DataFrame:
+                 states: list[str] | None = None, raw_root: Path | None = None,
+                 follow_links: bool = True) -> pd.DataFrame:
     cut = pd.Timestamp(since)
     rows, seen = [], set()
     for page in range(1, max_pages + 1):
@@ -142,9 +203,24 @@ def run_oig_feed(since: str, fetch_text=default_fetch_text, max_pages: int = 400
                 page_oldest = ts if page_oldest is None else min(page_oldest, ts)
                 if ts < cut:
                     continue
-            page_html = fetch_text(it["url"])
-            cache_raw(FEED_NAME, re.sub(r"\W+", "_", it["url"])[-120:], {"html": page_html}, root=raw_root)
-            case = action_to_case(it["url"], it["title"], d, page_html)
+            name = _cache_name(it["url"])
+            page_html = _cached_html(name, raw_root)
+            if not page_html:
+                page_html = fetch_text(it["url"])
+                cache_raw(FEED_NAME, name, {"html": page_html}, root=raw_root)
+            linked_html = ""
+            link = action_meta(page_html)["read_more"]
+            if follow_links and link and not re.search(r"\.pdf($|\?)", link, re.I):
+                lname = "linked_" + _cache_name(link)
+                linked_html = _cached_html(lname, raw_root)
+                if not linked_html:
+                    try:
+                        linked_html = fetch_text(link)
+                    except Exception as e:  # noqa: BLE001 — a dead link never sinks the harvest
+                        linked_html = ""
+                        print(f"  [oig] linked release unavailable: {link} ({type(e).__name__})")
+                    cache_raw(FEED_NAME, lname, {"html": linked_html}, root=raw_root)
+            case = action_to_case(it["url"], it["title"], d, page_html, linked_html)
             if case:
                 rows.append(case)
             if sleep_s:
@@ -176,10 +252,11 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="oig_cases.csv")
     ap.add_argument("--states", default=None, help="comma list; keep these states (+ rows with no state)")
     ap.add_argument("--merge-into", default=None, help="an existing case CSV to append to (existing rows win)")
-    ap.add_argument("--max-pages", type=int, default=400)
+    ap.add_argument("--max-pages", type=int, default=600, help="20 actions per page; the site holds ~11,000 actions (~560 pages)")
+    ap.add_argument("--no-follow-links", action="store_true", help="do not fetch the linked full release (DOJ / state AG)")
     a = ap.parse_args()
     states = [s.strip() for s in a.states.split(",")] if a.states else None
-    cases = run_oig_feed(a.since, states=states, max_pages=a.max_pages)
+    cases = run_oig_feed(a.since, states=states, max_pages=a.max_pages, follow_links=not a.no_follow_links)
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     cases.to_csv(out, index=False)

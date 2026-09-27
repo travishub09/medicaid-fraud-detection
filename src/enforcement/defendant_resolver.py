@@ -215,6 +215,10 @@ def _clean_name(raw: str) -> str:
         else:
             break
     s = " ".join(reversed(keep)).strip(" ,")
+    # an honorific inside the run starts the person's name ("... of Justice Dr. Jane Roe")
+    hm = list(re.finditer(r"\b(?:Dr|Mr|Mrs|Ms)\.?\s", s))
+    if hm and hm[-1].start() > 0:
+        s = s[hm[-1].start():]
     while True:
         t2 = _LEADING_JUNK.sub("", s).strip(" ,")
         t2 = re.sub(r"^(?:of|and|&|for|the|at|on|in|to)\s+", "", t2, flags=re.I).strip(" ,")

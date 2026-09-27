@@ -508,7 +508,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   not deactivated before conduct), time-boxing (conduct window + window_inferred),
   provenance on every row, a quarantine file with reasons, a 30-row verification
   sample for a human check, FCA_LABEL_EXPORT.md with the policy text.
-  Full suite: `pytest tests/` (916 tests).
+  Full suite: `pytest tests/` (917 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

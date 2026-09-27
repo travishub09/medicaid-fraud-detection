@@ -568,13 +568,13 @@
   },
   {
    "key": "case_harvest_sources_1_6",
-   "what": "BUILT 2026-09-27 (bundles 184-186). Run 1 of the DOJ backfill (400-page cap) reached only ~3 years back: 983 releases, 946 new cases (feeds/enforcement/doj_cases.csv = 2,211). OPERATOR: (1) re-run the DOJ backfill with --max-pages 1500 (overnight, network only); (3) OIG harvest; then fold both feed files into doj_cases_v3.csv with the merge line and re-run the resolver; upload FEEDS_REPORT.md, OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md. (2) CourtListener docket backfill SKIPPED by operator decision (no account). (4-6) review case_harvest_batch.csv, dispatch, poll a day later, review results/, load accepted CSVs via research_evidence mfcu-cases.",
+   "what": "BUILT 2026-09-27 (bundles 184-186). Run 1 of the DOJ backfill (400-page cap) reached only ~3 years back: 983 releases, 946 new cases (feeds/enforcement/doj_cases.csv = 2,211). OPERATOR: (1) re-run the DOJ backfill with --max-pages 1500 (overnight, network only); (3) OIG harvest; then fold both feed files into doj_cases_v3.csv with the merge line and re-run the resolver; upload FEEDS_REPORT.md, OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md. (2) CourtListener docket backfill SKIPPED by operator decision (no account). (4-6) review case_harvest_batch.csv, dispatch, poll a day later, review results/, load accepted CSVs via research_evidence mfcu-cases. Bundle 191 fits the OIG parser to the live site (abbreviated dates, published_time meta, agency, the linked full release fetched for the defendant / city / state; cached pages are never re-fetched): re-run the OIG harvest since 2015, then the merge line, reclassify, resolver, strict export.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
     "python -m src.enforcement.fetch --backfill-years 10 --max-pages 1500 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\"",
-    "python -m src.enforcement.oig_enforcement --since 2020-01-01 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --states FL,GA,AL,MS,TN,NC,SC,LA,KY",
+    "python -m src.enforcement.oig_enforcement --since 2015-01-01 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --states FL,GA,AL,MS,TN,NC,SC,LA,KY",
     "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\"",
     "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --sets mfcu,takedown,yir,hcfac,oig_sar",
     "REM review case_harvest_batch.csv, then:",
