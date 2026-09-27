@@ -170,3 +170,13 @@ def test_url_state_person_split_parens_middle_and_chain(pdim):
     assert out["npi"].iloc[0] == "1114567893" and out["match_level"].iloc[0] == "name_state_middle"
     assert out["status"].iloc[1] == "chain_org"
     assert "Walgreens" not in set(residuals(out)["defendant"])
+
+
+def test_text_state_single_state_only():
+    from src.enforcement.defendant_resolver import text_state
+    assert text_state("A Miami, Florida man was sentenced in the Southern District of Florida.") == "FL"
+    assert text_state("The S.D. Fla. court entered judgment.") == "FL"
+    assert text_state("Defendants in Florida and Georgia") == ""
+    assert text_state("no state here") == ""
+    ms = extract_defendants("A Tampa man was sentenced today in Florida.", "Miguel Gonzalez", "", "https://oig.hhs.gov/fraud/enforcement/x/")
+    assert ms[0]["state"] == "FL"

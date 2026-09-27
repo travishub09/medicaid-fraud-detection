@@ -115,6 +115,22 @@ def url_state(source_url: str) -> str:
     return ""
 
 
+_STATE_IN_TEXT = re.compile(r"\b(" + "|".join(sorted((n.title() for n in _NAME_TO_ABBR), key=len, reverse=True)) + r")\b")
+_DISTRICT_IN_TEXT = re.compile(r"\b(?:[NSEWCM]\.?D\.?|D\.)\s?(?:Fla|Ga|Ala|Miss|Tenn|N\.?C|S\.?C|La|Ky|Tex|Cal|Pa|N\.?Y|N\.?J|Mass|Ohio|Ill|Mich|Va|Md|Mo|Okla|Nev|Wash|Ariz|Colo|Conn|Minn|Wis|Ind|Iowa|Kan|Neb|Ore|Utah|W\.? ?Va|D\.?C)\.?")
+
+
+def text_state(summary: str) -> str:
+    """The ONE state a case text names (full state name or a district cite); '' when it
+    names none or more than one. Used only when neither the district nor the URL says."""
+    t = str(summary or "")
+    names = {_NAME_TO_ABBR[m.upper()] for m in _STATE_IN_TEXT.findall(t)}
+    for d in _DISTRICT_IN_TEXT.findall(t):
+        st = district_state(d)
+        if st:
+            names.add(st)
+    return next(iter(names)) if len(names) == 1 else ""
+
+
 _PERSON_SPLIT = re.compile(r"\s*;\s*|\s*,?\s+and\s+|\s*&\s*", re.I)
 
 
@@ -245,7 +261,7 @@ def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str
 
     primary = _clean_name(defendant_name)
     if primary:
-        dst = district_state(jurisdiction) or url_state(source_url)
+        dst = district_state(jurisdiction) or url_state(source_url) or text_state(text)
         # if the text already located the primary defendant, keep that (city-bearing) row
         already = any(k[0] == primary.upper() or k[0] in primary.upper() for k in found)
         if not already:
