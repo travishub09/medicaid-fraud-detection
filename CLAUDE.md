@@ -508,7 +508,14 @@ committed. Never let this file go stale: stale reminders are worse than none.
   not deactivated before conduct), time-boxing (conduct window + window_inferred),
   provenance on every row, a quarantine file with reasons, a 30-row verification
   sample for a human check, FCA_LABEL_EXPORT.md with the policy text.
-  Full suite: `pytest tests/` (918 tests).
+  LABEL VERIFICATION (`model_a/label_verification.py`): the 30-row human check on the
+  strict label delegated to the research agent as a FIRST pass: batches of 10 rows,
+  one verdict per row (confirmed / wrong_person / wrong_npi / not_a_provider /
+  cannot_verify) with the evidence URL; --dispatch / --poll through the same Manus
+  plumbing; verification_results.csv + LABEL_VERIFICATION.md with the tally and the
+  tighten-or-ship verdict (confirmed < 90% or > 1 wrong_npi = tighten). The operator
+  reads every flagged row; verdicts are evidence, never the final word.
+  Full suite: `pytest tests/` (920 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
