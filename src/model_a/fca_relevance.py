@@ -123,8 +123,15 @@ STATE_TERM_RULES = [
     (r"fraud|false claim|kickback|anti-?kickback|bribe|credible allegation|program integrity|"
      r"mfcu|medicaid fraud control|convict|felony|guilty|indict|plea|theft|embezzl|forg|"
      r"misrepresent|abuse of billing|billing (abuse|irregularit|fraud)|overbill|upcod|"
-     r"phantom|false (record|statement|document)|health ?care (fraud|offense)", "hard",
+     r"phantom|false (record|statement|document)|health ?care (fraud|offense)|"
+     r"criminal conduct|financial integrity", "hard",
      "state termination for a fraud-shaped cause"),
+    (r"^(state|federal)$", "weak",
+     "state list records only the sanctioning authority, not a cause"),
+    (r"policy violation|vi[a-z]*lation of [a-z ]*polic|program violation|vi[a-z]*lation of [a-z ]*(rule|regulation|requirement)s?$", "weak",
+     "state termination for a program-policy violation (cause unstated beyond the policy)"),
+    (r"quality of care|standard of care|professional (mis)?conduct|unprofessional", "weak",
+     "state termination on a quality-of-care or professional-conduct ground"),
     (r"oig|leie|federal exclusion|1128|hhs exclusion|medicare exclusion|sam\b|reciprocal|"
      r"another state|other state|derivative", "weak",
      "state action derivative of a federal or other-state exclusion (the underlying record sets the tier)"),
@@ -143,8 +150,19 @@ STATE_TERM_RULES = [
 ]
 
 
+_STATE_LEIE_CODE = re.compile(r"1128\s*\(?\s*[ab]\s*\)?\s*\(?\s*\d{1,2}\s*\)?|brch\s*(cia|sa)\b", re.I)
+
+
 def _classify_state_reason(reason: str) -> tuple[str, str]:
     r = reason.lower()
+    # A state list that mirrors the LEIE layout carries the federal statute in its
+    # reason column (SC's EXCLTYPE); the statute sets the tier, exactly as for the LEIE.
+    m = _STATE_LEIE_CODE.search(r)
+    if m:
+        key = _NORM.sub("", m.group(0))
+        if key in LEIE_STATUTES:
+            tier, basis = LEIE_STATUTES[key]
+            return tier, f"state list carries the federal statute: {basis}"
     for pat, tier, basis in STATE_TERM_RULES:
         if re.search(pat, r):
             return tier, basis

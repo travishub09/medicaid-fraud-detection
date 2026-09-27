@@ -460,7 +460,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   (`fca_relevance.STATE_TERM_RULES`: fraud-shaped = hard; license / derivative /
   bare 'terminated' = weak). They are the Medicaid-side labels that lead the LEIE by
   years; the operator's sorter files them under preclean/state_terminations/.
-  Full suite: `pytest tests/` (854 tests).
+  Full suite: `pytest tests/` (865 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -172,3 +172,35 @@ def test_sentinel_and_far_dates_never_overflow_on_concat():
     got = _dates(pd.Series(["9999-12-31", "44927", "12/31/1899", "Jan 5, 2022", None]))
     assert got.isna().tolist() == [True, False, True, False, True]
     assert got.iloc[1].year == 2023 and got.iloc[3].month == 1
+
+
+@pytest.mark.parametrize("excl_type,tier,basis_part", [
+    ("state_term:SC:1128a1 [MEDICAL PRACTICE, MD]", "hard", "federal statute"),
+    ("state_term:SC:1128(b)(14) [PRIVATE CITIZEN]", "excluded", "loan"),
+    ("state_term:SC:1128b4|name_match", "weak", "license"),
+    ("state_term:KY:Violation of KMAP Policy", "weak", "policy"),
+    ("state_term:KY:Vilolation of KMAP Policy", "weak", "policy"),
+    ("state_term:GA:STATE", "weak", "authority"),
+    ("state_term:NC:Criminal Conduct [Suppliers]", "hard", "fraud-shaped"),
+    ("state_term:NC:Financial Integrity Issues [Agencies]", "hard", "fraud-shaped"),
+    ("state_term:NC:Quality of Care [Physician]", "weak", "quality"),
+])
+def test_state_reasons_seen_in_the_real_lists(excl_type, tier, basis_part):
+    t, b = fca_tier(excl_type)
+    assert t == tier and basis_part in b
+
+
+def test_general_column_is_provider_type_not_reason():
+    """LEIE-layout state lists: GENERAL is the provider category; EXCLTYPE is the reason."""
+    m = resolve_fields(["LASTNAME", "FIRSTNAME", "BUSNAME", "GENERAL", "EXCLTYPE", "EXCLDATE", "NPI"])
+    assert m["reason"] == "EXCLTYPE" and m["provider_type"] == "GENERAL"
+    m2 = resolve_fields(["Provider Name", "NPI", "Sanction Type", "Sanction Reason", "Sanction Date"])
+    assert m2["reason"] == "Sanction Reason"
+
+
+def test_report_shows_field_map_and_npi_diagnostics(in_dir, provider_dim):
+    from src.enforcement.state_terminations import report
+    rows, log = load_all(in_dir, provider_dim)
+    rep = report(rows, log)
+    assert "## Field map per file" in rep and "- map: {" in rep and "NPI cells non-blank" in rep
+    assert any(r.get("npi_invalid") is not None for r in log if r.get("rows"))

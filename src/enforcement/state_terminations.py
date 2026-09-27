@@ -59,9 +59,14 @@ FIELD_ALIASES: dict[str, list[str]] = {
                   r"^action date", r"^exclusion date", r"^suspension date", r"^date of action",
                   r"^suspension$", r"^termination date"],
     "reinstate_date": [r"termination end date", r"^end date", r"reinstat"],
-    "reason": [r"^reason", r"reason for", r"termination reason", r"^general$", r"^sanction type",
-               r"^excluded/terminated", r"^action$", r"^type of action", r"^basis"],
-    "provider_type": [r"provider type", r"profession", r"^role$", r"specialty"],
+    # NOTE: the LEIE-style "GENERAL" column is the provider CATEGORY (MEDICAL PRACTICE,
+    # MD / PRIVATE CITIZEN ...), never the reason; the statute lives in EXCLTYPE.
+    "reason": [r"^reason", r"reason for", r"termination reason", r"^sanction reason", r"^excltype",
+               r"^excl\.? ?type", r"^exclusion type", r"^cause", r"^grounds", r"^violation", r"^offense",
+               r"^category", r"^sanction type", r"^excluded/terminated", r"^action$", r"^type of action",
+               r"^basis"],
+    "provider_type": [r"provider type", r"^general$", r"provider category", r"profession", r"^role$",
+                      r"specialty"],
     "state": [r"^state$", r"^st$"],
     "timeframe": [r"timeframe", r"exclusion period", r"^period"],
 }
@@ -268,10 +273,22 @@ def load_all(in_dir: Path, provider_dim: pd.DataFrame | None = None) -> tuple[pd
         out = normalize_state_list(df, fields, st, p.name)
         out = match_names_to_nppes(out, provider_dim) if provider_dim is not None else out.assign(match_basis="npi_on_list")
         frames.append(out)
+        # NPI diagnostics on the RAW column: blank vs present-but-invalid (length/Luhn)
+        npi_nonblank = npi_invalid = 0
+        if "npi" in fields:
+            raw_npi = df[fields["npi"]].fillna("").astype(str).str.strip()
+            digits = raw_npi.str.replace(r"\D", "", regex=True)
+            nb = raw_npi != ""
+            npi_nonblank = int(nb.sum())
+            npi_invalid = int((nb & ~digits.map(lambda s: len(s) == 10 and is_valid_npi(s))).sum())
+        top_reasons = (df[fields["reason"]].fillna("").astype(str).str.strip().replace("", "(blank)")
+                       .value_counts().head(6).to_dict() if "reason" in fields else {})
         log.append({"file": p.name, "state": st, "sheet": sheet, "rows": int(len(out)),
                     "with_npi": int((out["npi"] != "").sum()),
                     "name_matched": int((out["match_basis"] == "name_match").sum()),
                     "dated": int(out["excl_date"].notna().sum()),
+                    "npi_nonblank": npi_nonblank, "npi_invalid": npi_invalid,
+                    "header": [str(c) for c in df.columns][:16], "top_reasons": top_reasons,
                     "fields": {k: v for k, v in fields.items()}, "note": ""})
     if not frames:
         return pd.DataFrame(columns=EXCLUSION_COLS + ["state", "source_file", "match_basis"]), log
@@ -287,6 +304,17 @@ def report(rows: pd.DataFrame, log: list[dict]) -> str:
     for r in log:
         L.append(f"| {r['file']} | {r.get('state','')} | {r.get('sheet','')} | {r.get('rows',0)} | {r.get('with_npi','')} | "
                  f"{r.get('name_matched','')} | {r.get('dated','')} | {r.get('note','')} |")
+    L += ["", "## Field map per file (which column fed each field; check this before trusting a tier)", ""]
+    for r in log:
+        if not r.get("rows"):
+            continue
+        L.append(f"**{r['file']}** (sheet {r.get('sheet') or '-'}): NPI cells non-blank {r.get('npi_nonblank', 0):,}, "
+                 f"of which invalid (length/Luhn) {r.get('npi_invalid', 0):,}")
+        L.append(f"- header: {r.get('header', [])}")
+        L.append(f"- map: {r.get('fields', {})}")
+        if r.get("top_reasons"):
+            L.append("- top reason values: " + "; ".join(f"{k[:50]} ({v})" for k, v in r["top_reasons"].items()))
+        L.append("")
     if len(rows):
         t = classify_series(rows["excl_type"])
         rows = rows.assign(tier=t["fca_tier"].values, basis=t["fca_basis"].values)
