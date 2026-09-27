@@ -209,16 +209,7 @@ dir /s /b "C:\Users\treyr\OneDrive\Desktop\data\npidata_pfile_20050523-2021*.csv
 ```
 
 - [ ] **build_ready_to_wire_schemes** — CLAUDE build queue from SCHEME_DISCOVERY 2026-09-16: three READY TO WIRE (nh_ownership_stakes from NH_Ownership_Nov2023 Ownership Percentage/Role; nh_penalties from NH_Penalties_Nov2023 Fine Amount; pbj_weekend_staffing from pbj_daily_staffing Hrs_RN by WorkDate weekday); the six hospice candidates need the long-format Measure Code pivot (facility.py already pivots hospice, so the discovery check should read the pivoted view); new idea: HCRIS HHA discipline visit counts (RN/LPN/PT/OT/SLP visits, Medicaid Title XIX) as a home-health capacity check (visits per licensed nurse). No operator action. (added 2026-09-16)
-- [ ] **state_terminations_loader** — BUILT 2026-09-27 (bundle 173): enforcement/state_terminations.py + STATE_TERM_RULES tiering + tests. OPERATOR: after merging bundle 173, build the exclusions file and rerun the census (commands below), then upload STATE_TERMINATIONS_REPORT.md and LABEL_CENSUS_SE.md. The graph picks the new file up on its next rebuild; the census reads it directly. (added 2026-09-26)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-set MEDICAID_DATA_ROOT=C:\Users\treyr\OneDrive\Desktop\data
-python -m src.enforcement.state_terminations --in-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\state_terminations" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\exclusions_state_terminations.parquet"
-python label_census_se.py --nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --extra "C:\Users\treyr\OneDrive\Desktop\data\processed\exclusions_state_terminations.parquet"
-python -m src.reminders --done-task state_terminations_loader
-```
-
+- [ ] **fl_la_state_lists** — Florida and Louisiana state Medicaid termination lists are still not loaded (the operator prefers to keep searching for a downloadable file). Florida: the AHCA search screen and the Provider Master List on the FLMMIS portal; a records request for the for-cause list goes to PublicRecordsReq@ahca.myflorida.com. Louisiana: LDH adverse actions is a search screen only. When a file lands: save it in Downloads with the state name in the filename, run the sorter dry run then --apply, rerun the loader and the census (state_terminations cadence commands), and upload STATE_TERMINATIONS_REPORT.md. (added 2026-09-27)
 
 ## After ANY download session (standing rule)
 
