@@ -186,8 +186,17 @@ def match_names_to_nppes(rows: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.D
     name_col = "provider_name" if "provider_name" in pd_.columns else None
     if st_col is None or name_col is None:
         return rows
-    pd_["k"] = _normalize_name(pd_[name_col])
+    # Only the states that actually have blank-NPI rows need a name index; normalizing
+    # all ~8M NPPES names for one state's list is the slow path.
+    blank_states = set(rows.loc[rows["npi"] == "", "state"].fillna("").astype(str).str.upper())
+    blank_states.discard("")
+    if not blank_states:
+        rows = rows.copy()
+        rows["match_basis"] = "npi_on_list"
+        return rows
     pd_["st"] = pd_[st_col].fillna("").astype(str).str.upper()
+    pd_ = pd_[pd_["st"].isin(blank_states)].copy()
+    pd_["k"] = _normalize_name(pd_[name_col])
     pd_ = pd_[pd_["k"] != ""]
     counts = pd_.groupby(["st", "k"])["npi"].nunique()
     uniq = pd_.drop_duplicates(["st", "k"]).set_index(["st", "k"])["npi"]
