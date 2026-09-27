@@ -227,24 +227,39 @@ def _nppes_person_key(provider_name: pd.Series) -> pd.Series:
     return key.where((first != "") & (last != ""), "")
 
 
-def _index_nppes(provider_dim: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    p = provider_dim.copy()
-    p["npi"] = p["npi"].astype(str)
-    p["st"] = p.get("addr_state", pd.Series("", index=p.index)).fillna("").astype(str).str.upper().str.strip()
-    p["city"] = p.get("addr_city", pd.Series("", index=p.index)).fillna("").astype(str).str.upper().str.strip()
-    et = p.get("entity_type", pd.Series("", index=p.index)).fillna("").astype(str).str.strip()
-    name = p.get("provider_name", pd.Series("", index=p.index)).fillna("").astype(str)
+def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
+                 states: set) -> tuple[dict, dict]:
+    """Two lookups {(key, state): [(npi, city), ...]} restricted to the keys and states the
+    mentions actually use. Never materializes per-group frames over the full NPPES table
+    (8M rows): the full-table version exhausted memory on the operator's laptop."""
+    cols = [c for c in ("npi", "provider_name", "name_key", "entity_type", "addr_state", "addr_city")
+            if c in provider_dim.columns]
+    p = provider_dim[cols]
+    st = p["addr_state"].fillna("").astype(str).str.upper().str.strip() if "addr_state" in p else pd.Series("", index=p.index)
+    p = p[st.isin(states)]
+    st = st.loc[p.index]
+    city = p["addr_city"].fillna("").astype(str).str.upper().str.strip() if "addr_city" in p else pd.Series("", index=p.index)
+    et = p["entity_type"].fillna("").astype(str).str.strip() if "entity_type" in p else pd.Series("", index=p.index)
+    name = p["provider_name"].fillna("").astype(str) if "provider_name" in p else pd.Series("", index=p.index)
     is_person = (et == "1") | ((et == "") & name.str.contains(","))
-    people = p[is_person].copy()
-    people["k"] = _nppes_person_key(people["provider_name"])
-    people = people[people["k"] != ""]
-    orgs = p[~is_person].copy()
-    if "name_key" in orgs.columns:
-        orgs["k"] = orgs["name_key"].fillna("").astype(str)
-    else:
-        orgs["k"] = orgs["provider_name"].map(norm_org_name)
-    orgs = orgs[orgs["k"] != ""]
-    return people[["npi", "k", "st", "city"]], orgs[["npi", "k", "st", "city"]]
+    npi = p["npi"].astype(str)
+
+    people: dict = {}
+    if person_keys:
+        pk = _nppes_person_key(name[is_person])
+        hit = pk[pk.isin(person_keys)]
+        for idx, k in hit.items():
+            people.setdefault((k, st[idx]), []).append((npi[idx], city[idx]))
+    orgs: dict = {}
+    if org_keys:
+        if "name_key" in p.columns:
+            ok = p.loc[~is_person, "name_key"].fillna("").astype(str)
+        else:
+            ok = name[~is_person].map(norm_org_name)
+        hit = ok[ok.isin(org_keys)]
+        for idx, k in hit.items():
+            orgs.setdefault((k, st[idx]), []).append((npi[idx], city[idx]))
+    return people, orgs
 
 
 def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.DataFrame:
@@ -258,50 +273,54 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
     if not len(out):
         out["basis"] = "resolved_defendant"
         return out
-    people, orgs = _index_nppes(provider_dim)
-    p_groups = {k: g for k, g in people.groupby(["k", "st"])}
-    o_groups = {k: g for k, g in orgs.groupby(["k", "st"])}
+    # keys for BOTH kinds (the shape guess can be wrong, so both lookups are tried)
+    out["_pk"] = out["defendant"].map(person_key)
+    out["_ok"] = out["defendant"].map(norm_org_name)
+    states = set(out["state"].fillna("").astype(str).str.upper()) - {""}
+    people, orgs = _index_nppes(provider_dim, set(out["_pk"]) - {""}, set(out["_ok"]) - {""}, states)
+
+    def _lookup(kind, r, st):
+        if kind == "person":
+            k = r["_pk"]
+            return k, (people.get((k, st)) if k else None)
+        k = r["_ok"]
+        if not distinctive_name_key(_normalize_name(pd.Series([k])).iloc[0]):
+            return k, "generic"
+        return k, (orgs.get((k, st)) if k else None)
+
     for i, r in out.iterrows():
         st = str(r.get("state") or "").upper()
         if not st:
             out.at[i, "status"] = "no_state"
             continue
-        def _lookup(kind):
-            if kind == "person":
-                k = person_key(r["defendant"])
-                return k, (p_groups.get((k, st)) if k else None)
-            k = norm_org_name(r["defendant"])
-            if not distinctive_name_key(_normalize_name(pd.Series([k])).iloc[0]):
-                return k, "generic"
-            return k, (o_groups.get((k, st)) if k else None)
-
-        key, cands = _lookup(r["kind"])
+        key, cands = _lookup(r["kind"], r, st)
         if isinstance(cands, str):                 # generic org name: never matched
             out.at[i, "status"] = "generic_name"
             continue
-        if cands is None or not len(cands):
+        if not cands:
             # shape guessed the kind wrong ("Bayou Rx" is a pharmacy, "J Smith Jr" a person)
             other = "org" if r["kind"] == "person" else "person"
-            key2, cands2 = _lookup(other)
-            if not isinstance(cands2, str) and cands2 is not None and len(cands2):
+            key2, cands2 = _lookup(other, r, st)
+            if not isinstance(cands2, str) and cands2:
                 key, cands = key2, cands2
                 out.at[i, "kind"] = other
-        if not key or cands is None or not len(cands):
+        if not key or not cands:
             continue
         level = "name_state"
         city = str(r.get("city") or "").upper()
-        if len(cands) > 1 and city:
-            narrowed = cands[cands["city"] == city]
-            if len(narrowed):
+        if len({n for n, _ in cands}) > 1 and city:
+            narrowed = [(n, c) for n, c in cands if c == city]
+            if narrowed:
                 cands, level = narrowed, "name_city_state"
-        n = int(cands["npi"].nunique())
-        out.at[i, "n_candidates"] = n
-        if n == 1:
-            out.at[i, "npi"] = str(cands["npi"].iloc[0])
+        uniq = sorted({n for n, _ in cands})
+        out.at[i, "n_candidates"] = len(uniq)
+        if len(uniq) == 1:
+            out.at[i, "npi"] = uniq[0]
             out.at[i, "match_level"] = level
             out.at[i, "status"] = "resolved"
         else:
             out.at[i, "status"] = "ambiguous"
+    out = out.drop(columns=["_pk", "_ok"])
     out["basis"] = "resolved_defendant"
     return out
 

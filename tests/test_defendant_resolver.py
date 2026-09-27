@@ -112,3 +112,30 @@ def test_mfcu_sweep_prompts_cover_the_southeast():
     assert len(ps) == 9 * 6 and {p["state"] for p in ps} == {"FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY"}
     fl = next(p for p in ps if p["state"] == "FL" and p["year"] == 2024)
     assert "Florida Medicaid Fraud Control Unit" in fl["prompt"] and "Do not contact anyone" in fl["prompt"]
+
+
+def test_scales_without_per_group_frames():
+    """The first cut materialized one frame per (name, state) over all of NPPES and
+    exhausted the operator's RAM; the index must stay proportional to the mentions."""
+    import time, tracemalloc
+    n = 300_000
+
+    def word(i):                      # digits are stripped from person keys: letters only
+        return "".join(chr(ord("A") + int(d)) for d in str(i))
+
+    pdim = pd.DataFrame({
+        "npi": [str(1000000000 + i) for i in range(n)],
+        "entity_type": ["1" if i % 3 else "2" for i in range(n)],
+        "provider_name": [f"LAST{word(i)}, FIRST{word(i)}" if i % 3 else f"ORG {word(i)} HEALTH LLC" for i in range(n)],
+        "name_key": [f"LAST{word(i)} FIRST{word(i)}" if i % 3 else f"ORG {word(i)} HEALTH" for i in range(n)],
+        "addr_state": ["FL", "GA", "TX", "NY"] * (n // 4),
+        "addr_city": ["MIAMI"] * n,
+    })
+    m = pd.DataFrame([{"case_id": f"c{i}", "announced_date": "", "amount_usd": "", "scheme": "",
+                       "defendant": f"First{word(i)} Last{word(i)}", "kind": "person", "city": "", "state": "FL", "mention": "x"}
+                      for i in range(1, 60)])
+    tracemalloc.start(); t0 = time.time()
+    out = resolve_defendants(m, pdim)
+    _, peak = tracemalloc.get_traced_memory(); tracemalloc.stop()
+    assert time.time() - t0 < 30 and peak < 400 * 1024 * 1024
+    assert (out["status"] == "resolved").sum() >= 10                             # the FL-resident ones
