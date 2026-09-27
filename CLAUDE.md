@@ -453,7 +453,14 @@ committed. Never let this file go stale: stale reminders are worse than none.
   DME and HCBS reported but not flagged on clinician ratios. Inputs to procure:
   the NPPES pl_pfile (inside the monthly zip) and state rosters
   (`preclean/state_capacity/<ST>_<what>.csv`; reminders carry the steps).
-  Full suite: `pytest tests/` (832 tests).
+  STATE TERMINATIONS (`enforcement/state_terminations.py`): the state Medicaid
+  terminated/excluded lists (Southeast first: GA, KY, MS, NC, SC, TN with NPI; AL
+  name-only via a unique in-state NPPES name match) load into the exclusions schema as
+  `state_term:<ST>:<reason>` and are tiered by the state's stated reason
+  (`fca_relevance.STATE_TERM_RULES`: fraud-shaped = hard; license / derivative /
+  bare 'terminated' = weak). They are the Medicaid-side labels that lead the LEIE by
+  years; the operator's sorter files them under preclean/state_terminations/.
+  Full suite: `pytest tests/` (853 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -113,6 +113,45 @@ REVOCATION_RULES: list[tuple[str, str, str]] = [
 ]
 _TIER_RANK = {"hard": 2, "weak": 1, "excluded": 0}
 
+# State Medicaid termination / exclusion lists (enforcement.state_terminations):
+# excl_type = "state_term:<ST>:<reason text> [provider type]|name_match". The reason
+# text is the state's own words, so the rules read for the FCA-shaped causes and
+# fall back to WEAK, never hard: "terminated for cause" on its own is not a fraud
+# finding, and an entry that merely mirrors a federal exclusion carries no
+# statute of its own (the LEIE row of the same NPI already sets the tier).
+STATE_TERM_RULES = [
+    (r"fraud|false claim|kickback|anti-?kickback|bribe|credible allegation|program integrity|"
+     r"mfcu|medicaid fraud control|convict|felony|guilty|indict|plea|theft|embezzl|forg|"
+     r"misrepresent|abuse of billing|billing (abuse|irregularit|fraud)|overbill|upcod|"
+     r"phantom|false (record|statement|document)|health ?care (fraud|offense)", "hard",
+     "state termination for a fraud-shaped cause"),
+    (r"oig|leie|federal exclusion|1128|hhs exclusion|medicare exclusion|sam\b|reciprocal|"
+     r"another state|other state|derivative", "weak",
+     "state action derivative of a federal or other-state exclusion (the underlying record sets the tier)"),
+    (r"licens|board action|certification|credential|revok|surrender", "weak",
+     "state termination on a license or credential action"),
+    (r"patient abuse|neglect|abuse of (a |an )?(patient|recipient|member|resident)|"
+     r"assault|sexual|exploitation of", "weak",
+     "state termination for patient abuse or neglect (not FCA-shaped on its face)"),
+    (r"overpayment|failure to (repay|return|refund)|debt", "weak",
+     "state termination for an unpaid overpayment"),
+    (r"revalidat|enrollment|screening|fingerprint|non-?compli|failure to (report|disclose|respond|cooperate|submit|maintain)|"
+     r"record ?keeping|documentation|paperwork|address|application|ownership|site visit|not operational", "weak",
+     "state termination on an administrative or enrollment ground"),
+    (r"^(terminat|exclu|suspen|sanction|debar)[a-z ]*(for cause)?$", "weak",
+     "state termination with no cause stated beyond the action itself"),
+]
+
+
+def _classify_state_reason(reason: str) -> tuple[str, str]:
+    r = reason.lower()
+    for pat, tier, basis in STATE_TERM_RULES:
+        if re.search(pat, r):
+            return tier, basis
+    if not r or r.startswith("unspecified"):
+        return "weak", "state termination with no reason recorded"
+    return "weak", f"state termination reason unmapped: {reason.strip()[:60]}"
+
 
 def _classify_reason(reason: str) -> tuple[str, str]:
     for pat, tier, basis in REVOCATION_RULES:
@@ -146,6 +185,12 @@ def fca_tier(excl_type) -> tuple[str, str]:
         best = max((_classify_reason(p) for p in parts),
                    key=lambda tb: _TIER_RANK.get(tb[0], -1))
         return best
+    if t.startswith("state_term"):
+        # "state_term:<ST>:<reason> [type]|name_match" -> the reason only
+        body = t.split(":", 2)[2] if t.count(":") >= 2 else ""
+        body = re.sub(r"\|name_match$", "", body)
+        body = re.sub(r"\s*\[[^\]]*\]\s*$", "", body)
+        return _classify_state_reason(body)
     if t.startswith("doj") or t.startswith("case"):
         return "hard", "DOJ / court case (direct tier)"
     # LEIE statute codes: normalize "1128(a)(1)", "1128 A1", "BRCH CIA" -> key

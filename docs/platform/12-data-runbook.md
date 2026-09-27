@@ -389,3 +389,22 @@ lights up its scheme(s).
 | Annually (new vintage) | Part B, Part D, DMEPOS, Market Saturation |
 | Quarterly | PBJ staffing, Care Compare hospice/deficiencies, OIG Work Plan table (`model_a/government_interest.py`) |
 | After every refresh | re-run the pipeline order in [GETTING_STARTED](../GETTING_STARTED.md) Part 3 |
+
+## State Medicaid termination lists (labels; Southeast first)
+
+Seven states publish a downloadable terminated / excluded / sanctioned provider list; two need a
+records request. Save each as `preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext>`
+(the operator's sorter names them), then build the exclusions file and rebuild the graph:
+
+```bash
+python -m src.enforcement.state_terminations --in-dir preclean/state_terminations \
+    --provider-dim processed/provider_dim.parquet --out processed/exclusions_state_terminations.parquet
+```
+
+Sources: Georgia DCH OIG exclusions list; Alabama Medicaid suspended providers (name-only);
+TennCare terminated providers; NC Medicaid state excluded provider list; SCDHHS excluded/terminated
+providers; Kentucky CHFS terminated and excluded providers; Mississippi Division of Medicaid
+provider terminations. Florida (s.409.913 terminated-for-cause list) and Louisiana (LDH adverse
+actions) are search screens; request the file from the agency. Tiering: the state's stated reason
+only (`fca_relevance.STATE_TERM_RULES`); 'terminated' alone is weak, never hard. The report
+`STATE_TERMINATIONS_REPORT.md` lists every reason the tier table does not know.

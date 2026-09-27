@@ -95,6 +95,10 @@ UNLOCKS = [
     Src("revocations", "CMS revoked Medicare providers", "revocations",
         ["revoked_providers.csv", "revocations.csv"], [".csv"],
         "widens the PU label", "enforcement.medicare_revocations"),
+    Src("state_terminations", "State Medicaid terminated/excluded provider lists (SE states first)",
+        "state_terminations", ["GA_terminations.xlsx"], [".xlsx", ".csv"],
+        "Medicaid-side FCA labels that lead the LEIE; tiered by stated reason",
+        "enforcement.state_terminations"),
     Src("docgraph", "Physician Shared Patient Patterns", "docgraph",
         ["docgraph.csv", "shared_patient.csv"], [".csv"],
         "referral edges → referral-ring detection", "ingest_cms.docgraph"),
@@ -142,6 +146,9 @@ DERIVED = [
      "python -m src.ingest_cms.ccn_npi_crosswalk  (from PECOS) — unlocks facility/HCRIS/POS"),
     ("processed/exclusions_medicare_revocations.parquet",
      "python -m src.enforcement.medicare_revocations --in preclean/revocations/... --out ..."),
+    ("processed/exclusions_state_terminations.parquet",
+     "python -m src.enforcement.state_terminations --in-dir preclean/state_terminations "
+     "--provider-dim processed/provider_dim.parquet --out ..."),
     ("processed/ndc_claims.parquet",
      "python -m src.ingest_cms.claim_slices --kind ndc ...  (needs an NDC-level feed; often gated)"),
 ]
