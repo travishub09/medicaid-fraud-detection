@@ -98,6 +98,8 @@ def fetch_doj_press_releases(since: str,
     """
     cut = pd.Timestamp(since)
     rows: list[dict] = []
+    oldest_seen = None
+    reached_window = False
     for page in range(max_pages):
         payload = fetch_json(DOJ_API_URL, params={
             "pagesize": PAGE_SIZE, "page": page,
@@ -112,6 +114,7 @@ def fetch_doj_press_releases(since: str,
             if date:
                 ts = pd.Timestamp(date)
                 page_oldest = ts if page_oldest is None else min(page_oldest, ts)
+                oldest_seen = ts if oldest_seen is None else min(oldest_seen, ts)
                 if ts < cut:
                     continue
             title = _strip_html(item.get("title"))
@@ -126,10 +129,15 @@ def fetch_doj_press_releases(since: str,
                          "url": str(item.get("url") or item.get("uuid") or ""),
                          "component": str(comp)})
         if page_oldest is not None and page_oldest < cut:
+            reached_window = True
             break                       # everything further back is out of window
         if sleep_s:
             time.sleep(sleep_s)
-    return pd.DataFrame(rows, columns=["title", "body", "date", "url", "component"])
+    df = pd.DataFrame(rows, columns=["title", "body", "date", "url", "component"])
+    # a backfill that hit the page cap before the window is TRUNCATED: say so
+    df.attrs["oldest_seen"] = str(oldest_seen.date()) if oldest_seen is not None else ""
+    df.attrs["truncated"] = not reached_window
+    return df
 
 
 def _defendant_from_body(body: str) -> str:
@@ -157,7 +165,7 @@ def releases_to_case_db(releases: pd.DataFrame) -> pd.DataFrame:
 def run_doj_feed(since: str | None = None, backfill_years: int | None = None,
                  fetch_json=default_fetch_json, out_dir: Path | None = None,
                  store_path: Path | None = None,
-                 state_path: Path | None = None) -> dict:
+                 state_path: Path | None = None, max_pages: int = 400) -> dict:
     """Fetch → parse → case DB on disk → label store → derived priors → report.
 
     ``since`` resolution: explicit arg > backfill window > saved cursor >
@@ -170,7 +178,7 @@ def run_doj_feed(since: str | None = None, backfill_years: int | None = None,
         since = get_cursor(FEED_NAME, state_path) or \
             (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
-    releases = fetch_doj_press_releases(since, fetch_json=fetch_json)
+    releases = fetch_doj_press_releases(since, fetch_json=fetch_json, max_pages=max_pages)
     cases = releases_to_case_db(releases) if len(releases) else build_case_db([])
 
     out = Path(out_dir) if out_dir else FEEDS_ROOT / "enforcement"
@@ -205,7 +213,13 @@ def run_doj_feed(since: str | None = None, backfill_years: int | None = None,
     summary = {"since": since, "releases_fetched": int(len(releases)),
                "cases_new": int(len(cases)), "cases_total": int(len(merged)),
                "labels_appended": int(len(labeled)),
-               "sectors_with_priors": len([k for k in priors if k != "default"])}
+               "sectors_with_priors": len([k for k in priors if k != "default"]),
+               "oldest_release_seen": releases.attrs.get("oldest_seen", ""),
+               "truncated_at_page_cap": bool(releases.attrs.get("truncated", False))}
+    if summary["truncated_at_page_cap"]:
+        summary["note"] = (f"the page cap ({max_pages} pages x {PAGE_SIZE}) was reached at "
+                           f"{summary['oldest_release_seen']} before {since}: re-run with a larger --max-pages "
+                           "to go further back (existing rows are kept)")
     report = out / "FEEDS_REPORT.md"
     lines = [f"# FEEDS_REPORT — DOJ press releases\n",
              f"_Run at {datetime.now(timezone.utc).isoformat()}_\n\n"]
@@ -232,8 +246,11 @@ def main() -> None:
     ap.add_argument("--backfill-years", type=int, default=None,
                     help="ignore cursor; pull this many years of history")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--max-pages", type=int, default=400,
+                    help="pages of 50 releases to scan, newest first (400 ~ 3 years of DOJ output; "
+                         "a 10-year backfill needs ~1500)")
     args = ap.parse_args()
-    summary = run_doj_feed(since=args.since, backfill_years=args.backfill_years,
+    summary = run_doj_feed(since=args.since, backfill_years=args.backfill_years, max_pages=args.max_pages,
                            out_dir=Path(args.out) if args.out else None)
     print(summary)
 

@@ -175,3 +175,42 @@ def build_case_db(rows: list[dict] | pd.DataFrame) -> pd.DataFrame:
     df = df[CASE_COLUMNS].drop_duplicates(subset=["case_id"]).reset_index(drop=True)
     assert df["case_id"].notna().all(), "every case needs a case_id"
     return df
+
+
+def _url_base(case_id: str) -> str:
+    """'https://.../pr/x#DEFENDANT_A' and 'https://.../pr/x' are the same announcement."""
+    return re.sub(r"#.*$", "", str(case_id or "")).rstrip("/").lower()
+
+
+def merge_case_files(primary: pd.DataFrame, secondary: pd.DataFrame) -> pd.DataFrame:
+    """Append ``secondary`` rows whose announcement is not already in ``primary``
+    (same case_id, or same source URL once the #fragment is stripped). Primary
+    rows are never changed."""
+    p = build_case_db(primary)
+    s = build_case_db(secondary)
+    have_ids = set(p["case_id"].astype(str))
+    have_urls = {_url_base(u) for u in p["case_id"].astype(str)} | {
+        _url_base(u) for u in p["source_url"].fillna("").astype(str) if u}
+    keep = ~s["case_id"].astype(str).isin(have_ids) & ~s["case_id"].astype(str).map(_url_base).isin(have_urls) \
+        & ~s["source_url"].fillna("").astype(str).map(_url_base).isin(have_urls - {""})
+    return build_case_db(pd.concat([p, s[keep]], ignore_index=True))
+
+
+def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser(description="merge case files: rows of --into win; --add rows join when their announcement is new")
+    ap.add_argument("--into", required=True, help="the case CSV to extend (rewritten in place)")
+    ap.add_argument("--add", required=True, nargs="+", help="case CSVs to fold in")
+    a = ap.parse_args()
+    primary = pd.read_csv(a.into, dtype=str)
+    n0 = len(primary)
+    for path in a.add:
+        sec = pd.read_csv(path, dtype=str)
+        primary = merge_case_files(primary, sec)
+        print(f"  + {path}: {len(sec):,} rows -> {len(primary) - n0:,} new so far")
+    primary.to_csv(a.into, index=False)
+    print(f"case db: {n0:,} -> {len(primary):,} cases in {a.into}")
+
+
+if __name__ == "__main__":
+    main()

@@ -71,3 +71,25 @@ def test_docket_cases_never_flip_the_hard_label():
     dn2 = pd.concat([dn, pd.DataFrame([{"case_id": "u9", "npi": "1679576722", "status": "resolved"}])])
     lbl2 = build_case_labels(both, org_nodes, npi_to_org, fuzzy_threshold=None, defendant_npis=dn2)
     assert lbl2["label_source"].iloc[0] == "doj_case"
+
+
+def test_merge_case_files_dedups_on_announcement_url():
+    from src.enforcement.case_db import merge_case_files
+    v3 = pd.DataFrame([{"case_id": "https://www.justice.gov/usao-mdfl/pr/x#ACME", "source_url": "https://www.justice.gov/usao-mdfl/pr/x",
+                        "defendant_name": "Acme", "announced_date": "2024-01-01"}])
+    feed = pd.DataFrame([{"case_id": "https://www.justice.gov/usao-mdfl/pr/x", "source_url": "https://www.justice.gov/usao-mdfl/pr/x",
+                          "defendant_name": "Acme Health LLC", "announced_date": "2024-01-01"},
+                         {"case_id": "https://www.justice.gov/usao-sdfl/pr/y", "source_url": "https://www.justice.gov/usao-sdfl/pr/y",
+                          "defendant_name": "Beta", "announced_date": "2024-02-02"}])
+    m = merge_case_files(v3, feed)
+    assert len(m) == 2 and m["defendant_name"].tolist() == ["Acme", "Beta"]      # v3 row wins; new announcement joins
+
+
+def test_fetch_reports_truncation(tmp_path):
+    from src.enforcement.fetch import fetch_doj_press_releases
+    rel = {"title": "Acme Agrees to Pay $1 Million to Resolve False Claims Act Allegations", "body": "x",
+           "date": "2025-05-05", "url": "https://www.justice.gov/opa/pr/a", "component": []}
+    pages = iter([{"results": [rel]}, {"results": [dict(rel, date="2025-04-04", url="u2")]}])
+    df = fetch_doj_press_releases("2016-01-01", fetch_json=lambda url, params=None, headers=None: next(pages),
+                                  max_pages=2, sleep_s=0)
+    assert df.attrs["truncated"] is True and df.attrs["oldest_seen"] == "2025-04-04"

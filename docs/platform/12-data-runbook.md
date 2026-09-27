@@ -450,7 +450,7 @@ python -m src.enforcement.defendant_research --out-dir processed/defendant_resea
 
 ```bash
 # 1. DOJ harvest, now including criminal health-care-fraud releases (ten-year backfill, network)
-python -m src.enforcement.fetch --backfill-years 10 --out feeds/enforcement
+python -m src.enforcement.fetch --backfill-years 10 --max-pages 1500 --out feeds/enforcement   # 400 pages ~ 3 years; the summary says if it was truncated
 # 2. every unsealed FCA / qui tam docket (CourtListener; COURTLISTENER_TOKEN raises the rate limit)
 python -m src.enforcement.docket_backfill --since 2015-01-01 --out feeds/enforcement/fca_dockets.csv \
     --merge-into enforcement/doj_cases_v3.csv
@@ -462,6 +462,8 @@ python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest 
 python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --dispatch   # $MANUS_API_KEY
 python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --poll      # answers -> results/
 python -m src.enforcement.research_evidence mfcu-cases --in <reviewed.csv> --state XX --case-db enforcement/doj_cases_v3.csv
+# fold the feed files into the working case table (rows already there win; same announcement URL = same case)
+python -m src.enforcement.case_db --into enforcement/doj_cases_v3.csv --add feeds/enforcement/doj_cases.csv feeds/enforcement/oig_cases.csv
 ```
 
 Then rerun the defendant resolver on the merged case CSV. Docket-only cases are allegations: they enter
