@@ -35,7 +35,28 @@ CASE_COLUMNS = [
     "jurisdiction",       # district, e.g. "M.D. Fla."
     "source_url",
     "summary",
+    "case_type",          # civil_fca / criminal_hcf / docket_fca / docket_qui_tam / "" (unclassified)
 ]
+
+_CIVIL_RE = re.compile(r"false\s+claims\s+act|qui\s+tam|civil\s+settlement|agree[sd]?\s+to\s+pay", re.I)
+_CRIMINAL_RE = re.compile(r"sentenced|pleaded\s+guilty|pled\s+guilty|indict|convicted|jury\s+found|"
+                          r"health\s*care\s+fraud\s+(?:conspiracy|scheme|charges)|18\s*u\.?s\.?c\.?\s*(?:§\s*)?1347|"
+                          r"anti-?kickback\s+statute|conspiracy\s+to\s+commit", re.I)
+
+
+def classify_case_type(text: str) -> str:
+    """civil_fca (an FCA / qui tam resolution), criminal_hcf (a health-care-fraud
+    prosecution), or '' when the text says neither. Both are prosecution-grade
+    labels; the type is kept so evaluations can stratify."""
+    t = str(text or "")
+    civ, crim = bool(_CIVIL_RE.search(t)), bool(_CRIMINAL_RE.search(t))
+    if civ and not crim:
+        return "civil_fca"
+    if crim and not civ:
+        return "criminal_hcf"
+    if civ and crim:
+        return "civil_fca" if re.search(r"false\s+claims\s+act", t, re.I) else "criminal_hcf"
+    return ""
 
 # Units: spelled out OR the abbreviations DOJ/press copy actually uses ("$3M",
 # "$1.2B") — without [MBK], "$3M" parsed as three dollars (found by probing).
@@ -136,7 +157,8 @@ def parse_press_release(text: str, source_url: str = "",
         "intervened": intervened,
         "jurisdiction": juris,
         "source_url": source_url,
-        "summary": text[:500],
+        "summary": text[:1500],
+        "case_type": classify_case_type(text),
     }
 
 

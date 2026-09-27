@@ -445,3 +445,25 @@ python -m src.enforcement.defendant_research --out-dir processed/defendant_resea
 python -m src.enforcement.defendant_research --out-dir processed/defendant_research --poll \
     --resolved processed/case_defendant_npis.parquet
 ```
+
+## More prosecuted cases for the label (sources 1-6)
+
+```bash
+# 1. DOJ harvest, now including criminal health-care-fraud releases (ten-year backfill, network)
+python -m src.enforcement.fetch --backfill-years 10 --out feeds/enforcement
+# 2. every unsealed FCA / qui tam docket (CourtListener; COURTLISTENER_TOKEN raises the rate limit)
+python -m src.enforcement.docket_backfill --since 2015-01-01 --out feeds/enforcement/fca_dockets.csv \
+    --merge-into enforcement/doj_cases_v3.csv
+# 3. HHS-OIG enforcement actions (no API; listing + action pages, cached raw)
+python -m src.enforcement.oig_enforcement --since 2020-01-01 --out feeds/enforcement/oig_cases.csv \
+    --states FL,GA,AL,MS,TN,NC,SC,LA,KY --merge-into enforcement/doj_cases_v3.csv
+# 4-6. research prompt sets (takedown pages, year in review, HCFAC, OIG semiannual, MFCU sweeps)
+python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --sets mfcu,takedown,yir,hcfac,oig_sar
+python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --dispatch   # $MANUS_API_KEY
+python -m src.enforcement.case_harvest_prompts --out-dir processed/case_harvest --poll      # answers -> results/
+python -m src.enforcement.research_evidence mfcu-cases --in <reviewed.csv> --state XX --case-db enforcement/doj_cases_v3.csv
+```
+
+Then rerun the defendant resolver on the merged case CSV. Docket-only cases are allegations: they enter
+the label as source `docket_case` (weak) and never flip the hard label; a settlement or judgment for the
+same case (press release, OIG action, reviewed research) upgrades it to `doj_case`.

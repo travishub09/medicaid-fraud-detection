@@ -63,6 +63,35 @@ def default_fetch_json(url: str, params: dict | None = None,
     raise RuntimeError(f"feed fetch failed after {retries + 1} attempts: {last_err}")
 
 
+def default_fetch_text(url: str, params: dict | None = None,
+                       headers: dict | None = None,
+                       timeout: int = DEFAULT_TIMEOUT,
+                       retries: int = DEFAULT_RETRIES) -> str:
+    """GET → response text (HTML pages), same retry/backoff contract as
+    ``default_fetch_json``; raises on a final failure."""
+    import requests
+
+    hdrs = {"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml"}
+    if headers:
+        hdrs.update(headers)
+    delay = DEFAULT_BACKOFF
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            resp = requests.get(url, params=params, headers=hdrs, timeout=timeout)
+            if resp.status_code in (429, 500, 502, 503, 504):
+                last_err = RuntimeError(f"HTTP {resp.status_code} from {url}")
+            else:
+                resp.raise_for_status()
+                return resp.text
+        except Exception as e:          # noqa: BLE001
+            last_err = e
+        if attempt < retries:
+            time.sleep(delay)
+            delay *= 2
+    raise RuntimeError(f"page fetch failed after {retries + 1} attempts: {last_err}")
+
+
 def default_post_json(url: str, payload: dict | None = None,
                       headers: dict | None = None,
                       timeout: int = DEFAULT_TIMEOUT,

@@ -38,7 +38,14 @@ from .label_store import record_outcomes
 DOJ_API_URL = "https://www.justice.gov/api/v1/press_releases.json"
 PAGE_SIZE = 50
 FEED_NAME = "doj_press_releases"
-FCA_PATTERN = re.compile(r"false\s+claims\s+act", re.IGNORECASE)
+# The harvest keeps CIVIL FCA resolutions AND criminal health-care-fraud
+# prosecutions: the latter never say "False Claims Act" yet are the majority of
+# provider-level cases with a named person, city and state (the defendant
+# resolver's raw material). case_db.classify_case_type tells them apart.
+FCA_PATTERN = re.compile(r"false\s+claims\s+act|health\s*care\s+fraud|medicare\s+fraud|medicaid\s+fraud|"
+                         r"anti-?kickback|kickbacks?\b|patient\s+broker|18\s*u\.?s\.?c\.?\s*(?:§\s*)?1347|"
+                         r"medicare\s+advantage\s+fraud|hospice\s+fraud|home\s+health\s+fraud",
+                         re.IGNORECASE)
 
 # "Acme Health Inc. to Pay $12 Million ..." / "... Agrees to Pay ..." — the two
 # dominant DOJ headline shapes. Conservative: no match → empty, human fills in.
@@ -125,6 +132,17 @@ def fetch_doj_press_releases(since: str,
     return pd.DataFrame(rows, columns=["title", "body", "date", "url", "component"])
 
 
+def _defendant_from_body(body: str) -> str:
+    """Criminal releases name nobody in the title ("Miami Doctor Sentenced ...");
+    the first located mention in the body ("John Smith, 45, of Miami, Florida")
+    is the defendant."""
+    from .defendant_resolver import extract_defendants
+    for m in extract_defendants(body):
+        if m.get("mention") != "primary_defendant":
+            return m["defendant"]
+    return ""
+
+
 def releases_to_case_db(releases: pd.DataFrame) -> pd.DataFrame:
     """Run each release through the existing parser into the case-DB schema."""
     cases = []
@@ -132,7 +150,7 @@ def releases_to_case_db(releases: pd.DataFrame) -> pd.DataFrame:
         cases.append(parse_press_release(
             f"{r.title}\n\n{r.body}",
             source_url=r.url, announced_date=r.date,
-            defendant_name=_defendant_from_title(r.title)))
+            defendant_name=_defendant_from_title(r.title) or _defendant_from_body(r.body)))
     return build_case_db(cases)
 
 

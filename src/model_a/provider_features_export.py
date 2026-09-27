@@ -340,12 +340,25 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         # affiliation-broadcast rows ("worked at a settling org") carry scheme
         # METADATA for stratified evaluation but never flip the hard PU label —
         # only named-NPI and org-billing bases are prosecution-grade evidence.
+        # docket-only cases (an unsealed FCA complaint with no known outcome) are
+        # recorded as a WEAK source and never flip the hard label
+        docket_npis = set(cl.loc[cl.get("label_source", pd.Series("doj_case", index=cl.index)) == "docket_case", "npi"]) \
+            if "label_source" in cl.columns else set()
         if "label_basis" in cl.columns:
             hard_npis = set(cl.loc[cl["label_basis"] != "affiliated_individual",
-                                   "npi"])
+                                   "npi"]) - docket_npis
         else:
-            hard_npis = set(cl["npi"])
+            hard_npis = set(cl["npi"]) - docket_npis
         hit = m["npi"].isin(hard_npis)
+        if docket_npis:
+            dhit = m["npi"].isin(docket_npis)
+            if "exclusion_label_sources" not in m.columns:
+                m["exclusion_label_sources"] = ""
+            m.loc[dhit, "exclusion_label_sources"] = (
+                m.loc[dhit, "exclusion_label_sources"].fillna("").astype(str)
+                 .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["docket_case"])))))
+            audit(f"    [doj_case] {len(docket_npis):,} NPIs carry docket-only (allegation) labels: "
+                  "source docket_case, hard label NOT flipped")
         if "provider_on_exclusion" not in m.columns:
             m["provider_on_exclusion"] = 0
         m["provider_on_exclusion"] = (m["provider_on_exclusion"].fillna(0).astype(int)

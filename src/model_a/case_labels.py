@@ -193,6 +193,10 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
               f"fan-outs suppressed (> {max_org_members} members — "
               f"institutional, not individual, evidence)")
 
+    def _case_source(c) -> str:
+        ct = str(c.get("case_type") or "") if hasattr(c, "get") else ""
+        return "docket_case" if ct.startswith("docket") else "doj_case"
+
     def _case_fields(c):
         scheme = str(c.get("scheme") or "unknown")
         sector = str(c.get("sector") or "")
@@ -218,7 +222,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             rows.append({"npi": str(getattr(r, npi_col)), "fraud_scheme": scheme,
                          "case_sector": sector, "conduct_start": start,
                          "conduct_end": end, "case_ids": str(r.case_id),
-                         "amount_usd": amt, "label_basis": "named_npi"})
+                         "amount_usd": amt, "label_basis": "named_npi",
+                         "label_source": _case_source(c)})
     # tier 1b: defendants resolved to a unique NPPES record by the resolver
     if defendant_npis is not None and len(defendant_npis):
         ok = defendant_npis[(defendant_npis.get("status", "resolved") == "resolved")
@@ -230,7 +235,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             scheme, sector, start, end, amt = _case_fields(cases.loc[cid])
             rows.append({"npi": str(r.npi), "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
-                         "amount_usd": amt, "label_basis": "resolved_defendant"})
+                         "amount_usd": amt, "label_basis": "resolved_defendant",
+                         "label_source": _case_source(cases.loc[cid])})
     for s in settled.itertuples():
         cid = str(s.matched_case_id)
         if cid not in cases.index:
@@ -241,12 +247,14 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         for npi in org_to_npis.get(oid, []):                  # tier 2
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
-                         "amount_usd": amt, "label_basis": "org_billing"})
+                         "amount_usd": amt, "label_basis": "org_billing",
+                         "label_source": _case_source(c)})
         for npi in org_to_individuals.get(oid, []):           # tier 3
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt,
-                         "label_basis": "affiliated_individual"})
+                         "label_basis": "affiliated_individual",
+                         "label_source": _case_source(c)})
     if not rows:
         return pd.DataFrame(columns=cols)
     df = pd.DataFrame(rows)
@@ -282,7 +290,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "conduct_end": int(ends.max()) if len(ends) else None,
             "case_ids": ";".join(sorted(set(g["case_ids"]))),
             "amount_usd": float(dedup["amount_usd"].sum()),
-            "label_source": "doj_case",
+            # a prosecuted outcome (doj_case) outranks an allegation (docket_case)
+            "label_source": "doj_case" if (g["label_source"] == "doj_case").any() else "docket_case",
             "label_basis": min(g["label_basis"],
                                key=lambda b: _BASIS_RANK.get(b, 9)),
         })

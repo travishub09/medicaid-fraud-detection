@@ -131,5 +131,6 @@ def cia_case_rows(normalized_cia: pd.DataFrame) -> pd.DataFrame:
         "source_url": c["source_url"].astype(str),
         "summary": ("OIG Corporate Integrity Agreement ("
                     + c["cia_status"].astype(str) + ")"),
+        "case_type": "civil_fca",
     }, index=c.index)
     return rows.drop_duplicates("case_id").reset_index(drop=True)[CASE_COLUMNS]

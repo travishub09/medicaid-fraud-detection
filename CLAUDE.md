@@ -482,7 +482,24 @@ committed. Never let this file go stale: stale reminders are worse than none.
   pursuit-dossier Manus plumbing (own registry), then `--poll --resolved` folds answers
   back: Luhn-valid NPI + high/medium confidence → status resolved / match_level
   research_<conf>; low → research_low; none → research_no_npi (a non-provider).
-  Full suite: `pytest tests/` (900 tests).
+  CASE HARVEST (sources 1-6 of the DOJ-label expansion, 2026-09-27): (1) the DOJ
+  press-release harvest keeps criminal health-care-fraud prosecutions too (they never
+  say "False Claims Act"); every case row carries `case_type` (civil_fca /
+  criminal_hcf / docket_fca / docket_qui_tam) and summaries run 1,500 chars so the
+  resolver sees the "of <city>, <state>" mention; criminal titles name nobody, so the
+  defendant comes from the body's first located mention. (2) `enforcement/
+  docket_backfill.py`: CourtListener nature-of-suit 375 + 376 dockets since a date →
+  case rows (defendant from the caption, district from the court id); docket-only
+  cases are ALLEGATIONS → `case_labels` tags them source `docket_case` and the export
+  records that source WITHOUT flipping the hard PU label. (3) `enforcement/
+  oig_enforcement.py`: HHS-OIG enforcement-actions listing + action pages (tolerant
+  HTML parse, cached raw, state from URL/text) → case rows. (4-6) `enforcement/
+  case_harvest_prompts.py`: Manus prompt sets sharing ONE CSV schema (takedown
+  court-document pages, Fraud Section year in review, HCFAC annual report, OIG
+  semiannual reports, state MFCU sweeps) → --dispatch / --poll (answers saved for
+  review; loaded only via research_evidence mfcu-cases). `feeds.client.
+  default_fetch_text` is the HTML counterpart of the JSON client.
+  Full suite: `pytest tests/` (907 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

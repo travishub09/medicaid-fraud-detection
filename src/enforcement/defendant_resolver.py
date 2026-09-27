@@ -67,6 +67,8 @@ def district_state(jurisdiction: str) -> str:
     j = str(jurisdiction or "").strip().lower()
     if not j:
         return ""
+    if len(j) == 2 and j.upper() in _NAME_TO_ABBR.values():      # a bare state code passes through
+        return j.upper()
     # strip the division prefix ("m.d.", "n.d.", "e.d.", "w.d.", "c.d.", "s.d.", "d.")
     body = re.sub(r"^\s*(?:[nsewcm]\.?\s*d\.?|d\.?)\s*", "", j).strip(" .")
     body_dotless = body.replace(" ", "")
