@@ -531,7 +531,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   tier cell, weak first: the sample that attacks the label where it is weakest; the
   random 30 stays too), and `--min-strength moderate|strong` drops the weak stratum
   once the verification says so. LABEL_VERIFICATION.md tallies confirmed by strength.
-  Full suite: `pytest tests/` (928 tests).
+  Full suite: `pytest tests/` (931 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

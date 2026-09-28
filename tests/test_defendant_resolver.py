@@ -211,8 +211,8 @@ def test_resolver_rejects_nonclinical_and_mismatched_roles_and_counts_name_hits(
     pdim = pdim.copy()
     pdim["taxonomy_code"] = ["111N00000X", "163W00000X", "", "", "163W00000X", "207Q00000X", ""]   # Smith FL = chiropractor
     cdb = pd.DataFrame([
-        {"case_id": "r1", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
-         "amount_usd": "1000000", "scheme": "", "summary": "Pharmacist John Smith, of Miami, Florida, pleaded guilty."},
+        {"case_id": "r1", "announced_date": "2025-01-01", "defendant_name": "Maria Lopez", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Pharmacist Maria Lopez, of Orlando, Florida, pleaded guilty."},
         {"case_id": "r2", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
          "amount_usd": "1000000", "scheme": "", "summary": "John Smith, of Miami, Florida, a patient recruiter, pleaded guilty."},
         {"case_id": "r3", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
@@ -223,7 +223,7 @@ def test_resolver_rejects_nonclinical_and_mismatched_roles_and_counts_name_hits(
     out = resolve_defendants(mentions_from_case_db(cdb), pdim)
     # the located mention (the row with a city) is the one under test; the bare primary-defendant row is a duplicate
     by = {r.case_id: r for r in out[out["city"] != ""].itertuples()}
-    assert by["r1"].status == "role_mismatch" and by["r1"].npi == "" and by["r1"].npi_taxonomy_family == "chiropractor"
+    assert by["r1"].status == "role_mismatch" and by["r1"].npi == "" and by["r1"].npi_taxonomy_family == "nurse"
     assert by["r2"].status == "nonclinical_role" and by["r2"].npi == ""
     assert by["r3"].status == "resolved" and by["r3"].role_agree == "agree" and by["r3"].npi == "1234567893"
     assert by["r4"].status == "resolved" and by["r4"].role_agree == "agree" and by["r4"].match_level == "name_city_state"
@@ -268,3 +268,51 @@ def test_role_near_surname_fallback_keeps_the_honorific_and_never_picks_a_relati
     assert role_near("Chowdhury and Chowdhury were sentenced; the elder, a marketer, first.", "Dr. Tajul Chowdhury")[1] != "nonclinical"
     # a bare surname that appears once is used
     assert role_near("Ifediba, a physician, billed for tests never done.", "Patrick Emeka Ifediba")[1:] == ("clinical", "physician")
+
+
+def test_role_near_summary_shapes_from_role_debug_2026_09_28(pdim):
+    """The five people the 199 run still rejected, on their actual case-table text."""
+    from src.enforcement.defendant_resolver import role_near, role_agreement, extract_defendants
+    ifediba = ("A federal jury convicted Dr. Patrick Emeka Ifediba and nurse Ngozi Justina Ozuligbo for their involvement "
+               "with Care Complete Medical Clinic in Birmingham. They were found guilty of numerous counts of healthcare fraud.")
+    r = role_near(ifediba, "Patrick Emeka Ifediba")              # the mention lacks the Dr.; the text has it
+    assert r[1:] == ("clinical", "doctorate") and role_agreement(r[2], "physician") == "agree"
+    assert role_near(ifediba, "Ngozi Justina Ozuligbo")[1:] == ("clinical", "nurse")
+    baldizzi = ("Dr. Anthony Baldizzi (physician), Carlos Mazariegos (pharmacist), Benjamin Nundy (pharmacist), Frank V. Monte "
+                "and Kimberley S. Anderson (marketing firm owners) sentenced in MDFL for conspiracy to pay kickbacks.")
+    assert role_near(baldizzi, "Dr. Anthony Baldizzi")[1:] == ("clinical", "physician")
+    assert role_near(baldizzi, "Carlos Mazariegos")[1:] == ("clinical", "pharmacist")
+    chowdhury = ("Physician/owner of Center for Pain Management (Edinburg, TX). Pleaded guilty January 2025 to receiving "
+                 "kickbacks. Co-defendant: Mohammad Imtiaz Chowdhury (son/pharmacy marketer). Awaiting sentencing.")
+    r = role_near(chowdhury, "Dr. Tajul Shams Chowdhury", primary=True)   # name absent; the son must not stand in
+    assert r[1] == "clinical" and r[1] != "nonclinical"
+    assert role_agreement(r[2], "physician") == "agree"
+    steward = ("Dr. Christopher Steward, a physician, dentist, and nurse practitioner in Cave City, Kentucky, pleaded guilty "
+               "to illegally dispensing controlled substances and healthcare fraud.")
+    r = role_near(steward, "Dr. Christopher Steward")
+    assert set(r[2].split("|")) == {"physician", "dentist", "np"}
+    assert role_agreement(r[2], "dentist") == "agree" and role_agreement(r[2], "chiropractor") == "disagree"
+    # the parenthetical "(age, City, ST)" shape now yields a located mention with the real state
+    baird = ("John Baird (55, Louisville, KY), a physician specializing in physical medicine, rehabilitation, and pain "
+             "treatment, pleaded guilty in July 2018.")
+    got = {m["defendant"]: m for m in extract_defendants(baird, "John Baird", "W.D. Pa.")}
+    assert got["John Baird"]["state"] == "KY" and got["John Baird"]["city"] == "Louisville"
+    assert got["John Baird"]["mention"] == "paren_city_state" and got["John Baird"]["role_family"] == "physician"
+    assert extract_defendants("Frank Monte (40, Valrico) and Kimberley Anderson (52, New Port Richey) pleaded guilty.",
+                              "Frank Monte", "M.D. Fla.")[0]["state"] == "FL"     # no state in the parens: district
+
+
+def test_role_mismatch_rescued_by_an_agreeing_mention_of_the_same_person(pdim):
+    pdim = pdim.copy()
+    pdim["taxonomy_code"] = ["122300000X", "", "", "", "", "", ""]          # John Smith FL = dentist
+    cdb = pd.DataFrame([
+        {"case_id": "s1", "announced_date": "2025-01-01", "defendant_name": "Dr. John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Dr. John Smith, a physician, dentist, and nurse practitioner in Miami, Florida, pleaded guilty."},
+        {"case_id": "s2", "announced_date": "2025-02-01", "defendant_name": "Dr. John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Dr. John Smith, a Miami, Florida physician, was sentenced to 18 months."},
+    ])
+    out = resolve_defendants(mentions_from_case_db(cdb), pdim)
+    by = {r.case_id: r for r in out.itertuples()}
+    assert by["s1"].status == "resolved" and by["s1"].role_agree == "agree"
+    assert by["s2"].status == "resolved" and by["s2"].role_agree == "agree_other_mention" and by["s2"].npi == "1234567893"
+    assert "npi_candidate" not in out.columns

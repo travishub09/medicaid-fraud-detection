@@ -182,6 +182,9 @@ _BASED_PATTERN = re.compile(
 # "Acme Home Health LLC (Acme), located in Tampa, Florida"
 _LOCATED_PATTERN = re.compile(
     rf"(?P<name>{_NAME}?)(?:\s*\([^)]{{1,40}}\))?,\s*(?:which is\s+|is\s+)?(?:located|headquartered|based)\s+in\s+(?P<city>{_CITY}),\s*(?P<state>{_STATE_NAMES})\b")
+# "Frank Monte (40, Valrico)"  /  "John Baird (55, Louisville, KY)"  /  "Acme LLC (Tampa, Florida)"
+_PAREN_PATTERN = re.compile(
+    rf"(?P<name>{_NAME}?)\s*\((?:(?:age[d]?\s+)?\d{{2}},\s*)?(?P<city>{_CITY}),\s*(?P<state>{_STATE_NAMES}|[A-Z]{{2}})\)")
 _LEADING_JUNK = re.compile(r"^(?:(?:the|and|that|with|against|defendants?|including|co-?defendants?|"
                            r"owner|operator|physician|doctor|its|his|her|their|by|"
                            r"nurse|pharmacist|chiropractor|dentist|podiatrist|optometrist|psychologist|"
@@ -265,15 +268,19 @@ def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str
                     continue
                 key = (n.upper(), (city or "").upper(), state)
                 if key not in found:
-                    role, rclass, rfam = role_near(text, n)
-                    found[key] = {"defendant": n, "kind": classify_defendant(n),
+                    kind = classify_defendant(n)
+                    role, rclass, rfam = role_near(text, n) if kind == "person" else ("", "unknown", "")
+                    found[key] = {"defendant": n, "kind": kind,
                                   "city": city or "", "state": state, "mention": source,
                                   "role": role, "role_class": rclass, "role_family": rfam}
 
     for pat, src in ((_OF_PATTERN, "of_city_state"), (_BASED_PATTERN, "city_state_based"),
-                     (_LOCATED_PATTERN, "located_in")):
+                     (_LOCATED_PATTERN, "located_in"), (_PAREN_PATTERN, "paren_city_state")):
         for m in pat.finditer(text):
-            st = _NAME_TO_ABBR.get(m.group("state").upper(), "")
+            raw_st = m.group("state").upper()
+            st = _NAME_TO_ABBR.get(raw_st, raw_st if raw_st in _NAME_TO_ABBR.values() else "")
+            if not st:
+                continue
             _add(m.group("name"), m.group("city").strip(), st, src)
 
     primary = _clean_name(defendant_name)
@@ -290,8 +297,9 @@ def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str
                                if v["defendant"].upper() in n.upper() or n.upper() in v["defendant"].upper()), dst)
                     key = (n.upper(), "", st)
                     if key not in found:
-                        role, rclass, rfam = role_near(text, n)
-                        found[key] = {"defendant": n, "kind": classify_defendant(n), "city": "",
+                        kind = classify_defendant(n)
+                        role, rclass, rfam = role_near(text, n, primary=True) if kind == "person" else ("", "unknown", "")
+                        found[key] = {"defendant": n, "kind": kind, "city": "",
                                       "state": st, "mention": "primary_defendant",
                                       "role": role, "role_class": rclass, "role_family": rfam}
     return list(found.values())
@@ -427,61 +435,93 @@ def taxonomy_family(code: str) -> str:
     return "other"
 
 
-def role_near(text: str, name: str) -> tuple[str, str, str]:
-    """(role_phrase, role_class, role_family) read from the clause around the first mention of
-    ``name`` in ``text``. role_class: clinical / nonclinical / owner_exec / unknown. The window
-    stops at the next sentence, semicolon, or another capitalised name after ' and ', so a
-    co-defendant's role is not read as this defendant's."""
+def _find_name(t: str, n: str) -> tuple[int, str]:
+    """Where ``n`` (or the closest printed form of it) sits in ``t``: exact, then 'First Last',
+    then 'Dr. Last', then the bare surname when it occurs once AND is not the tail of a
+    different person's name (a father and son share a surname). (-1, '') when absent."""
+    i = t.lower().find(n.lower())
+    if i >= 0:
+        return i, t[i: i + len(n)]
+    pk = person_key(n)
+    first, last = (pk.split(" ")[0], pk.split(" ")[-1]) if pk else ("", "")
+    for probe in ([f"{first} {last}"] if first else []) + ([f"dr. {last}", f"dr {last}"] if last else []):
+        j = t.lower().find(probe.lower())
+        if j >= 0:
+            return j, t[j: j + len(probe)]
+    if len(last) >= 4:
+        occ = list(re.finditer(rf"\b{re.escape(last)}\b", t, re.I))
+        if len(occ) == 1:
+            m = occ[0]
+            prev = re.search(r"([A-Z][a-z]+)\s+$", t[max(0, m.start() - 30): m.start()])
+            mine = {tok.upper() for tok in re.split(r"[\s.]+", _HONORIFIC.sub("", n)) if tok}
+            if not prev or prev.group(1).upper() in mine:
+                return m.start(), m.group(0)
+    return -1, ""
+
+
+def role_near(text: str, name: str, primary: bool = False) -> tuple[str, str, str]:
+    """(role_phrase, role_class, role_family) read from the clause around the mention of ``name``
+    in ``text``. role_class: clinical / nonclinical / owner_exec / unknown. role_family may list
+    several families joined by '|' when the text gives the person more than one ("a physician,
+    dentist, and nurse practitioner"). The clause stops at the next sentence, a semicolon, a
+    co-defendant introduced by "and <Name>" / "and nurse <Name>" / "and his sister", or a
+    comma-separated next name, so a co-defendant's role is not read as this defendant's. A
+    role word that itself introduces another capitalised name ("nurse Ngozi") is never this
+    person's. When the name is absent from the text, the first sentence's opening words stand
+    in (the summaries open with the primary defendant's role: "Physician/owner of ...")."""
     t = re.sub(r"\s+", " ", str(text or ""))
     n = str(name or "").strip()
     if not n:
         return "", "unknown", ""
     is_dr = bool(_HONORIFIC.match(n) and n.lower().startswith("dr"))   # from the NAME, before any fallback
-    i = t.lower().find(n.lower())
-    if i < 0:
-        # the text may print the name without the honorific / middle name: try "First Last",
-        # then "Dr. Last", then the bare surname only when it occurs ONCE (a father and son
-        # share a surname; the first hit would be the wrong person)
-        pk = person_key(n)
-        first, last = (pk.split(" ")[0], pk.split(" ")[-1]) if pk else ("", "")
-        cand = ""
-        for probe in ([f"{first} {last}"] if first else []) + ([f"dr. {last}", f"dr {last}"] if last else []):
-            j = t.lower().find(probe.lower())
-            if j >= 0:
-                i, cand = j, probe
-                break
-        if i < 0 and len(last) >= 4 and len(re.findall(rf"\b{re.escape(last)}\b", t, re.I)) == 1:
-            i, cand = t.lower().find(last.lower()), last
-        if i < 0:
-            return "", "unknown", ""
-        n = t[i: i + len(cand)]
-    # the clause: back to the last sentence break, forward to the next sentence break or to a
-    # co-defendant introduced by "and <Name>" / "and his sister" / "along with the"
-    before = re.split(r"[.;]\s", t[max(0, i - 90): i])[-1]
+    i, printed = _find_name(t, n)
+    prot = lambda seg: _ABBREV_DOT.sub(lambda m: m.group(1) + "\x00", seg)     # "Dr. " is not a sentence end
+    if i >= 0:
+        # back to the last sentence end, and never across the previous list item ("(physician), " / ", and ")
+        before = re.split(r"[.;]\s|\)\s*,\s*|,\s+and\s+", prot(t[max(0, i - 90): i]))[-1].replace("\x00", ".")
+        after_raw = prot(t[i + len(printed): i + len(printed) + 140])
+    elif primary:
+        # the summaries open with the primary defendant's role ("Physician/owner of ...")
+        before, after_raw = "", re.split(r"[.;]\s", prot(t[:_APPOSITIVE_ZONE + 1]))[0]
+    else:
+        return "", "unknown", ""
     after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with|together with)\s+"
-                     r"(?=(?:Dr\.\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendant)\b)",
-                     t[i + len(n): i + len(n) + 140])[0]
-    # every clinical phrase in the clause, ranked by distance to the name (an appositive right
-    # after the name is distance 0); the nearest wins, a longer phrase wins a tie
-    # ("speech pathologist" over "pathologist")
-    hits: list[tuple[int, int, str, str]] = []
+                     r"(?=(?:[a-z][a-z\-]+\s+)?(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendants?)\b)"
+                     r"|,\s+(?=(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z][a-z]+\s*[,(])",
+                     after_raw)[0].replace("\x00", ".")
+    if re.search(r"\bDr\.?\s*$", before):
+        is_dr = True                              # "convicted Dr. Patrick Ifediba" with the Dr. in the text only
+    hits: list[tuple[int, int, str, str, tuple]] = []    # (distance, -len, phrase, family, span)
+
+    def _wend(seg: str, e: int) -> int:           # a stem match ("patholog") extends to the end of its word
+        while e < len(seg) and seg[e].isalpha():
+            e += 1
+        return e
+
     for f, pat in _ROLE_CLINICAL:
         for m in pat.finditer(before):
-            hits.append((len(before) - m.end(), -len(m.group(0)), m.group(0), f))
+            hits.append((len(before) - m.end(), -len(m.group(0)), m.group(0), f, ("b", m.start(), _wend(before, m.end()))))
         for m in pat.finditer(after):
-            hits.append((0 if m.start() <= _APPOSITIVE_ZONE else m.start(), -len(m.group(0)), m.group(0), f))
+            if re.match(r"\s+[A-Z][a-z]+\s+[A-Z]", after[m.end(): m.end() + 40]):
+                continue                          # "nurse Ngozi Justina": the other person's role
+            hits.append((m.start(), -len(m.group(0)), m.group(0), f, ("a", m.start(), _wend(after, m.end()))))
+    # a phrase inside a longer phrase is the same words, not a second role ("pathologist" in "speech pathologist")
+    hits = [h for h in hits if not any(o is not h and o[4][0] == h[4][0] and o[4][1] <= h[4][1] and h[4][2] <= o[4][2]
+                                       and (o[4][2] - o[4][1]) > (h[4][2] - h[4][1]) for o in hits)]
     if hits:
         hits.sort()
-        dist, _, phrase, fam = hits[0]
-        # "Dr." on the name outranks a clinical word that sits outside the appositive zone
-        # ("Doctor, pharmacists and marketers sentenced ... Dr. Baldizzi, 46, of Tampa")
+        dist, _, phrase, fam, _sp = hits[0]
         if is_dr and dist > _APPOSITIVE_ZONE:
-            return "Dr.", "clinical", "doctorate"
-        return phrase, "clinical", fam
-    win = f"{before} {n} {after}"
+            return "Dr.", "clinical", "doctorate"   # the honorific on the name outranks a distant word
+        fams = [fam] + [h[3] for h in hits[1:] if h[0] <= _APPOSITIVE_ZONE and h[3] not in (fam,)]
+        seen: list[str] = []
+        for x in fams:
+            if x not in seen:
+                seen.append(x)
+        return phrase, "clinical", "|".join(seen)
+    win = f"{before} {printed} {after}"
     if is_dr:
-        # a doctor who also marketed or owned is still a provider: never nonclinical
-        m2 = _ROLE_OWNER.search(win)
+        m2 = _ROLE_OWNER.search(win)             # a doctor who also owned or marketed is still a provider
         return (m2.group(0), "owner_exec", "doctorate") if m2 else ("Dr.", "clinical", "doctorate")
     m = _ROLE_NONCLINICAL.search(win)
     if m:
@@ -493,10 +533,12 @@ def role_near(text: str, name: str) -> tuple[str, str, str]:
 
 
 def role_agreement(role_family: str, npi_family: str) -> str:
-    """agree / disagree / unknown for a text role family against the NPI's taxonomy family."""
-    if not role_family or npi_family in ("", "other", "student"):
+    """agree / disagree / unknown for the text role family (or '|'-joined families) against the
+    NPI's taxonomy family: agree when the taxonomy is compatible with ANY listed family."""
+    fams = [f for f in str(role_family or "").split("|") if f]
+    if not fams or npi_family in ("", "other", "student"):
         return "unknown"
-    return "agree" if npi_family in _ROLE_COMPAT.get(role_family, {role_family}) else "disagree"
+    return "agree" if any(npi_family in _ROLE_COMPAT.get(f, {f}) for f in fams) else "disagree"
 
 
 def _middle_tokens(defendant: str) -> list[str]:
@@ -510,7 +552,7 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
     """mentions: case_id, defendant, kind, city, state (+ any other columns carried).
     Returns the same rows with npi, status, match_level, n_candidates, basis."""
     out = mentions.copy()
-    for c in ("npi", "match_level", "npi_taxonomy_family"):
+    for c in ("npi", "match_level", "npi_taxonomy_family", "npi_candidate"):
         out[c] = ""
     for c in ("role", "role_class", "role_family"):
         if c not in out.columns:
@@ -586,6 +628,8 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             out.at[i, "role_agree"] = agree
             if agree == "disagree":
                 out.at[i, "status"] = "role_mismatch"       # text says pharmacist, NPI is a chiropractor
+                out.at[i, "npi_candidate"] = uniq[0]
+                out.at[i, "match_level"] = level
                 continue
             out.at[i, "npi"] = uniq[0]
             out.at[i, "match_level"] = level
@@ -594,6 +638,18 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             out.at[i, "status"] = "chain_org"        # the org_billing tier covers enrolled chains
         else:
             out.at[i, "status"] = "ambiguous"
+    # a role_mismatch on one release is overruled when another release resolved the SAME person
+    # to the SAME NPI with an agreeing role ("a Cave City physician" vs the dentist NPI that a
+    # fuller release lists as "physician, dentist, and nurse practitioner")
+    if "npi_candidate" in out.columns:
+        ok = out[(out["status"] == "resolved") & (out["role_agree"] == "agree")]
+        agreed = set(zip(ok["_pk"], ok["state"].fillna("").astype(str).str.upper(), ok["npi"]))
+        for i, r in out[out["status"] == "role_mismatch"].iterrows():
+            if (r["_pk"], str(r.get("state") or "").upper(), r["npi_candidate"]) in agreed:
+                out.at[i, "npi"] = r["npi_candidate"]
+                out.at[i, "status"] = "resolved"
+                out.at[i, "role_agree"] = "agree_other_mention"
+        out = out.drop(columns=["npi_candidate"])
     out = out.drop(columns=["_pk", "_ok"])
     out["basis"] = "resolved_defendant"
     return out
