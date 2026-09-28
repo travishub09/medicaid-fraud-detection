@@ -254,3 +254,17 @@ def test_role_near_real_release_shapes_from_the_2026_09_28_run():
     assert role_near("John Terrence, the medical director of the clinic, was sentenced.", "John Terrence")[1] == "owner_exec"
     assert role_agreement("psychiatrist", "behavioral") == "agree" and role_agreement("psychiatrist", "physician") == "agree"
     assert role_agreement("pt_ot", "physician") == "disagree"
+
+
+def test_role_near_surname_fallback_keeps_the_honorific_and_never_picks_a_relative():
+    """The mention name came from the title ('Dr. Tajul Shams Chowdhury'); the body prints the name another
+    way. The fallback keeps the 'Dr.' and never lands on the son who shares the surname."""
+    from src.enforcement.defendant_resolver import role_near
+    body = ("Tajul Chowdhury, 63, of Edinburg, pleaded guilty today. His son, Ahmed Chowdhury, 31, a marketer for the "
+            "pharmacy, pleaded guilty as well.")
+    assert role_near(body, "Dr. Tajul Shams Chowdhury")[1:] == ("clinical", "doctorate")
+    assert role_near(body, "Ahmed Chowdhury") == ("marketer", "nonclinical", "")
+    # a bare surname that appears twice is never guessed
+    assert role_near("Chowdhury and Chowdhury were sentenced; the elder, a marketer, first.", "Dr. Tajul Chowdhury")[1] != "nonclinical"
+    # a bare surname that appears once is used
+    assert role_near("Ifediba, a physician, billed for tests never done.", "Patrick Emeka Ifediba")[1:] == ("clinical", "physician")

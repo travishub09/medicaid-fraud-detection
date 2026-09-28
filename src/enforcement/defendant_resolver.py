@@ -436,20 +436,31 @@ def role_near(text: str, name: str) -> tuple[str, str, str]:
     n = str(name or "").strip()
     if not n:
         return "", "unknown", ""
+    is_dr = bool(_HONORIFIC.match(n) and n.lower().startswith("dr"))   # from the NAME, before any fallback
     i = t.lower().find(n.lower())
     if i < 0:
-        last = person_key(n).split(" ")[-1] if person_key(n) else ""
-        i = t.upper().find(last) if len(last) >= 4 else -1
+        # the text may print the name without the honorific / middle name: try "First Last",
+        # then "Dr. Last", then the bare surname only when it occurs ONCE (a father and son
+        # share a surname; the first hit would be the wrong person)
+        pk = person_key(n)
+        first, last = (pk.split(" ")[0], pk.split(" ")[-1]) if pk else ("", "")
+        cand = ""
+        for probe in ([f"{first} {last}"] if first else []) + ([f"dr. {last}", f"dr {last}"] if last else []):
+            j = t.lower().find(probe.lower())
+            if j >= 0:
+                i, cand = j, probe
+                break
+        if i < 0 and len(last) >= 4 and len(re.findall(rf"\b{re.escape(last)}\b", t, re.I)) == 1:
+            i, cand = t.lower().find(last.lower()), last
         if i < 0:
             return "", "unknown", ""
-        n = last
+        n = t[i: i + len(cand)]
     # the clause: back to the last sentence break, forward to the next sentence break or to a
     # co-defendant introduced by "and <Name>" / "and his sister" / "along with the"
     before = re.split(r"[.;]\s", t[max(0, i - 90): i])[-1]
     after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with|together with)\s+"
                      r"(?=(?:Dr\.\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendant)\b)",
                      t[i + len(n): i + len(n) + 140])[0]
-    is_dr = bool(_HONORIFIC.match(n) and n.lower().startswith("dr"))
     # every clinical phrase in the clause, ranked by distance to the name (an appositive right
     # after the name is distance 0); the nearest wins, a longer phrase wins a tie
     # ("speech pathologist" over "pathologist")
