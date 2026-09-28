@@ -388,13 +388,13 @@ _ROLE_CLINICAL: list[tuple[str, re.Pattern]] = [(f, re.compile(p, re.I)) for f, 
     ("nurse", r"registered nurse|licensed (?:practical|vocational) nurse|\bnurse\b|\bRN\b|\bLPN\b|\bLVN\b"),
     ("pharmacist", r"pharmacist"),
     ("dentist", r"\bdentist|orthodontist|oral surgeon|\bDDS\b|\bDMD\b"),
-    ("chiropractor", r"chiropract"),
-    ("pt_ot", r"physical therap|occupational therap|speech(?:[- ]language)?[- ]patholog|respiratory therap"),
-    ("podiatrist", r"podiatr|\bDPM\b"),
-    ("optometrist", r"optometr"),
+    ("chiropractor", r"chiropractor"),
+    ("pt_ot", r"physical therapist|occupational therapist|speech(?:[- ]language)?[- ]pathologist|respiratory therapist"),
+    ("podiatrist", r"podiatrist|\bDPM\b"),
+    ("optometrist", r"optometrist"),
     ("behavioral", r"psychologist|\bcounselor|social worker|\bLCSW\b|\bLPC\b|marriage and family therap|behavioral health therap|\btherapist"),
     ("aide", r"home health aide|personal care (?:aide|attendant|assistant)|certified nurs(?:e|ing) assistant|\bCNA\b|caregiver"),
-    ("psychiatrist", r"psychiatr"),        # a physician, but NPPES sometimes files them under a behavioral code
+    ("psychiatrist", r"psychiatrist"),     # a physician, but NPPES sometimes files them under a behavioral code
     ("physician", r"physician|\bdoctor\b|\bM\.D\.|\bD\.O\.|surgeon|anesthesiologist|cardiologist|"
                   r"dermatologist|neurologist|oncologist|radiologist|urologist|pediatrician|internist|"
                   r"gynecologist|ophthalmologist|\bpathologist|rheumatologist|gastroenterologist|"
@@ -405,7 +405,7 @@ _ROLE_NONCLINICAL = re.compile(
     r"patient recruiter|\brecruiter|\bmarketer|marketing (?:company|firm|representative|agent|director)|"
     r"\bbiller\b|billing (?:manager|clerk|specialist|agent|company)|office manager|\baccountant|bookkeeper|"
     r"sales(?:man|woman|person| representative| rep\b)|\bdriver\b|receptionist|telemarketer|call[- ]center|"
-    r"straw owner|nominee owner|money launder|\bcapper\b|\brunner\b|\bkickback recipient", re.I)
+    r"straw owner|nominee owner|\bcapper\b|\brunner\b|\bkickback recipient", re.I)
 _ROLE_OWNER = re.compile(r"\bowner|\boperator|\bCEO\b|\bCFO\b|\bCOO\b|chief (?:executive|financial|operating)|"
                          r"\bpresident|\bfounder|\badministrator|medical director|\bdirector\b|\bmanager\b|\bexecutive\b", re.I)
 _ROLE_COMPAT: dict[str, set[str]] = {
@@ -486,7 +486,7 @@ def role_near(text: str, name: str, primary: bool = False) -> tuple[str, str, st
     else:
         return "", "unknown", ""
     after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with|together with)\s+"
-                     r"(?=(?:[a-z][a-z\-]+\s+)?(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendants?)\b)"
+                     r"(?=(?:[a-z][a-z\-]+\s+){0,2}(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendants?)\b)"
                      r"|,\s+(?=(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z][a-z]+\s*[,(])",
                      after_raw)[0].replace("\x00", ".")
     if re.search(r"\bDr\.?\s*$", before):
@@ -502,12 +502,12 @@ def role_near(text: str, name: str, primary: bool = False) -> tuple[str, str, st
         for m in pat.finditer(before):
             hits.append((len(before) - m.end(), -len(m.group(0)), m.group(0), f, ("b", m.start(), _wend(before, m.end()))))
         for m in pat.finditer(after):
-            if re.match(r"\s+[A-Z][a-z]+\s+[A-Z]", after[m.end(): m.end() + 40]):
-                continue                          # "nurse Ngozi Justina": the other person's role
             hits.append((m.start(), -len(m.group(0)), m.group(0), f, ("a", m.start(), _wend(after, m.end()))))
     # a phrase inside a longer phrase is the same words, not a second role ("pathologist" in "speech pathologist")
     hits = [h for h in hits if not any(o is not h and o[4][0] == h[4][0] and o[4][1] <= h[4][1] and h[4][2] <= o[4][2]
                                        and (o[4][2] - o[4][1]) > (h[4][2] - h[4][1]) for o in hits)]
+    # a role phrase that itself introduces another capitalised name is that person's ("nurse practitioner Donna A.")
+    hits = [h for h in hits if not (h[4][0] == "a" and re.match(r"\s+[A-Z][a-z]+\s+[A-Z]", after[h[4][2]: h[4][2] + 40]))]
     if hits:
         hits.sort()
         dist, _, phrase, fam, _sp = hits[0]

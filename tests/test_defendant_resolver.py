@@ -316,3 +316,18 @@ def test_role_mismatch_rescued_by_an_agreeing_mention_of_the_same_person(pdim):
     assert by["s1"].status == "resolved" and by["s1"].role_agree == "agree"
     assert by["s2"].status == "resolved" and by["s2"].role_agree == "agree_other_mention" and by["s2"].npi == "1234567893"
     assert "npi_candidate" not in out.columns
+
+
+def test_role_near_business_words_are_not_roles_and_two_word_roles_cut_the_clause():
+    """From the 200 run: 'Dr. Brij R. Vaid and nurse practitioner Donna A. Waldo' (two role words before the
+    co-defendant), a clinic owner in an 'occupational therapy fraud' (a scheme, not his job), and 'money
+    laundering' (a charge, not a job)."""
+    from src.enforcement.defendant_resolver import role_near
+    vaid = "Dr. Brij R. Vaid and nurse practitioner Donna A. Waldo pleaded guilty to making false claims to Medicare."
+    assert role_near(vaid, "Dr. Brij R. Vaid")[1:] == ("clinical", "doctorate")
+    assert role_near(vaid, "Donna A. Waldo")[1:] == ("clinical", "np")
+    hong = "Simon Hong, 54, of Los Angeles, California, the owner of a physical therapy clinic, was sentenced for his role in an occupational therapy fraud scheme."
+    assert role_near(hong, "Simon Hong")[1] == "owner_exec"
+    assert role_near("Ana Ruiz, of Reno, Nevada, owner of a psychiatric hospital and a chiropractic clinic, pleaded guilty.", "Ana Ruiz")[1] == "owner_exec"
+    assert role_near("Rodney Mesquias, of Harlingen, Texas, the CEO, was convicted of money laundering.", "Rodney Mesquias")[1] == "owner_exec"
+    assert role_near("Dr. Lee Park, of Reno, Nevada, a psychiatrist, was convicted of money laundering.", "Dr. Lee Park")[1:] == ("clinical", "psychiatrist")
