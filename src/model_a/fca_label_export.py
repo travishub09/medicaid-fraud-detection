@@ -64,10 +64,18 @@ OK_MATCH_LEVELS = {"name_state", "name_city_state", "name_state_middle", "name_c
                    "research_high", "research_medium"}
 
 
+def _s(v) -> str:
+    """A clean string: None / NaN / the literal 'nan' become '' (never a 'nan' state or type)."""
+    if v is None or (isinstance(v, float) and v != v):
+        return ""
+    s = str(v).strip()
+    return "" if s.lower() in ("nan", "none", "<na>") else s
+
+
 def outcome_tier(case_type: str, text: str, amount) -> tuple[str, str]:
     """(tier, outcome_words) for a case row; tier '' when it does not qualify."""
     t = str(text or "")
-    ct = str(case_type or "")
+    ct = _s(case_type)          # an untyped case (NaN in the table) takes the state-case path below
     amt = pd.to_numeric(pd.Series([amount]), errors="coerce").iloc[0]
     if ct == "civil_fca":
         m = _CIVIL_OUTCOME.search(t)
@@ -149,8 +157,8 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
             quar.append({**d, "reason": "NPI not in NPPES (provider_dim)"})
             continue
         p = pd_.loc[npi]
-        et = str(p.get("entity_type", "") or "")
-        kind = str(d.get("kind", ""))
+        et = _s(p.get("entity_type", ""))
+        kind = _s(d.get("kind", ""))
         if et and kind and ((kind == "person" and et == "2") or (kind == "org" and et == "1")):
             quar.append({**d, "reason": f"entity type {et} disagrees with defendant kind {kind}"})
             continue
@@ -166,7 +174,7 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
             "case_type": c.get("case_type", ""), "outcome_words": words,
             "amount_usd": c.get("amount_usd"), "announced_date": c.get("announced_date", ""),
             "conduct_start": start, "conduct_end": end,
-            "state": d.get("state") or _row_state(c), "basis": basis, "match_level": ml,
+            "state": _s(d.get("state")) or _row_state(c) or _s(p.get("addr_state")), "basis": basis, "match_level": ml,
             "defendant": d.get("defendant", ""), "kind": kind, "entity_type": et,
             "flags": ";".join(flags), "source_url": c.get("source_url", cid),
         })
@@ -212,7 +220,7 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                 "outcome_words": LEIE_STATUTES[code][1], "amount_usd": None,
                 "announced_date": d.strftime("%Y-%m-%d") if pd.notna(d) else "",
                 "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
-                "state": str(pd_.loc[npi].get("addr_state", "") or ""), "basis": "npi_on_list", "match_level": "exact",
+                "state": _s(pd_.loc[npi].get("addr_state", "")), "basis": "npi_on_list", "match_level": "exact",
                 "defendant": "", "kind": "", "entity_type": str(pd_.loc[npi].get("entity_type", "") or ""),
                 "flags": "window_inferred", "source_url": "https://oig.hhs.gov/exclusions/",
             })

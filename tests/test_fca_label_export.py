@@ -151,6 +151,31 @@ def test_old_boilerplate_amounts_dropped_and_duplicate_cases_collapsed():
     assert (labels["npi"] == "1679576722").sum() == 1            # one row, not two, for the twice-harvested case
 
 
+def test_nan_case_type_and_nan_state_never_leak():
+    """An untyped case (NaN case_type in the table) with fraud words + an outcome is a state_case, not
+    quarantined as 'case_type nan'; a NaN state on the mention / NPPES row never becomes the string 'nan'."""
+    import numpy as np
+    assert outcome_tier(np.nan, "Jane Doe pleaded guilty to Medicaid fraud.", None)[0] == "state_case"
+    assert outcome_tier("nan", "Jane Doe pleaded guilty to Medicaid fraud.", None)[0] == "state_case"
+    assert outcome_tier(np.nan, "Jane Doe opened a clinic.", None) == ("", "case_type blank")
+    cases, dn, pdim, ex = _fixture()
+    cases = pd.concat([cases, pd.DataFrame([{
+        "case_id": "https://www.ag.state.ms.us/y", "case_type": np.nan, "announced_date": "2024-05-05", "amount_usd": "",
+        "summary": "Jane Doe pleaded guilty to Medicaid fraud.", "jurisdiction": "", "source_url": "https://www.ag.state.ms.us/y", "scheme": ""}])],
+        ignore_index=True)
+    dn = pd.concat([dn, pd.DataFrame([{"case_id": "https://www.ag.state.ms.us/y", "npi": "1497758544", "status": "resolved",
+                                       "match_level": "name_state", "kind": "person", "state": np.nan, "defendant": "Jane Doe", "mention": "primary_defendant"}])],
+                   ignore_index=True)
+    pdim = pdim.copy()
+    pdim.loc[pdim.npi == "1234567893", "addr_state"] = np.nan          # the LEIE row's NPPES state is missing
+    shaped, quar = build_strict_labels(cases, dn, pdim, "fca_shaped", ex)
+    assert not any("case_type nan" in r for r in quar["reason"])
+    jane = shaped[shaped.npi == "1497758544"].iloc[0]
+    assert jane["label_tier"] == "state_case" and jane["state"] == "FL"      # NaN mention state -> NPPES state, not 'nan'
+    leie = shaped[shaped.label_tier == "excl_statute"].iloc[0]
+    assert leie["state"] == "" and "nan" not in set(shaped["state"].astype(str))
+
+
 def test_org_billing_broadcast_is_capped():
     from src.model_a.case_labels import build_case_labels
     cases = pd.DataFrame([{"case_id": "u1", "announced_date": "2024-01-01", "defendant_name": "Big Chain Pharmacy",
