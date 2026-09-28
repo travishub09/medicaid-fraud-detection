@@ -359,3 +359,34 @@ def test_resolver_rerun_carries_research_verdicts_forward(pdim):
     assert by["c4"].status == "unmatched" and by["c4"].research_confidence == ""
     same, n0 = carry_research(new, None)
     assert n0 == 0 and len(same) == 4
+
+
+def test_verification_fixes_middle_conflict_descriptors_and_new_roles(pdim):
+    """2026-09-29 verification: a unique candidate whose NPPES middle name contradicts the release is
+    rejected; 'Worcester Pharmacy' / 'Plea' never match an org; a technician / head of marketing /
+    nominal owner is non-clinical; 'Northern Virginia Neurology' is an org."""
+    from src.enforcement.defendant_resolver import is_descriptor_name, role_near
+    pdim = pdim.copy()
+    pdim["taxonomy_code"] = ""
+    cdb = pd.DataFrame([
+        {"case_id": "m1", "announced_date": "2025-01-01", "defendant_name": "John David Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "John David Smith, of Miami, Florida, was sentenced."},     # NPPES: JOHN ANDREW
+        {"case_id": "m2", "announced_date": "2025-01-01", "defendant_name": "John A. Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "John A. Smith, of Miami, Florida, was sentenced."},
+        {"case_id": "m3", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "John Smith, of Miami, Florida, was sentenced."},
+        {"case_id": "m4", "announced_date": "2025-01-01", "defendant_name": "Health Services LLC", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Miami Pharmacy Agrees to Pay. Plea entered by Health Services LLC, of Miami, Florida."},
+    ])
+    out = resolve_defendants(mentions_from_case_db(cdb), pdim)
+    by = {(r.case_id, r.defendant): r for r in out.itertuples()}
+    assert by[("m1", "John David Smith")].status == "middle_conflict" and by[("m1", "John David Smith")].npi == ""
+    assert by[("m2", "John A. Smith")].status == "resolved"          # initial agrees with ANDREW
+    assert by[("m3", "John Smith")].status == "resolved"             # no middle in the release: not a conflict
+    assert is_descriptor_name("Worcester Pharmacy") and is_descriptor_name("Plea") and is_descriptor_name("Pittsburgh Resident")
+    assert not is_descriptor_name("Trang Pharmacy, Inc.") and not is_descriptor_name("Sunrise Wellness Clinic LLC")
+    assert not is_descriptor_name("Acme Home Health")
+    assert classify_defendant("Northern Virginia Neurology") == "org"
+    assert role_near("James Lawson, a rehabilitation technician, pleaded guilty.", "James Lawson")[1] == "nonclinical"
+    assert role_near("Frank Villanueva, the head of marketing at MB2, pleaded guilty.", "Frank Villanueva")[1] == "nonclinical"
+    assert role_near("Maria Yepez, the nominal owner of a trucking company, was charged.", "Maria Yepez")[1] == "nonclinical"

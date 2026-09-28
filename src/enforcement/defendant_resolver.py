@@ -165,6 +165,9 @@ _LEGAL_SUFFIX = re.compile(r"\b(?:llc|l\.l\.c|inc|incorporated|corp|corporation|
 _BUSINESS_WORDS = re.compile(r"\b(?:health|medical|clinic|pharmacy|pharma|rx|drugs?|hospice|home|care|services?|"
                              r"center|centre|laborator(?:y|ies)|labs?|hospital|physicians?|"
                              r"therapy|rehab|diagnostics?|imaging|dental|nursing|wellness|"
+                             r"neurology|cardiology|oncology|radiology|urology|dermatology|orthopedics?|"
+                             r"pediatrics?|psychiatry|anesthesia|podiatry|optometry|ophthalmology|"
+                             r"pathology|surgery|surgical|urgent|"
                              r"associates|partners|management|solutions|supply|dme|ambulance|"
                              r"transport|behavioral|counseling|urgent|surgical|surgery|"
                              r"orthopedic|cardiology|oncology|pain|spine|practice|consultants?|"
@@ -372,6 +375,24 @@ def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
 
 CHAIN_MIN_CANDIDATES = 5   # an org name with this many NPIs in one state is a chain, not a target
 
+# a headline descriptor, not a party: "Worcester Pharmacy Agrees to Pay" names Trang Pharmacy
+# inside; "Plea" / "Settlement" are fragments. Such a name never matches an org by name.
+_DESCRIPTOR_NOUN = re.compile(r"^(?:pharmacy|pharmacist|doctor|physician|dentist|clinic|hospital|nurse|man|woman|"
+                              r"resident|company|owner|couple|provider|therapist|chiropractor|podiatrist|"
+                              r"psychiatrist|business|firm|executive|lab|laboratory|practice|group|"
+                              r"contractor|supplier|agency|facility|home|center)$", re.I)
+_FRAGMENT = re.compile(r"^(?:plea|pleads?|settlement|settles?|agreed?|sentenced?|charged|indicted|"
+                       r"convicted|guilty|verdict|complaint|united states|us|u\.s\.)$", re.I)
+
+
+def is_descriptor_name(name: str) -> bool:
+    toks = [t for t in re.split(r"\s+", str(name or "").strip(" .,")) if t]
+    if not toks:
+        return True
+    if len(toks) == 1:      # "Plea" / "Pharmacy" are fragments; "Walgreens" is a brand and stays
+        return bool(_FRAGMENT.match(toks[0]) or _DESCRIPTOR_NOUN.match(toks[0]))
+    return len(toks) == 2 and bool(_DESCRIPTOR_NOUN.match(toks[1])) and not _LEGAL_SUFFIX.search(name)
+
 
 # ---- role coherence: what the release SAYS the person is vs what the NPI IS ---------------
 # A press release names recruiters, marketers, billers, office managers and owners next to
@@ -405,7 +426,9 @@ _ROLE_NONCLINICAL = re.compile(
     r"patient recruiter|\brecruiter|\bmarketer|marketing (?:company|firm|representative|agent|director)|"
     r"\bbiller\b|billing (?:manager|clerk|specialist|agent|company)|office manager|\baccountant|bookkeeper|"
     r"sales(?:man|woman|person| representative| rep\b)|\bdriver\b|receptionist|telemarketer|call[- ]center|"
-    r"straw owner|nominee owner|\bcapper\b|\brunner\b|\bkickback recipient", re.I)
+    r"straw owner|nominee owner|nominal owner|\bcapper\b|\brunner\b|\bkickback recipient|"
+    r"\btechnician\b|\btech\b|head of marketing|marketing director|director of marketing|chief marketing|"
+    r"non-provider|former employee|hospital employee|clinic employee|trucking", re.I)
 _ROLE_OWNER = re.compile(r"\bowner|\boperator|\bCEO\b|\bCFO\b|\bCOO\b|chief (?:executive|financial|operating)|"
                          r"\bpresident|\bfounder|\badministrator|medical director|\bdirector\b|\bmanager\b|\bexecutive\b", re.I)
 _ROLE_COMPAT: dict[str, set[str]] = {
@@ -575,7 +598,7 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             k = r["_pk"]
             return k, (people.get((k, st)) if k else None)
         k = r["_ok"]
-        if not distinctive_name_key(_normalize_name(pd.Series([k])).iloc[0]):
+        if not distinctive_name_key(_normalize_name(pd.Series([k])).iloc[0]) or is_descriptor_name(r["defendant"]):
             return k, "generic"
         return k, (orgs.get((k, st)) if k else None)
 
@@ -615,6 +638,18 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
         out.at[i, "n_candidates"] = len(uniq)
         if out.at[i, "kind"] == "person":
             out.at[i, "name_national_hits"] = int(national.get(key, 0))
+        if len(uniq) == 1 and out.at[i, "kind"] == "person" and not level.endswith("_middle"):
+            # "Matthew David Carter" is not NPPES "MATTHEW R CARTER": a middle name in the release
+            # that contradicts the candidate's middle name is the wrong person (5 of 10 wrong_npi
+            # verdicts on the 2026-09-29 verification). Silence on either side is not a conflict.
+            mids = _middle_tokens(r["defendant"])
+            cmid = next((c[2] for c in cands if c[0] == uniq[0]), "")
+            if mids and cmid and not any((len(m) == 1 and cmid.startswith(m)) or (len(m) > 1 and m in cmid.split())
+                                         or (len(m) > 1 and cmid.split()[0].startswith(m[0]) and len(cmid.split()[0]) == 1)
+                                         for m in mids):
+                out.at[i, "status"] = "middle_conflict"
+                out.at[i, "npi_candidate"] = uniq[0]
+                continue
         if len(uniq) == 1:
             rclass = str(r.get("role_class") or "unknown")
             rfam = str(r.get("role_family") or "")

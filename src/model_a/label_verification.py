@@ -43,6 +43,9 @@ PROMPT = (
     "source_url; (2) confirm the defendant named on the row is a party in that document; (3) look the NPI up "
     "in the NPPES NPI Registry (npiregistry.cms.hhs.gov) and confirm it is that provider (name, city, state, "
     "entity type); (4) give a verdict. Use only public sources. Do not contact anyone.\n\n"
+    "A row whose defendant reads '(exclusion-list entry, no name)' is an OIG exclusion-list row: for it, confirm that the "
+    "NPI appears on the OIG LEIE (https://oig.hhs.gov/exclusions/) with a fraud statute and that the NPPES name for the NPI "
+    "matches the LEIE name; when they match the verdict is confirmed (the missing name is not a defendant).\n\n"
     "Verdict values: confirmed (source names this defendant AND the NPI is that provider); wrong_person (the "
     "source names someone else or the defendant is not a party); wrong_npi (right defendant, NPI belongs to a "
     "different provider); not_a_provider (defendant is real but has no NPI: owner, recruiter, marketer); "
@@ -122,7 +125,13 @@ def fold_results(sample: pd.DataFrame, results: dict) -> pd.DataFrame:
             except (TypeError, ValueError):
                 continue
             if 0 <= i < len(rows):
-                rows.loc[i, ["verdict", "evidence_url", "note"]] = [v["verdict"], v["evidence_url"], v["note"]]
+                verdict, note = v["verdict"], v["note"]
+                # an exclusion-list row has no defendant name; a 'wrong_person' whose note says the LEIE
+                # names the NPPES person is a CONFIRMED identity (the agent compared against the blank)
+                if verdict == "wrong_person" and not str(rows.at[i, "defendant"] if "defendant" in rows.columns else "").strip() \
+                        and re.search(r"\bLEIE\b", note) and not re.search(r"\b(?:not|no)\s+(?:on|in|listed)\b", note, re.I):
+                    verdict, note = "confirmed", "[list identity: LEIE and NPPES agree] " + note
+                rows.loc[i, ["verdict", "evidence_url", "note"]] = [verdict, v["evidence_url"], note]
     return rows
 
 

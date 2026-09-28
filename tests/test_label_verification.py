@@ -39,3 +39,20 @@ def test_parse_fold_and_report():
     assert "confirmed: 1" in rep and "TIGHTEN" in rep and "row 2: wrong_npi" in rep
     pending = fold_results(sample, {})
     assert (pending["verdict"] == "pending").all() and "answered: 0" in report(pending)
+
+
+def test_exclusion_row_wrong_person_against_the_blank_is_a_confirmed_identity():
+    from src.model_a.label_verification import fold_results, build_prompts
+    sample = pd.DataFrame([{"npi": "1871637223", "defendant": "", "label_tier": "excl_statute", "state": "NY", "announced_date": "2019-01-01",
+                            "source_url": "https://oig.hhs.gov/exclusions/", "case_id": "leie:1871637223:1128a1"},
+                           {"npi": "1437360799", "defendant": "Southern Respiratory LLC", "label_tier": "hcf_criminal", "state": "GA",
+                            "announced_date": "2020-01-01", "source_url": "https://www.justice.gov/x", "case_id": "https://www.justice.gov/x"}])
+    results = {"verify:abc": {"status": "completed", "output": (
+        '[{"row": 1, "npi": "1871637223", "verdict": "wrong_person", "evidence_url": "u1", '
+        '"note": "The official OIG LEIE record for NPI 1871637223 names SHAHEEN BEGUM and NPPES agrees; the defendant nan is not a party."},'
+        ' {"row": 2, "npi": "1437360799", "verdict": "wrong_person", "evidence_url": "u2", '
+        '"note": "The DOJ announcement names Detra Wiley Pate as the convicted party; the LLC is her company."}]')}}
+    rows = fold_results(sample, results)
+    assert rows.loc[0, "verdict"] == "confirmed" and rows.loc[0, "note"].startswith("[list identity")
+    assert rows.loc[1, "verdict"] == "wrong_person"
+    assert "exclusion-list row" in build_prompts(sample)[0]["prompt"]
