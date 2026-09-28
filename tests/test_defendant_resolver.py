@@ -390,3 +390,10 @@ def test_verification_fixes_middle_conflict_descriptors_and_new_roles(pdim):
     assert role_near("James Lawson, a rehabilitation technician, pleaded guilty.", "James Lawson")[1] == "nonclinical"
     assert role_near("Frank Villanueva, the head of marketing at MB2, pleaded guilty.", "Frank Villanueva")[1] == "nonclinical"
     assert role_near("Maria Yepez, the nominal owner of a trucking company, was charged.", "Maria Yepez")[1] == "nonclinical"
+
+
+def test_trailing_doctoral_degree_counts_as_a_doctor():
+    from src.enforcement.defendant_resolver import role_near
+    t = "Gerald Congdon, M.D., of Charleston, South Carolina, and laboratory marketers agreed to pay $19 million."
+    assert role_near(t, "Gerald Congdon, M.D.")[1] != "nonclinical"
+    assert role_near("Dawn Rhodes, DPM, of St. Louis, Missouri, was convicted.", "Dawn Rhodes, DPM")[1:] == ("clinical", "doctorate")

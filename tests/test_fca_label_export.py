@@ -287,3 +287,15 @@ def test_company_of_a_convicted_owner_stays_flagged_as_the_billing_party():
     civil = labels[labels.npi == "1679576722"].iloc[0]           # Acme, a civil FCA settling party: no flag
     assert "org_billing_party" not in civil["flags"]
     assert "org_billing_party" in report(labels, pd.DataFrame(), "strict_plus_criminal")
+
+
+def test_strata_sample_can_be_restricted_to_rungs_and_reseeded():
+    from src.model_a.fca_label_export import stratified_sample
+    labels = pd.DataFrame({"npi": [str(1000000000 + i) for i in range(40)], "label_tier": ["hcf_criminal"] * 40,
+                           "evidence_strength": ["weak"] * 10 + ["moderate"] * 10 + ["strong"] * 10 + ["exact_id"] * 10})
+    two = stratified_sample(labels, per_stratum=5, rungs=["weak", "moderate"])
+    assert set(two["evidence_strength"]) == {"weak", "moderate"} and len(two) == 10
+    a = stratified_sample(labels, per_stratum=5, seed=11, rungs=["weak"])
+    b = stratified_sample(labels, per_stratum=5, seed=12, rungs=["weak"])
+    assert set(a["npi"]) != set(b["npi"])
+    assert len(stratified_sample(labels, per_stratum=5, rungs=["nope"])) == 0

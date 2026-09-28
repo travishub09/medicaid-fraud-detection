@@ -140,14 +140,19 @@ def evidence_strength(basis: str, match_level: str, role_agree: str = "", nation
     return "moderate" if 0 < hits < COMMON_NAME_HITS else "weak"
 
 
-def stratified_sample(labels: pd.DataFrame, per_stratum: int = 12, seed: int = 11) -> pd.DataFrame:
+def stratified_sample(labels: pd.DataFrame, per_stratum: int = 12, seed: int = 11,
+                      rungs: list[str] | None = None) -> pd.DataFrame:
     """The verification sample that attacks the label where it is weakest: up to
-    ``per_stratum`` rows from every (evidence_strength, label_tier) cell, weak first."""
+    ``per_stratum`` rows from every (evidence_strength, label_tier) cell, weak first;
+    ``rungs`` restricts the cells (e.g. ["weak", "moderate"] for the second batch)."""
     if not len(labels):
         return labels
     order = {"weak": 0, "moderate": 1, "strong": 2, "exact_id": 3}
     parts = []
-    for (s, t), g in labels.groupby(["evidence_strength", "label_tier"]):
+    pool = labels[labels["evidence_strength"].isin(rungs)] if rungs else labels
+    if not len(pool):
+        return pool
+    for (s, t), g in pool.groupby(["evidence_strength", "label_tier"]):
         parts.append(g.sample(min(per_stratum, len(g)), random_state=seed).assign(_o=order.get(s, 9)))
     out = pd.concat(parts).sort_values(["_o", "label_tier"]).drop(columns="_o")
     return out.reset_index(drop=True)
@@ -362,6 +367,9 @@ def main() -> None:
     ap.add_argument("--policy", default="strict_plus_criminal", choices=POLICIES)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--sample", type=int, default=30)
+    ap.add_argument("--strata-rungs", default=None,
+                    help="comma list of evidence rungs the strata sample draws from (e.g. weak,moderate); default all")
+    ap.add_argument("--strata-seed", type=int, default=11, help="change it to draw a fresh strata sample")
     ap.add_argument("--strata-sample", type=int, default=12,
                     help="rows per (evidence_strength x tier) cell in verification_sample_strata.csv (0 = skip)")
     ap.add_argument("--min-strength", default="weak", choices=["weak", "moderate", "strong", "exact_id"],
@@ -386,7 +394,8 @@ def main() -> None:
     if len(labels):
         labels.sample(min(a.sample, len(labels)), random_state=7).to_csv(out / "verification_sample.csv", index=False)
         if a.strata_sample:
-            stratified_sample(labels, a.strata_sample).to_csv(out / "verification_sample_strata.csv", index=False)
+            rungs = [x.strip() for x in a.strata_rungs.split(",") if x.strip()] if a.strata_rungs else None
+            stratified_sample(labels, a.strata_sample, a.strata_seed, rungs).to_csv(out / "verification_sample_strata.csv", index=False)
     rep = out / "FCA_LABEL_EXPORT.md"
     rep.write_text(report(labels, quar, a.policy), encoding="utf-8")
     print(f"strict FCA label ({a.policy}): {len(labels):,} rows, {labels['npi'].nunique():,} NPIs, "

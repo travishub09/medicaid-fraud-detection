@@ -160,6 +160,7 @@ def _split_persons(name: str) -> list[str]:
 _HONORIFIC = re.compile(r"^(?:dr|mr|mrs|ms|nurse|pharmacist)\.?\s+", re.I)
 _PERSON_SUFFIX = re.compile(r",?\s*\b(?:jr|sr|ii|iii|iv|m\.?d|d\.?o|d\.?d\.?s|d\.?m\.?d|d\.?p\.?m|"
                             r"ph\.?d|r\.?n|n\.?p|p\.?a|l\.?p\.?n|d\.?c|o\.?d|pharm\.?d|r\.?ph)\.?$", re.I)
+_DOCTORAL_SUFFIX = re.compile(r",?\s*\b(?:m\.?d|d\.?o|d\.?d\.?s|d\.?m\.?d|d\.?p\.?m|pharm\.?d|d\.?c|o\.?d|ph\.?d)\.?$", re.I)
 _LEGAL_SUFFIX = re.compile(r"\b(?:llc|l\.l\.c|inc|incorporated|corp|corporation|co|company|ltd|"
                            r"lp|llp|pllc|pc|p\.c|pa|p\.a|plc|group|holdings)\b\.?", re.I)
 _BUSINESS_WORDS = re.compile(r"\b(?:health|medical|clinic|pharmacy|pharma|rx|drugs?|hospice|home|care|services?|"
@@ -496,7 +497,9 @@ def role_near(text: str, name: str, primary: bool = False) -> tuple[str, str, st
     n = str(name or "").strip()
     if not n:
         return "", "unknown", ""
-    is_dr = bool(_HONORIFIC.match(n) and n.lower().startswith("dr"))   # from the NAME, before any fallback
+    # a doctor by the NAME, before any fallback: a leading "Dr." or a trailing doctoral degree
+    # ("Gerald Congdon, M.D." was rejected as a 'marketer' when only the prefix counted)
+    is_dr = bool(_HONORIFIC.match(n) and n.lower().startswith("dr")) or bool(_DOCTORAL_SUFFIX.search(n))
     i, printed = _find_name(t, n)
     prot = lambda seg: _ABBREV_DOT.sub(lambda m: m.group(1) + "\x00", seg)     # "Dr. " is not a sentence end
     if i >= 0:
