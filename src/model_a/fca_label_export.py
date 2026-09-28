@@ -112,6 +112,47 @@ def _row_state(c) -> str:
             or text_state(c.get("summary", "")))
 
 
+# The evidence ladder: how sure the identifier on the row is. exact_id = the NPI was printed
+# on the list itself; strong = name + city + state, a middle name, a research answer at high
+# confidence, or a name + state hit whose text role agrees with the NPI taxonomy; moderate =
+# name + state on a name that is rare nationally (<= 3 NPIs), or research medium, or a unique
+# in-state name-only exclusion match; weak = name + state on a common name with no role
+# corroboration (the stratum the verification batch must oversample).
+COMMON_NAME_HITS = 4
+
+
+def evidence_strength(basis: str, match_level: str, role_agree: str = "", national_hits=0) -> str:
+    ml = str(match_level or "")
+    if basis in ("npi_on_list", "named_npi"):
+        return "exact_id"
+    if basis == "name_match":
+        return "moderate"
+    if ml == "research_high" or ml.startswith("name_city_state") or ml.endswith("_middle"):
+        return "strong"
+    if ml == "research_medium":
+        return "moderate"
+    if str(role_agree) == "agree":
+        return "strong"
+    try:
+        hits = int(float(national_hits or 0))
+    except (TypeError, ValueError):
+        hits = 0
+    return "moderate" if 0 < hits < COMMON_NAME_HITS else "weak"
+
+
+def stratified_sample(labels: pd.DataFrame, per_stratum: int = 12, seed: int = 11) -> pd.DataFrame:
+    """The verification sample that attacks the label where it is weakest: up to
+    ``per_stratum`` rows from every (evidence_strength, label_tier) cell, weak first."""
+    if not len(labels):
+        return labels
+    order = {"weak": 0, "moderate": 1, "strong": 2, "exact_id": 3}
+    parts = []
+    for (s, t), g in labels.groupby(["evidence_strength", "label_tier"]):
+        parts.append(g.sample(min(per_stratum, len(g)), random_state=seed).assign(_o=order.get(s, 9)))
+    out = pd.concat(parts).sort_values(["_o", "label_tier"]).drop(columns="_o")
+    return out.reset_index(drop=True)
+
+
 def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, provider_dim: pd.DataFrame,
                         policy: str = "strict_plus_criminal",
                         exclusion_nodes: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -123,7 +164,15 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
     pd_ = pd_.drop_duplicates("npi").set_index("npi")
 
     rows, quar = [], []
-    dn = defendant_npis[defendant_npis["status"].astype(str) == "resolved"].copy()
+    # mentions the resolver rejected on role coherence are kept visible in the quarantine
+    st_all = defendant_npis["status"].astype(str)
+    for r in defendant_npis[st_all.isin(["nonclinical_role", "role_mismatch"])].itertuples(index=False):
+        d = r._asdict()
+        why = (f"non-clinical role in the release: '{d.get('role', '')}'" if d.get("status") == "nonclinical_role"
+               else f"role mismatch: release says '{d.get('role', '')}' [{d.get('role_family', '') or '-'}], "
+                    f"NPI taxonomy family is {d.get('npi_taxonomy_family', '') or '-'}")
+        quar.append({**d, "reason": why})
+    dn = defendant_npis[st_all == "resolved"].copy()
     for r in dn.itertuples(index=False):
         d = r._asdict()
         cid = str(d.get("case_id", ""))
@@ -176,6 +225,9 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
             "conduct_start": start, "conduct_end": end,
             "state": _s(d.get("state")) or _row_state(c) or _s(p.get("addr_state")), "basis": basis, "match_level": ml,
             "defendant": d.get("defendant", ""), "kind": kind, "entity_type": et,
+            "role": _s(d.get("role")), "role_agree": _s(d.get("role_agree")) or "unknown",
+            "name_national_hits": d.get("name_national_hits", 0) or 0,
+            "evidence_strength": evidence_strength(basis, ml, _s(d.get("role_agree")), d.get("name_national_hits", 0)),
             "flags": ";".join(flags), "source_url": c.get("source_url", cid),
         })
 
@@ -202,7 +254,9 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                     "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
                     "state": st, "basis": "npi_on_list" if "name_match" not in et_raw else "name_match",
                     "match_level": "exact" if "name_match" not in et_raw else "unique_in_state",
-                    "defendant": "", "kind": "", "entity_type": str(pd_.loc[npi].get("entity_type", "") or ""),
+                    "defendant": "", "kind": "", "entity_type": _s(pd_.loc[npi].get("entity_type", "")),
+                    "role": "", "role_agree": "n/a", "name_national_hits": 0,
+                    "evidence_strength": "exact_id" if "name_match" not in et_raw else "moderate",
                     "flags": "window_inferred", "source_url": "",
                 })
                 continue
@@ -222,13 +276,14 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                 "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
                 "state": _s(pd_.loc[npi].get("addr_state", "")) or _s(getattr(r, "state", "")),
                 "basis": "npi_on_list", "match_level": "exact",
-                "defendant": "", "kind": "", "entity_type": str(pd_.loc[npi].get("entity_type", "") or ""),
+                "defendant": "", "kind": "", "entity_type": _s(pd_.loc[npi].get("entity_type", "")),
+                "role": "", "role_agree": "n/a", "name_national_hits": 0, "evidence_strength": "exact_id",
                 "flags": "window_inferred", "source_url": "https://oig.hhs.gov/exclusions/",
             })
 
     cols = ["npi", "label_tier", "policy", "case_id", "source", "case_type", "outcome_words", "amount_usd",
-            "announced_date", "conduct_start", "conduct_end", "state", "basis", "match_level", "defendant",
-            "kind", "entity_type", "flags", "source_url"]
+            "announced_date", "conduct_start", "conduct_end", "state", "basis", "match_level", "evidence_strength",
+            "role", "role_agree", "name_national_hits", "defendant", "kind", "entity_type", "flags", "source_url"]
     labels = pd.DataFrame(rows, columns=cols).drop_duplicates(["npi", "case_id"]).reset_index(drop=True)
     # the same case harvested twice (DOJ national + local USAO release, or a sentencing
     # re-announcement): one row per NPI per (year, amount); the first source kept
@@ -256,6 +311,21 @@ def report(labels: pd.DataFrame, quar: pd.DataFrame, policy: str) -> str:
         L += ["", "## Basis and match level", ""] + [f"- {b} / {m or '-'}: {n:,}"
                                                    for (b, m), n in labels.groupby(["basis", "match_level"]).size().items()]
         L += ["", f"- rows with an inferred conduct window: {int(labels['flags'].fillna('').str.contains('window_inferred').sum()):,}"]
+        if "evidence_strength" in labels.columns:
+            L += ["", "## Evidence strength (how sure the identifier on the row is)", "",
+                  "_exact_id = the NPI was printed on the list; strong = name+city+state, a middle name, research high, or a "
+                  "name+state hit whose text role agrees with the NPI taxonomy; moderate = name+state on a rare name (under "
+                  f"{COMMON_NAME_HITS} NPIs nationally) or research medium; weak = name+state on a common name with no role "
+                  "corroboration. Weak rows are the ones the verification batch oversamples; drop them with --min-strength "
+                  "moderate if the verification says so._", ""]
+            for s in ("exact_id", "strong", "moderate", "weak"):
+                g = labels[labels["evidence_strength"] == s]
+                if len(g):
+                    L.append(f"- {s}: {len(g):,} rows, {g['npi'].nunique():,} NPIs")
+            rp = labels[labels["basis"] == "resolved_defendant"]
+            if len(rp):
+                L += ["", "- role read from the release, resolved-defendant rows: "
+                      + ", ".join(f"{k or '(none)'} {v:,}" for k, v in rp["role_agree"].fillna("").value_counts().items())]
     if len(quar):
         L += ["", "## Quarantine reasons", ""] + [f"- {r}: {n:,}" for r, n in quar["reason"].value_counts().head(20).items()]
     L += ["", "## The written policy", "",
@@ -285,22 +355,36 @@ def main() -> None:
     ap.add_argument("--policy", default="strict_plus_criminal", choices=POLICIES)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--sample", type=int, default=30)
+    ap.add_argument("--strata-sample", type=int, default=12,
+                    help="rows per (evidence_strength x tier) cell in verification_sample_strata.csv (0 = skip)")
+    ap.add_argument("--min-strength", default="weak", choices=["weak", "moderate", "strong", "exact_id"],
+                    help="rows below this evidence strength go to the quarantine instead of the label")
     a = ap.parse_args()
     cdb = pd.read_csv(a.case_db, dtype=str) if a.case_db.endswith(".csv") else pd.read_parquet(a.case_db)
     dn = pd.read_parquet(a.defendant_npis)
     pdim = pd.read_parquet(a.provider_dim)
     ex = pd.concat([pd.read_parquet(x) for x in a.exclusion_nodes], ignore_index=True) if a.exclusion_nodes else None
     labels, quar = build_strict_labels(cdb, dn, pdim, a.policy, ex)
+    rank = {"weak": 0, "moderate": 1, "strong": 2, "exact_id": 3}
+    if a.min_strength != "weak" and len(labels):
+        low = labels["evidence_strength"].map(rank).fillna(0) < rank[a.min_strength]
+        dropped = labels[low].copy()
+        dropped["reason"] = "evidence strength below --min-strength " + a.min_strength + ": " + dropped["evidence_strength"]
+        quar = pd.concat([quar, dropped], ignore_index=True)
+        labels = labels[~low].reset_index(drop=True)
     out = Path(a.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     labels.to_csv(out / "labels_fca_strict.csv", index=False)
     quar.to_csv(out / "labels_fca_quarantine.csv", index=False)
     if len(labels):
         labels.sample(min(a.sample, len(labels)), random_state=7).to_csv(out / "verification_sample.csv", index=False)
+        if a.strata_sample:
+            stratified_sample(labels, a.strata_sample).to_csv(out / "verification_sample_strata.csv", index=False)
     rep = out / "FCA_LABEL_EXPORT.md"
     rep.write_text(report(labels, quar, a.policy), encoding="utf-8")
     print(f"strict FCA label ({a.policy}): {len(labels):,} rows, {labels['npi'].nunique():,} NPIs, "
-          f"{len(quar):,} quarantined -> {out / 'labels_fca_strict.csv'}\n  report: {rep}\n  verify by hand: {out / 'verification_sample.csv'}")
+          f"{len(quar):,} quarantined -> {out / 'labels_fca_strict.csv'}\n  report: {rep}\n  verify by hand: {out / 'verification_sample.csv'}"
+          + (f"\n  stratified (weak first): {out / 'verification_sample_strata.csv'}" if a.strata_sample and len(labels) else ""))
 
 
 if __name__ == "__main__":

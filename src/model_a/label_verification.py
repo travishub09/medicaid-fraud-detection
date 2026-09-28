@@ -63,9 +63,14 @@ def build_prompts(sample: pd.DataFrame, batch_size: int = 10, sample_name: str =
         chunk = rows.iloc[b: b + batch_size]
         lines = []
         for i, r in chunk.iterrows():
+            extra = ""
+            if str(r.get("role", "") or "").strip():
+                extra += f"; role_in_release={r.get('role')}"
+            if str(r.get("evidence_strength", "") or "").strip():
+                extra += f"; match_strength={r.get('evidence_strength')}"
             lines.append(f"row {i + 1}: npi={r.get('npi', '')}; defendant={r.get('defendant', '') or '(exclusion-list entry, no name)'}; "
                          f"tier={r.get('label_tier', '')}; state={r.get('state', '')}; announced={r.get('announced_date', '')}; "
-                         f"source_url={r.get('source_url', '')}; case_id={r.get('case_id', '')}")
+                         f"source_url={r.get('source_url', '')}; case_id={r.get('case_id', '')}{extra}")
         out.append({"org_id": _oid(sample_name, b // batch_size), "org_name": f"label verification batch {b // batch_size + 1}",
                     "batch": b // batch_size + 1, "rows": [int(i) + 1 for i in chunk.index],
                     "prompt": PROMPT.format(n=len(chunk), rows="\n".join(lines))})
@@ -138,6 +143,10 @@ def report(rows: pd.DataFrame) -> str:
                 L.append(f"- row {r.row}: {r.verdict}; NPI {r.npi}; {r.defendant or '(exclusion entry)'}; tier {r.label_tier}; {r.note} [{r.evidence_url}]")
         by_tier = done.groupby("label_tier")["verdict"].apply(lambda s: f"{(s == 'confirmed').sum()}/{len(s)} confirmed")
         L += ["", "## By tier", ""] + [f"- {t}: {v}" for t, v in by_tier.items()]
+        if "evidence_strength" in done.columns:
+            by_s = done.groupby("evidence_strength")["verdict"].apply(lambda s: f"{(s == 'confirmed').sum()}/{len(s)} confirmed")
+            L += ["", "## By evidence strength (the ruler for --min-strength on the next export)", ""]
+            L += [f"- {s}: {v}" for s, v in by_s.items()]
     return "\n".join(L)
 
 

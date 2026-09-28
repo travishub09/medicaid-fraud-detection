@@ -233,13 +233,19 @@ python -m src.enforcement.research_evidence mfcu-cases --in "C:\Users\treyr\OneD
 python -m src.reminders --done-task case_harvest_sources_1_6
 ```
 
-- [ ] **fca_strict_label_export** — 2026-09-28 state: bundle 194 merged; export (fca_shaped, both exclusion files incl. state terminations) = 5,354 rows / 4,855 NPIs / 250 quarantined; duplicate-case collapse + org_billing cap (max 150 NPIs per org mention) in effect. Verification batch DISPATCHED to Manus 2026-09-27 (3 tasks of 10 rows). OPERATOR: upload FCA_LABEL_EXPORT.md now; a day after dispatch poll the verification (ONE window), read LABEL_VERIFICATION.md and every flagged row (tighten if confirmed < 90% or more than one wrong_npi). Re-run the export after the OIG merge and after every poll fold-back; labels_fca_strict.csv never enters the repo. (added 2026-09-27)
+- [ ] **fca_strict_label_export** — 2026-09-28 state: bundle 196 export = 5,407 rows / 4,891 NPIs / 197 quarantined (state_case tier recovered 51 NPIs). LABEL QUALITY ATTACK (bundle 198): the resolver now reads each defendant's role from the release and checks it against the NPI taxonomy (recruiters / marketers / billers never resolve on a name alone; contradicting clinical roles are rejected), counts name commonness, and the export ranks every row on an evidence ladder (exact_id / strong / moderate / weak) + writes verification_sample_strata.csv (weak first). OPERATOR after merging 198: rerun the resolver, then the export (both commands below), upload DEFENDANT_RESOLUTION.md + FCA_LABEL_EXPORT.md, then build + dispatch the STRATA verification batch (ONE window; separate folder verify_strata so it never collides with the first batch), poll a day later, read LABEL_VERIFICATION.md 'By evidence strength'. If weak rows confirm under 90%: rerun the export with --min-strength moderate. The first (random) verification batch of 3 tasks is still out: poll it too. labels_fca_strict.csv never enters the repo. (added 2026-09-27)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY
 python -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\exclusions_state_terminations.parquet" --policy fca_shaped --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label"
-REM a day after dispatch:
+python -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label\verification_sample_strata.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label\verify_strata"
+python -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label\verify_strata" --dispatch
+REM a day later (both batches):
 python -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label\verify" --poll
+python -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label\verify_strata" --poll
+REM only if the weak stratum confirms under 90%:
+python -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\exclusions_state_terminations.parquet" --policy fca_shaped --min-strength moderate --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label"
 python -m src.reminders --done-task fca_strict_label_export
 ```
 

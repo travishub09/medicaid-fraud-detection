@@ -47,7 +47,8 @@ def test_extract_defendants_people_orgs_dba_and_primary():
     assert got["Bayou Rx"]["state"] == "LA"
     # a primary defendant the text never locates takes the district's state
     only = extract_defendants("Sentenced today.", "Delta Labs Inc.", "N.D. Ga.")
-    assert only == [{"defendant": "Delta Labs Inc.", "kind": "org", "city": "", "state": "GA", "mention": "primary_defendant"}]
+    assert only == [{"defendant": "Delta Labs Inc.", "kind": "org", "city": "", "state": "GA", "mention": "primary_defendant",
+                     "role": "", "role_class": "unknown", "role_family": ""}]
 
 
 def test_keys_and_classification():
@@ -180,3 +181,53 @@ def test_text_state_single_state_only():
     assert text_state("no state here") == ""
     ms = extract_defendants("A Tampa man was sentenced today in Florida.", "Miguel Gonzalez", "", "https://oig.hhs.gov/fraud/enforcement/x/")
     assert ms[0]["state"] == "FL"
+
+
+# ---- role coherence + name commonness (the label-quality attack, 2026-09-28) ------------
+def test_role_near_reads_this_defendants_clause_not_the_codefendants():
+    from src.enforcement.defendant_resolver import role_near, taxonomy_family, role_agreement
+    t = ("John Smith, 45, of Tampa, Florida, a patient recruiter, and Dr. Jane Roe, 51, of Miami, Florida, a "
+         "physician, were sentenced today. Roe owned the clinic. Pharmacist Luis Diaz, of Hialeah, Florida, pleaded guilty. "
+         "Carla Nunez, of Orlando, Florida, the office manager, was also sentenced.")
+    assert role_near(t, "John Smith") == ("patient recruiter", "nonclinical", "")
+    assert role_near(t, "Dr. Jane Roe")[1:] == ("clinical", "physician")
+    assert role_near(t, "Luis Diaz")[1:] == ("clinical", "pharmacist")
+    assert role_near(t, "Carla Nunez") == ("office manager", "nonclinical", "")
+    assert role_near(t, "Nobody Here") == ("", "unknown", "")
+    # "Dr." with no specialty word = any doctoral clinician; an owner is owner_exec
+    assert role_near("Dr. Ana Cruz, of Reno, Nevada, was sentenced.", "Dr. Ana Cruz") == ("Dr.", "clinical", "doctorate")
+    assert role_near("Bob Lee, the owner of Acme, of Reno, Nevada, pleaded guilty.", "Bob Lee")[1] == "owner_exec"
+    # state abbreviations never read as degrees ("Baltimore, MD")
+    assert role_near("Sam Ortiz, of Baltimore, MD, pleaded guilty.", "Sam Ortiz")[1] == "unknown"
+    assert taxonomy_family("207Q00000X") == "physician" and taxonomy_family("363LF0000X") == "np"
+    assert taxonomy_family("1835P1200X") == "pharmacist" and taxonomy_family("111N00000X") == "chiropractor"
+    assert taxonomy_family("") == "" and taxonomy_family("174400000X") == "other"
+    assert role_agreement("pharmacist", "chiropractor") == "disagree"
+    assert role_agreement("np", "nurse") == "agree" and role_agreement("doctorate", "dentist") == "agree"
+    assert role_agreement("physician", "other") == "unknown" and role_agreement("", "physician") == "unknown"
+
+
+def test_resolver_rejects_nonclinical_and_mismatched_roles_and_counts_name_hits(pdim):
+    pdim = pdim.copy()
+    pdim["taxonomy_code"] = ["111N00000X", "163W00000X", "", "", "163W00000X", "207Q00000X", ""]   # Smith FL = chiropractor
+    cdb = pd.DataFrame([
+        {"case_id": "r1", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Pharmacist John Smith, of Miami, Florida, pleaded guilty."},
+        {"case_id": "r2", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "John Smith, of Miami, Florida, a patient recruiter, pleaded guilty."},
+        {"case_id": "r3", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Chiropractor John Smith, of Miami, Florida, pleaded guilty."},
+        {"case_id": "r4", "announced_date": "2025-01-01", "defendant_name": "Maria Lopez", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Nurse Maria Lopez, of Tampa, Florida, pleaded guilty."},
+    ])
+    out = resolve_defendants(mentions_from_case_db(cdb), pdim)
+    # the located mention (the row with a city) is the one under test; the bare primary-defendant row is a duplicate
+    by = {r.case_id: r for r in out[out["city"] != ""].itertuples()}
+    assert by["r1"].status == "role_mismatch" and by["r1"].npi == "" and by["r1"].npi_taxonomy_family == "chiropractor"
+    assert by["r2"].status == "nonclinical_role" and by["r2"].npi == ""
+    assert by["r3"].status == "resolved" and by["r3"].role_agree == "agree" and by["r3"].npi == "1234567893"
+    assert by["r4"].status == "resolved" and by["r4"].role_agree == "agree" and by["r4"].match_level == "name_city_state"
+    assert by["r3"].name_national_hits == 1          # only FL is indexed here (the mentions name no other state)
+    assert by["r4"].name_national_hits == 2          # two Maria Lopez in FL
+    rep = report(out, residuals(out))
+    assert "Role coherence" in rep and "nonclinical_role 1" in rep and "role_mismatch 1" in rep

@@ -483,6 +483,23 @@ it). Every row: NPI, tier, case id and source URL, outcome words, amount, announ
 basis and match level. `labels_fca_quarantine.csv` keeps every rejected row with its reason;
 `verification_sample.csv` is the 30-row human check before anything is uploaded.
 
+**Evidence ladder (label quality).** Every row carries `evidence_strength`: `exact_id` (the NPI was printed on
+the list), `strong` (name + city + state, a middle name, research high, or a name + state hit whose text role
+agrees with the NPI taxonomy), `moderate` (name + state on a rare name, under 4 NPIs nationally, or research
+medium), `weak` (name + state on a common name with no role corroboration). The resolver reads each person's
+role from the release (`role`, `role_class`, `role_family`) and compares it with the NPI's taxonomy family
+(`role_agree`): recruiters / marketers / billers / office managers never resolve on a name alone
+(`nonclinical_role`), and a clinical role that contradicts the taxonomy is a `role_mismatch`; both land in the
+quarantine with the reason. `verification_sample_strata.csv` takes up to 12 rows per strength x tier cell,
+weak first, and is the batch to send for verification; `--min-strength moderate` drops the weak stratum once
+the verification report says the weak rows do not hold up.
+
+```bash
+python -m src.model_a.label_verification --sample processed/fca_label/verification_sample_strata.csv --out-dir processed/fca_label/verify_strata
+python -m src.model_a.label_verification --out-dir processed/fca_label/verify_strata --dispatch
+python -m src.model_a.label_verification --out-dir processed/fca_label/verify_strata --poll
+```
+
 Then rerun the defendant resolver on the merged case CSV. Docket-only cases are allegations: they enter
 the label as source `docket_case` (weak) and never flip the hard label; a settlement or judgment for the
 same case (press release, OIG action, reviewed research) upgrades it to `doj_case`.

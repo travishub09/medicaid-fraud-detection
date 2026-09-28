@@ -184,6 +184,8 @@ _LOCATED_PATTERN = re.compile(
     rf"(?P<name>{_NAME}?)(?:\s*\([^)]{{1,40}}\))?,\s*(?:which is\s+|is\s+)?(?:located|headquartered|based)\s+in\s+(?P<city>{_CITY}),\s*(?P<state>{_STATE_NAMES})\b")
 _LEADING_JUNK = re.compile(r"^(?:(?:the|and|that|with|against|defendants?|including|co-?defendants?|"
                            r"owner|operator|physician|doctor|its|his|her|their|by|"
+                           r"nurse|pharmacist|chiropractor|dentist|podiatrist|optometrist|psychologist|"
+                           r"therapist|counselor|surgeon|psychiatrist|"
                            r"a|an)\s+)+", re.I)
 
 
@@ -263,8 +265,10 @@ def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str
                     continue
                 key = (n.upper(), (city or "").upper(), state)
                 if key not in found:
+                    role, rclass, rfam = role_near(text, n)
                     found[key] = {"defendant": n, "kind": classify_defendant(n),
-                                  "city": city or "", "state": state, "mention": source}
+                                  "city": city or "", "state": state, "mention": source,
+                                  "role": role, "role_class": rclass, "role_family": rfam}
 
     for pat, src in ((_OF_PATTERN, "of_city_state"), (_BASED_PATTERN, "city_state_based"),
                      (_LOCATED_PATTERN, "located_in")):
@@ -286,8 +290,10 @@ def extract_defendants(summary: str, defendant_name: str = "", jurisdiction: str
                                if v["defendant"].upper() in n.upper() or n.upper() in v["defendant"].upper()), dst)
                     key = (n.upper(), "", st)
                     if key not in found:
+                        role, rclass, rfam = role_near(text, n)
                         found[key] = {"defendant": n, "kind": classify_defendant(n), "city": "",
-                                      "state": st, "mention": "primary_defendant"}
+                                      "state": st, "mention": "primary_defendant",
+                                      "role": role, "role_class": rclass, "role_family": rfam}
     return list(found.values())
 
 
@@ -315,11 +321,13 @@ def _nppes_person_key(provider_name: pd.Series) -> pd.Series:
 
 
 def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
-                 states: set) -> tuple[dict, dict]:
-    """Two lookups {(key, state): [(npi, city), ...]} restricted to the keys and states the
-    mentions actually use. Never materializes per-group frames over the full NPPES table
-    (8M rows): the full-table version exhausted memory on the operator's laptop."""
-    cols = [c for c in ("npi", "provider_name", "name_key", "entity_type", "addr_state", "addr_city")
+                 states: set) -> tuple[dict, dict, dict]:
+    """Two lookups {(key, state): [(npi, city, middle, taxonomy_family), ...]} restricted to the
+    keys and states the mentions actually use, plus {person_key: hits across ALL indexed states}
+    (the name-commonness count: DOJ cases span the country, so the indexed states are close to
+    the nation). Never materializes per-group frames over the full NPPES table (8M rows): the
+    full-table version exhausted memory on the operator's laptop."""
+    cols = [c for c in ("npi", "provider_name", "name_key", "entity_type", "addr_state", "addr_city", "taxonomy_code")
             if c in provider_dim.columns]
     p = provider_dim[cols]
     st = p["addr_state"].fillna("").astype(str).str.upper().str.strip() if "addr_state" in p else pd.Series("", index=p.index)
@@ -328,17 +336,20 @@ def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
     city = p["addr_city"].fillna("").astype(str).str.upper().str.strip() if "addr_city" in p else pd.Series("", index=p.index)
     et = p["entity_type"].fillna("").astype(str).str.strip() if "entity_type" in p else pd.Series("", index=p.index)
     name = p["provider_name"].fillna("").astype(str) if "provider_name" in p else pd.Series("", index=p.index)
+    tax = p["taxonomy_code"].fillna("").astype(str) if "taxonomy_code" in p else pd.Series("", index=p.index)
     is_person = (et == "1") | ((et == "") & name.str.contains(","))
     npi = p["npi"].astype(str)
 
     people: dict = {}
+    national: dict = {}
     if person_keys:
         pk = _nppes_person_key(name[is_person])
         hit = pk[pk.isin(person_keys)]
         for idx, k in hit.items():
             full = name[idx].upper()
             middle = full.split(",", 1)[1].strip().split(" ")[1:] if "," in full else []
-            people.setdefault((k, st[idx]), []).append((npi[idx], city[idx], " ".join(middle)))
+            people.setdefault((k, st[idx]), []).append((npi[idx], city[idx], " ".join(middle), taxonomy_family(tax[idx])))
+            national[k] = national.get(k, 0) + 1
     orgs: dict = {}
     if org_keys:
         if "name_key" in p.columns:
@@ -347,11 +358,112 @@ def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
             ok = name[~is_person].map(norm_org_name)
         hit = ok[ok.isin(org_keys)]
         for idx, k in hit.items():
-            orgs.setdefault((k, st[idx]), []).append((npi[idx], city[idx], ""))
-    return people, orgs
+            orgs.setdefault((k, st[idx]), []).append((npi[idx], city[idx], "", ""))
+    return people, orgs, national
 
 
 CHAIN_MIN_CANDIDATES = 5   # an org name with this many NPIs in one state is a chain, not a target
+
+
+# ---- role coherence: what the release SAYS the person is vs what the NPI IS ---------------
+# A press release names recruiters, marketers, billers, office managers and owners next to
+# the clinicians. A unique in-state name hit for "John Smith, a patient recruiter" is the
+# wrong person by construction (the recruiter has no NPI; some other John Smith does). The
+# role near the mention is read from the text, mapped to a family, and compared with the
+# NPPES taxonomy family of the candidate: a non-clinical role never resolves on a name
+# alone, a clinical role that contradicts the taxonomy is a role_mismatch, and an agreeing
+# role is recorded as corroboration (role_agree = agree) for the evidence ladder.
+_ROLE_CLINICAL: list[tuple[str, re.Pattern]] = [(f, re.compile(p, re.I)) for f, p in (
+    ("np", r"nurse[- ]practitioner|\bAPRN\b|\bARNP\b|\bFNP\b|\bNP-C\b"),
+    ("pa", r"physician'?s? assistant|\bPA-C\b"),
+    ("crna", r"nurse anesthetist|\bCRNA\b"),
+    ("nurse", r"registered nurse|licensed (?:practical|vocational) nurse|\bnurse\b|\bRN\b|\bLPN\b|\bLVN\b"),
+    ("pharmacist", r"pharmacist"),
+    ("dentist", r"\bdentist|orthodontist|oral surgeon|\bDDS\b|\bDMD\b"),
+    ("chiropractor", r"chiropract"),
+    ("pt_ot", r"physical therap|occupational therap|speech[- ]language patholog|respiratory therap"),
+    ("podiatrist", r"podiatr|\bDPM\b"),
+    ("optometrist", r"optometr"),
+    ("behavioral", r"psychologist|\bcounselor|social worker|\bLCSW\b|\bLPC\b|marriage and family therap|behavioral health therap|\btherapist"),
+    ("aide", r"home health aide|personal care (?:aide|attendant|assistant)|certified nurs(?:e|ing) assistant|\bCNA\b|caregiver"),
+    ("physician", r"physician|\bdoctor\b|\bM\.D\.|\bD\.O\.|surgeon|psychiatrist|anesthesiologist|cardiologist|"
+                  r"dermatologist|neurologist|oncologist|radiologist|urologist|pediatrician|internist|"
+                  r"gynecologist|ophthalmologist|pathologist|rheumatologist|gastroenterologist|"
+                  r"pulmonologist|endocrinologist|nephrologist|medical director"),
+)]
+_ROLE_NONCLINICAL = re.compile(
+    r"patient recruiter|\brecruiter|\bmarketer|marketing (?:company|firm|representative|agent|director)|"
+    r"\bbiller\b|billing (?:manager|clerk|specialist|agent|company)|office manager|\baccountant|bookkeeper|"
+    r"sales(?:man|woman|person| representative| rep\b)|\bdriver\b|receptionist|telemarketer|call[- ]center|"
+    r"straw owner|nominee owner|money launder|\bcapper\b|\brunner\b|\bkickback recipient", re.I)
+_ROLE_OWNER = re.compile(r"\bowner|\boperator|\bCEO\b|\bCFO\b|\bCOO\b|chief (?:executive|financial|operating)|"
+                         r"\bpresident|\bfounder|\badministrator|\bdirector\b|\bmanager\b|\bexecutive\b", re.I)
+_ROLE_COMPAT: dict[str, set[str]] = {
+    "physician": {"physician"}, "np": {"np", "nurse"}, "pa": {"pa"}, "crna": {"crna", "nurse"},
+    "nurse": {"nurse", "np", "crna"}, "pharmacist": {"pharmacist"}, "dentist": {"dentist"},
+    "chiropractor": {"chiropractor"}, "pt_ot": {"pt_ot"}, "podiatrist": {"podiatrist"},
+    "optometrist": {"optometrist"}, "behavioral": {"behavioral"}, "aide": {"aide", "nurse"},
+    # "Dr." with no specialty word: any doctoral clinician
+    "doctorate": {"physician", "dentist", "chiropractor", "podiatrist", "optometrist", "behavioral"},
+}
+
+
+def taxonomy_family(code: str) -> str:
+    """NUCC taxonomy code → the coarse family used for role coherence ('' when unknown)."""
+    c = str(code or "").strip().upper()
+    if len(c) < 3 or c in ("NAN", "NONE"):
+        return ""
+    for prefix, fam in (("20", "physician"), ("363L", "np"), ("363A", "pa"), ("3675", "crna"), ("364", "np"),
+                        ("163", "nurse"), ("164", "nurse"), ("183", "pharmacist"), ("122", "dentist"),
+                        ("124", "dentist"), ("111", "chiropractor"), ("225", "pt_ot"), ("235", "pt_ot"),
+                        ("213", "podiatrist"), ("152", "optometrist"), ("101", "behavioral"),
+                        ("102", "behavioral"), ("103", "behavioral"), ("104", "behavioral"),
+                        ("106", "behavioral"), ("3747", "aide"), ("39", "student")):
+        if c.startswith(prefix):
+            return fam
+    return "other"
+
+
+def role_near(text: str, name: str) -> tuple[str, str, str]:
+    """(role_phrase, role_class, role_family) read from the clause around the first mention of
+    ``name`` in ``text``. role_class: clinical / nonclinical / owner_exec / unknown. The window
+    stops at the next sentence, semicolon, or another capitalised name after ' and ', so a
+    co-defendant's role is not read as this defendant's."""
+    t = re.sub(r"\s+", " ", str(text or ""))
+    n = str(name or "").strip()
+    if not n:
+        return "", "unknown", ""
+    i = t.lower().find(n.lower())
+    if i < 0:
+        last = person_key(n).split(" ")[-1] if person_key(n) else ""
+        i = t.upper().find(last) if len(last) >= 4 else -1
+        if i < 0:
+            return "", "unknown", ""
+        n = last
+    before = re.split(r"[.;]\s", t[max(0, i - 90): i])[-1]
+    after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with)\s+(?=(?:Dr\.\s)?[A-Z][a-z]+\s[A-Z])", t[i + len(n): i + len(n) + 140])[0]
+    win = f"{before} {n} {after}"
+    fam = ""
+    for f, pat in _ROLE_CLINICAL:
+        m = pat.search(win)
+        if m:
+            return m.group(0), "clinical", f
+    if _HONORIFIC.match(n) and n.lower().startswith("dr"):
+        fam = "doctorate"
+    m = _ROLE_NONCLINICAL.search(win)
+    if m and not fam:
+        return m.group(0), "nonclinical", ""
+    m2 = _ROLE_OWNER.search(win)
+    if m2:
+        return m2.group(0), "owner_exec", fam
+    return ("Dr.", "clinical", fam) if fam else ("", "unknown", "")
+
+
+def role_agreement(role_family: str, npi_family: str) -> str:
+    """agree / disagree / unknown for a text role family against the NPI's taxonomy family."""
+    if not role_family or npi_family in ("", "other", "student"):
+        return "unknown"
+    return "agree" if npi_family in _ROLE_COMPAT.get(role_family, {role_family}) else "disagree"
 
 
 def _middle_tokens(defendant: str) -> list[str]:
@@ -365,9 +477,14 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
     """mentions: case_id, defendant, kind, city, state (+ any other columns carried).
     Returns the same rows with npi, status, match_level, n_candidates, basis."""
     out = mentions.copy()
-    for c in ("npi", "match_level"):
+    for c in ("npi", "match_level", "npi_taxonomy_family"):
         out[c] = ""
+    for c in ("role", "role_class", "role_family"):
+        if c not in out.columns:
+            out[c] = "" if c != "role_class" else "unknown"
+    out["role_agree"] = "unknown"
     out["n_candidates"] = 0
+    out["name_national_hits"] = 0
     out["status"] = "unmatched"
     if not len(out):
         out["basis"] = "resolved_defendant"
@@ -376,7 +493,7 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
     out["_pk"] = out["defendant"].map(person_key)
     out["_ok"] = out["defendant"].map(norm_org_name)
     states = set(out["state"].fillna("").astype(str).str.upper()) - {""}
-    people, orgs = _index_nppes(provider_dim, set(out["_pk"]) - {""}, set(out["_ok"]) - {""}, states)
+    people, orgs, national = _index_nppes(provider_dim, set(out["_pk"]) - {""}, set(out["_ok"]) - {""}, states)
 
     def _lookup(kind, r, st):
         if kind == "person":
@@ -421,7 +538,22 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
                     cands, level = narrowed, level + "_middle"
         uniq = sorted({c[0] for c in cands})
         out.at[i, "n_candidates"] = len(uniq)
+        if out.at[i, "kind"] == "person":
+            out.at[i, "name_national_hits"] = int(national.get(key, 0))
         if len(uniq) == 1:
+            rclass = str(r.get("role_class") or "unknown")
+            rfam = str(r.get("role_family") or "")
+            npi_fam = next((c[3] for c in cands if c[0] == uniq[0]), "")
+            out.at[i, "npi_taxonomy_family"] = npi_fam
+            if out.at[i, "kind"] == "person" and rclass == "nonclinical":
+                # a recruiter / marketer / biller has no NPI; the unique name hit is someone else
+                out.at[i, "status"] = "nonclinical_role"
+                continue
+            agree = role_agreement(rfam, npi_fam) if out.at[i, "kind"] == "person" else "n/a"
+            out.at[i, "role_agree"] = agree
+            if agree == "disagree":
+                out.at[i, "status"] = "role_mismatch"       # text says pharmacist, NPI is a chiropractor
+                continue
             out.at[i, "npi"] = uniq[0]
             out.at[i, "match_level"] = level
             out.at[i, "status"] = "resolved"
@@ -443,7 +575,7 @@ def mentions_from_case_db(case_db: pd.DataFrame) -> pd.DataFrame:
             rows.append({"case_id": str(d.get("case_id", "")), "announced_date": d.get("announced_date", ""),
                          "amount_usd": d.get("amount_usd", ""), "scheme": d.get("scheme", ""), **m})
     return pd.DataFrame(rows, columns=["case_id", "announced_date", "amount_usd", "scheme", "defendant",
-                                       "kind", "city", "state", "mention"])
+                                       "kind", "city", "state", "mention", "role", "role_class", "role_family"])
 
 
 # ---- residuals for research (no dispatch here; prompts are written for review) -----------
@@ -530,6 +662,20 @@ def report(resolved: pd.DataFrame, res: pd.DataFrame) -> str:
         L += ["", "## Match level", "", "| level | mentions |", "|---|--:|"]
         for lv, n in resolved[resolved["status"] == "resolved"]["match_level"].value_counts().items():
             L.append(f"| {lv} | {n} |")
+        res_p = resolved[(resolved["status"] == "resolved") & (resolved["kind"] == "person")]
+        if "role_agree" in resolved.columns and len(res_p):
+            L += ["", "## Role coherence (resolved people: what the release says they are vs the NPI's taxonomy)", "",
+                  "- role read from the text: " + ", ".join(f"{k} {v:,}" for k, v in res_p["role_class"].value_counts().items()),
+                  "- role vs taxonomy: " + ", ".join(f"{k} {v:,}" for k, v in res_p["role_agree"].value_counts().items()),
+                  f"- rejected by role: nonclinical_role {int((resolved['status'] == 'nonclinical_role').sum()):,} "
+                  f"(recruiters / marketers / billers whose unique name hit is someone else), "
+                  f"role_mismatch {int((resolved['status'] == 'role_mismatch').sum()):,} (text role contradicts the NPI taxonomy)"]
+            hits = pd.to_numeric(res_p["name_national_hits"], errors="coerce").fillna(0)
+            L += ["- name commonness (NPIs with the same first+last name across the indexed states): "
+                  f"unique {int((hits <= 1).sum()):,}, 2-3 {int(((hits >= 2) & (hits <= 3)).sum()):,}, "
+                  f"4-9 {int(((hits >= 4) & (hits <= 9)).sum()):,}, 10+ {int((hits >= 10).sum()):,}"]
+            for st_, n in resolved[resolved["status"].isin(["nonclinical_role", "role_mismatch"])].groupby("status").head(6).iterrows():
+                L.append(f"  - {n['status']}: {n['defendant']} ({n['state']}) role '{n['role']}' [{n['role_family'] or '-'}] vs NPI {n['npi_taxonomy_family'] or '-'}; case {n['case_id']}")
     L += ["", f"## Residual list for research: {len(res):,} mentions (ambiguous first, then unmatched by case dollars)", ""]
     for r in res.head(25).itertuples(index=False):
         L.append(f"- {r.status}: {r.defendant} ({r.kind}) {r.city or ''} {r.state} — case {r.case_id}, ${r.amount_num:,.0f}, candidates {r.n_candidates}".replace(" — ", "; "))

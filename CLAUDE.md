@@ -515,7 +515,23 @@ committed. Never let this file go stale: stale reminders are worse than none.
   plumbing; verification_results.csv + LABEL_VERIFICATION.md with the tally and the
   tighten-or-ship verdict (confirmed < 90% or > 1 wrong_npi = tighten). The operator
   reads every flagged row; verdicts are evidence, never the final word.
-  Full suite: `pytest tests/` (924 tests).
+  LABEL QUALITY ATTACK (2026-09-28, the precision layer on the resolved-defendant
+  rows): `defendant_resolver.role_near` reads the role the release gives each person
+  from the clause around the mention (clinical family / nonclinical / owner_exec /
+  unknown; a co-defendant's clause is never read as this person's), `taxonomy_family`
+  maps the candidate NPI's NUCC code to the same families, and `role_agreement`
+  compares them: a recruiter / marketer / biller / office manager NEVER resolves on a
+  name alone (status `nonclinical_role`: the unique name hit is someone else), a
+  clinical role that contradicts the taxonomy is `role_mismatch`, an agreeing role is
+  corroboration (`role_agree = agree`). `name_national_hits` counts NPIs with the same
+  first+last name across every indexed state (commonness). The strict export ranks
+  every row on an EVIDENCE LADDER (`evidence_strength`: exact_id / strong / moderate /
+  weak, the ruler in FCA_LABEL_EXPORT.md), quarantines the role-rejected mentions with
+  the reason, writes `verification_sample_strata.csv` (up to 12 rows per strength x
+  tier cell, weak first: the sample that attacks the label where it is weakest; the
+  random 30 stays too), and `--min-strength moderate|strong` drops the weak stratum
+  once the verification says so. LABEL_VERIFICATION.md tallies confirmed by strength.
+  Full suite: `pytest tests/` (927 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -205,3 +205,38 @@ def test_clean_leie_keeps_state(tmp_path):
     out = pd.read_parquet(tmp_path / "exclusions.parquet")
     assert out.set_index("entity_name").loc["DOE, JANE", "state"] == "OH"
     assert out.set_index("entity_name").loc["ACME LLC", "state"] == ""
+
+
+def test_evidence_strength_ladder_strata_and_role_quarantine():
+    from src.model_a.fca_label_export import evidence_strength, stratified_sample
+    assert evidence_strength("npi_on_list", "exact") == "exact_id"
+    assert evidence_strength("resolved_defendant", "name_city_state") == "strong"
+    assert evidence_strength("resolved_defendant", "name_state_middle") == "strong"
+    assert evidence_strength("resolved_defendant", "name_state", "agree", 40) == "strong"
+    assert evidence_strength("resolved_defendant", "name_state", "unknown", 2) == "moderate"
+    assert evidence_strength("resolved_defendant", "name_state", "unknown", 9) == "weak"
+    assert evidence_strength("resolved_defendant", "name_state", "unknown", 0) == "weak"     # no count = assume common
+    assert evidence_strength("resolved_defendant", "research_medium") == "moderate"
+    assert evidence_strength("name_match", "unique_in_state") == "moderate"
+    cases, dn, pdim, ex = _fixture()
+    dn = dn.copy()
+    dn["role"], dn["role_agree"], dn["name_national_hits"] = "", "unknown", 0
+    dn.loc[dn.npi == "1679576722", ["role", "role_agree"]] = ["", "n/a"]
+    dn.loc[dn.npi == "1234567893", ["role", "role_agree", "name_national_hits"]] = ["physician", "agree", 30]
+    rejected = pd.DataFrame([{"case_id": cases.case_id[1], "npi": "", "status": "nonclinical_role", "match_level": "", "kind": "person",
+                              "state": "FL", "defendant": "Rick Recruiter", "mention": "of_city_state", "role": "patient recruiter",
+                              "role_family": "", "npi_taxonomy_family": "", "role_agree": "unknown", "name_national_hits": 1},
+                             {"case_id": cases.case_id[1], "npi": "", "status": "role_mismatch", "match_level": "", "kind": "person",
+                              "state": "FL", "defendant": "Paula Pharm", "mention": "of_city_state", "role": "pharmacist",
+                              "role_family": "pharmacist", "npi_taxonomy_family": "chiropractor", "role_agree": "disagree", "name_national_hits": 1}])
+    dn = pd.concat([dn, rejected], ignore_index=True)
+    labels, quar = build_strict_labels(cases, dn, pdim, "with_exclusions", ex)
+    smith = labels[labels.npi == "1234567893"]
+    assert set(smith["evidence_strength"]) == {"strong", "exact_id"}           # the DOJ row (role agrees) + the LEIE row
+    assert labels[labels.npi == "1679576722"]["evidence_strength"].iloc[0] == "weak"     # org, name_state, no count
+    assert any("non-clinical role" in r for r in quar["reason"]) and any("role mismatch" in r for r in quar["reason"])
+    strata = stratified_sample(labels, per_stratum=1)
+    assert len(strata) == labels.groupby(["evidence_strength", "label_tier"]).ngroups
+    assert strata["evidence_strength"].iloc[0] == "weak"                            # weak first
+    rep = report(labels, quar, "with_exclusions")
+    assert "## Evidence strength" in rep and "- weak:" in rep
