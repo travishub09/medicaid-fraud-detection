@@ -208,10 +208,36 @@ def _url_base(case_id: str) -> str:
     return re.sub(r"#.*$", "", str(case_id or "")).rstrip("/").lower()
 
 
-def merge_case_files(primary: pd.DataFrame, secondary: pd.DataFrame) -> pd.DataFrame:
+# a stored summary that is the page chrome, not the release (the first OIG harvest read the
+# site navigation as the body); a re-harvest with the article text replaces it
+_NAV_GARBAGE = re.compile(r"skip to main content|official website of the united states government|here.s how you know", re.I)
+_REFRESH_COLS = ("announced_date", "defendant_name", "jurisdiction", "amount_usd", "scheme", "sector")
+_last_refresh: dict = {"filled": 0, "summaries": 0}
+
+
+def _blank(v) -> bool:
+    if v is None:
+        return True
+    try:
+        if pd.isna(v):                      # float NaN, pd.NA, NaT
+            return True
+    except (TypeError, ValueError):
+        pass
+    return str(v).strip().lower() in ("", "nan", "none", "<na>")
+
+
+def _str(v) -> str:
+    return "" if _blank(v) else str(v)
+
+
+def merge_case_files(primary: pd.DataFrame, secondary: pd.DataFrame, refresh: bool = True) -> pd.DataFrame:
     """Append ``secondary`` rows whose announcement is not already in ``primary``
-    (same case_id, or same source URL once the #fragment is stripped). Primary
-    rows are never changed."""
+    (same case_id, or same source URL once the #fragment is stripped). A primary
+    row is never dropped or re-keyed; with ``refresh`` (the default) an incoming
+    row for an announcement already stored FILLS its blanks (date, defendant,
+    jurisdiction, amount, scheme, sector) and replaces a summary that is page
+    chrome, so a better re-harvest of the same URL improves the row instead of
+    being thrown away. The counts land in ``_last_refresh`` for the CLI line."""
     p = build_case_db(primary)
     s = build_case_db(secondary)
     have_ids = set(p["case_id"].astype(str))
@@ -219,6 +245,26 @@ def merge_case_files(primary: pd.DataFrame, secondary: pd.DataFrame) -> pd.DataF
         _url_base(u) for u in p["source_url"].fillna("").astype(str) if u}
     keep = ~s["case_id"].astype(str).isin(have_ids) & ~s["case_id"].astype(str).map(_url_base).isin(have_urls) \
         & ~s["source_url"].fillna("").astype(str).map(_url_base).isin(have_urls - {""})
+    _last_refresh.update(filled=0, summaries=0)
+    if refresh and len(s):
+        incoming: dict = {}
+        for r in s.itertuples(index=False):
+            d = r._asdict()
+            for k in (_url_base(_str(d.get("case_id"))), _url_base(_str(d.get("source_url")))):
+                if k:
+                    incoming.setdefault(k, d)
+        for i in p.index:
+            new = incoming.get(_url_base(_str(p.at[i, "case_id"]))) or incoming.get(_url_base(_str(p.at[i, "source_url"])))
+            if new is None:
+                continue
+            for c in _REFRESH_COLS:
+                if c in p.columns and _blank(p.at[i, c]) and not _blank(new.get(c)):
+                    p.at[i, c] = new[c]
+                    _last_refresh["filled"] += 1
+            old_sum, new_sum = _str(p.at[i, "summary"]), _str(new.get("summary"))
+            if new_sum.strip() and not _NAV_GARBAGE.search(new_sum) and (_NAV_GARBAGE.search(old_sum) or len(old_sum.strip()) < 40):
+                p.at[i, "summary"] = new_sum
+                _last_refresh["summaries"] += 1
     return build_case_db(pd.concat([p, s[keep]], ignore_index=True))
 
 
@@ -257,7 +303,8 @@ def main() -> None:
     for path in a.add:
         sec = pd.read_csv(path, dtype=str)
         primary = merge_case_files(primary, sec)
-        print(f"  + {path}: {len(sec):,} rows -> {len(primary) - n0:,} new so far")
+        print(f"  + {path}: {len(sec):,} rows -> {len(primary) - n0:,} new so far; refreshed existing rows: "
+              f"{_last_refresh['filled']:,} blank fields filled, {_last_refresh['summaries']:,} page-chrome summaries replaced")
     if a.reclassify:                       # AFTER the adds, so appended rows get the current rules too
         before = primary["case_type"].fillna("").value_counts().to_dict() if "case_type" in primary.columns else {}
         primary = reclassify(primary)

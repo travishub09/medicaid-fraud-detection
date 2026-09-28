@@ -531,7 +531,16 @@ committed. Never let this file go stale: stale reminders are worse than none.
   tier cell, weak first: the sample that attacks the label where it is weakest; the
   random 30 stays too), and `--min-strength moderate|strong` drops the weak stratum
   once the verification says so. LABEL_VERIFICATION.md tallies confirmed by strength.
-  Full suite: `pytest tests/` (932 tests).
+  CASE MERGE REFRESH (`case_db.merge_case_files`, default on): an incoming row for an
+  announcement already stored fills its blanks (date, defendant, jurisdiction, amount,
+  scheme, sector) and replaces a page-chrome summary ("Skip to main content"), so a
+  better re-harvest of the same URL improves the row instead of being discarded; the
+  CLI line prints the refresh counts. EMBEDDING BOUNDS (`graph_embeddings_sparse`,
+  `--max-embed-nodes`, default 1.5M): nodes in components under 3 (a solo NPI + its
+  own org, 13.6M of them nationally) keep their row with a zero vector, and at most
+  the cap is embedded, fraud-proximate first then by degree (the 2026-09-28 MemoryError
+  in the SVD on 13,660,702 connected nodes).
+  Full suite: `pytest tests/` (934 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

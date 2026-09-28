@@ -240,3 +240,33 @@ def test_evidence_strength_ladder_strata_and_role_quarantine():
     assert strata["evidence_strength"].iloc[0] == "weak"                            # weak first
     rep = report(labels, quar, "with_exclusions")
     assert "## Evidence strength" in rep and "- weak:" in rep
+
+
+def test_merge_refreshes_a_stored_announcement_from_a_better_harvest():
+    """The first OIG harvest stored rows with no date, no defendant and the site navigation as the
+    summary; the re-harvest of the same URL fills the blanks and replaces the chrome, never re-keys."""
+    from src.enforcement.case_db import merge_case_files, _last_refresh
+    old = pd.DataFrame([{"case_id": "https://oig.hhs.gov/fraud/enforcement/x/", "case_type": "civil_fca", "announced_date": "",
+                         "defendant_name": "", "summary": "X | Office of Inspector General Skip to main content An official website of the United States government",
+                         "jurisdiction": "", "source_url": "https://oig.hhs.gov/fraud/enforcement/x/", "scheme": "", "amount_usd": ""},
+                        {"case_id": "https://www.justice.gov/opa/pr/y", "case_type": "civil_fca", "announced_date": "2024-01-01",
+                         "defendant_name": "Acme LLC", "summary": "Acme LLC agreed to pay $2 million to resolve allegations.",
+                         "jurisdiction": "M.D. Fla.", "source_url": "https://www.justice.gov/opa/pr/y", "scheme": "", "amount_usd": "2000000"}])
+    new = pd.DataFrame([{"case_id": "https://oig.hhs.gov/fraud/enforcement/x/", "case_type": "criminal_hcf", "announced_date": "2021-05-05",
+                         "defendant_name": "Jane Doe", "summary": "Jane Doe, of Tampa, Florida, was sentenced to 24 months for health care fraud.",
+                         "jurisdiction": "M.D. Fla.", "source_url": "https://oig.hhs.gov/fraud/enforcement/x/", "scheme": "", "amount_usd": "500000"},
+                        {"case_id": "https://www.justice.gov/opa/pr/y", "case_type": "civil_fca", "announced_date": "2024-02-02",
+                         "defendant_name": "Other Name", "summary": "A different summary.", "jurisdiction": "", "source_url": "https://www.justice.gov/opa/pr/y",
+                         "scheme": "", "amount_usd": "1"},
+                        {"case_id": "https://oig.hhs.gov/fraud/enforcement/z/", "case_type": "criminal_hcf", "announced_date": "2020-01-01",
+                         "defendant_name": "New Person", "summary": "New Person pleaded guilty.", "jurisdiction": "", "source_url": "https://oig.hhs.gov/fraud/enforcement/z/",
+                         "scheme": "", "amount_usd": ""}])
+    out = merge_case_files(old, new)
+    assert len(out) == 3 and _last_refresh["summaries"] == 1 and _last_refresh["filled"] >= 3
+    x = out[out.case_id == "https://oig.hhs.gov/fraud/enforcement/x/"].iloc[0]
+    assert x["announced_date"] == "2021-05-05" and x["defendant_name"] == "Jane Doe" and "Skip to main" not in x["summary"]
+    y = out[out.case_id == "https://www.justice.gov/opa/pr/y"].iloc[0]
+    assert y["announced_date"] == "2024-01-01" and y["defendant_name"] == "Acme LLC" and y["summary"].startswith("Acme LLC")   # a full row is untouched
+    assert y["jurisdiction"] == "M.D. Fla."
+    same = merge_case_files(old, new, refresh=False)
+    assert same[same.case_id.str.endswith("/x/")].iloc[0]["announced_date"] == ""

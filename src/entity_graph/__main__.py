@@ -108,6 +108,7 @@ def _discover_docgraph(path: Path | None, input_dir: Path | None) -> Path | None
 def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         embeddings: bool = True,
         max_component_size: int = 150_000,
+        max_embed_nodes: int = 1_500_000,
         max_colocation_cluster: int = 100,
         docgraph_path: Path | None = None,
         docgraph_min_patients: float = 20,
@@ -207,7 +208,7 @@ def run(tables: dict[str, pd.DataFrame], out_dir: Path,
             org_nodes, owner_nodes, exclusion_nodes, member_edges, owned_by_edges,
             excluded_in_edges, co_located_edges, max_colocation_cluster=max_colocation_cluster)
         node_embeddings = compute_node_embeddings_sparse(
-            nodes, A, excl_ids, max_component_size=max_component_size)
+            nodes, A, excl_ids, max_component_size=max_component_size, max_embed_nodes=max_embed_nodes)
         log(f"    embedded {len(node_embeddings):,} graph nodes (SciPy-sparse: DeepWalk "
             f"+ fraud-proximity + motifs; mega-address edges pruned, components "
             f"<= {max_component_size:,})")
@@ -298,6 +299,10 @@ def main() -> None:
     ap.add_argument("--no-embeddings", action="store_true",
                     help="skip the DeepWalk node embeddings entirely; core graph "
                          "features are still computed")
+    ap.add_argument("--max-embed-nodes", type=int, default=1_500_000,
+                    help="embed at most this many connected nodes (fraud-proximate first, then by "
+                         "degree); the rest keep degree + proximity with a zero vector. Lower it "
+                         "(e.g. 500000) on tight RAM; 0 = no cap.")
     ap.add_argument("--max-component-size", type=int, default=150_000,
                     help="drop connected components larger than this before embedding "
                          "(giant shared-address artifact hairballs); keeps memory "
@@ -359,6 +364,7 @@ def main() -> None:
     }, indent=2), encoding="utf-8")
     run(tables, Path(args.out), embeddings=not args.no_embeddings,
         max_component_size=args.max_component_size,
+        max_embed_nodes=args.max_embed_nodes,
         max_colocation_cluster=args.max_colocation_cluster,
         docgraph_path=docgraph_path,
         docgraph_min_patients=args.docgraph_min_patients)

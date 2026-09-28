@@ -73,3 +73,26 @@ def test_component_cap_drops_blob():
     out = compute_node_embeddings_sparse(nodes, A, dim=8, max_component_size=10).set_index("node_id")
     assert {"x", "y", "zz"}.issubset(out.index)             # small cluster kept
     assert "addr:hub" not in out.index and "o0" not in out.index   # blob dropped
+
+
+def test_small_components_and_the_embed_cap_keep_rows_but_skip_the_heavy_compute():
+    """The 2026-09-28 national crash: 13.6M 'connected' nodes were mostly a solo NPI + its own
+    org (2-node components). Those keep their row (degree, proximity) with a zero vector; a cap
+    embeds the fraud-proximate and best-connected nodes first."""
+    pairs = [("a", "b"), ("b", "c"), ("c", "a"), ("c", "d"), ("d", "e"), ("e", "c"),   # a 5-node blob
+             ("p1", "q1"), ("p2", "q2"), ("p3", "q3")]                                 # three 2-node pairs
+    nodes, A = build_sparse_adjacency(None, None, None, _EMPTY, _edges(pairs), _EMPTY, _EMPTY)
+    out = compute_node_embeddings_sparse(nodes, A, dim=4, min_component_size=3, max_embed_nodes=0)
+    out = out.set_index("node_id")
+    emb = [f"{EMB_PREFIX}{i}" for i in range(4)]
+    assert {"p1", "q1", "p2", "q2", "p3", "q3"} <= set(out.index)                 # rows kept
+    assert (out.loc[["p1", "q1", "p2", "q2", "p3", "q3"], emb].abs().sum(axis=1) == 0).all()   # zero vectors
+    assert out.loc["p1", "graph_degree"] == 1
+    assert (out.loc[["a", "b", "c", "d", "e"], emb].abs().sum(axis=1) > 0).all()  # the blob is embedded
+    # the cap: with 2 embed slots the best-connected node (c, degree 4) is embedded, e.g. 'a' may not be
+    capped = compute_node_embeddings_sparse(nodes, A, dim=4, min_component_size=3, max_embed_nodes=2).set_index("node_id")
+    assert (capped[emb].abs().sum(axis=1) > 0).sum() <= 2
+    assert capped.loc["c", emb].abs().sum() > 0
+    # legacy behaviour is still reachable: no minimum, no cap
+    legacy = compute_node_embeddings_sparse(nodes, A, dim=4, min_component_size=0, max_embed_nodes=0).set_index("node_id")
+    assert legacy.loc["p1", emb].abs().sum() > 0

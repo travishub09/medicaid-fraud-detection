@@ -50,7 +50,7 @@ def _ppmi_svd(C, dim: int, seed: int = 42) -> np.ndarray:
     try:
         U, S, _ = svds(P.asfptype(), k=k, random_state=seed)
     except Exception:
-        return np.zeros((n, dim))
+        return np.zeros((n, dim), dtype=np.float32)      # half the bytes of the float64 fallback that also failed
     order = np.argsort(-S)
     emb = U[:, order] * np.sqrt(np.maximum(S[order], 0.0))
     for j in range(emb.shape[1]):
@@ -199,10 +199,21 @@ def _walk_cooccurrence(A, n, walk_len, n_walks, window, seed,
 
 def compute_node_embeddings_sparse(nodes, A, exclusion_ids=frozenset(), dim: int = 16,
                                    walk_len: int = 20, n_walks: int = 10, window: int = 5,
-                                   seed: int = 42, max_component_size: int = 150_000
+                                   seed: int = 42, max_component_size: int = 150_000,
+                                   min_component_size: int = 3, max_embed_nodes: int = 1_500_000
                                    ) -> pd.DataFrame:
     """One row per (kept, non-exclusion) node: embeddings + proximity + motifs.
-    ``nodes``/``A`` come from ``graph_features.build_sparse_adjacency``."""
+    ``nodes``/``A`` come from ``graph_features.build_sparse_adjacency``.
+
+    The heavy compute (walks / PPMI-SVD / triangles / k-core) runs only on nodes worth
+    embedding: a node in a component smaller than ``min_component_size`` (a solo NPI and
+    its one-member org is a 2-node component: 13.6M of them on the national graph) has
+    no neighbourhood to embed and gets a zero vector; and at most ``max_embed_nodes``
+    nodes are embedded, fraud-proximate nodes first, then by degree, so the
+    co-occurrence matrix and the SVD stay inside a 16 GB machine (the 2026-09-28
+    crash: 13,660,702 connected nodes, MemoryError in the SVD). Every connected or
+    fraud-proximate node still gets its row (degree, proximity; zero embedding when
+    not embedded)."""
     import scipy.sparse as sp
     from scipy.sparse.csgraph import connected_components
 
@@ -249,6 +260,20 @@ def compute_node_embeddings_sparse(nodes, A, exclusion_ids=frozenset(), dim: int
     # co-occurrence matrix (the 9M-node OOM was millions of these).
     deg_sub = np.diff(As.indptr)
     cidx = np.flatnonzero(deg_sub > 0)
+    if len(cidx) and min_component_size and min_component_size > 2:
+        _, lab = connected_components(As, directed=False)
+        csize = np.bincount(lab)[lab]
+        before = len(cidx)
+        cidx = cidx[csize[cidx] >= min_component_size]
+        if len(cidx) < before:
+            print(f"    [embeddings] {before - len(cidx):,} nodes sit in components smaller than "
+                  f"{min_component_size} (a solo NPI + its own org): no neighbourhood to embed, zero vector", flush=True)
+    if len(cidx) and max_embed_nodes and len(cidx) > max_embed_nodes:
+        # fraud-proximate nodes first, then the best-connected: the ones the model can use
+        pri = np.lexsort((-deg_sub[cidx], -(sub_prox_raw[cidx] > 0).astype(int)))
+        cidx = np.sort(cidx[pri[:max_embed_nodes]])
+        print(f"    [embeddings] embedding capped at {max_embed_nodes:,} of the connected nodes "
+              f"(fraud-proximate first, then by degree); the rest keep degree + proximity with a zero vector", flush=True)
 
     # On a large connected graph, lighten the walks (fewer/shorter/narrower) so the
     # co-occurrence support stays within a 16 GB box; the signal is unchanged in kind,
