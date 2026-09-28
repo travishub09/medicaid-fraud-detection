@@ -655,6 +655,48 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
     return out
 
 
+RESEARCH_STATUSES = ("research_low", "research_no_npi")
+
+
+def carry_research(new: pd.DataFrame, prior: pd.DataFrame | None) -> tuple[pd.DataFrame, int]:
+    """A resolver rerun rebuilds the table from the case text; the research answers folded
+    into the PRIOR table (defendant_research --poll) would be lost. Re-apply them by
+    (case_id, defendant): a high/medium research NPI wins over anything but a name
+    resolution to the same NPI; a low / no-NPI verdict applies when the name match found
+    nothing. Returns (table, rows carried)."""
+    if prior is None or not len(prior) or "research_confidence" not in prior.columns:
+        return new, 0
+    pr = prior[prior["research_confidence"].fillna("").astype(str).str.strip() != ""]
+    if not len(pr):
+        return new, 0
+    out = new.copy()
+    for c in ("task_id", "research_confidence"):
+        if c not in out.columns:
+            out[c] = ""
+    key = lambda df: list(zip(df["case_id"].astype(str), df["defendant"].astype(str)))
+    idx = {k: i for i, k in zip(pr.index, key(pr))}
+    n = 0
+    for i, k in zip(out.index, key(out)):
+        j = idx.get(k)
+        if j is None:
+            continue
+        r = pr.loc[j]
+        conf = str(r.get("research_confidence") or "")
+        rnpi = str(r.get("npi") or "")
+        st = str(r.get("status") or "")
+        out.at[i, "task_id"] = str(r.get("task_id") or "")
+        out.at[i, "research_confidence"] = conf
+        if st == "resolved" and str(r.get("match_level") or "").startswith("research_") and rnpi:
+            if out.at[i, "status"] == "resolved" and out.at[i, "npi"] == rnpi:
+                continue                                     # the name match already agrees
+            out.at[i, "npi"], out.at[i, "status"], out.at[i, "match_level"] = rnpi, "resolved", str(r["match_level"])
+            n += 1
+        elif st in RESEARCH_STATUSES and out.at[i, "status"] != "resolved":
+            out.at[i, "status"] = st
+            n += 1
+    return out, n
+
+
 def mentions_from_case_db(case_db: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for c in case_db.itertuples(index=False):
@@ -795,6 +837,10 @@ def main() -> None:
     resolved = resolve_defendants(mentions, pdim)
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():                                   # keep the research answers folded into the prior table
+        resolved, n_carried = carry_research(resolved, pd.read_parquet(out))
+        if n_carried:
+            print(f"  carried {n_carried:,} research verdicts forward from the prior table")
     resolved.to_parquet(out, index=False)
     res = residuals(resolved, a.min_amount,
                     [x.strip() for x in a.research_states.split(",")] if a.research_states else None)

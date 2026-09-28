@@ -167,8 +167,8 @@ def main() -> None:
         from src.model_a.pursuit_dossier import poll_research
         results = poll_research(registry, results_p)
         n = save_results(results, out_dir)
-        print(f"case harvest poll: {n}/{len(results)} completed -> {out_dir / 'results'} (review each CSV, then "
-              "python -m src.enforcement.research_evidence --mfcu <csv> to load it)")
+        print(f"case harvest poll: {n}/{len(results)} completed -> {out_dir / 'results'} (review each CSV, then load an "
+              "accepted one with: python -m src.enforcement.research_evidence mfcu-cases --in <csv> --state <ST> --case-db <doj_cases_v3.csv>)")
         return
     y0, y1 = (int(x) for x in a.years.split("-"))
     ps = build_prompts([s.strip() for s in a.sets.split(",") if s.strip()], list(range(y0, y1 + 1)),

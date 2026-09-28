@@ -540,7 +540,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   own org, 13.6M of them nationally) keep their row with a zero vector, and at most
   the cap is embedded, fraud-proximate first then by degree (the 2026-09-28 MemoryError
   in the SVD on 13,660,702 connected nodes).
-  Full suite: `pytest tests/` (934 tests).
+  Full suite: `pytest tests/` (935 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

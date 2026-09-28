@@ -331,3 +331,31 @@ def test_role_near_business_words_are_not_roles_and_two_word_roles_cut_the_claus
     assert role_near("Ana Ruiz, of Reno, Nevada, owner of a psychiatric hospital and a chiropractic clinic, pleaded guilty.", "Ana Ruiz")[1] == "owner_exec"
     assert role_near("Rodney Mesquias, of Harlingen, Texas, the CEO, was convicted of money laundering.", "Rodney Mesquias")[1] == "owner_exec"
     assert role_near("Dr. Lee Park, of Reno, Nevada, a psychiatrist, was convicted of money laundering.", "Dr. Lee Park")[1:] == ("clinical", "psychiatrist")
+
+
+def test_resolver_rerun_carries_research_verdicts_forward(pdim):
+    from src.enforcement.defendant_resolver import carry_research
+    new = pd.DataFrame([
+        {"case_id": "c1", "defendant": "Jorge Perez", "npi": "", "status": "ambiguous", "match_level": ""},
+        {"case_id": "c2", "defendant": "Rick Recruiter", "npi": "", "status": "unmatched", "match_level": ""},
+        {"case_id": "c3", "defendant": "Maria Lopez", "npi": "1245319599", "status": "resolved", "match_level": "name_city_state"},
+        {"case_id": "c4", "defendant": "New Person", "npi": "", "status": "unmatched", "match_level": ""},
+    ])
+    prior = pd.DataFrame([
+        {"case_id": "c1", "defendant": "Jorge Perez", "npi": "1234567893", "status": "resolved", "match_level": "research_high",
+         "task_id": "t1", "research_confidence": "high"},
+        {"case_id": "c2", "defendant": "Rick Recruiter", "npi": "", "status": "research_no_npi", "match_level": "",
+         "task_id": "t2", "research_confidence": "none"},
+        {"case_id": "c3", "defendant": "Maria Lopez", "npi": "1497758544", "status": "resolved", "match_level": "research_medium",
+         "task_id": "t3", "research_confidence": "medium"},
+        {"case_id": "c9", "defendant": "Gone Row", "npi": "", "status": "unmatched", "match_level": "", "task_id": "", "research_confidence": ""},
+    ])
+    out, n = carry_research(new, prior)
+    by = {r.case_id: r for r in out.itertuples()}
+    assert n == 3
+    assert by["c1"].status == "resolved" and by["c1"].npi == "1234567893" and by["c1"].match_level == "research_high"
+    assert by["c2"].status == "research_no_npi"
+    assert by["c3"].npi == "1497758544" and by["c3"].match_level == "research_medium"   # research overrides a differing name match
+    assert by["c4"].status == "unmatched" and by["c4"].research_confidence == ""
+    same, n0 = carry_research(new, None)
+    assert n0 == 0 and len(same) == 4
