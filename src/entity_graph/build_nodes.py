@@ -113,5 +113,5 @@ def build_exclusion_nodes(exclusions: pd.DataFrame) -> pd.DataFrame:
     e["node_id"] = "exclusion:" + e.index.astype(str)
     e["node_type"] = "exclusion"
     keep = ["node_id", "npi", "entity_name", "name_key", "excl_type", "excl_date",
-            "reinstate_date", "currently_active", "node_type"]
+            "reinstate_date", "currently_active", "state", "node_type"]
     return e[[c for c in keep if c in e.columns]].reset_index(drop=True)

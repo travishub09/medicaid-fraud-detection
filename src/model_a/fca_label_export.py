@@ -220,7 +220,8 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                 "outcome_words": LEIE_STATUTES[code][1], "amount_usd": None,
                 "announced_date": d.strftime("%Y-%m-%d") if pd.notna(d) else "",
                 "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
-                "state": _s(pd_.loc[npi].get("addr_state", "")), "basis": "npi_on_list", "match_level": "exact",
+                "state": _s(pd_.loc[npi].get("addr_state", "")) or _s(getattr(r, "state", "")),
+                "basis": "npi_on_list", "match_level": "exact",
                 "defendant": "", "kind": "", "entity_type": str(pd_.loc[npi].get("entity_type", "") or ""),
                 "flags": "window_inferred", "source_url": "https://oig.hhs.gov/exclusions/",
             })

@@ -174,6 +174,10 @@ def test_nan_case_type_and_nan_state_never_leak():
     assert jane["label_tier"] == "state_case" and jane["state"] == "FL"      # NaN mention state -> NPPES state, not 'nan'
     leie = shaped[shaped.label_tier == "excl_statute"].iloc[0]
     assert leie["state"] == "" and "nan" not in set(shaped["state"].astype(str))
+    # the exclusion row's own state (the LEIE STATE column, carried by build_exclusion_nodes) is the fallback
+    ex2 = ex.copy(); ex2["state"] = "OH"
+    shaped2, _ = build_strict_labels(cases, dn, pdim, "fca_shaped", ex2)
+    assert shaped2[shaped2.label_tier == "excl_statute"].iloc[0]["state"] == "OH"
 
 
 def test_org_billing_broadcast_is_capped():
@@ -188,3 +192,16 @@ def test_org_billing_broadcast_is_capped():
     assert len(capped) == 0
     small = build_case_labels(cases, org_nodes, npi_to_org.head(20), fuzzy_threshold=None, max_org_members=150)
     assert len(small) == 20
+
+
+def test_clean_leie_keeps_state(tmp_path):
+    """The LEIE STATE column rides along into interim/exclusions.parquet (the export's state fallback)."""
+    from src.attempt_2.clean_data import clean_leie
+    raw = tmp_path / "leie.csv"
+    raw.write_text("LASTNAME,FIRSTNAME,BUSNAME,NPI,EXCLTYPE,EXCLDATE,REINDATE,STATE\n"
+                   "DOE,JANE,,1234567893,1128a1,20240101,00000000,oh\n"
+                   ",,ACME LLC,,1128b7,20230505,00000000,\n", encoding="utf-8")
+    clean_leie(str(raw), tmp_path)
+    out = pd.read_parquet(tmp_path / "exclusions.parquet")
+    assert out.set_index("entity_name").loc["DOE, JANE", "state"] == "OH"
+    assert out.set_index("entity_name").loc["ACME LLC", "state"] == ""

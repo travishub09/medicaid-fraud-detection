@@ -864,6 +864,11 @@ def clean_leie(leie_path: str, interim_dir: Path) -> dict:
     out["excl_date"] = parse_date(df[excl_col]) if excl_col else pd.NaT
     out["reinstate_date"] = parse_date(df[rein_col]) if rein_col else pd.NaT
     out["excl_type"] = df[type_col] if type_col else None
+    # the LEIE's own STATE column: the fallback state for an excluded NPI whose NPPES
+    # row carries none (327 blank states on the 2026-09-28 strict label export)
+    state_col = find(lambda u: u == "STATE")
+    out["state"] = (df[state_col].fillna("").astype(str).str.strip().str.upper()
+                    .replace({"NAN": "", "NONE": "", "<NA>": ""}) if state_col else "")
 
     # entity name for the name/address resolution path: "LAST, FIRST" for
     # individuals, else the business name (BUSNAME) for excluded entities.
