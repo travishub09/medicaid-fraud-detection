@@ -381,25 +381,28 @@ _ROLE_CLINICAL: list[tuple[str, re.Pattern]] = [(f, re.compile(p, re.I)) for f, 
     ("pharmacist", r"pharmacist"),
     ("dentist", r"\bdentist|orthodontist|oral surgeon|\bDDS\b|\bDMD\b"),
     ("chiropractor", r"chiropract"),
-    ("pt_ot", r"physical therap|occupational therap|speech[- ]language patholog|respiratory therap"),
+    ("pt_ot", r"physical therap|occupational therap|speech(?:[- ]language)?[- ]patholog|respiratory therap"),
     ("podiatrist", r"podiatr|\bDPM\b"),
     ("optometrist", r"optometr"),
     ("behavioral", r"psychologist|\bcounselor|social worker|\bLCSW\b|\bLPC\b|marriage and family therap|behavioral health therap|\btherapist"),
     ("aide", r"home health aide|personal care (?:aide|attendant|assistant)|certified nurs(?:e|ing) assistant|\bCNA\b|caregiver"),
-    ("physician", r"physician|\bdoctor\b|\bM\.D\.|\bD\.O\.|surgeon|psychiatrist|anesthesiologist|cardiologist|"
+    ("psychiatrist", r"psychiatr"),        # a physician, but NPPES sometimes files them under a behavioral code
+    ("physician", r"physician|\bdoctor\b|\bM\.D\.|\bD\.O\.|surgeon|anesthesiologist|cardiologist|"
                   r"dermatologist|neurologist|oncologist|radiologist|urologist|pediatrician|internist|"
-                  r"gynecologist|ophthalmologist|pathologist|rheumatologist|gastroenterologist|"
-                  r"pulmonologist|endocrinologist|nephrologist|medical director"),
+                  r"gynecologist|ophthalmologist|\bpathologist|rheumatologist|gastroenterologist|"
+                  r"pulmonologist|endocrinologist|nephrologist"),
 )]
+_APPOSITIVE_ZONE = 60   # chars after the name in which a role phrase is read as this person's appositive
 _ROLE_NONCLINICAL = re.compile(
     r"patient recruiter|\brecruiter|\bmarketer|marketing (?:company|firm|representative|agent|director)|"
     r"\bbiller\b|billing (?:manager|clerk|specialist|agent|company)|office manager|\baccountant|bookkeeper|"
     r"sales(?:man|woman|person| representative| rep\b)|\bdriver\b|receptionist|telemarketer|call[- ]center|"
     r"straw owner|nominee owner|money launder|\bcapper\b|\brunner\b|\bkickback recipient", re.I)
 _ROLE_OWNER = re.compile(r"\bowner|\boperator|\bCEO\b|\bCFO\b|\bCOO\b|chief (?:executive|financial|operating)|"
-                         r"\bpresident|\bfounder|\badministrator|\bdirector\b|\bmanager\b|\bexecutive\b", re.I)
+                         r"\bpresident|\bfounder|\badministrator|medical director|\bdirector\b|\bmanager\b|\bexecutive\b", re.I)
 _ROLE_COMPAT: dict[str, set[str]] = {
-    "physician": {"physician"}, "np": {"np", "nurse"}, "pa": {"pa"}, "crna": {"crna", "nurse"},
+    "physician": {"physician"}, "psychiatrist": {"physician", "behavioral"},
+    "np": {"np", "nurse"}, "pa": {"pa"}, "crna": {"crna", "nurse"},
     "nurse": {"nurse", "np", "crna"}, "pharmacist": {"pharmacist"}, "dentist": {"dentist"},
     "chiropractor": {"chiropractor"}, "pt_ot": {"pt_ot"}, "podiatrist": {"podiatrist"},
     "optometrist": {"optometrist"}, "behavioral": {"behavioral"}, "aide": {"aide", "nurse"},
@@ -440,23 +443,42 @@ def role_near(text: str, name: str) -> tuple[str, str, str]:
         if i < 0:
             return "", "unknown", ""
         n = last
+    # the clause: back to the last sentence break, forward to the next sentence break or to a
+    # co-defendant introduced by "and <Name>" / "and his sister" / "along with the"
     before = re.split(r"[.;]\s", t[max(0, i - 90): i])[-1]
-    after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with)\s+(?=(?:Dr\.\s)?[A-Z][a-z]+\s[A-Z])", t[i + len(n): i + len(n) + 140])[0]
-    win = f"{before} {n} {after}"
-    fam = ""
+    after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with|together with)\s+"
+                     r"(?=(?:Dr\.\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendant)\b)",
+                     t[i + len(n): i + len(n) + 140])[0]
+    is_dr = bool(_HONORIFIC.match(n) and n.lower().startswith("dr"))
+    # every clinical phrase in the clause, ranked by distance to the name (an appositive right
+    # after the name is distance 0); the nearest wins, a longer phrase wins a tie
+    # ("speech pathologist" over "pathologist")
+    hits: list[tuple[int, int, str, str]] = []
     for f, pat in _ROLE_CLINICAL:
-        m = pat.search(win)
-        if m:
-            return m.group(0), "clinical", f
-    if _HONORIFIC.match(n) and n.lower().startswith("dr"):
-        fam = "doctorate"
+        for m in pat.finditer(before):
+            hits.append((len(before) - m.end(), -len(m.group(0)), m.group(0), f))
+        for m in pat.finditer(after):
+            hits.append((0 if m.start() <= _APPOSITIVE_ZONE else m.start(), -len(m.group(0)), m.group(0), f))
+    if hits:
+        hits.sort()
+        dist, _, phrase, fam = hits[0]
+        # "Dr." on the name outranks a clinical word that sits outside the appositive zone
+        # ("Doctor, pharmacists and marketers sentenced ... Dr. Baldizzi, 46, of Tampa")
+        if is_dr and dist > _APPOSITIVE_ZONE:
+            return "Dr.", "clinical", "doctorate"
+        return phrase, "clinical", fam
+    win = f"{before} {n} {after}"
+    if is_dr:
+        # a doctor who also marketed or owned is still a provider: never nonclinical
+        m2 = _ROLE_OWNER.search(win)
+        return (m2.group(0), "owner_exec", "doctorate") if m2 else ("Dr.", "clinical", "doctorate")
     m = _ROLE_NONCLINICAL.search(win)
-    if m and not fam:
+    if m:
         return m.group(0), "nonclinical", ""
     m2 = _ROLE_OWNER.search(win)
     if m2:
-        return m2.group(0), "owner_exec", fam
-    return ("Dr.", "clinical", fam) if fam else ("", "unknown", "")
+        return m2.group(0), "owner_exec", ""
+    return "", "unknown", ""
 
 
 def role_agreement(role_family: str, npi_family: str) -> str:

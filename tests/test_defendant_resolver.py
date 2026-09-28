@@ -231,3 +231,26 @@ def test_resolver_rejects_nonclinical_and_mismatched_roles_and_counts_name_hits(
     assert by["r4"].name_national_hits == 2          # two Maria Lopez in FL
     rep = report(out, residuals(out))
     assert "Role coherence" in rep and "nonclinical_role 1" in rep and "role_mismatch 1" in rep
+
+
+def test_role_near_real_release_shapes_from_the_2026_09_28_run():
+    """The misreads the first live run surfaced: a co-defendant's role after 'and his sister',
+    'speech pathologist' read as a physician, a distant 'pharmacist' outranking the 'Dr.' on the name."""
+    from src.enforcement.defendant_resolver import role_near, role_agreement
+    ifediba = ("Federal jury convicts Birmingham doctor and nurse. Dr. Patrick Emeka Ifediba, 59, of Birmingham, "
+               "Alabama, and his sister, Ngozi Justina Ozuligbo, 58, a nurse, were convicted today.")
+    assert role_near(ifediba, "Dr. Patrick Emeka Ifediba")[2] == "doctorate"
+    assert role_near(ifediba, "Ngozi Justina Ozuligbo")[1:] == ("clinical", "nurse")
+    chowdhury = ("Edinburg doctor and son guilty in kickback conspiracy. Dr. Tajul Shams Chowdhury, 63, of Edinburg, "
+                 "Texas, and his son, Ahmed Chowdhury, 31, a marketer, pleaded guilty.")
+    assert role_near(chowdhury, "Dr. Tajul Shams Chowdhury")[1] != "nonclinical"
+    assert role_near(chowdhury, "Ahmed Chowdhury") == ("marketer", "nonclinical", "")
+    rose = "Tara Leigh Rose, 44, of Denver, Colorado, a speech pathologist, fraudulently billed Medicaid."
+    assert role_near(rose, "Tara Leigh Rose")[1:] == ("clinical", "pt_ot")
+    baldizzi = ("Doctor, pharmacists and marketers in compounding pharmacy kickback conspiracy sentenced. Dr. Anthony "
+                "Baldizzi, 46, of Tampa, Florida, was sentenced to 30 months. Pharmacists Carlos Mazariegos and Benjamin Nundy were also sentenced.")
+    assert role_near(baldizzi, "Dr. Anthony Baldizzi")[2] == "doctorate"
+    assert role_near("Dr. Ana Cruz, a pharmacist, of Reno, Nevada, was sentenced.", "Dr. Ana Cruz")[1:] == ("clinical", "pharmacist")
+    assert role_near("John Terrence, the medical director of the clinic, was sentenced.", "John Terrence")[1] == "owner_exec"
+    assert role_agreement("psychiatrist", "behavioral") == "agree" and role_agreement("psychiatrist", "physician") == "agree"
+    assert role_agreement("pt_ot", "physician") == "disagree"
