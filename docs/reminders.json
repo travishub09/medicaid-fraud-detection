@@ -553,48 +553,39 @@
   },
   {
    "key": "defendant_resolver_run",
-   "what": "DONE-ish 2026-09-27: resolver run 3 (bundle 182) = 744 mentions -> 695 NPIs / 696 cases; SE 218 NPIs. Operator approved Manus tiers 1 and 2. OPERATOR (after merging bundle 183): rerun the resolver (comma-separated people now split), build the research batch, REVIEW processed\\defendant_research\\defendant_research_batch.csv, then dispatch, then poll a day later and upload DEFENDANT_RESOLUTION.md. Expected ~275 tasks (tier 1 ~39, tier 2 ~236 at the $2M floor); use --cap to spend less.",
+   "what": "2026-09-28: resolver run 4 (bundle 183+) = 1,329 resolved mentions -> 1,052 NPIs / 1,212 cases; SE 314 NPIs; 1,680 research residual. Manus tiers 1 and 2 DISPATCHED 2026-09-27 (280 tracked tasks; ~448 orphan duplicates from concurrent windows are paid but untracked). OPERATOR (a day after dispatch, ONE window): poll with --resolved (the poll folds the answers into case_defendant_npis.parquet itself; no resolver re-run needed for that); after the poll re-run the strict export (task fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md + DEFENDANT_RESEARCH.md. A second batch (excluding already-dispatched org_ids) only after this batch's answer quality is known.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
-    "python -m src.enforcement.defendant_research --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --tiers 1,2",
-    "REM review defendant_research_batch.csv, then:",
-    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --dispatch",
-    "REM a day later:",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --status",
     "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --poll --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
+    "REM then re-run the strict export (see fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md",
     "python -m src.reminders --done-task defendant_resolver_run"
    ]
   },
   {
    "key": "case_harvest_sources_1_6",
-   "what": "BUILT 2026-09-27 (bundles 184-186). Run 1 of the DOJ backfill (400-page cap) reached only ~3 years back: 983 releases, 946 new cases (feeds/enforcement/doj_cases.csv = 2,211). OPERATOR: (1) re-run the DOJ backfill with --max-pages 1500 (overnight, network only); (3) OIG harvest; then fold both feed files into doj_cases_v3.csv with the merge line and re-run the resolver; upload FEEDS_REPORT.md, OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md. (2) CourtListener docket backfill SKIPPED by operator decision (no account). (4-6) review case_harvest_batch.csv, dispatch, poll a day later, review results/, load accepted CSVs via research_evidence mfcu-cases. Bundle 191 fits the OIG parser to the live site (abbreviated dates, published_time meta, agency, the linked full release fetched for the defendant / city / state; cached pages are never re-fetched): re-run the OIG harvest since 2015, then the merge line, reclassify, resolver, strict export.",
+   "what": "2026-09-28 state: (1) deep DOJ backfill DONE (9,256 feed cases back to 2016-09-28; case table 15,240 after merge + reclassify: criminal_hcf 7,126 / civil_fca 4,594 / oig_cmp 614 / not_fraud 334 / untyped 2,572). (2) CourtListener docket backfill SKIPPED by operator decision (no account). (3) OIG harvest since 2015 WITH linked releases is RUNNING (6-8 h, network only; a bundle merge is safe while it runs). (4-6) harvest prompts DISPATCHED 2026-09-27 (98 tracked + 59 duplicate tasks). OPERATOR when the OIG window prints its summary: paste it, then run the merge line WITH --reclassify, the resolver, the strict export; upload OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md, FCA_LABEL_EXPORT.md. A day after dispatch (ONE window): poll the harvest prompts, review every CSV under processed\\case_harvest\\results\\, load only accepted ones via research_evidence mfcu-cases.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
-    "python -m src.enforcement.fetch --backfill-years 10 --max-pages 1500 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\"",
-    "python -m src.enforcement.oig_enforcement --since 2015-01-01 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --states FL,GA,AL,MS,TN,NC,SC,LA,KY",
-    "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\"",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --sets mfcu,takedown,yir,hcfac,oig_sar",
-    "REM review case_harvest_batch.csv, then:",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --dispatch",
-    "REM a day later:",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --poll",
+    "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --reclassify",
     "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
+    "REM a day after dispatch:",
+    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --poll",
+    "REM review each CSV under processed\\case_harvest\\results\\; load an accepted one with:",
+    "python -m src.enforcement.research_evidence mfcu-cases --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\\results\\<accepted>.csv\" --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
     "python -m src.reminders --done-task case_harvest_sources_1_6"
    ]
   },
   {
    "key": "fca_strict_label_export",
-   "what": "BUILT 2026-09-27 (bundle 189): model_a/fca_label_export.py writes the strict FCA label for the PurpleLab join (labels_fca_strict.csv + quarantine + 30-row verification sample + FCA_LABEL_EXPORT.md). OPERATOR: after merging bundle 190, reclassify the case table (OIG civil-monetary-penalty settlements are oig_cmp, EMTALA / excluded-employee actions are not_fraud) then run it (command below), upload FCA_LABEL_EXPORT.md and verification_sample.csv, and hand-check the 30 sample rows against their source URLs before any upload to the clean room. Re-run after every resolver run and after research answers are folded in. Verification delegated to Manus (bundle 193): build the batch from verification_sample.csv, dispatch (ONE window), poll a day later, read LABEL_VERIFICATION.md and every flagged row.",
+   "what": "2026-09-28 state: bundle 194 merged; export (fca_shaped, both exclusion files incl. state terminations) = 5,354 rows / 4,855 NPIs / 250 quarantined; duplicate-case collapse + org_billing cap (max 150 NPIs per org mention) in effect. Verification batch DISPATCHED to Manus 2026-09-27 (3 tasks of 10 rows). OPERATOR: upload FCA_LABEL_EXPORT.md now; a day after dispatch poll the verification (ONE window), read LABEL_VERIFICATION.md and every flagged row (tighten if confirmed < 90% or more than one wrong_npi). Re-run the export after the OIG merge and after every poll fold-back; labels_fca_strict.csv never enters the repo.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --reclassify",
-    "python -m src.model_a.fca_label_export --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --policy fca_shaped --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\"",
-    "python -m src.model_a.label_verification --sample \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\\verification_sample.csv\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\\verify\"",
-    "python -m src.model_a.label_verification --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\\verify\" --dispatch",
+    "python -m src.model_a.fca_label_export --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\exclusions_state_terminations.parquet\" --policy fca_shaped --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\"",
+    "REM a day after dispatch:",
     "python -m src.model_a.label_verification --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label\\verify\" --poll",
     "python -m src.reminders --done-task fca_strict_label_export"
    ]
