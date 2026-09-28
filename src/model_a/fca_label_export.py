@@ -217,6 +217,11 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
             continue
         if inferred:
             flags.append("window_inferred")
+        if kind == "org" and tier == "hcf_criminal":
+            # the operator's policy (2026-09-29): a company named in a criminal release is the billing
+            # vehicle of the convicted owner; its NPI is the one that submitted the claims, so it stays
+            # in the label, flagged for the reader and the model
+            flags.append("org_billing_party")
         rows.append({
             "npi": npi, "label_tier": tier, "policy": policy, "case_id": cid,
             "source": "oig" if "oig.hhs.gov" in cid else ("doj" if "justice.gov" in cid else "other"),
@@ -339,6 +344,8 @@ def report(labels: pd.DataFrame, quar: pd.DataFrame, policy: str) -> str:
           "- identifier: Luhn-valid NPI; basis named_npi or resolved_defendant at an accepted match level or research high/medium;",
           "  NPI present in NPPES; entity type agrees with defendant kind; not deactivated before the conduct began.",
           "- time: announced_date + conduct window from the text (window_inferred flag when a lookback was used).",
+          "- org_billing_party (flag): a company named in a CRIMINAL release whose owner was convicted stays in the label as the",
+          "  billing vehicle (its NPI submitted the claims); the flag marks it so a reader can separate it from a convicted party.",
           "- dockets, allegations, license and paperwork actions, chains and broadcast-to-employees: never."]
     return "\n".join(L)
 

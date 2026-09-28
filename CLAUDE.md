@@ -540,7 +540,21 @@ committed. Never let this file go stale: stale reminders are worse than none.
   own org, 13.6M of them nationally) keep their row with a zero vector, and at most
   the cap is embedded, fraud-proximate first then by degree (the 2026-09-28 MemoryError
   in the SVD on 13,660,702 connected nodes).
-  Full suite: `pytest tests/` (937 tests).
+  VERIFICATION OUTCOME (2026-09-29, 110 strata rows + 30 random): confirmed by
+  evidence strength = strong 95% / moderate 76% / weak 67%. The PurpleLab file is
+  therefore `--min-strength strong` (exact_id + strong; processed/fca_label_strong/);
+  moderate + weak rows stay in the full-ladder file for a second verification after
+  the fixes. Fixes from the flagged rows: a unique candidate whose NPPES middle name
+  contradicts the release is rejected (`middle_conflict`), technician / head of
+  marketing / nominal owner / non-provider are non-clinical roles, headline
+  descriptors ("Worcester Pharmacy") and fragments ("Plea") never match an org
+  (`is_descriptor_name`), medical specialties are org words, exclusion rows are
+  verified as LEIE-vs-NPPES identity (a 'wrong_person' against the blank defendant is
+  re-labelled a confirmed identity). Operator policy: a company named in a CRIMINAL
+  release whose owner was convicted STAYS in the label as the billing vehicle, flagged
+  `org_billing_party`. A resolver rerun carries prior research verdicts forward
+  (`carry_research`) instead of erasing them.
+  Full suite: `pytest tests/` (938 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

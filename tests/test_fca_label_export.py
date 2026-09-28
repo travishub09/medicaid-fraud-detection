@@ -270,3 +270,20 @@ def test_merge_refreshes_a_stored_announcement_from_a_better_harvest():
     assert y["jurisdiction"] == "M.D. Fla."
     same = merge_case_files(old, new, refresh=False)
     assert same[same.case_id.str.endswith("/x/")].iloc[0]["announced_date"] == ""
+
+
+def test_company_of_a_convicted_owner_stays_flagged_as_the_billing_party():
+    cases, dn, pdim, ex = _fixture()
+    cases = pd.concat([cases, pd.DataFrame([{"case_id": "https://www.justice.gov/usao-sdga/pr/z", "case_type": "criminal_hcf",
+                                             "announced_date": "2024-06-01", "amount_usd": "", "jurisdiction": "S.D. Ga.",
+                                             "summary": "Detra Pate, owner of Southern Respiratory LLC, of Thomson, Georgia, was sentenced to ten years for Medicare fraud.",
+                                             "source_url": "https://www.justice.gov/usao-sdga/pr/z", "scheme": ""}])], ignore_index=True)
+    dn = pd.concat([dn, pd.DataFrame([{"case_id": "https://www.justice.gov/usao-sdga/pr/z", "npi": "1003000126", "status": "resolved",
+                                       "match_level": "name_state", "kind": "org", "state": "GA", "defendant": "Southern Respiratory LLC",
+                                       "mention": "of_city_state"}])], ignore_index=True)
+    labels, _ = build_strict_labels(cases, dn, pdim, "strict_plus_criminal")
+    row = labels[labels.case_id == "https://www.justice.gov/usao-sdga/pr/z"].iloc[0]
+    assert row["label_tier"] == "hcf_criminal" and "org_billing_party" in row["flags"]
+    civil = labels[labels.npi == "1679576722"].iloc[0]           # Acme, a civil FCA settling party: no flag
+    assert "org_billing_party" not in civil["flags"]
+    assert "org_billing_party" in report(labels, pd.DataFrame(), "strict_plus_criminal")
