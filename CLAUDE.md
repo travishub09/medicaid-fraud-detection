@@ -540,11 +540,19 @@ committed. Never let this file go stale: stale reminders are worse than none.
   own org, 13.6M of them nationally) keep their row with a zero vector, and at most
   the cap is embedded, fraud-proximate first then by degree (the 2026-09-28 MemoryError
   in the SVD on 13,660,702 connected nodes).
-  VERIFICATION OUTCOME (2026-09-29, 110 strata rows + 30 random): confirmed by
-  evidence strength = strong 95% / moderate 76% / weak 67%. The PurpleLab file is
-  therefore `--min-strength strong` (exact_id + strong; processed/fca_label_strong/);
-  moderate + weak rows stay in the full-ladder file for a second verification after
-  the fixes. Fixes from the flagged rows: a unique candidate whose NPPES middle name
+  VERIFICATION OUTCOME (2026-09-29, two batches, 249 rows, re-scored on rows still
+  in the label): confirmed by evidence strength = strong 39/40 / moderate 69/75 (92%)
+  / weak 65/88 (74%). MODERATE IS PROMOTED: the PurpleLab file is `--min-strength
+  moderate` (exact_id + strong + moderate; processed/fca_label_strong/, 5,155 rows /
+  4,672 NPIs); weak stays in the full-ladder file only (processed/fca_label/). The
+  resolver's `--nppes-file` streams middle names for every person candidate
+  (`candidate_person_npis`) from the raw NPPES file (UTF-8 first, Latin-1 fallback):
+  63 middle-name conflicts quarantined, 31 ties settled by a middle name.
+  `npi_candidate` stays on every resolver row (blank once resolved) so the quarantine
+  shows the rejected NPI. STOP RULE (agreed 2026-09-29): precision work on the label
+  is at diminishing returns (every kept stratum verifies at 90%+, the residual wrong
+  rows are one-offs); the next label levers are the PurpleLab join itself and recall
+  (the research residue), not more precision. Fixes from the flagged rows: a unique candidate whose NPPES middle name
   contradicts the release is rejected (`middle_conflict`), technician / head of
   marketing / nominal owner / non-provider are non-clinical roles, headline
   descriptors ("Worcester Pharmacy") and fragments ("Plea") never match an org
@@ -554,7 +562,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   release whose owner was convicted STAYS in the label as the billing vehicle, flagged
   `org_billing_party`. A resolver rerun carries prior research verdicts forward
   (`carry_research`) instead of erasing them.
-  Full suite: `pytest tests/` (944 tests).
+  Full suite: `pytest tests/` (945 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

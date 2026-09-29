@@ -778,9 +778,11 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame,
         for i, r in out[out["status"] == "role_mismatch"].iterrows():
             if (r["_pk"], str(r.get("state") or "").upper(), r["npi_candidate"]) in agreed:
                 out.at[i, "npi"] = r["npi_candidate"]
+                out.at[i, "npi_candidate"] = ""
                 out.at[i, "status"] = "resolved"
                 out.at[i, "role_agree"] = "agree_other_mention"
-        out = out.drop(columns=["npi_candidate"])
+    # npi_candidate stays on the row (blank when resolved): the rejected candidate is what the
+    # quarantine file and a human re-check need to see
     out = out.drop(columns=["_pk", "_ok"])
     out["basis"] = "resolved_defendant"
     return out

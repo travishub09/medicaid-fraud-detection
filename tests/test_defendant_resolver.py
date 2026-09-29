@@ -315,7 +315,7 @@ def test_role_mismatch_rescued_by_an_agreeing_mention_of_the_same_person(pdim):
     by = {r.case_id: r for r in out.itertuples()}
     assert by["s1"].status == "resolved" and by["s1"].role_agree == "agree"
     assert by["s2"].status == "resolved" and by["s2"].role_agree == "agree_other_mention" and by["s2"].npi == "1234567893"
-    assert "npi_candidate" not in out.columns
+    assert "npi_candidate" in out.columns and set(out["npi_candidate"]) == {""}   # kept, blank once resolved
 
 
 def test_role_near_business_words_are_not_roles_and_two_word_roles_cut_the_clause():

@@ -177,7 +177,7 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
         if st == "nonclinical_role":
             why = f"non-clinical role in the release: '{d.get('role', '')}'"
         elif st == "middle_conflict":
-            why = f"middle name in the release contradicts the NPPES middle name of NPI {d.get('npi_candidate', '') or '-'}"
+            why = "middle name in the release contradicts the NPPES middle name of the unique candidate (npi_candidate column)"
         else:
             why = (f"role mismatch: release says '{d.get('role', '')}' [{d.get('role_family', '') or '-'}], "
                    f"NPI taxonomy family is {d.get('npi_taxonomy_family', '') or '-'}")
