@@ -56,3 +56,20 @@ def test_exclusion_row_wrong_person_against_the_blank_is_a_confirmed_identity():
     assert rows.loc[0, "verdict"] == "confirmed" and rows.loc[0, "note"].startswith("[list identity")
     assert rows.loc[1, "verdict"] == "wrong_person"
     assert "exclusion-list row" in build_prompts(sample)[0]["prompt"]
+
+
+def test_rescore_against_current_label_sets_dropped_rows_aside():
+    from src.model_a.label_verification import rescore_against, report, build_prompts
+    rows = pd.DataFrame([
+        {"npi": "1", "case_id": "a", "defendant": "X", "label_tier": "hcf_criminal", "evidence_strength": "weak", "verdict": "wrong_npi", "evidence_url": "", "note": "", "row": 1},
+        {"npi": "2", "case_id": "b", "defendant": "Y", "label_tier": "hcf_criminal", "evidence_strength": "weak", "verdict": "confirmed", "evidence_url": "", "note": "", "row": 2},
+        {"npi": "3", "case_id": "c", "defendant": "Z", "label_tier": "fca_civil", "evidence_strength": "moderate", "verdict": "confirmed", "evidence_url": "", "note": "", "row": 3},
+        {"npi": "4", "case_id": "state_term:MS:4", "defendant": "", "label_tier": "state_fraud", "evidence_strength": "exact_id", "verdict": "cannot_verify", "evidence_url": "", "note": "", "row": 4},
+    ])
+    current = pd.DataFrame({"npi": ["2", "3", "4"], "case_id": ["b", "c", "state_term:MS:4"]})   # row 1 was rejected since
+    scored = rescore_against(rows, current)
+    assert scored["in_current_label"].tolist() == [False, True, True, True]
+    rep = report(scored)
+    assert "dropped since the sample was drawn: 1 (of which flagged wrong: 1)" in rep
+    assert "confirmed among still-present rows with a decision (cannot_verify excluded): 2/2 (100%)" in rep
+    assert "STATE MEDICAID TERMINATION" in build_prompts(rows)[0]["prompt"]

@@ -46,6 +46,10 @@ PROMPT = (
     "A row whose defendant reads '(exclusion-list entry, no name)' is an OIG exclusion-list row: for it, confirm that the "
     "NPI appears on the OIG LEIE (https://oig.hhs.gov/exclusions/) with a fraud statute and that the NPPES name for the NPI "
     "matches the LEIE name; when they match the verdict is confirmed (the missing name is not a defendant).\n\n"
+    "A row whose case_id starts with 'state_term:' is a STATE MEDICAID TERMINATION (source_url is blank): look the NPI "
+    "up in NPPES for the provider's name and state, then confirm that provider appears on that state's published Medicaid "
+    "terminated / excluded / sanctioned provider list (the state Medicaid agency or its program-integrity office publishes "
+    "it); confirmed when it does, cannot_verify only if the state list is not reachable.\n\n"
     "Verdict values: confirmed (source names this defendant AND the NPI is that provider); wrong_person (the "
     "source names someone else or the defendant is not a party); wrong_npi (right defendant, NPI belongs to a "
     "different provider); not_a_provider (defendant is real but has no NPI: owner, recruiter, marketer); "
@@ -135,6 +139,16 @@ def fold_results(sample: pd.DataFrame, results: dict) -> pd.DataFrame:
     return rows
 
 
+def rescore_against(rows: pd.DataFrame, current_labels: pd.DataFrame) -> pd.DataFrame:
+    """Mark each sampled row as still in the CURRENT label (same npi + case_id) or dropped since
+    the sample was drawn: a verdict on a row the resolver has since rejected is history, not a
+    defect of the label being shipped."""
+    out = rows.copy()
+    keys = set(zip(current_labels["npi"].astype(str), current_labels["case_id"].astype(str)))
+    out["in_current_label"] = [(str(n), str(c)) in keys for n, c in zip(out["npi"], out["case_id"])]
+    return out
+
+
 def report(rows: pd.DataFrame) -> str:
     done = rows[rows["verdict"] != "pending"]
     tally = done["verdict"].value_counts().to_dict()
@@ -156,6 +170,19 @@ def report(rows: pd.DataFrame) -> str:
             by_s = done.groupby("evidence_strength")["verdict"].apply(lambda s: f"{(s == 'confirmed').sum()}/{len(s)} confirmed")
             L += ["", "## By evidence strength (the ruler for --min-strength on the next export)", ""]
             L += [f"- {s}: {v}" for s, v in by_s.items()]
+        if "in_current_label" in done.columns:
+            cur = done[done["in_current_label"]]
+            gone = done[~done["in_current_label"]]
+            decided = cur[cur["verdict"] != "cannot_verify"]
+            L += ["", "## Re-scored against the CURRENT label (rows the resolver has since rejected are set aside)", "",
+                  f"- rows still in the label: {len(cur)}; dropped since the sample was drawn: {len(gone)} "
+                  f"(of which flagged wrong: {int(gone['verdict'].isin(['wrong_person', 'wrong_npi']).sum())})",
+                  f"- confirmed among still-present rows with a decision (cannot_verify excluded): "
+                  f"{int((decided['verdict'] == 'confirmed').sum())}/{len(decided)}"
+                  + (f" ({100 * (decided['verdict'] == 'confirmed').sum() / len(decided):.0f}%)" if len(decided) else "")]
+            if "evidence_strength" in decided.columns and len(decided):
+                by_cs = decided.groupby("evidence_strength")["verdict"].apply(lambda s: f"{(s == 'confirmed').sum()}/{len(s)} confirmed")
+                L += [f"- {s}: {v}" for s, v in by_cs.items()]
     return "\n".join(L)
 
 
@@ -168,6 +195,8 @@ def main() -> None:
     ap.add_argument("--dispatch", action="store_true")
     ap.add_argument("--poll", action="store_true")
     ap.add_argument("--status", action="store_true")
+    ap.add_argument("--current-labels", default=None,
+                    help="labels_fca_strict.csv of the CURRENT export: the poll report re-scores the verdicts on the rows still in it")
     a = ap.parse_args()
     out_dir = Path(a.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -188,6 +217,8 @@ def main() -> None:
         results = poll_research(registry, results_p)
         sample = pd.read_csv(sample_copy, dtype=str)
         rows = fold_results(sample, results)
+        if a.current_labels:
+            rows = rescore_against(rows, pd.read_csv(a.current_labels, dtype=str))
         rows.to_csv(out_dir / "verification_results.csv", index=False)
         rep = out_dir / "LABEL_VERIFICATION.md"
         rep.write_text(report(rows), encoding="utf-8")
