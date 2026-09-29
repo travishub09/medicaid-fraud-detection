@@ -171,11 +171,18 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
     rows, quar = [], []
     # mentions the resolver rejected on role coherence are kept visible in the quarantine
     st_all = defendant_npis["status"].astype(str)
-    for r in defendant_npis[st_all.isin(["nonclinical_role", "role_mismatch"])].itertuples(index=False):
+    for r in defendant_npis[st_all.isin(["nonclinical_role", "role_mismatch", "middle_conflict"])].itertuples(index=False):
         d = r._asdict()
-        why = (f"non-clinical role in the release: '{d.get('role', '')}'" if d.get("status") == "nonclinical_role"
-               else f"role mismatch: release says '{d.get('role', '')}' [{d.get('role_family', '') or '-'}], "
-                    f"NPI taxonomy family is {d.get('npi_taxonomy_family', '') or '-'}")
+        st = d.get("status")
+        if st == "nonclinical_role":
+            why = f"non-clinical role in the release: '{d.get('role', '')}'"
+        elif st == "middle_conflict":
+            why = f"middle name in the release contradicts the NPPES middle name of NPI {d.get('npi_candidate', '') or '-'}"
+        else:
+            why = (f"role mismatch: release says '{d.get('role', '')}' [{d.get('role_family', '') or '-'}], "
+                   f"NPI taxonomy family is {d.get('npi_taxonomy_family', '') or '-'}")
+        if str(d.get("veto_from") or ""):
+            why += " (vetoed via the sibling mention)"
         quar.append({**d, "reason": why})
     dn = defendant_npis[st_all == "resolved"].copy()
     for r in dn.itertuples(index=False):

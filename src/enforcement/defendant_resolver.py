@@ -392,7 +392,17 @@ def is_descriptor_name(name: str) -> bool:
         return True
     if len(toks) == 1:      # "Plea" / "Pharmacy" are fragments; "Walgreens" is a brand and stays
         return bool(_FRAGMENT.match(toks[0]) or _DESCRIPTOR_NOUN.match(toks[0]))
-    return len(toks) == 2 and bool(_DESCRIPTOR_NOUN.match(toks[1])) and not _LEGAL_SUFFIX.search(name)
+    if _LEGAL_SUFFIX.search(name):
+        return False
+    if len(toks) == 2:
+        return bool(_DESCRIPTOR_NOUN.match(toks[1]))
+    # "Florida Medical Practice" / "Texas Dental Practice" / "New Jersey Doctor": a place name, an
+    # adjective from the sector list, and a descriptor noun
+    if len(toks) not in (3, 4) or not _DESCRIPTOR_NOUN.match(toks[-1]):
+        return False
+    lead = " ".join(toks[:-1]).upper()
+    return bool(re.match(r"^(?:medical|dental|health|healthcare|home|pain|mental|behavioral|urgent|"
+                         r"physical|area|based|local|county)$", toks[-2], re.I)) or lead in _NAME_TO_ABBR
 
 
 # ---- role coherence: what the release SAYS the person is vs what the NPI IS ---------------
@@ -429,7 +439,8 @@ _ROLE_NONCLINICAL = re.compile(
     r"sales(?:man|woman|person| representative| rep\b)|\bdriver\b|receptionist|telemarketer|call[- ]center|"
     r"straw owner|nominee owner|nominal owner|\bcapper\b|\brunner\b|\bkickback recipient|"
     r"\btechnician\b|\btech\b|head of marketing|marketing director|director of marketing|chief marketing|"
-    r"non-provider|former employee|hospital employee|clinic employee|trucking", re.I)
+    r"non-provider|not a (?:medical|health ?care|licensed|healthcare) (?:provider|professional)|no medical (?:license|training)|"
+    r"former employee|hospital employee|clinic employee|trucking", re.I)
 _ROLE_OWNER = re.compile(r"\bowner|\boperator|\bCEO\b|\bCFO\b|\bCOO\b|chief (?:executive|financial|operating)|"
                          r"\bpresident|\bfounder|\badministrator|medical director|\bdirector\b|\bmanager\b|\bexecutive\b", re.I)
 _ROLE_COMPAT: dict[str, set[str]] = {
@@ -513,7 +524,7 @@ def role_near(text: str, name: str, primary: bool = False) -> tuple[str, str, st
         return "", "unknown", ""
     after = re.split(r"(?<=[.;])\s|\s(?:and|while|along with|together with)\s+"
                      r"(?=(?:[a-z][a-z\-]+\s+){0,2}(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z]|(?:his|her|their|the|a|an|two|three|co-defendants?)\b)"
-                     r"|,\s+(?=(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z][a-z]+\s*[,(])",
+                     r"|,\s+(?!(?:New|North|South|West|Rhode)\s[A-Z])(?=(?:Dr[.\x00]\s)?[A-Z][a-z]+\s[A-Z][a-z]+\s*[,(])",
                      after_raw)[0].replace("\x00", ".")
     if re.search(r"\bDr\.?\s*$", before):
         is_dr = True                              # "convicted Dr. Patrick Ifediba" with the Dr. in the text only
@@ -565,6 +576,21 @@ def role_agreement(role_family: str, npi_family: str) -> str:
     if not fams or npi_family in ("", "other", "student"):
         return "unknown"
     return "agree" if any(npi_family in _ROLE_COMPAT.get(f, {f}) for f in fams) else "disagree"
+
+
+def _middle_agrees(mids: list[str], cmid: str) -> bool:
+    """Do the release's middle tokens agree with the NPPES middle name? An initial agrees with a
+    name that starts with it; a full name agrees only with the same full name (or the matching
+    initial in NPPES). 'Scott' vs NPPES 'STETSON' is a conflict although both start with S."""
+    ctoks = [t for t in str(cmid or "").upper().split() if t]
+    for m in mids:
+        m = m.upper().strip(".")
+        for c in ctoks:
+            if len(m) == 1 and c.startswith(m):
+                return True
+            if len(m) > 1 and (m == c or (len(c) == 1 and m.startswith(c))):
+                return True
+    return False
 
 
 def _middle_tokens(defendant: str) -> list[str]:
@@ -647,9 +673,7 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             # verdicts on the 2026-09-29 verification). Silence on either side is not a conflict.
             mids = _middle_tokens(r["defendant"])
             cmid = next((c[2] for c in cands if c[0] == uniq[0]), "")
-            if mids and cmid and not any((len(m) == 1 and cmid.startswith(m)) or (len(m) > 1 and m in cmid.split())
-                                         or (len(m) > 1 and cmid.split()[0].startswith(m[0]) and len(cmid.split()[0]) == 1)
-                                         for m in mids):
+            if mids and cmid and not _middle_agrees(mids, cmid):
                 out.at[i, "status"] = "middle_conflict"
                 out.at[i, "npi_candidate"] = uniq[0]
                 continue
@@ -661,6 +685,7 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             if out.at[i, "kind"] == "person" and rclass == "nonclinical":
                 # a recruiter / marketer / biller has no NPI; the unique name hit is someone else
                 out.at[i, "status"] = "nonclinical_role"
+                out.at[i, "npi_candidate"] = uniq[0]
                 continue
             agree = role_agreement(rfam, npi_fam) if out.at[i, "kind"] == "person" else "n/a"
             out.at[i, "role_agree"] = agree
@@ -676,6 +701,25 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
             out.at[i, "status"] = "chain_org"        # the org_billing tier covers enrolled chains
         else:
             out.at[i, "status"] = "ambiguous"
+    # SIBLING VETO: a case usually mentions the same person twice (the headline defendant
+    # without a middle name or role, and the located mention "Matthew David Carter, 45, of
+    # Ely, a rehabilitation technician"). A rejection on either mention (middle_conflict,
+    # nonclinical_role, role_mismatch) vetoes the sibling that resolved to the same NPI on
+    # the thinner evidence; the 2026-09-29 verification found five middle-name conflicts
+    # still in the label through their headline mention.
+    out["veto_from"] = ""
+    rej = out[out["status"].isin(["middle_conflict", "nonclinical_role", "role_mismatch"])]
+    veto = {}
+    for _, d in rej.iterrows():          # iterrows: itertuples renames '_pk' (leading underscore)
+        veto.setdefault((str(d["case_id"]), str(d["_pk"])), (str(d["status"]), str(d.get("npi_candidate") or "")))
+    if veto:
+        for i, r in out[out["status"] == "resolved"].iterrows():
+            v = veto.get((str(r["case_id"]), str(r["_pk"])))
+            if v and (not v[1] or v[1] == str(r["npi"])):
+                out.at[i, "npi_candidate"] = str(r["npi"])
+                out.at[i, "npi"] = ""
+                out.at[i, "status"] = v[0]
+                out.at[i, "veto_from"] = "sibling mention"
     # a role_mismatch on one release is overruled when another release resolved the SAME person
     # to the SAME NPI with an agreeing role ("a Cave City physician" vs the dentist NPI that a
     # fuller release lists as "physician, dentist, and nurse practitioner")

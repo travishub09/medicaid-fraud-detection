@@ -397,3 +397,33 @@ def test_trailing_doctoral_degree_counts_as_a_doctor():
     t = "Gerald Congdon, M.D., of Charleston, South Carolina, and laboratory marketers agreed to pay $19 million."
     assert role_near(t, "Gerald Congdon, M.D.")[1] != "nonclinical"
     assert role_near("Dawn Rhodes, DPM, of St. Louis, Missouri, was convicted.", "Dawn Rhodes, DPM")[1:] == ("clinical", "doctorate")
+
+
+def test_sibling_veto_rejects_the_headline_mention_too(pdim):
+    """The headline defendant 'Matthew Carter' resolves by name; the located mention 'Matthew David
+    Carter' is a middle_conflict against NPPES 'MATTHEW R'. The rejection vetoes the sibling."""
+    pdim = pdim.copy()
+    pdim["taxonomy_code"] = ""
+    pdim.loc[pdim.npi == "1234567893", "provider_name"] = "SMITH, JOHN R"       # NPPES middle R
+    cdb = pd.DataFrame([
+        {"case_id": "v1", "announced_date": "2025-01-01", "defendant_name": "John Smith", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "John David Smith, 45, of Miami, Florida, was sentenced."},
+        {"case_id": "v2", "announced_date": "2025-01-01", "defendant_name": "Maria Lopez", "jurisdiction": "S.D. Fla.",
+         "amount_usd": "1000000", "scheme": "", "summary": "Maria Lopez, 51, of Tampa, Florida, a patient recruiter, was sentenced."},
+    ])
+    out = resolve_defendants(mentions_from_case_db(cdb), pdim)
+    v1 = out[out.case_id == "v1"]
+    assert set(v1["status"]) == {"middle_conflict"} and (v1["npi"] == "").all()
+    assert (v1["veto_from"] == "sibling mention").sum() == 1                 # the headline row was vetoed
+    v2 = out[out.case_id == "v2"]
+    assert set(v2["status"]) == {"nonclinical_role"} and (v2["npi"] == "").all()
+
+
+def test_batch_two_shapes_full_middle_conflict_not_a_provider_and_three_word_descriptor():
+    from src.enforcement.defendant_resolver import _middle_agrees, is_descriptor_name, role_near
+    assert not _middle_agrees(["SCOTT"], "STETSON")          # both start with S, still a conflict
+    assert _middle_agrees(["S"], "STETSON") and _middle_agrees(["SCOTT"], "S") and _middle_agrees(["SCOTT"], "SCOTT")
+    assert not _middle_agrees(["DAVID"], "R")
+    assert is_descriptor_name("Florida Medical Practice") and is_descriptor_name("New Jersey Doctor")
+    assert not is_descriptor_name("Florida Medical Practice LLC") and not is_descriptor_name("Sunrise Wellness Clinic")
+    assert role_near("Jose Colon, of Newark, New Jersey, who was not a medical provider, pleaded guilty.", "Jose Colon")[1] == "nonclinical"
