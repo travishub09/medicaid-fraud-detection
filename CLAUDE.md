@@ -554,7 +554,7 @@ committed. Never let this file go stale: stale reminders are worse than none.
   release whose owner was convicted STAYS in the label as the billing vehicle, flagged
   `org_billing_party`. A resolver rerun carries prior research verdicts forward
   (`carry_research`) instead of erasing them.
-  Full suite: `pytest tests/` (943 tests).
+  Full suite: `pytest tests/` (944 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

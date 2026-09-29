@@ -427,3 +427,23 @@ def test_batch_two_shapes_full_middle_conflict_not_a_provider_and_three_word_des
     assert is_descriptor_name("Florida Medical Practice") and is_descriptor_name("New Jersey Doctor")
     assert not is_descriptor_name("Florida Medical Practice LLC") and not is_descriptor_name("Sunrise Wellness Clinic")
     assert role_near("Jose Colon, of Newark, New Jersey, who was not a medical provider, pleaded guilty.", "Jose Colon")[1] == "nonclinical"
+
+
+def test_raw_nppes_middle_names_fill_the_blank_provider_dim_leaves(pdim, tmp_path):
+    """provider_dim stores 'LAST, FIRST' only; the raw NPPES file supplies the middle name, and with it
+    'Matthew David Carter' against NPPES 'MATTHEW R' is a conflict instead of a silent match."""
+    from src.enforcement.defendant_resolver import load_nppes_middle_names
+    nppes = tmp_path / "npidata_pfile_20050523-20231210.csv"
+    nppes.write_text('"NPI","Entity Type Code","Provider Last Name (Legal Name)","Provider First Name","Provider Middle Name"\n'
+                     '"1234567893","1","SMITH","JOHN","R"\n"1245319599","1","LOPEZ","MARIA",""\n"1999999999","1","X","Y","Z"\n', encoding="utf-8")
+    got = load_nppes_middle_names(tmp_path, {"1234567893", "1245319599"})        # a folder resolves to the newest file
+    assert got == {"1234567893": "R"}
+    pdim = pdim.copy()
+    pdim["taxonomy_code"] = ""
+    pdim.loc[pdim.npi == "1234567893", "provider_name"] = "SMITH, JOHN"          # no middle in provider_dim
+    cdb = pd.DataFrame([{"case_id": "n1", "announced_date": "2025-01-01", "defendant_name": "John David Smith", "jurisdiction": "S.D. Fla.",
+                         "amount_usd": "1000000", "scheme": "", "summary": "John David Smith, of Miami, Florida, was sentenced."}])
+    silent = resolve_defendants(mentions_from_case_db(cdb), pdim)
+    assert (silent["status"] == "resolved").any()                                # without the lookup: no conflict visible
+    caught = resolve_defendants(mentions_from_case_db(cdb), pdim, middle_lookup=got)
+    assert set(caught["status"]) == {"middle_conflict"}

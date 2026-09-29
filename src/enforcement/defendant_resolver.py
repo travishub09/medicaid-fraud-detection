@@ -600,7 +600,32 @@ def _middle_tokens(defendant: str) -> list[str]:
     return toks[1:-1] if len(toks) > 2 else []
 
 
-def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.DataFrame:
+def load_nppes_middle_names(nppes_path, npis: set) -> dict:
+    """{npi: 'MIDDLE'} for the given NPIs, streamed from the raw NPPES data file with DuckDB
+    (processed/provider_dim stores 'LAST, FIRST' only, so a middle-name conflict could never
+    fire: 'Matthew David Carter' matched NPPES 'CARTER, MATTHEW R' unchallenged). A directory
+    resolves to its newest npidata_pfile_*.csv."""
+    import duckdb
+    from pathlib import Path
+    path = Path(nppes_path)
+    if path.is_dir():
+        files = sorted(path.glob("npidata_pfile_*.csv"))
+        if not files:
+            raise FileNotFoundError(f"no npidata_pfile_*.csv under {path}")
+        path = files[-1]
+    if not npis:
+        return {}
+    con = duckdb.connect()
+    con.register("want", pd.DataFrame({"npi": sorted(str(n) for n in npis)}))
+    rows = con.execute(
+        f"SELECT n.\"NPI\", n.\"Provider Middle Name\" FROM read_csv_auto('{path.as_posix()}', header=true, "
+        f"all_varchar=true, encoding='latin-1') n JOIN want w ON n.\"NPI\" = w.npi").fetchall()
+    con.close()
+    return {str(a): str(b or "").strip().upper() for a, b in rows if b and str(b).strip()}
+
+
+def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame,
+                       middle_lookup: dict | None = None) -> pd.DataFrame:
     """mentions: case_id, defendant, kind, city, state (+ any other columns carried).
     Returns the same rows with npi, status, match_level, n_candidates, basis."""
     out = mentions.copy()
@@ -621,6 +646,10 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> pd
     out["_ok"] = out["defendant"].map(norm_org_name)
     states = set(out["state"].fillna("").astype(str).str.upper()) - {""}
     people, orgs, national = _index_nppes(provider_dim, set(out["_pk"]) - {""}, set(out["_ok"]) - {""}, states)
+    if middle_lookup:
+        # the raw NPPES middle name fills the blank provider_dim leaves for every person candidate
+        for key, cands in people.items():
+            people[key] = [(c[0], c[1], c[2] or middle_lookup.get(str(c[0]), ""), c[3]) for c in cands]
 
     def _lookup(kind, r, st):
         if kind == "person":
@@ -905,6 +934,9 @@ def main() -> None:
                     help="unmatched mentions below this case amount are left out of the research list")
     ap.add_argument("--research-states", default=None,
                     help="comma list; restrict the research list to these states (e.g. the Southeast)")
+    ap.add_argument("--nppes-file", default=None,
+                    help="raw NPPES data file (npidata_pfile_*.csv) or its folder: supplies the middle names "
+                         "provider_dim lacks, so a release middle name that contradicts NPPES is caught")
     ap.add_argument("--mfcu-prompts", default=None,
                     help="also write state-MFCU sweep research prompts (jsonl) for the Southeast, 2020-2025")
     a = ap.parse_args()
@@ -916,7 +948,15 @@ def main() -> None:
     cdb = pd.read_csv(a.case_db, dtype=str) if a.case_db.endswith(".csv") else pd.read_parquet(a.case_db)
     pdim = pd.read_parquet(a.provider_dim)
     mentions = mentions_from_case_db(cdb)
-    resolved = resolve_defendants(mentions, pdim)
+    middle = None
+    if a.nppes_file:
+        pre = resolve_defendants(mentions, pdim)                      # first pass: which NPIs are candidates
+        want = set(pre.loc[pre["npi"].astype(str) != "", "npi"].astype(str)) | set(
+            pre.loc[pre["npi_candidate"].astype(str) != "", "npi_candidate"].astype(str)) if "npi_candidate" in pre.columns else set()
+        # every unique person candidate, not only the resolved ones: the index keeps them per key
+        middle = load_nppes_middle_names(a.nppes_file, want)
+        print(f"  NPPES middle names loaded for {len(middle):,} of {len(want):,} candidate NPIs from {a.nppes_file}")
+    resolved = resolve_defendants(mentions, pdim, middle_lookup=middle)
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():                                   # keep the research answers folded into the prior table
