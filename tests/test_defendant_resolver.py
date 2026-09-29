@@ -447,3 +447,18 @@ def test_raw_nppes_middle_names_fill_the_blank_provider_dim_leaves(pdim, tmp_pat
     assert (silent["status"] == "resolved").any()                                # without the lookup: no conflict visible
     caught = resolve_defendants(mentions_from_case_db(cdb), pdim, middle_lookup=got)
     assert set(caught["status"]) == {"middle_conflict"}
+
+
+def test_candidate_person_npis_is_the_lookup_set_for_the_cli_first_pass(pdim):
+    """The CLI asks the raw NPPES file for the middle names of every person candidate the index
+    holds for the mentions (resolved, tied or rejected alike); the 2026-09-29 run read a column
+    the resolver drops on the way out and loaded '0 of 0'."""
+    from src.enforcement.defendant_resolver import candidate_person_npis
+    pdim = pdim.copy()
+    pdim["taxonomy_code"] = ""
+    pdim.loc[pdim.npi == "1234567893", "provider_name"] = "SMITH, JOHN"
+    cdb = pd.DataFrame([{"case_id": "n1", "announced_date": "2025-01-01", "defendant_name": "John David Smith", "jurisdiction": "S.D. Fla.",
+                         "amount_usd": "1000000", "scheme": "", "summary": "John David Smith, of Miami, Florida, was sentenced."}])
+    want = candidate_person_npis(mentions_from_case_db(cdb), pdim)
+    assert "1234567893" in want
+    assert candidate_person_npis(mentions_from_case_db(cdb).iloc[0:0], pdim) == set()

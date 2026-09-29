@@ -600,6 +600,18 @@ def _middle_tokens(defendant: str) -> list[str]:
     return toks[1:-1] if len(toks) > 2 else []
 
 
+def candidate_person_npis(mentions: pd.DataFrame, provider_dim: pd.DataFrame) -> set:
+    """Every NPI the person index holds for the mentions' name keys and states: the set whose
+    NPPES middle names can settle a tie or contradict a unique hit. (The 2026-09-29 run loaded
+    '0 of 0' because the first pass read a column resolve_defendants drops on its way out.)"""
+    if not len(mentions):
+        return set()
+    pk = set(mentions["defendant"].map(person_key)) - {""}
+    states = set(mentions["state"].fillna("").astype(str).str.upper()) - {""}
+    people, _, _ = _index_nppes(provider_dim, pk, set(), states)
+    return {str(c[0]) for cands in people.values() for c in cands}
+
+
 def load_nppes_middle_names(nppes_path, npis: set) -> dict:
     """{npi: 'MIDDLE'} for the given NPIs, streamed from the raw NPPES data file with DuckDB
     (processed/provider_dim stores 'LAST, FIRST' only, so a middle-name conflict could never
@@ -950,10 +962,7 @@ def main() -> None:
     mentions = mentions_from_case_db(cdb)
     middle = None
     if a.nppes_file:
-        pre = resolve_defendants(mentions, pdim)                      # first pass: which NPIs are candidates
-        want = set(pre.loc[pre["npi"].astype(str) != "", "npi"].astype(str)) | set(
-            pre.loc[pre["npi_candidate"].astype(str) != "", "npi_candidate"].astype(str)) if "npi_candidate" in pre.columns else set()
-        # every unique person candidate, not only the resolved ones: the index keeps them per key
+        want = candidate_person_npis(mentions, pdim)                  # every person candidate, ties included
         middle = load_nppes_middle_names(a.nppes_file, want)
         print(f"  NPPES middle names loaded for {len(middle):,} of {len(want):,} candidate NPIs from {a.nppes_file}")
     resolved = resolve_defendants(mentions, pdim, middle_lookup=middle)
