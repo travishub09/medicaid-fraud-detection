@@ -629,9 +629,17 @@ def load_nppes_middle_names(nppes_path, npis: set) -> dict:
         return {}
     con = duckdb.connect()
     con.register("want", pd.DataFrame({"npi": sorted(str(n) for n in npis)}))
-    rows = con.execute(
-        f"SELECT n.\"NPI\", n.\"Provider Middle Name\" FROM read_csv_auto('{path.as_posix()}', header=true, "
-        f"all_varchar=true, encoding='latin-1') n JOIN want w ON n.\"NPI\" = w.npi").fetchall()
+    rows = None
+    for enc in ("utf-8", "latin-1"):     # the monthly NPPES file is UTF-8; a Latin-1 hint on it is refused
+        try:
+            rows = con.execute(
+                f"SELECT n.\"NPI\", n.\"Provider Middle Name\" FROM read_csv_auto('{path.as_posix()}', header=true, "
+                f"all_varchar=true, encoding='{enc}') n JOIN want w ON n.\"NPI\" = w.npi").fetchall()
+            break
+        except duckdb.InvalidInputException as e:
+            if "encoded" not in str(e) or enc == "latin-1":
+                con.close()
+                raise
     con.close()
     return {str(a): str(b or "").strip().upper() for a, b in rows if b and str(b).strip()}
 
