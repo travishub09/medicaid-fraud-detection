@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-09-29. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-05. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -109,6 +109,13 @@ python -m src.reminders --done state_capacity_rosters
 - leie — due 2026-10-16: OIG LEIE exclusion list (THE label source — new bans are training labels)
 - sam_exclusions — due 2026-10-16: SAM.gov exclusions extract (widens the PU label)
 - nppes_practice_locations — due 2026-10-16: NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
+- mue — due 2026-11-02: CMS MUE quarterly files (practitioner + facility)
+- pos — due 2026-11-02: Provider of Services file (quarterly)
+- pbj — due 2026-11-02: PBJ Daily Nurse Staffing (quarterly)
+- care_compare — due 2026-11-02: Care Compare provider-data archives (hospice measures, NH citations/ownership/penalties)
+- nadac — due 2026-11-02: NADAC drug pricing (drug_spread_anomaly)
+- work_plan — due 2026-11-02: OIG Work Plan curated table refresh (government_interest overlay)
+- hrsa_340b — due 2026-11-02: 340B OPAIS Covered Entity Daily Report (contract_pharmacy)
 
 ## STANDING TASK QUEUE
 
@@ -239,6 +246,33 @@ python -m src.reminders --done-task case_harvest_sources_1_6
 cd /d C:\Users\treyr\medicaid-fraud-detection
 dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_strong\labels_fca_strict.csv"
 python -m src.reminders --done-task fca_strict_label_export
+```
+
+- [ ] **medicaid_ndc_spending_download** — Download the July 24, 2026 'Medicaid Provider Spending by NDC' open-data file (billing NPI x prescribing NPI x NDC x month, 2018-2024, FFS + managed care). It is the input the NADAC drug_spread_anomaly scheme and the pill_mill / pharma_kickback prescriber views were built waiting for (claim_slices --kind ndc). Save the CSV (several GB) to preclean\medicaid_ndc\ and tell Claude the exact column names so the loader gets the prescribing-NPI column. (added 2026-10-05)
+
+```bat
+mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc"
+REM open https://data.cms.gov/search?keywords=Medicaid%20Provider%20Spending%20by%20NDC and download the full CSV (not the sample); then:
+move "%USERPROFILE%\Downloads\*Spending*NDC*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc\"
+python -c "import duckdb;print(duckdb.sql(\"SELECT * FROM read_csv_auto('C:/Users/treyr/OneDrive/Desktop/data/preclean/medicaid_ndc/*.csv', all_varchar=true) LIMIT 3\").df().T.to_string())"
+python -m src.reminders --done-task medicaid_ndc_spending_download
+```
+
+- [ ] **medicaid_enrollment_segments_download** — Download the July 24, 2026 'Medicaid Provider Enrollment Segments' open-data file (NPI x state x enrollment start/end x status x program x provider type, 2018-2024). Three uses, in order: (1) the state dimension the national spending file lacks (327 label rows have no state today; peer groups by state become exact), (2) enrollment END dates with a non-benign status = Medicaid-side termination events years before the LEIE (new label source), (3) tenure + 'paid after enrollment ended' per-se check. Save to preclean\medicaid_enrollment\ and send Claude the column names. (added 2026-10-05)
+
+```bat
+mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment"
+REM open https://data.cms.gov/search?keywords=Medicaid%20Provider%20Enrollment%20Segments and download the full CSV; then:
+move "%USERPROFILE%\Downloads\*Enrollment*Segment*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment\"
+python -c "import duckdb;print(duckdb.sql(\"SELECT * FROM read_csv_auto('C:/Users/treyr/OneDrive/Desktop/data/preclean/medicaid_enrollment/*.csv', all_varchar=true) LIMIT 3\").df().T.to_string())"
+python -m src.reminders --done-task medicaid_enrollment_segments_download
+```
+
+- [ ] **storage_sense_off** — OneDrive Storage Sense dehydrated the data folder on 2026-10-02 (86.4 GB freed; every parquet became a cloud-only placeholder and queries died with 'The cloud file provider is not running'). The folder is pinned (attrib +P) but the setting must be changed or it recurs in 30 days: Settings > System > Storage > Storage Sense: set 'Content will become online-only if not opened for more than' to Never, and turn 'Automatic User content cleanup' Off. Then check free disk space; the overnight runs need tens of GB. (added 2026-10-05)
+
+```bat
+wmic logicaldisk get caption,freespace,size
+python -m src.reminders --done-task storage_sense_off
 ```
 
 

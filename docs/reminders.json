@@ -587,6 +587,39 @@
     "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv\"",
     "python -m src.reminders --done-task fca_strict_label_export"
    ]
+  },
+  {
+   "key": "medicaid_ndc_spending_download",
+   "what": "Download the July 24, 2026 'Medicaid Provider Spending by NDC' open-data file (billing NPI x prescribing NPI x NDC x month, 2018-2024, FFS + managed care). It is the input the NADAC drug_spread_anomaly scheme and the pill_mill / pharma_kickback prescriber views were built waiting for (claim_slices --kind ndc). Save the CSV (several GB) to preclean\\medicaid_ndc\\ and tell Claude the exact column names so the loader gets the prescribing-NPI column.",
+   "added": "2026-10-05",
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_ndc\"",
+    "REM open https://data.cms.gov/search?keywords=Medicaid%20Provider%20Spending%20by%20NDC and download the full CSV (not the sample); then:",
+    "move \"%USERPROFILE%\\Downloads\\*Spending*NDC*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_ndc\\\"",
+    "python -c \"import duckdb;print(duckdb.sql(\\\"SELECT * FROM read_csv_auto('C:/Users/treyr/OneDrive/Desktop/data/preclean/medicaid_ndc/*.csv', all_varchar=true) LIMIT 3\\\").df().T.to_string())\"",
+    "python -m src.reminders --done-task medicaid_ndc_spending_download"
+   ]
+  },
+  {
+   "key": "medicaid_enrollment_segments_download",
+   "what": "Download the July 24, 2026 'Medicaid Provider Enrollment Segments' open-data file (NPI x state x enrollment start/end x status x program x provider type, 2018-2024). Three uses, in order: (1) the state dimension the national spending file lacks (327 label rows have no state today; peer groups by state become exact), (2) enrollment END dates with a non-benign status = Medicaid-side termination events years before the LEIE (new label source), (3) tenure + 'paid after enrollment ended' per-se check. Save to preclean\\medicaid_enrollment\\ and send Claude the column names.",
+   "added": "2026-10-05",
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_enrollment\"",
+    "REM open https://data.cms.gov/search?keywords=Medicaid%20Provider%20Enrollment%20Segments and download the full CSV; then:",
+    "move \"%USERPROFILE%\\Downloads\\*Enrollment*Segment*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_enrollment\\\"",
+    "python -c \"import duckdb;print(duckdb.sql(\\\"SELECT * FROM read_csv_auto('C:/Users/treyr/OneDrive/Desktop/data/preclean/medicaid_enrollment/*.csv', all_varchar=true) LIMIT 3\\\").df().T.to_string())\"",
+    "python -m src.reminders --done-task medicaid_enrollment_segments_download"
+   ]
+  },
+  {
+   "key": "storage_sense_off",
+   "what": "OneDrive Storage Sense dehydrated the data folder on 2026-10-02 (86.4 GB freed; every parquet became a cloud-only placeholder and queries died with 'The cloud file provider is not running'). The folder is pinned (attrib +P) but the setting must be changed or it recurs in 30 days: Settings > System > Storage > Storage Sense: set 'Content will become online-only if not opened for more than' to Never, and turn 'Automatic User content cleanup' Off. Then check free disk space; the overnight runs need tens of GB.",
+   "added": "2026-10-05",
+   "commands": [
+    "wmic logicaldisk get caption,freespace,size",
+    "python -m src.reminders --done-task storage_sense_off"
+   ]
   }
  ]
 }
