@@ -53,7 +53,11 @@ RPT_COLS = ["RPT_REC_NUM", "PRVDR_CTRL_TYPE_CD", "PRVDR_NUM", "NPI", "RPT_STUS_C
             "TRNSMTL_NUM", "FI_NUM", "ADR_VNDR_CD", "FI_CREAT_DT", "UTIL_CD", "NPR_DT",
             "SPEC_IND", "FI_RCPT_DT"]
 CELL_COLS = ["RPT_REC_NUM", "WKSHT_CD", "LINE_NUM", "CLMN_NUM", "VALUE"]
-WORKSHEETS = {"A810000": "A-8-1 related organizations", "S200001": "S-2 facility identity"}
+# Worksheet codes are matched by PREFIX: the SNF layout splits A-8-1 into parts
+# (A81000A / A81000B / A81000C), the hospital layout uses A810000; a prefix catches
+# every vintage. A-8 (A800000) is kept too: its line 12 carries the A-8-1 total.
+WORKSHEETS = {"A81": "A-8-1 related organizations", "A800": "A-8 adjustments",
+              "S2000": "S-2 facility identity"}
 
 
 def _read_headerless(raw: bytes, names: list[str]) -> pd.DataFrame:
@@ -104,13 +108,19 @@ def related_party_rows(rpt: pd.DataFrame, cells: pd.DataFrame, ccns: set[str] | 
     if not len(r):
         return pd.DataFrame(columns=["ccn", "npi", "fy_begin", "fy_end", "report_status",
                                      "worksheet", "worksheet_name", "line", "column", "kind", "value"])
-    c = cells[cells["WKSHT_CD"].isin(worksheets)]
+    prefixes = tuple(worksheets)
+    wk = cells["WKSHT_CD"].astype(str).str.strip()
+    c = cells[wk.str.startswith(prefixes)]
     j = c.merge(r[["RPT_REC_NUM", "PRVDR_NUM", "NPI", "FY_BGN_DT", "FY_END_DT", "RPT_STUS_CD"]],
                 on="RPT_REC_NUM", how="inner")
+
+    def _name(code: str) -> str:
+        return next((n for p, n in worksheets.items() if str(code).startswith(p)), "")
+
     out = pd.DataFrame({
         "ccn": j["PRVDR_NUM"], "npi": j["NPI"].astype(str).str.strip(),
         "fy_begin": j["FY_BGN_DT"], "fy_end": j["FY_END_DT"], "report_status": j["RPT_STUS_CD"],
-        "worksheet": j["WKSHT_CD"], "worksheet_name": j["WKSHT_CD"].map(worksheets),
+        "worksheet": j["WKSHT_CD"].astype(str).str.strip(), "worksheet_name": j["WKSHT_CD"].map(_name),
         "line": j["LINE_NUM"].astype(str).str.zfill(5), "column": j["CLMN_NUM"].astype(str).str.zfill(5),
         "kind": j["kind"], "value": j["VALUE"],
     })
@@ -121,13 +131,19 @@ def a81_summary(rows: pd.DataFrame) -> pd.DataFrame:
     """One line per CCN x fiscal year x A-8-1 line: the text cells joined (names, symbols,
     business type) next to the numeric cells (percent owned, amounts). The column numbers
     are kept in the headers so nothing is guessed about which is which."""
-    a = rows[rows["worksheet"] == "A810000"]
+    a = rows[rows["worksheet"].astype(str).str.startswith("A81")]
     if not len(a):
-        return pd.DataFrame(columns=["ccn", "fy_end", "line"])
-    piv = a.pivot_table(index=["ccn", "fy_end", "line"], columns="column", values="value",
+        return pd.DataFrame(columns=["ccn", "fy_end", "worksheet", "line"])
+    piv = a.pivot_table(index=["ccn", "fy_end", "worksheet", "line"], columns="column", values="value",
                         aggfunc="first").reset_index()
-    piv.columns = [c if c in ("ccn", "fy_end", "line") else f"col_{c}" for c in piv.columns]
+    piv.columns = [c if c in ("ccn", "fy_end", "worksheet", "line") else f"col_{c}" for c in piv.columns]
     return piv
+
+
+def worksheet_census(cells: pd.DataFrame) -> pd.Series:
+    """Distinct worksheet codes with cell counts: the diagnostic that would have shown
+    the A-8-1 code on the first real run instead of an empty summary."""
+    return cells["WKSHT_CD"].astype(str).str.strip().value_counts()
 
 
 def main() -> None:
@@ -150,7 +166,13 @@ def main() -> None:
             print(f"  skip {src.name}: {e}")
             continue
         part = related_party_rows(rpt, cells, ccns=ccns, state=a.state)
-        print(f"  {src.name}: {len(rpt):,} cost reports, {len(part):,} cells kept")
+        n81 = int(part["worksheet"].astype(str).str.startswith("A81").sum())
+        print(f"  {src.name}: {len(rpt):,} cost reports, {len(part):,} cells kept, {n81:,} on A-8-1")
+        if n81 == 0:
+            census = worksheet_census(cells)
+            a_codes = census[census.index.str.startswith("A")]
+            print(f"    no A-8-1 cells; worksheet codes starting with A in this file: "
+                  f"{', '.join(f'{k}={v:,}' for k, v in a_codes.items())}")
         frames.append(part)
     out = pd.concat(frames, ignore_index=True) if frames else related_party_rows(
         pd.DataFrame(columns=RPT_COLS), pd.DataFrame(columns=CELL_COLS + ["kind"]))

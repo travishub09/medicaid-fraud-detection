@@ -11,12 +11,13 @@ from src.ingest_cms.hcris_related_party import (a81_summary, load_hcris_year,
 def _zip(tmp_path):
     rpt = ("1001,4,365162,1528065737,1,01/01/2023,12/31/2023,05/30/2024,N,Y,,07001,3,06/01/2024,F,,,06/01/2024\n"
            "1002,4,105555,1999999999,1,01/01/2023,12/31/2023,05/30/2024,N,Y,,07001,3,06/01/2024,F,,,06/01/2024\n")
-    alpha = ("1001,A810000,00100,00200,WV HEALTHCARE MANAGEMENT LLC\n"
-             "1001,A810000,00100,00600,MANAGEMENT SERVICES\n"
+    # the SNF layout splits A-8-1 into parts (A81000A / A81000B); the hospital layout uses A810000
+    alpha = ("1001,A81000B,00100,00200,WV HEALTHCARE MANAGEMENT LLC\n"
+             "1001,A81000B,00100,00600,MANAGEMENT SERVICES\n"
              "1001,S200001,00100,00100,WESLEYAN VILLAGE\n"
              "1002,A810000,00100,00200,SOMEONE ELSE LLC\n")
-    nmrc = ("1001,A810000,00100,00300,100\n"
-            "1001,A810000,00100,00400,812345.5\n"
+    nmrc = ("1001,A81000B,00100,00300,100\n"
+            "1001,A81000A,00100,00400,812345.5\n"
             "1001,A000000,00500,00100,999\n"
             "1002,A810000,00100,00400,5\n")
     p = tmp_path / "SNF10FY2023.zip"
@@ -42,11 +43,14 @@ def test_a81_summary_keeps_column_numbers_in_headers(tmp_path):
     rpt, cells = load_hcris_year(_zip(tmp_path))
     rows = related_party_rows(rpt, cells, state="OH")
     s = a81_summary(rows)
-    assert len(s) == 1
-    r = s.iloc[0]
-    assert r["col_00200"] == "WV HEALTHCARE MANAGEMENT LLC"
-    assert r["col_00600"] == "MANAGEMENT SERVICES"
-    assert r["col_00400"] == "812345.5"
+    assert len(s) == 2                                        # one line per part (A81000A, A81000B)
+    b = s[s["worksheet"] == "A81000B"].iloc[0]
+    assert b["col_00200"] == "WV HEALTHCARE MANAGEMENT LLC"
+    assert b["col_00600"] == "MANAGEMENT SERVICES"
+    a = s[s["worksheet"] == "A81000A"].iloc[0]
+    assert a["col_00400"] == "812345.5"
+    from src.ingest_cms.hcris_related_party import worksheet_census
+    assert worksheet_census(cells)["A81000B"] == 3
 
 
 def test_extracted_folder_works_like_the_zip(tmp_path):
