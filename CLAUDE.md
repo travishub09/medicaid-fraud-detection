@@ -562,7 +562,14 @@ committed. Never let this file go stale: stale reminders are worse than none.
   release whose owner was convicted STAYS in the label as the billing vehicle, flagged
   `org_billing_party`. A resolver rerun carries prior research verdicts forward
   (`carry_research`) instead of erasing them.
-  Full suite: `pytest tests/` (945 tests).
+  HCRIS RELATED PARTY (`ingest_cms/hcris_related_party.py`, 2026-10-06): reads the RAW
+  SNF10FY<year>.zip cost-report files (header-less RPT/ALPHA/NMRC) and writes the
+  Worksheet A-8-1 related-organization cells + S-2 identity cells for a CCN list or a
+  state (CCN prefix), long-form plus a per-line summary with the column numbers kept in
+  the headers (nothing interpreted). The published SNF cost-report file has no
+  related-party column; this is where management fees to owner-affiliated companies
+  live (the New York AG Lahasky theory). Dormant until preclean/hcris/raw/ holds the zips.
+  Full suite: `pytest tests/` (948 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -620,6 +620,19 @@
     "wmic logicaldisk get caption,freespace,size",
     "python -m src.reminders --done-task storage_sense_off"
    ]
+  },
+  {
+   "key": "hcris_raw_snf_download",
+   "what": "Wesleyan / Lahasky stack: pull the related-organization worksheet (A-8-1) from the RAW HCRIS skilled-nursing cost reports. The published data.cms.gov SNF cost-report file has no related-party column; the raw SNF10FY<year>.zip files do (Form CMS-2540-10 Worksheet A-8-1: management fees, leases, administrative services paid to companies the owners also own, the New York AG theory). Free, no registration. Download fiscal years 2021 to 2024, save the zips UNOPENED to preclean\\hcris\\raw\\, then run the extractor for Ohio (CCN prefix 36) and send Claude hcris_related_party_OH_summary.csv.",
+   "added": "2026-10-06",
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\"",
+    "REM open https://www.cms.gov/data-research/statistics-trends-and-reports/cost-reports/cost-reports-fiscal-year ; under Skilled Nursing Facility (2540-10) download SNF10FY2021.zip, SNF10FY2022.zip, SNF10FY2023.zip, SNF10FY2024.zip (do NOT unzip); then:",
+    "move \"%USERPROFILE%\\Downloads\\SNF10FY*.zip\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\\\"",
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.ingest_cms.hcris_related_party --hcris-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\" --state OH --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\hcris_related_party_OH.csv\"",
+    "python -m src.reminders --done-task hcris_raw_snf_download"
+   ]
   }
  ]
 }
