@@ -132,14 +132,14 @@ def a81_summary(rows: pd.DataFrame) -> pd.DataFrame:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--hcris-dir", required=True, help="folder of SNF10FY<year>.zip files (or extracted CSV folders)")
+    ap.add_argument("--hcris-dir", required=True, help="folder of SNF10FY<year>.zip / SNF24FY<year>.zip files (or extracted CSV folders)")
     ap.add_argument("--ccn", default="", help="comma-separated CCNs (leading zeros kept)")
     ap.add_argument("--state", default=None, help="two-letter state; filters by CCN state prefix")
     ap.add_argument("--out", required=True, help="CSV path for the long-form cells; a _summary.csv sits beside it")
     a = ap.parse_args()
     ccns = {c.strip() for c in a.ccn.split(",") if c.strip()} or None
     root = Path(a.hcris_dir)
-    sources = sorted(root.glob("SNF10FY*.zip")) + sorted(p for p in root.glob("*") if p.is_dir())
+    sources = sorted({q for pat in ("SNF*FY*.zip", "snf*fy*.zip") for q in root.glob(pat)}) + sorted(p for p in root.glob("*") if p.is_dir())
     if not sources:
         raise SystemExit(f"no SNF10FY<year>.zip (or extracted folders) under {root}")
     frames = []

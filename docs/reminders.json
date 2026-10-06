@@ -628,7 +628,7 @@
    "commands": [
     "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\"",
     "REM open https://www.cms.gov/data-research/statistics-trends-and-reports/cost-reports/cost-reports-fiscal-year ; under Skilled Nursing Facility (2540-10) download SNF10FY2021.zip, SNF10FY2022.zip, SNF10FY2023.zip, SNF10FY2024.zip (do NOT unzip); then:",
-    "move \"%USERPROFILE%\\Downloads\\SNF10FY*.zip\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\\\"",
+    "move \"%USERPROFILE%\\Downloads\\SNF*FY*.zip\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\\\"",
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "python -m src.ingest_cms.hcris_related_party --hcris-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcris\\raw\" --state OH --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\hcris_related_party_OH.csv\"",
     "python -m src.reminders --done-task hcris_raw_snf_download"
