@@ -58,6 +58,12 @@ CELL_COLS = ["RPT_REC_NUM", "WKSHT_CD", "LINE_NUM", "CLMN_NUM", "VALUE"]
 # every vintage. A-8 (A800000) is kept too: its line 12 carries the A-8-1 total.
 WORKSHEETS = {"A81": "A-8-1 related organizations", "A800": "A-8 adjustments",
               "S2000": "S-2 facility identity"}
+# every worksheet the CLI can be asked for by prefix (--worksheets); the names are for the report
+WORKSHEET_CATALOG = {**WORKSHEETS,
+                     "S3": "S-3 statistics (beds, days by payer, staffing hours)",
+                     "A000": "A trial balance of expenses",
+                     "G0": "G balance sheet", "G2": "G-2 revenue", "G3": "G-3 income statement",
+                     "E": "E settlement", "D": "D cost allocation"}
 
 
 def _read_headerless(raw: bytes, names: list[str]) -> pd.DataFrame:
@@ -152,8 +158,12 @@ def main() -> None:
     ap.add_argument("--ccn", default="", help="comma-separated CCNs (leading zeros kept)")
     ap.add_argument("--state", default=None, help="two-letter state; filters by CCN state prefix")
     ap.add_argument("--out", required=True, help="CSV path for the long-form cells; a _summary.csv sits beside it")
+    ap.add_argument("--worksheets", default=",".join(WORKSHEETS),
+                    help="comma-separated worksheet-code PREFIXES to keep (default A81,A800,S2000; "
+                         "add S3 for beds/days/staffing, G2/G3 for revenue and income); see WORKSHEET_CATALOG")
     a = ap.parse_args()
     ccns = {c.strip() for c in a.ccn.split(",") if c.strip()} or None
+    wk = {w.strip(): WORKSHEET_CATALOG.get(w.strip(), w.strip()) for w in a.worksheets.split(",") if w.strip()}
     root = Path(a.hcris_dir)
     sources = sorted({q for pat in ("SNF*FY*.zip", "snf*fy*.zip") for q in root.glob(pat)}) + sorted(p for p in root.glob("*") if p.is_dir())
     if not sources:
@@ -165,7 +175,7 @@ def main() -> None:
         except FileNotFoundError as e:
             print(f"  skip {src.name}: {e}")
             continue
-        part = related_party_rows(rpt, cells, ccns=ccns, state=a.state)
+        part = related_party_rows(rpt, cells, ccns=ccns, state=a.state, worksheets=wk)
         n81 = int(part["worksheet"].astype(str).str.startswith("A81").sum())
         print(f"  {src.name}: {len(rpt):,} cost reports, {len(part):,} cells kept, {n81:,} on A-8-1")
         if n81 == 0:
