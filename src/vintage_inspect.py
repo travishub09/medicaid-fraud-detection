@@ -351,7 +351,15 @@ def write_outputs(rows: list[dict], data_root: Path) -> Path:
                                   "hrsa_340b", "owners", "owners_prior",
                                   "hud", "usps", "state_licensing",
                                   "preclusion", "dmf", "cms_priority", "mue",
-                                  "reassignment", "census", "sam", "warn"}
+                                  "reassignment", "census", "sam", "warn",
+                                  # wired since 2026-09: state Medicaid termination lists
+                                  # (enforcement/state_terminations), licensed-capacity
+                                  # rosters (ingest_cms/licensed_capacity), the NPPES
+                                  # practice-location file + archived monthly editions
+                                  # (capacity check / --asof-nppes), raw HCRIS zips
+                                  "state_terminations", "state_capacity", "nppes",
+                                  "nppes_history", "hcris", "cia", "state_rates",
+                                  "medicaid_ndc", "medicaid_enrollment"}
     for r in rows_s:
         top = r["file"].split("/")[0]
         if "/" in r["file"] and top not in known and "_hold" not in top:
