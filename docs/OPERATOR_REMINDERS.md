@@ -6,28 +6,6 @@ _As of 2026-10-07. Regenerate/update: `python -m src.reminders` (`--done <key>` 
 
 _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
 
-- **nppes_deactivation** — CMS Deactivated NPI Report (invalid_identity scheme)
-  - save to: preclean/nppes_deactivation/ (keep as the .zip; loader unzips)  |  https://download.cms.gov/nppes/NPI_Files.html
-  - due: freshness unknown
-  - step 1: Open https://download.cms.gov/nppes/NPI_Files.html
-  - step 2: Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)
-
-```bat
-move "%USERPROFILE%\Downloads\NPPES_Deactivated_*.zip" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes_deactivation\"
-python -m src.reminders --done nppes_deactivation
-```
-
-- **owner_snapshot** — make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
-  - save to: run from repo: make owner-snapshot
-  - due: freshness unknown
-  - step 1: Nothing to download — paste the commands below
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.entity_graph.ownership_snapshot --owned-by "C:\Users\treyr\OneDrive\Desktop\data\graph\edges\owned_by_edges.parquet" --snapshots-dir "C:\Users\treyr\OneDrive\Desktop\data\owner_snapshots"
-python -m src.reminders --done owner_snapshot
-```
-
 - **warn_notices** — WARN layoff notices for the surge monitor (whistleblower timing)
   - save to: preclean/warn/
   - due: freshness unknown
@@ -275,17 +253,6 @@ wmic logicaldisk get caption,freespace,size
 python -m src.reminders --done-task storage_sense_off
 ```
 
-- [ ] **hcris_raw_snf_download** — Wesleyan / Lahasky stack: pull the related-organization worksheet (A-8-1) from the RAW HCRIS skilled-nursing cost reports. The published data.cms.gov SNF cost-report file has no related-party column; the raw SNF10FY<year>.zip files do (Form CMS-2540-10 Worksheet A-8-1: management fees, leases, administrative services paid to companies the owners also own, the New York AG theory). Free, no registration. Download fiscal years 2021 to 2024, save the zips UNOPENED to preclean\hcris\raw\, then run the extractor for Ohio (CCN prefix 36) and send Claude hcris_related_party_OH_summary.csv. (added 2026-10-06)
-
-```bat
-mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\hcris\raw"
-REM open https://www.cms.gov/data-research/statistics-trends-and-reports/cost-reports/cost-reports-fiscal-year ; under Skilled Nursing Facility (2540-10) download SNF10FY2021.zip, SNF10FY2022.zip, SNF10FY2023.zip, SNF10FY2024.zip (do NOT unzip); then:
-move "%USERPROFILE%\Downloads\SNF*FY*.zip" "C:\Users\treyr\OneDrive\Desktop\data\preclean\hcris\raw\"
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.ingest_cms.hcris_related_party --hcris-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\hcris\raw" --state OH --out "C:\Users\treyr\OneDrive\Desktop\data\processed\hcris_related_party_OH.csv"
-python -m src.reminders --done-task hcris_raw_snf_download
-```
-
 - [ ] **ohio_medicaid_cost_report_request** — Wesleyan / Lahasky stack: file the Ohio public records request (R.C. 149.43; OAG 76-011 says NF Medicaid cost reports are public) with the Ohio Department of Medicaid for the CY2021-2024 nursing facility cost reports of the 21 Ohio homes below, all schedules incl. related-party. The federal HCRIS A-8-1 run (2026-10-06) showed: Wesleyan Village filed NO related-organization worksheet 2021-2025 despite WV Healthcare Management LLC in managerial control; the Gardens group booked $9.2M (2021) / $7.7M (2022) to related home-office + property companies with $4.5M / $11.5M disallowed as above-cost, then the home-office entities vanish from the 2023+ filings; the six Ayden/Buckeye Forest homes' related-party charges grew $3.0M (2021) to $7.5M (2024) after the Lahasky acquisition. The Ohio report is the state-side version of the same schedule and the one Ohio rate-setting uses. CCNs: 365162 Wesleyan Village; 365330 Ayden Wauseon; 365453 Ayden Oregon; 365532 Ayden Greenville; 365607 Ayden Piqua; 365617 Ayden Waterville; 365849 Ayden Toledo; 365315 Capital City Gardens; 365355 Gardens of Mayfield Village; 365557 Eaton/Maple Gardens; 365559 Lansing Gardens/Rolling Hills; 365577 Marysville/Prestige Gardens; 365594 Gardens of Euclid Beach; 365933 Buckeye Terrace/Edgewood Manor of Westerville; 366002 Crestline; 366010 Summit Villa/Pinnacle; 366012 Country Meadow; 366014 Whispering Hills; 366085 Legends Care; 366158 Mount Royal Villa; 366187 Minerva Healthcare. Send to ODM public records (address on medicaid.ohio.gov, Public Records); Claude drafted the letter in chat 2026-10-06. Close when sent. (added 2026-10-06)
 
 ```bat
@@ -296,6 +263,14 @@ python -m src.reminders --done-task ohio_medicaid_cost_report_request
 
 ```bat
 python -m src.reminders --done-task build_nursing_home_dollar_basis
+```
+
+- [ ] **hcris_wesleyan_allocation_pull** — Wesleyan / Lahasky stack (2026-10-07 reading of hcris_wesleyan_all.csv): the SNF cost report carries the WHOLE campus (346 other-LTC beds and 124K resident days on S-3 in 2021-22; $8.2M-$8.6M of 'other long term care' revenue on G-2 every year; entrance-fee amortization $1.2M in 2024; AL/IP revenue $16.9M booked as other income in 2025) while only $1.2M (2021) to $2.4M (2025) of SALARIES is carved out as other-LTC / nonreimbursable; $1.9M/yr of interest appears in 2023 with no A-8-1. The worksheets that settle whether the carve-out is complete and who the lender/landlord is: A-6 (reclassification detail), A-7 (capital assets: purchase/lease, 2023 financing), B Part I + B-1 (step-down allocation and the statistics that push overhead to the nonreimbursable center), G and G-1 (balance sheet: notes payable, due to related parties). Pull them for 365162 and upload the CSV. (added 2026-10-07)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.ingest_cms.hcris_related_party --hcris-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\hcris\raw" --ccn 365162 --worksheets A6,A7,B000,B100,G000,G100 --out "C:\Users\treyr\OneDrive\Desktop\data\processed\hcris_wesleyan_alloc.csv"
+python -m src.reminders --done-task hcris_wesleyan_allocation_pull
 ```
 
 
@@ -315,3 +290,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+
