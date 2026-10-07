@@ -472,19 +472,6 @@
    "added": "2026-09-15"
   },
   {
-   "key": "post_download_checks",
-   "what": "New files landed \u2014 run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.vintage_inspect --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
-    "python -m src.model_a.scheme_discovery --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
-    "python -m src.reminders --done-task post_download_checks"
-   ],
-   "added": "2026-09-16",
-   "done": "2026-09-16",
-   "done_note": "VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md received 2026-09-16 (pre-merge code; rerun queued)"
-  },
-  {
    "key": "state_letter:_every_named",
    "what": "State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter",
    "added": "2026-09-16"
