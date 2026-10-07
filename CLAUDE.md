@@ -569,7 +569,13 @@ committed. Never let this file go stale: stale reminders are worse than none.
   the headers (nothing interpreted). The published SNF cost-report file has no
   related-party column; this is where management fees to owner-affiliated companies
   live (the New York AG Lahasky theory). Dormant until preclean/hcris/raw/ holds the zips.
-  Full suite: `pytest tests/` (948 tests).
+  AFFILIATE DISCLOSURE CHECK (`ingest_cms/hcris_affiliates.py`, 2026-10-07): for every
+  SNF, raw A-8-1 presence + affiliate total vs PECOS organization owners/managers (via
+  ccn_to_npi -> member_edges -> owned_by_edges -> owner_nodes type O); flags
+  `affiliate_undisclosed` (org owners, no A-8-1) and ranks affiliate share of G-3
+  opex within state x year; `--focus` details chosen CCNs. Wesleyan Village was the
+  one home in its group with the gap; this gives the gap a base rate.
+  Full suite: `pytest tests/` (950 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
