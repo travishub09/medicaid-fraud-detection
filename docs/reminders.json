@@ -646,6 +646,17 @@
     "python -m src.entity_graph --input \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\"",
     "python -m src.reminders --done-task medicaid_enrollment_build_rerun"
    ]
+  },
+  {
+   "key": "medicaid_ndc_rebuild_after_230",
+   "what": "The first NDC load (2026-10-08) summed to $20.4 TRILLION over 2018-2024 (national Medicaid drug spend is near $80B a year): aggregate rows (582,523 with a blank billing NPI, plus any single row above $500M) were feeding the features, and 87% of billers read as 'fed by one prescriber' because a clinic billing the drugs its own clinicians administer is biller = prescriber. Bundle 230 quarantines the aggregate rows with a reason (processed/ndc_quarantine.parquet) and adds the external-only concentration features (rx_*_ext / px_*_ext). After merging 230, rebuild the NDC features and upload the new MEDICAID_NDC_REPORT.md: the clean dollars per year must land near $60B to $90B; if they do not, paste the report (more aggregate shapes to quarantine).",
+   "added": "2026-10-08",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.ingest_cms.medicaid_ndc --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_ndc\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\" --nadac \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nadac\\nadac_2026.csv\"",
+    "REM upload processed\\MEDICAID_NDC_REPORT.md",
+    "python -m src.reminders --done-task medicaid_ndc_rebuild_after_230"
+   ]
   }
  ]
 }

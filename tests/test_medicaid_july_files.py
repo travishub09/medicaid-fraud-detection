@@ -190,3 +190,49 @@ def test_export_runner_picks_up_both_processed_files(tmp_path):
     lines3 = []
     _run_npi_adapters(tmp_path / "nowhere", lines3.append, processed=tmp_path / "nothing")
     assert any("[medicaid_ndc] skipped" in l for l in lines3) and any("[medicaid_enrollment] skipped" in l for l in lines3)
+
+
+def test_ndc_quarantine_and_self_prescribed_split(tmp_path):
+    """The 2026-10-08 load: $20.4T over 2018-2024 (aggregate rows with a blank billing NPI
+    and impossible single-row totals) and 87% of billers 'fed by one prescriber' because a
+    clinic billing its own administered drugs is biller = prescriber. Aggregate rows are
+    quarantined with a reason (never deleted; the fact still conserves every dollar) and
+    the *_ext concentration features count external prescribers / pharmacies only."""
+    raw = _ndc_csv(tmp_path, with_units=False)
+    extra = pd.DataFrame([
+        # a national aggregate row: blank billing NPI, $9T
+        dict(BILLING_PROVIDER_NPI_NUM="", PRESCRIBING_PROVIDER_NPI_NUM="", NDC="00071015523",
+             CLAIM_FROM_MONTH="2023-01", TOTAL_PATIENTS=1, TOTAL_CLAIM_LINES=1, TOTAL_PAID=9e12),
+        # a valid NPI carrying an impossible single row
+        dict(BILLING_PROVIDER_NPI_NUM=PH2, PRESCRIBING_PROVIDER_NPI_NUM=DR2, NDC="00071015523",
+             CLAIM_FROM_MONTH="2023-02", TOTAL_PATIENTS=1, TOTAL_CLAIM_LINES=1, TOTAL_PAID=2e9),
+        # a clinic that bills the drugs its own clinician administers (biller = prescriber)
+        dict(BILLING_PROVIDER_NPI_NUM=DR1, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00093505601",
+             CLAIM_FROM_MONTH="2023-02", TOTAL_PATIENTS=30, TOTAL_CLAIM_LINES=30, TOTAL_PAID=9000.0),
+    ])
+    f = raw / "medicaid_ndc.csv"
+    pd.concat([pd.read_csv(f, dtype=str), extra.astype(str)]).to_csv(f, index=False)
+    fact = tmp_path / "ndc_fact.parquet"
+    info = mndc.build_ndc_fact(raw, fact)
+    assert info["rows"] == 19 and info["paid"] > 9e12                      # the fact conserves everything
+    q = info["quarantine"]
+    assert q["blank_billing_npi"]["rows"] == 1 and q["blank_billing_npi"]["paid"] == 9e12
+    assert q["row_above_ceiling"]["rows"] == 1 and q["row_above_ceiling"]["paid"] == 2e9
+    assert info["kept_rows"] == 17 and abs(info["kept_paid"] - (16400 + 4000 + 9000)) < 1e-6
+    assert dict((y, n) for y, n, _ in info["kept_by_year"]) == {"2022": 8, "2023": 9}
+    assert info["largest_rows"][0][3] == 9e12 and info["kept_paid_self_prescribed"] == 9000.0
+    qf = pd.read_parquet(tmp_path / "ndc_quarantine.parquet")
+    assert set(qf["reason"]) == {"blank_billing_npi", "row_above_ceiling"} and len(qf) == 2
+    feats = mndc.npi_features(fact).set_index("npi")
+    # the $2B row never reaches PH2's totals
+    assert abs(feats.loc[PH2, "rx_paid_total"] - 4000.0) < 1e-9
+    # the self-billing clinic: all of its dollars are its own, no external concentration to read
+    assert feats.loc[DR1, "rx_self_prescribed_share"] == 1.0 and pd.isna(feats.loc[DR1, "rx_top_prescriber_share_ext"])
+    assert feats.loc[DR1, "rx_top_prescriber_share"] == 1.0                 # the old all-prescriber view says 'captive'
+    # the real pharmacies have no self rows: the external view equals the full view
+    assert abs(feats.loc[PH1, "rx_top_prescriber_share_ext"] - feats.loc[PH1, "rx_top_prescriber_share"]) < 1e-9
+    assert abs(feats.loc[PH1, "rx_external_paid_share"] - 1.0) < 1e-9
+    # prescriber side: DR1's $9,000 self-billed dollars leave the external pharmacy view
+    assert abs(feats.loc[DR1, "px_self_billed_share"] - (9000 / 27000)) < 1e-9
+    assert abs(feats.loc[DR1, "px_top_pharmacy_share_ext"] - (16000 / 18000)) < 1e-9
+    assert feats.loc[DR1, "px_top_pharmacy_share"] < feats.loc[DR1, "px_top_pharmacy_share_ext"]

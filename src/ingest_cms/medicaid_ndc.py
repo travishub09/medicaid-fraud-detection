@@ -98,6 +98,17 @@ def _canonical_select(resolved: dict[str, str]) -> str:
             f"upper(trim({q('provider_state')})) as provider_state")
 
 
+# The same per-row plausibility ceiling the spending-fact corruption audit uses
+# (attempt_2/audit/audit_corruption.PLAUSIBILITY_CEILING): one NPI x NDC x month
+# above it is a national aggregate row, not a provider's claims. The 2026-10-08
+# load of the CMS file summed to $20.4 TRILLION over 2018-2024 against a national
+# Medicaid drug spend near $80B a year: the aggregate rows (blank billing NPI, or
+# impossible single-row totals) must be quarantined before any feature is built.
+# Rule 4: quarantine with a reason, never delete; the fact keeps every row.
+NDC_ROW_CEILING = 500_000_000.0
+CLEAN_ROW = f"length(billing_npi) = 10 and total_paid <= {NDC_ROW_CEILING}"
+
+
 def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
                    con=None) -> dict:
     """Stream one or more raw CSVs into processed/ndc_fact.parquet (FACT_COLS).
@@ -140,10 +151,38 @@ def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
     assert fact_n == raw_n, f"row conservation failed: raw {raw_n} fact {fact_n}"
     assert abs(float(fact_paid) - float(raw_paid)) <= max(1.0, 1e-9 * abs(float(raw_paid))), \
         f"dollar conservation failed: raw {raw_paid} fact {fact_paid}"
+    # quarantine (rule 4): blank / invalid billing NPI rows and single rows above the
+    # plausibility ceiling, written with a reason; the features read CLEAN rows only
+    q_parquet = out_parquet.parent / "ndc_quarantine.parquet"
+    con.execute(f"""
+        copy (select *, case when billing_npi is null or length(billing_npi) <> 10 then 'blank_billing_npi'
+                             else 'row_above_ceiling' end as reason
+              from read_parquet('{_pq(out_parquet)}')
+              where not ({CLEAN_ROW})) to '{_pq(q_parquet)}' (format parquet)""")
+    q = con.execute(f"""
+        select reason, count(*), coalesce(sum(total_paid), 0) from read_parquet('{_pq(q_parquet)}') group by 1""").fetchall()
+    kept_n, kept_paid = con.execute(f"""
+        select count(*), coalesce(sum(total_paid), 0) from read_parquet('{_pq(out_parquet)}') where {CLEAN_ROW}""").fetchone()
+    by_year = con.execute(f"""
+        select substr(service_month, 1, 4) as yr, count(*), coalesce(sum(total_paid), 0)
+        from read_parquet('{_pq(out_parquet)}') where {CLEAN_ROW} group by 1 order by 1""").fetchall()
+    largest = con.execute(f"""
+        select billing_npi, ndc, service_month, total_paid from read_parquet('{_pq(out_parquet)}')
+        order by total_paid desc nulls last limit 5""").fetchall()
+    bad_presc_clean = con.execute(f"""
+        select coalesce(sum(case when prescribing_npi is null or length(prescribing_npi) <> 10 then total_paid else 0 end), 0),
+               coalesce(sum(case when prescribing_npi = billing_npi then total_paid else 0 end), 0)
+        from read_parquet('{_pq(out_parquet)}') where {CLEAN_ROW}""").fetchone()
     return {"files": [f.name for f in files], "resolved": resolved, "rows": int(fact_n),
             "paid": float(fact_paid), "rows_bad_billing_npi": int(bad_bill),
             "rows_bad_prescriber_npi": int(bad_presc), "rows_with_units": int(with_units),
-            "asof_cutoff": asof_cutoff}
+            "asof_cutoff": asof_cutoff,
+            "quarantine": {r: {"rows": int(n), "paid": float(d)} for r, n, d in q},
+            "kept_rows": int(kept_n), "kept_paid": float(kept_paid),
+            "kept_by_year": [(y, int(n), float(d)) for y, n, d in by_year],
+            "largest_rows": [(b, n, m, float(d or 0)) for b, n, m, d in largest],
+            "kept_paid_blank_prescriber": float(bad_presc_clean[0]),
+            "kept_paid_self_prescribed": float(bad_presc_clean[1])}
 
 
 def write_ndc_claims_slice(fact_parquet: Path, out_parquet: Path, con=None) -> int:
@@ -158,7 +197,7 @@ def write_ndc_claims_slice(fact_parquet: Path, out_parquet: Path, con=None) -> i
     con.execute(f"""
         copy (select billing_npi, ndc, sum(units) as units, sum(total_paid) as billed_cost
               from read_parquet('{_pq(fact_parquet)}')
-              where units is not null and length(billing_npi) = 10
+              where units is not null and {CLEAN_ROW}
               group by 1, 2) to '{_pq(out_parquet)}' (format parquet)""")
     return int(n)
 
@@ -205,18 +244,33 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
     joins = (("left join _excl x on x.npi = f.prescribing_npi " if has_excl else "")
              + ("left join _deact y on y.npi = f.prescribing_npi " if has_deact else ""))
     df = con.execute(f"""
-        with f as (select * from read_parquet('{_pq(fact_parquet)}') where length(billing_npi) = 10),
+        with f as (select * from read_parquet('{_pq(fact_parquet)}') where {CLEAN_ROW}),
         by_presc as (select billing_npi, prescribing_npi, sum(total_paid) as paid from f group by 1, 2),
         by_ndc as (select billing_npi, ndc, sum(total_paid) as paid from f group by 1, 2),
         tp as (select billing_npi, sum(paid) as tp from by_presc group by 1),
+        -- EXTERNAL prescribers only: a clinic billing the drugs its own clinicians
+        -- administer (billing NPI = prescribing NPI) is one organization, not a
+        -- captive pharmacy; the 2026-10-08 load showed 87% of billers at >= 50% from
+        -- 'one prescriber' before this split
+        ext as (select billing_npi, prescribing_npi, paid from by_presc
+                where length(prescribing_npi) = 10 and prescribing_npi <> billing_npi),
+        tpe as (select billing_npi, sum(paid) as tpe from ext group by 1),
         conc as (
             select b.billing_npi,
                    count(distinct case when length(b.prescribing_npi) = 10 then b.prescribing_npi end) as rx_distinct_prescribers,
                    sum(power(b.paid / nullif(t.tp, 0), 2)) as rx_prescriber_hhi,
                    max(b.paid) / nullif(max(t.tp), 0) as rx_top_prescriber_share,
                    sum(case when length(coalesce(b.prescribing_npi, '')) <> 10 then b.paid else 0 end)
-                       / nullif(max(t.tp), 0) as rx_missing_prescriber_share
+                       / nullif(max(t.tp), 0) as rx_missing_prescriber_share,
+                   sum(case when b.prescribing_npi = b.billing_npi then b.paid else 0 end)
+                       / nullif(max(t.tp), 0) as rx_self_prescribed_share
             from by_presc b join tp t using (billing_npi) group by b.billing_npi),
+        conc_ext as (
+            select e.billing_npi,
+                   sum(power(e.paid / nullif(t.tpe, 0), 2)) as rx_prescriber_hhi_ext,
+                   max(e.paid) / nullif(max(t.tpe), 0) as rx_top_prescriber_share_ext,
+                   max(t.tpe) / nullif(max(tp.tp), 0) as rx_external_paid_share
+            from ext e join tpe t using (billing_npi) join tp using (billing_npi) group by e.billing_npi),
         nconc as (
             select n.billing_npi, count(distinct n.ndc) as rx_distinct_ndc,
                    sum(power(n.paid / nullif(t.tp, 0), 2)) as rx_ndc_hhi
@@ -233,11 +287,13 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
                t.rx_paid_total / nullif(t.rx_claims, 0) as rx_paid_per_claim,
                t.rx_claims / nullif(t.rx_patient_months, 0) as rx_claims_per_patient_month,
                c.rx_distinct_prescribers, c.rx_prescriber_hhi, c.rx_top_prescriber_share,
-               c.rx_missing_prescriber_share,
+               c.rx_missing_prescriber_share, c.rx_self_prescribed_share,
+               x.rx_prescriber_hhi_ext, x.rx_top_prescriber_share_ext, x.rx_external_paid_share,
                n.rx_distinct_ndc, n.rx_ndc_hhi,
                t.excl_paid / nullif(t.rx_paid_total, 0) as rx_excluded_prescriber_share,
                t.deact_paid / nullif(t.rx_paid_total, 0) as rx_deactivated_prescriber_share
-        from tot t left join conc c using (billing_npi) left join nconc n using (billing_npi)
+        from tot t left join conc c using (billing_npi) left join conc_ext x using (billing_npi)
+             left join nconc n using (billing_npi)
         """).df()
     df["npi"] = df["npi"].astype(str)
     return df
@@ -268,14 +324,23 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
                  if brand else "NULL")
     brand_join = "left join _ref r on r.ndc = f.ndc " if brand else ""
     df = con.execute(f"""
-        with f as (select * from read_parquet('{_pq(fact_parquet)}') where length(prescribing_npi) = 10),
+        with f as (select * from read_parquet('{_pq(fact_parquet)}') where length(prescribing_npi) = 10 and {CLEAN_ROW}),
         by_pharm as (select prescribing_npi, billing_npi, sum(total_paid) as paid from f group by 1, 2),
         tp as (select prescribing_npi, sum(paid) as tp from by_pharm group by 1),
+        ext as (select prescribing_npi, billing_npi, paid from by_pharm where billing_npi <> prescribing_npi),
+        tpe as (select prescribing_npi, sum(paid) as tpe from ext group by 1),
         conc as (
             select b.prescribing_npi, count(distinct b.billing_npi) as px_distinct_pharmacies,
                    sum(power(b.paid / nullif(t.tp, 0), 2)) as px_pharmacy_hhi,
-                   max(b.paid) / nullif(max(t.tp), 0) as px_top_pharmacy_share
+                   max(b.paid) / nullif(max(t.tp), 0) as px_top_pharmacy_share,
+                   sum(case when b.billing_npi = b.prescribing_npi then b.paid else 0 end)
+                       / nullif(max(t.tp), 0) as px_self_billed_share
             from by_pharm b join tp t using (prescribing_npi) group by b.prescribing_npi),
+        conc_ext as (
+            select e.prescribing_npi,
+                   sum(power(e.paid / nullif(t.tpe, 0), 2)) as px_pharmacy_hhi_ext,
+                   max(e.paid) / nullif(max(t.tpe), 0) as px_top_pharmacy_share_ext
+            from ext e join tpe t using (prescribing_npi) group by e.prescribing_npi),
         tot as (
             select f.prescribing_npi, sum(f.total_paid) as px_paid_total, sum(f.total_claim_lines) as px_claims,
                    sum(f.total_patients) as px_patient_months, count(distinct f.ndc) as px_distinct_ndc,
@@ -285,9 +350,10 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
                t.px_paid_total / nullif(t.px_patient_months, 0) as px_paid_per_patient_month,
                t.px_claims / nullif(t.px_patient_months, 0) as px_claims_per_patient_month,
                t.px_paid_total / nullif(t.px_claims, 0) as px_paid_per_claim,
-               c.px_distinct_pharmacies, c.px_pharmacy_hhi, c.px_top_pharmacy_share,
+               c.px_distinct_pharmacies, c.px_pharmacy_hhi, c.px_top_pharmacy_share, c.px_self_billed_share,
+               x.px_pharmacy_hhi_ext, x.px_top_pharmacy_share_ext,
                t.px_distinct_ndc, t.px_brand_paid_share
-        from tot t left join conc c using (prescribing_npi)
+        from tot t left join conc c using (prescribing_npi) left join conc_ext x using (prescribing_npi)
         """).df()
     df["npi"] = df["npi"].astype(str)
     return df
@@ -311,18 +377,44 @@ def write_report(out_dir: Path, info: dict, slice_rows: int, feats: pd.DataFrame
          f"- rows with an invalid/blank prescriber NPI: {info['rows_bad_prescriber_npi']:,}",
          f"- rows with units: {info['rows_with_units']:,} -> ndc_claims.parquet rows for NADAC: {slice_rows:,}"
          + ("" if slice_rows else " (no units column: drug_spread_anomaly stays dormant)"),
-         "", "## Column resolution", ""]
+         "", "## Quarantine (rule 4: kept with a reason, never deleted; features read clean rows only)", ""]
+    for reason, qq in (info.get("quarantine") or {}).items():
+        L.append(f"- {reason}: {qq['rows']:,} rows, ${qq['paid']:,.0f}")
+    L += [f"- clean rows: {info.get('kept_rows', 0):,}, ${info.get('kept_paid', 0):,.0f} "
+          f"(national Medicaid drug spend is near $80B a year; a kept total far above that per year means "
+          f"more aggregate rows to quarantine, paste this report)",
+          "", "| year | clean rows | clean paid |", "|---|--:|--:|"]
+    for y, n, d in info.get("kept_by_year") or []:
+        L.append(f"| {y} | {n:,} | ${d:,.0f} |")
+    L += ["", "Largest single rows in the file (billing NPI, NDC, month, paid):"]
+    for b, n, m, d in info.get("largest_rows") or []:
+        L.append(f"- {b or '(blank)'} | {n} | {m} | ${d:,.0f}")
+    kp = info.get("kept_paid") or 0
+    L += ["", f"- clean dollars with no valid prescriber NPI: ${info.get('kept_paid_blank_prescriber', 0):,.0f} "
+          f"({(info.get('kept_paid_blank_prescriber', 0) / kp if kp else 0):.0%})",
+          f"- clean dollars where the biller IS the prescriber (physician-administered drugs, in-house "
+          f"dispensing): ${info.get('kept_paid_self_prescribed', 0):,.0f} "
+          f"({(info.get('kept_paid_self_prescribed', 0) / kp if kp else 0):.0%}); the *_ext concentration "
+          f"features exclude these rows",
+          "", "## Column resolution", ""]
     for k in FACT_COLS:
         L.append(f"- {k}: {info['resolved'].get(k, '(absent)')}")
     L += ["", "## Per-NPI features", "",
           f"- {len(feats):,} NPIs ({int(feats['rx_paid_total'].notna().sum()):,} as pharmacy, "
           f"{int(feats['px_paid_total'].notna().sum()):,} as prescriber)",
-          f"- pharmacies with >= 50% of dollars from one prescriber: "
-          f"{int((feats['rx_top_prescriber_share'] >= 0.5).sum()):,}",
+          f"- billers with >= 50% of dollars from one prescriber: "
+          f"{int((feats['rx_top_prescriber_share'] >= 0.5).sum()):,} (all prescribers) / "
+          f"{int((feats['rx_top_prescriber_share_ext'] >= 0.5).sum()):,} (external prescribers only, "
+          f"the captive-pharmacy shape)",
+          f"- billers whose dollars are mostly self-prescribed (>= 90%): "
+          f"{int((feats['rx_self_prescribed_share'] >= 0.9).sum()):,}",
           f"- pharmacies with any dollars on fills after the prescriber's exclusion: "
-          f"{int((feats['rx_excluded_prescriber_share'] > 0).sum()):,}",
+          f"{int((feats['rx_excluded_prescriber_share'] > 0).sum()):,}"
+          + (" (no exclusion events were passed on this CLI run; the export passes them)"
+             if not (feats['rx_excluded_prescriber_share'] > 0).any() else ""),
           f"- prescribers with >= 90% of dollars at one pharmacy: "
-          f"{int((feats['px_top_pharmacy_share'] >= 0.9).sum()):,}", "",
+          f"{int((feats['px_top_pharmacy_share'] >= 0.9).sum()):,} (all) / "
+          f"{int((feats['px_top_pharmacy_share_ext'] >= 0.9).sum()):,} (external pharmacies only)", "",
           "_Shares are facts about where dollars flowed; a captive pharmacy inside a clinic or a rural "
           "town with one pharmacy produces the same shape lawfully. Leads for review, never findings._"]
     p = out_dir / "MEDICAID_NDC_REPORT.md"
