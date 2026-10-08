@@ -291,6 +291,15 @@ python -m src.model_a.run_registry --register "C:\Users\treyr\OneDrive\Desktop\d
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
 ```
 
+- [ ] **medicaid_ndc_build_rerun** — The NDC file is downloaded and in place (medicaid-provider-spending-ndc file.csv) but the 2026-10-08 build stopped on the header (NATIONAL_DRUG_CODE / TOTAL_UNIQUE_BENEFICIARIES were not in the column map; fixed in bundle 227). After merging bundle 227, rerun the build and upload processed\MEDICAID_NDC_REPORT.md. The file carries no units column, so the NADAC claim slice is skipped by design; rx_*/px_* features still build. (added 2026-10-08)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
+REM upload processed\MEDICAID_NDC_REPORT.md
+python -m src.reminders --done-task medicaid_ndc_build_rerun
+```
+
 
 ## After ANY download session (standing rule)
 
