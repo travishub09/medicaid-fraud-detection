@@ -463,7 +463,7 @@
   },
   {
    "key": "registry_verdict__frozen_2021-12_v7",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v7 \u2014 close only when you have them",
+   "what": "VERDICT RETURNED 2026-10-08: HOLD. docs/ACCURACY_READOUT_v7_2026-10-08.md: on the FCA ruler (36-month horizon) the shipped v7 list holds 1 hit in the top 50 (random 0.2, p 0.18) and 3 in the top 250 (random 1.0, p 0.07); the top 50 is 24 institutional + 24 tiny-dollars + 2 other, zero operator-class; the NPI ranking's first 285 rows are one tie and the first 1,000 hold no future case while the top 1% carries lift 4.3; under the exclusion rulers the org list is ungradable (<= 1 org in the pool); $199.6B of post-cutoff settlements attach to no scored provider. v8 checks (hits50 >= 2, prec50_lo > base50, inst_share50 <= 0.4) all fail on v7. Scheme-triage follow-ups stay in consensus_v7_disagreement. Close when read.",
    "added": "2026-09-14"
   },
   {
@@ -610,14 +610,12 @@
   },
   {
    "key": "accuracy_diagnostics__frozen_2021-12_v7",
-   "what": "BASELINE for the accuracy sprint: run the new business-outcome diagnostics on the v7 packet as shipped (priority-list mode, no training; minutes). Then upload ACCURACY_DIAGNOSTICS.md + accuracy_diagnostics.json from the run folder. The FCA ruler needs the case DB + the FULL graph; the hard ruler comes from the future_bans__hard.csv already in the folder",
+   "what": "v7 HALF DONE 2026-10-08 (read-out in docs/ACCURACY_READOUT_v7_2026-10-08.md). Remaining: the v6 run (2023-12 freeze, 24-month horizon), one command below, then upload its ACCURACY_DIAGNOSTICS.md + accuracy_diagnostics.json. Press Enter once before pasting if the previous command was a batch file.",
    "added": "2026-10-08",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
-    "python -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --score-source priority_list+refit --horizon-months 36 --repeats 2",
     "python -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --score-source priority_list+refit --horizon-months 24",
-    "REM upload ACCURACY_DIAGNOSTICS.md and accuracy_diagnostics.json from both run folders to the chat",
+    "REM upload ACCURACY_DIAGNOSTICS.md and accuracy_diagnostics.json from the v6 run folder",
     "python -m src.reminders --done-task accuracy_diagnostics__frozen_2021-12_v7"
    ]
   },
