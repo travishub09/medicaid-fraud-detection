@@ -16,6 +16,8 @@ _Data column: not checked (run with --data-root)._
 | `dmepos` | UNLOCK | `ingest_cms.dmepos` | `preclean/dmepos/dmepos.csv` | dme_ring signals + the INFLUENCED-dollars exposure basis for referrers (needs the by-referring-AND-SERVICE layout: Rfrg_NPI + HCPCS; the by-referring summary lacks HCPCS and fails) | public | — |
 | `open_payments` | UNLOCK | `ingest_cms.openpayments` | `preclean/open_payments/open_payments.csv` | pharma_kickback (op_payment_concentration, utilization_corr) | public | — |
 | `nadac` | UNLOCK | `ingest_cms.nadac` | `preclean/nadac/nadac.csv` | drug_spread_anomaly (with the NDC claim slice) | gated | — |
+| `medicaid_ndc` | UNLOCK | `ingest_cms.medicaid_ndc` | `preclean/medicaid_ndc/medicaid_ndc.csv` | pharmacy prescriber-concentration + excluded-prescriber fills, prescriber pharmacy-concentration / dollars per patient / brand share (rx_* and px_* features); writes the NDC claim slice that un-gates drug_spread_anomaly (run python -m src.ingest_cms.medicaid_ndc after download) | public | — |
+| `medicaid_enrollment` | UNLOCK | `ingest_cms.medicaid_enrollment` | `preclean/medicaid_enrollment/medicaid_enrollment.csv` | state dimension (mcd_primary_state), tenure / churn / ended-for-cause (mcd_*), paid-after-enrollment-end per-se check, and the mcd_enroll:<ST>:<reason> label source (run python -m src.ingest_cms.medicaid_enrollment after download) | public | — |
 | `saturation` | UNLOCK | `ingest_cms.saturation` | `preclean/saturation/saturation.csv` | saturation_fraud (market_saturation_index) | public | — |
 | `hrsa_340b` | UNLOCK | `ingest_cms.hrsa_340b` | `preclean/hrsa_340b/opais.xlsx` | contract_pharmacy (needs openpyxl) | public | — |
 | `nppes_deactivation` | UNLOCK | `ingest_cms.nppes_deactivation` | `preclean/nppes_deactivation/deactivation.zip` | invalid_identity / post-deactivation billing (needs openpyxl) | public | — |
@@ -27,6 +29,7 @@ _Data column: not checked (run with --data-root)._
 | `pos` | UNLOCK | `ingest_cms.pos` | `preclean/pos/pos.csv` | worthless_services (capacity; needs ccn_to_npi) | public | — |
 | `nucc` | UNLOCK | `ingest_cms.nucc_taxonomy` | `preclean/nucc/nucc_taxonomy.csv` | coherent peer grouping — improves EVERY scheme | public | — |
 | `revocations` | UNLOCK | `enforcement.medicare_revocations` | `preclean/revocations/revoked_providers.csv` | widens the PU label | public | — |
+| `state_terminations` | UNLOCK | `enforcement.state_terminations` | `preclean/state_terminations/GA_terminations.xlsx` | Medicaid-side FCA labels that lead the LEIE; tiered by stated reason | public | — |
 | `docgraph` | UNLOCK | `ingest_cms.docgraph` | `preclean/docgraph/docgraph.csv` | referral edges → referral-ring detection | public | — |
 | `state_licensing` | UNLOCK | `enforcement.state_licensing` | `preclean/state_licensing/licenses.csv` | identity corroboration + soft exclusions | public | — |
 | `nucc_xwalk` | OPTIONAL | `ingest_cms.nucc_taxonomy` | `preclean/nucc/specialty_crosswalk.csv` | sharper peer cohorts (companion to nucc) | public | — |
@@ -43,4 +46,5 @@ _Data column: not checked (run with --data-root)._
 
 - `processed/ccn_to_npi.parquet` — python -m src.ingest_cms.ccn_npi_crosswalk  (from PECOS) — unlocks facility/HCRIS/POS
 - `processed/exclusions_medicare_revocations.parquet` — python -m src.enforcement.medicare_revocations --in preclean/revocations/... --out ...
+- `processed/exclusions_state_terminations.parquet` — python -m src.enforcement.state_terminations --in-dir preclean/state_terminations --provider-dim processed/provider_dim.parquet --out ...
 - `processed/ndc_claims.parquet` — python -m src.ingest_cms.claim_slices --kind ndc ...  (needs an NDC-level feed; often gated)

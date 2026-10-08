@@ -1,0 +1,341 @@
+"""
+medicaid_enrollment.py — the July-2026 CMS open-data file "Medicaid Provider Enrollment
+Segments" (NPI x state x enrollment start/end x status x program x provider type,
+2018-2024). Public domain, no registration.
+
+Three uses, in the order they pay off:
+
+  1. STATE DIMENSION. The national spending file carries a provider_state only on the
+     claim; the enrollment segments say which state program each NPI is enrolled in
+     and for how long. That fills the blank state on label rows and makes the
+     state x taxonomy peer key exact for every NPI (enrollment_features ->
+     mcd_primary_state, mcd_states_enrolled).
+  2. LABEL SOURCE. An enrollment segment that ENDS with a non-benign status/reason is a
+     Medicaid-side termination event, usually years before the same provider reaches
+     the LEIE. termination_events() writes those into the exclusions schema as
+     excl_type "mcd_enroll:<ST>:<reason>", tiered by fca_relevance (fraud-shaped =
+     hard; policy / license / derivative = weak; voluntary / deceased / revalidation /
+     administrative = excluded, never a positive). The graph's generalized loader
+     merges processed/exclusions_medicaid_enrollment.parquet like every other source.
+  3. TENURE and the PER-SE CHECK. mcd_tenure_months and mcd_segments (churn) are
+     features; paid_after_enrollment_end() is the contradiction nobody could compute
+     from public files before: dollars with a service month AFTER the provider's last
+     enrollment segment in that state ended.
+
+Point-in-time: every function takes ``asof_cutoff`` (YYYY-MM). Segments that start
+after the cutoff are dropped, end dates after the cutoff are treated as open, and
+termination events dated after the cutoff are not emitted — so a frozen run never
+sees a termination that had not happened yet.
+
+Column names in the CMS file are resolved from candidate lists (ENROLL_COLS); when the
+real header lands, add its names there and nothing else changes.
+
+CLI:
+    python -m src.ingest_cms.medicaid_enrollment --in <preclean/medicaid_enrollment> \
+        --out-dir <processed> [--asof-cutoff 2023-12] [--spending <processed/spending_fact.parquet>]
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+import pandas as pd
+
+from src.attempt_2.clean_data import _resolve_columns
+
+ENROLL_COLS = {
+    "npi": ["NPI", "PROVIDER_NPI_NUM", "PROVIDER_NPI", "BILLING_PROVIDER_NPI_NUM", "NPI_NUM"],
+    "state": ["STATE", "STATE_CODE", "STATE_CD", "PROVIDER_STATE", "ENROLLMENT_STATE", "SUBMITTING_STATE"],
+    "start_date": ["ENROLLMENT_START_DATE", "SEGMENT_START_DATE", "ENRL_START_DT", "START_DATE",
+                   "EFFECTIVE_DATE", "BEGIN_DATE", "PROVIDER_ENROLLMENT_EFF_DATE"],
+    "end_date": ["ENROLLMENT_END_DATE", "SEGMENT_END_DATE", "ENRL_END_DT", "END_DATE",
+                 "TERMINATION_DATE", "PROVIDER_ENROLLMENT_END_DATE"],
+    "status": ["ENROLLMENT_STATUS", "STATUS", "STATUS_CODE", "ENROLLMENT_STATUS_CODE", "PROVIDER_STATUS"],
+    "reason": ["TERMINATION_REASON", "END_REASON", "STATUS_REASON", "DISENROLLMENT_REASON",
+               "ENROLLMENT_END_REASON", "REASON"],
+    "program": ["PROGRAM", "ENROLLMENT_TYPE", "ENROLLMENT_PROGRAM", "PROGRAM_TYPE", "MEDICAID_CHIP"],
+    "provider_type": ["PROVIDER_TYPE", "PROVIDER_TYPE_CODE", "PROVIDER_CLASSIFICATION", "CLASSIFICATION",
+                      "PROVIDER_TYPE_DESC"],
+    "taxonomy": ["TAXONOMY", "TAXONOMY_CODE", "PROVIDER_TAXONOMY"],
+}
+REQUIRED = ["npi", "state", "start_date"]
+SEG_COLS = ["npi", "state", "start_date", "end_date", "status", "reason", "program",
+            "provider_type", "taxonomy"]
+
+# end statuses / reasons that are NOT misconduct: never a label positive
+BENIGN_END = re.compile(
+    r"active|open|current|enrolled$|voluntar|retire|deceas|death|died|moved|relocat|out of state|"
+    r"merge|acqui|duplicate|data (?:correction|clean|entry)|administrative|system|conversion|"
+    r"re-?enroll|revalidat|re-?validat|no (?:claims|activity)|inactiv|lapse|expir|end of (?:contract|segment)|"
+    r"contract (?:end|expir)|change of (?:ownership|npi)|chow|closed business|ceased|withdraw", re.I)
+
+
+def _pq(p) -> str:
+    return str(p).replace("\\", "/").replace("'", "''")
+
+
+def resolve_enrollment_columns(header: list[str]) -> dict[str, str]:
+    resolved = _resolve_columns(list(header), ENROLL_COLS)
+    missing = [k for k in REQUIRED if k not in resolved]
+    if missing:
+        raise ValueError(f"Medicaid enrollment file missing {missing}; saw {list(header)[:14]}. "
+                         f"Add the file's names to medicaid_enrollment.ENROLL_COLS.")
+    return resolved
+
+
+def build_segments(paths, out_parquet: Path, con=None) -> dict:
+    """Stream the raw CSV(s) into processed/medicaid_enrollment_segments.parquet (SEG_COLS,
+    dates as DATE, NPI digits only). Row count is asserted raw -> parquet."""
+    import duckdb
+    con = con or duckdb.connect()
+    paths = [Path(p) for p in (paths if isinstance(paths, (list, tuple)) else [paths])]
+    files = []
+    for p in paths:
+        files += sorted(p.glob("*.csv")) if p.is_dir() else [p]
+    if not files:
+        raise FileNotFoundError(f"no Medicaid enrollment csv under {paths}")
+    header = [r[0] for r in con.execute(
+        f"describe select * from read_csv_auto('{_pq(files[0])}', all_varchar=true, "
+        f"encoding='latin-1', sample_size=20480)").fetchall()]
+    resolved = resolve_enrollment_columns(header)
+
+    def q(k):
+        return f'"{resolved[k]}"' if k in resolved else "NULL"
+    sel = (f"regexp_replace(trim({q('npi')}), '[^0-9]', '', 'g') as npi, "
+           f"upper(trim({q('state')})) as state, "
+           f"try_cast(try_strptime(trim({q('start_date')}), ['%Y-%m-%d', '%m/%d/%Y', '%Y%m%d', '%Y-%m-%d %H:%M:%S']) as date) as start_date, "
+           f"try_cast(try_strptime(trim({q('end_date')}), ['%Y-%m-%d', '%m/%d/%Y', '%Y%m%d', '%Y-%m-%d %H:%M:%S']) as date) as end_date, "
+           f"trim({q('status')}) as status, trim({q('reason')}) as reason, trim({q('program')}) as program, "
+           f"trim({q('provider_type')}) as provider_type, trim({q('taxonomy')}) as taxonomy")
+    src = ", ".join(f"'{_pq(f)}'" for f in files)
+    con.execute(f"""
+        create or replace view _enr_raw as
+        select * from read_csv_auto([{src}], all_varchar=true, encoding='latin-1', union_by_name=true)""")
+    raw_n = con.execute("select count(*) from _enr_raw").fetchone()[0]
+    out_parquet = Path(out_parquet)
+    out_parquet.parent.mkdir(parents=True, exist_ok=True)
+    con.execute(f"copy (select {sel} from _enr_raw) to '{_pq(out_parquet)}' (format parquet)")
+    n, bad_npi, no_start, open_seg, states = con.execute(f"""
+        select count(*), sum(case when length(npi) <> 10 then 1 else 0 end),
+               sum(case when start_date is null then 1 else 0 end),
+               sum(case when end_date is null then 1 else 0 end), count(distinct state)
+        from read_parquet('{_pq(out_parquet)}')""").fetchone()
+    assert n == raw_n, f"row conservation failed: raw {raw_n} parquet {n}"
+    return {"files": [f.name for f in files], "resolved": resolved, "rows": int(n),
+            "rows_bad_npi": int(bad_npi), "rows_no_start": int(no_start),
+            "rows_open": int(open_seg), "states": int(states)}
+
+
+def _asof_frame(segments: pd.DataFrame, asof_cutoff: str | None) -> pd.DataFrame:
+    s = segments.copy()
+    s["npi"] = s["npi"].astype(str)
+    s["start_date"] = pd.to_datetime(s["start_date"], errors="coerce")
+    s["end_date"] = pd.to_datetime(s["end_date"], errors="coerce")
+    s = s[s["npi"].str.fullmatch(r"\d{10}").fillna(False) & s["start_date"].notna()]
+    if asof_cutoff:
+        cut = pd.Timestamp(asof_cutoff[:7] + "-01") + pd.offsets.MonthEnd(0)
+        s = s[s["start_date"] <= cut].copy()
+        s.loc[s["end_date"] > cut, "end_date"] = pd.NaT      # not ended yet as of the cutoff
+        s["_asof"] = cut
+    else:
+        s["_asof"] = s["end_date"].max() if s["end_date"].notna().any() else pd.Timestamp.today().normalize()
+    return s
+
+
+def enrollment_features(segments: pd.DataFrame, asof_cutoff: str | None = None) -> pd.DataFrame:
+    """Per NPI, as of the cutoff:
+      mcd_states_enrolled   distinct states with any segment
+      mcd_primary_state     state with the most enrolled months
+      mcd_segments          number of segments (churn: re-enrollments, moves)
+      mcd_tenure_months     months from first start to the cutoff (or last end)
+      mcd_enrolled_months   months actually covered by segments (gaps removed, per state summed)
+      mcd_gap_share         1 - enrolled_months / tenure_months (time un-enrolled inside the tenure)
+      mcd_open_segments     segments still open at the cutoff (0 = no active Medicaid enrollment)
+      mcd_ended_for_cause   1 if any segment ended with a non-benign status/reason on/before the cutoff
+      mcd_last_end_date     latest end date (NaT when a segment is still open)
+    """
+    s = _asof_frame(segments, asof_cutoff)
+    if not len(s):
+        return pd.DataFrame(columns=["npi", "mcd_states_enrolled", "mcd_primary_state", "mcd_segments",
+                                     "mcd_tenure_months", "mcd_enrolled_months", "mcd_gap_share",
+                                     "mcd_open_segments", "mcd_ended_for_cause", "mcd_last_end_date"])
+    s["_end"] = s["end_date"].fillna(s["_asof"])
+    s["_months"] = ((s["_end"] - s["start_date"]).dt.days / 30.44).clip(lower=0)
+    s["_cause"] = (~_is_benign(s)).astype(int) * s["end_date"].notna().astype(int)
+    by_state = s.groupby(["npi", "state"], as_index=False)["_months"].sum()
+    primary = by_state.sort_values(["npi", "_months"], ascending=[True, False]).drop_duplicates("npi")
+    g = s.groupby("npi")
+    out = pd.DataFrame({
+        "mcd_states_enrolled": g["state"].nunique(),
+        "mcd_segments": g.size(),
+        "mcd_tenure_months": ((g["_asof"].first() - g["start_date"].min()).dt.days / 30.44).clip(lower=0),
+        "mcd_enrolled_months": g["_months"].sum(),
+        "mcd_open_segments": g["end_date"].apply(lambda x: int(x.isna().sum())),
+        "mcd_ended_for_cause": g["_cause"].max(),
+        "mcd_last_end_date": g["end_date"].max(),
+    }).reset_index()
+    out = out.merge(primary[["npi", "state"]].rename(columns={"state": "mcd_primary_state"}), on="npi", how="left")
+    out["mcd_gap_share"] = (1 - out["mcd_enrolled_months"] / out["mcd_tenure_months"].replace(0, pd.NA)).clip(0, 1).astype(float)
+    # an NPI with an open segment has no "last end" that matters
+    out.loc[out["mcd_open_segments"] > 0, "mcd_last_end_date"] = pd.NaT
+    cols = ["npi", "mcd_states_enrolled", "mcd_primary_state", "mcd_segments", "mcd_tenure_months",
+            "mcd_enrolled_months", "mcd_gap_share", "mcd_open_segments", "mcd_ended_for_cause", "mcd_last_end_date"]
+    return out[cols]
+
+
+def _is_benign(s: pd.DataFrame) -> pd.Series:
+    txt = (s.get("status", pd.Series("", index=s.index)).fillna("").astype(str) + " | "
+           + s.get("reason", pd.Series("", index=s.index)).fillna("").astype(str)).str.strip(" |")
+    # no reason and no status recorded -> treated as benign (never a positive on silence)
+    return txt.eq("") | txt.str.contains(BENIGN_END)
+
+
+def termination_events(segments: pd.DataFrame, asof_cutoff: str | None = None) -> pd.DataFrame:
+    """Non-benign segment ends -> exclusions schema (one row per npi x state x end date):
+    npi, entity_name, name_key, excl_type, excl_date, reinstate_date, currently_active.
+    excl_type = "mcd_enroll:<ST>:<status | reason> [provider_type]" so fca_relevance tiers it
+    from the stated cause. reinstate_date = the start of the next segment in the same state
+    when one exists (a re-enrollment closes the window)."""
+    s = _asof_frame(segments, asof_cutoff)
+    cols = ["npi", "entity_name", "name_key", "excl_type", "excl_date", "reinstate_date", "currently_active"]
+    if not len(s):
+        return pd.DataFrame(columns=cols)
+    ended = s[s["end_date"].notna() & ~_is_benign(s)].copy()
+    if not len(ended):
+        return pd.DataFrame(columns=cols)
+    # next start in the same state after the end = reinstatement
+    starts = s[["npi", "state", "start_date"]].sort_values("start_date")
+    nxt = []
+    for r in ended.itertuples():
+        later = starts[(starts["npi"] == r.npi) & (starts["state"] == r.state) & (starts["start_date"] > r.end_date)]
+        nxt.append(later["start_date"].min() if len(later) else pd.NaT)
+    ended["reinstate_date"] = nxt
+    reason = (ended.get("status", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip() + " | "
+              + ended.get("reason", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip()).str.strip(" |")
+    ptype = ended.get("provider_type", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip()
+    out = pd.DataFrame({
+        "npi": ended["npi"].values,
+        "entity_name": "",
+        "name_key": "",
+        "excl_type": ("mcd_enroll:" + ended["state"].fillna("").astype(str) + ":" + reason.values
+                      + ptype.map(lambda t: f" [{t}]" if t else "").values),
+        "excl_date": ended["end_date"].values,
+        "reinstate_date": ended["reinstate_date"].values,
+        "currently_active": ended["reinstate_date"].isna().astype(int).values,
+    })
+    return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)[cols]
+
+
+def paid_after_enrollment_end(spending_path: str | Path, features: pd.DataFrame,
+                              con=None) -> pd.DataFrame:
+    """Per NPI with NO open segment at the cutoff: dollars and months with a service month
+    strictly AFTER the month of its last enrollment end (any state; the spending fact's
+    provider_state is the claim's state, so a state-exact version follows when the fact
+    carries it). Columns: npi, mcd_last_end_date, mcd_paid_after_end, mcd_months_after_end,
+    mcd_paid_after_end_share (of that NPI's total paid)."""
+    import duckdb
+    con = con or duckdb.connect()
+    f = features[features["mcd_last_end_date"].notna() & (features["mcd_open_segments"] == 0)][["npi", "mcd_last_end_date"]].copy()
+    cols = ["npi", "mcd_last_end_date", "mcd_paid_after_end", "mcd_months_after_end", "mcd_paid_after_end_share"]
+    if not len(f):
+        return pd.DataFrame(columns=cols)
+    f["end_month"] = pd.to_datetime(f["mcd_last_end_date"]).dt.strftime("%Y-%m")
+    con.register("_ends", f[["npi", "end_month"]].astype(str))
+    df = con.execute(f"""
+        select e.npi, max(e.end_month) as end_month,
+               sum(case when substr(cast(s.service_month as varchar),1,7) > e.end_month then s.total_paid else 0 end) as mcd_paid_after_end,
+               count(distinct case when substr(cast(s.service_month as varchar),1,7) > e.end_month
+                                   then substr(cast(s.service_month as varchar),1,7) end) as mcd_months_after_end,
+               sum(s.total_paid) as total_paid
+        from _ends e join read_parquet('{_pq(spending_path)}') s on cast(s.billing_npi as varchar) = e.npi
+        group by e.npi""").df()
+    df["mcd_last_end_date"] = pd.to_datetime(df["end_month"] + "-01")
+    df["mcd_paid_after_end_share"] = (df["mcd_paid_after_end"] / df["total_paid"].replace(0, pd.NA)).astype(float)
+    df["npi"] = df["npi"].astype(str)
+    return df[cols]
+
+
+def fill_state(provider_dim: pd.DataFrame, features: pd.DataFrame,
+               col: str = "addr_state") -> tuple[pd.DataFrame, int]:
+    """Fill a blank provider_dim state from mcd_primary_state. Returns (frame, n_filled)."""
+    d = provider_dim.copy()
+    m = features.set_index(features["npi"].astype(str))["mcd_primary_state"]
+    blank = d[col].isna() | d[col].astype(str).str.strip().eq("")
+    fill = d.loc[blank, "npi"].astype(str).map(m)
+    n = int(fill.notna().sum())
+    d.loc[blank, col] = fill
+    return d, n
+
+
+def write_report(out_dir: Path, info: dict, feats: pd.DataFrame, events: pd.DataFrame,
+                 after: pd.DataFrame | None) -> Path:
+    from src.model_a.fca_relevance import classify_series
+    L = ["# MEDICAID ENROLLMENT SEGMENTS — load report", "",
+         f"- files: {', '.join(info['files'])}",
+         f"- rows: {info['rows']:,}; states: {info['states']}; rows with invalid NPI: {info['rows_bad_npi']:,}; "
+         f"rows without a start date: {info['rows_no_start']:,}; open segments: {info['rows_open']:,}",
+         "", "## Column resolution", ""]
+    for k in SEG_COLS:
+        L.append(f"- {k}: {info['resolved'].get(k, '(absent)')}")
+    L += ["", "## Features", "",
+          f"- {len(feats):,} NPIs; median tenure {feats['mcd_tenure_months'].median():.0f} months; "
+          f"{int((feats['mcd_states_enrolled'] > 1).sum()):,} enrolled in more than one state; "
+          f"{int((feats['mcd_open_segments'] == 0).sum()):,} with no open segment; "
+          f"{int(feats['mcd_ended_for_cause'].sum()):,} ended a segment for a non-benign cause", ""]
+    L += ["## Termination events (label candidates)", ""]
+    if len(events):
+        t = classify_series(events["excl_type"])
+        L.append(f"- {len(events):,} events; by FCA tier: " + ", ".join(
+            f"{k} {v:,}" for k, v in t["fca_tier"].value_counts().items()))
+        L += ["", "| state : status / reason | events | tier |", "|---|--:|---|"]
+        reason = events["excl_type"].str.replace(r"^mcd_enroll:", "", regex=True).str.replace(r"\s*\[[^\]]*\]$", "", regex=True)
+        cen = pd.DataFrame({"reason": reason, "tier": t["fca_tier"].values}).value_counts().reset_index(name="n")
+        for r in cen.head(60).itertuples():
+            L.append(f"| {r.reason} | {r.n:,} | {r.tier} |")
+        L += ["", "_Reasons tiered 'weak' with 'unmapped' in the basis are the ones to add to "
+                  "fca_relevance.STATE_TERM_RULES; a tier is a label policy, never a finding about a provider._"]
+    else:
+        L.append("- none (no non-benign segment ends, or no status/reason column in the file)")
+    if after is not None and len(after):
+        hot = after[after["mcd_paid_after_end"] > 0]
+        L += ["", "## Paid after the last enrollment end (per-se check)", "",
+              f"- {len(hot):,} NPIs with any Medicaid dollars in months after their last segment ended; "
+              f"${hot['mcd_paid_after_end'].sum():,.0f} in total",
+              "- innocent explanations first: a re-enrollment the file does not carry, managed-care claims "
+              "paid under a plan contract after FFS enrollment ended, run-out claims for earlier dates of service"]
+    p = out_dir / "MEDICAID_ENROLLMENT_REPORT.md"
+    p.write_text("\n".join(L) + "\n", encoding="utf-8")
+    return p
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--in", dest="inp", required=True)
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--asof-cutoff", default=None)
+    ap.add_argument("--spending", default=None, help="processed/spending_fact.parquet for the paid-after check")
+    a = ap.parse_args()
+    import duckdb
+    con = duckdb.connect()
+    out = Path(a.out_dir)
+    seg_p = out / "medicaid_enrollment_segments.parquet"
+    info = build_segments(Path(a.inp), seg_p, con=con)
+    print(f"[medicaid_enrollment] {info['rows']:,} segments, {info['states']} states -> {seg_p}")
+    seg = pd.read_parquet(seg_p)
+    feats = enrollment_features(seg, a.asof_cutoff)
+    events = termination_events(seg, a.asof_cutoff)
+    after = None
+    if a.spending and Path(a.spending).exists():
+        after = paid_after_enrollment_end(a.spending, feats, con=con)
+        feats = feats.merge(after.drop(columns=["mcd_last_end_date"]), on="npi", how="left")
+    feats.to_parquet(out / "medicaid_enrollment_features.parquet", index=False)
+    events.to_parquet(out / "exclusions_medicaid_enrollment.parquet", index=False)
+    rp = write_report(out, info, feats, events, after)
+    print(f"[medicaid_enrollment] {len(feats):,} NPI feature rows; {len(events):,} termination events -> "
+          f"exclusions_medicaid_enrollment.parquet; report {rp}")
+
+
+if __name__ == "__main__":
+    main()

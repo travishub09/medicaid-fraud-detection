@@ -357,7 +357,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             m.loc[dhit, "exclusion_label_sources"] = (
                 m.loc[dhit, "exclusion_label_sources"].fillna("").astype(str)
                  .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["docket_case"])))))
-            audit(f"    [doj_case] {len(docket_npis):,} NPIs carry docket-only (allegation) labels: "
+            # build_provider_matrix has no audit logger in scope (it is main()'s local);
+            # a plain print keeps the line in the console log instead of a NameError
+            print(f"    [doj_case] {len(docket_npis):,} NPIs carry docket-only (allegation) labels: "
                   "source docket_case, hard label NOT flipped")
         if "provider_on_exclusion" not in m.columns:
             m["provider_on_exclusion"] = 0
@@ -473,11 +475,22 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     if "provider_on_exclusion" in out.columns:
         if "exclusion_label_sources" not in out.columns:
             out["exclusion_label_sources"] = ""
-        for flag, tag in (("billing_after_deactivation", "deactivation"),
-                          ("billing_after_death", "death")):
-            if flag not in out.columns:
+        # The adapter flags are ORG-grain (one deactivated or deceased member lights
+        # the whole org) and are broadcast to every member NPI, so widening on them
+        # smeared one event across hundreds of innocent NPIs. The per-NPI timeline
+        # (smoking_gun_timeline: <prefix>_paid_after for THIS NPI's own event) is the
+        # honest evidence; the broadcast flag is accepted only for single-NPI orgs,
+        # where broadcast and own-event coincide.
+        members = pd.to_numeric(out.get("org_member_count"), errors="coerce").fillna(1) \
+            if "org_member_count" in out.columns else pd.Series(1, index=out.index)
+        for flag, tag, own in (("billing_after_deactivation", "deactivation", "deact_paid_after"),
+                               ("billing_after_death", "death", "death_paid_after")):
+            if flag not in out.columns and own not in out.columns:
                 continue
-            pos = pd.to_numeric(out[flag], errors="coerce").fillna(0) > 0
+            if own in out.columns:
+                pos = pd.to_numeric(out[own], errors="coerce").fillna(0) > 0
+            else:
+                pos = (pd.to_numeric(out[flag], errors="coerce").fillna(0) > 0) & (members <= 1)
             if not pos.any():
                 continue
             out.loc[pos, "provider_on_exclusion"] = 1
@@ -871,6 +884,17 @@ def _label_source(excl_type: str) -> str:
         return "preclusion"
     if t.startswith("sam"):
         return "sam"
+    if t.startswith("state_term"):
+        return "state_termination"
+    if t.startswith("state_board"):
+        return "state_board"
+    if t.startswith("mcd_enroll"):
+        return "medicaid_enrollment"
+    if t.startswith("doj") or t.startswith("case"):
+        return "doj_case"
+    m = re.match(r"^([a-z]+)_([a-z]{2})(:|$)", t)   # research_evidence rows: "<src>_<st>:<action>"
+    if m and m.group(1) not in ("state", "medicare", "mcd"):
+        return f"research_{m.group(1)}"
     return "leie"
 
 
@@ -1184,7 +1208,10 @@ class _ResumeCache:
 def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                       max_year: int | None = None,
                       no_trends: bool = False,
-                      trend_years: int = 2) -> dict[str, pd.DataFrame]:
+                      trend_years: int = 2,
+                      processed: Path | None = None,
+                      asof_cutoff: str | None = None,
+                      exclusion_events: pd.DataFrame | None = None) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
     Each entry is (source_name, subdir/filenames, callable(raw)->npi-keyed frame).
@@ -1437,6 +1464,96 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
             log("    [nadac_namegrain] skipped: NADAC present but no Part D raw")
     except Exception as e:
         log(f"    [nadac_namegrain] skipped: {e}")
+
+    # --- Medicaid Provider Spending by NDC (CMS open data, July 2026) -------------
+    # processed/ndc_fact.parquet is built once by `python -m src.ingest_cms.medicaid_ndc`
+    # (DuckDB-streamed; the raw file is several GB). Per-NPI features for BOTH roles:
+    # pharmacy (prescriber concentration, excluded-prescriber fills) and prescriber
+    # (pharmacy concentration, dollars per patient, brand share). A frozen run
+    # re-derives the fact under its cutoff so no post-cutoff fill month leaks.
+    proc = processed if processed is not None else preclean.parent / "processed"
+    if "medicaid_ndc" in skip:
+        log("    [medicaid_ndc] skipped: --skip-sources")
+    else:
+        try:
+            from src.ingest_cms import medicaid_ndc as mndc
+            raw_dir = pc / "medicaid_ndc"
+            fact_p = proc / "ndc_fact.parquet"
+            if asof_cutoff and raw_dir.is_dir() and any(raw_dir.glob("*.csv")):
+                fact_p = proc / f"ndc_fact__asof_{asof_cutoff[:7]}.parquet"
+                if not fact_p.exists():
+                    info = mndc.build_ndc_fact(raw_dir, fact_p, asof_cutoff=asof_cutoff)
+                    log(f"    [medicaid_ndc] built as-of fact ({info['rows']:,} rows <= {asof_cutoff[:7]})")
+            if fact_p.exists():
+                deact = None
+                try:
+                    from src.ingest_cms import nppes_deactivation as nd
+                    dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv",
+                                         "deactivation.xlsx", "*.zip", "*.xlsx", "*.csv")
+                    if dp:
+                        deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
+                except Exception:
+                    deact = None
+                df = mndc.npi_features(fact_p, exclusions=exclusion_events, deactivations=deact)
+                if len(df):
+                    frames["medicaid_ndc"] = df
+                    log(f"    [medicaid_ndc] {len(df):,} NPIs from {fact_p.name} "
+                        f"({int(df['rx_paid_total'].notna().sum()):,} pharmacies, "
+                        f"{int(df['px_paid_total'].notna().sum()):,} prescribers; "
+                        f"excluded-prescriber join: {'on' if exclusion_events is not None else 'off'}, "
+                        f"deactivated-prescriber join: {'on' if deact is not None else 'off'})")
+                else:
+                    log(f"    [medicaid_ndc] skipped: {fact_p.name} produced no NPI rows")
+            elif raw_dir.is_dir() and any(raw_dir.glob("*.csv")):
+                log("    [medicaid_ndc] skipped: raw file present but processed/ndc_fact.parquet "
+                    "not built — run python -m src.ingest_cms.medicaid_ndc first")
+            else:
+                log("    [medicaid_ndc] skipped: no file in preclean/medicaid_ndc/ "
+                    "(CMS 'Medicaid Provider Spending by NDC', July 2026)")
+        except Exception as e:
+            log(f"    [medicaid_ndc] skipped: {e}")
+
+    # --- Medicaid Provider Enrollment Segments (CMS open data, July 2026) ----------
+    # processed/medicaid_enrollment_segments.parquet is built once by
+    # `python -m src.ingest_cms.medicaid_enrollment`; the features are re-derived here
+    # under the run's cutoff (segments starting after it dropped, later ends treated as
+    # open), so tenure / churn / ended-for-cause are point-in-time. The termination
+    # events become label rows through processed/exclusions_medicaid_enrollment.parquet,
+    # which the graph loader merges like every other exclusion source.
+    if "medicaid_enrollment" in skip:
+        log("    [medicaid_enrollment] skipped: --skip-sources")
+    else:
+        try:
+            from src.ingest_cms import medicaid_enrollment as menr
+            seg_p = proc / "medicaid_enrollment_segments.parquet"
+            raw_dir = pc / "medicaid_enrollment"
+            if seg_p.exists():
+                seg = pd.read_parquet(seg_p)
+                df = menr.enrollment_features(seg, asof_cutoff)
+                sp = proc / "spending_fact.parquet"
+                if len(df) and sp.exists():
+                    after = menr.paid_after_enrollment_end(sp, df)
+                    if len(after):
+                        df = df.merge(after.drop(columns=["mcd_last_end_date"]), on="npi", how="left")
+                if len(df):
+                    df = df.drop(columns=["mcd_last_end_date"], errors="ignore")
+                    frames["medicaid_enrollment"] = df
+                    log(f"    [medicaid_enrollment] {len(df):,} NPIs from {seg_p.name} "
+                        f"(as of {asof_cutoff or 'current'}; "
+                        f"{int(df['mcd_ended_for_cause'].sum()):,} ended for cause"
+                        + (f", {int((df['mcd_paid_after_end'] > 0).sum()):,} paid after their last end)"
+                           if 'mcd_paid_after_end' in df.columns else ")"))
+                else:
+                    log(f"    [medicaid_enrollment] skipped: {seg_p.name} produced no NPI rows")
+            elif raw_dir.is_dir() and any(raw_dir.glob("*.csv")):
+                log("    [medicaid_enrollment] skipped: raw file present but "
+                    "processed/medicaid_enrollment_segments.parquet not built — run "
+                    "python -m src.ingest_cms.medicaid_enrollment first")
+            else:
+                log("    [medicaid_enrollment] skipped: no file in preclean/medicaid_enrollment/ "
+                    "(CMS 'Medicaid Provider Enrollment Segments', July 2026)")
+        except Exception as e:
+            log(f"    [medicaid_enrollment] skipped: {e}")
     return frames
 
 
@@ -1504,6 +1621,11 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             "(DuckDB-streamed; scales to the full spending fact)")
 
     def _emit(name: str, fr, feature_cols: list[str]):
+        if name in skip:
+            # --skip-sources was parsed but ignored for every org/CCN-grain block; the
+            # frame is dropped here so the flag and SOURCES_REPORT tell the truth
+            log(f"    [{name}] skipped: --skip-sources")
+            return
         if fr is not None and len(fr) and "org_node_id" in fr.columns:
             frames[name] = fr
             log(f"    [{name}] {len(fr):,} orgs, cols: {', '.join(feature_cols)}")
@@ -2016,10 +2138,24 @@ def main() -> None:
                       f"run: {', '.join(sorted(list(cached_npi) + list(cached_org)))}")
         skip = skip | set(cached_npi) | set(cached_org)
 
+        # exclusion events (npi, excl_date) feed the NDC adapter's excluded-prescriber
+        # join; the graph's merged exclusion nodes are the one place every source meets
+        _excl_events = None
+        try:
+            _ep = Path(args.graph_dir) / "nodes" / "exclusion_nodes.parquet" if args.graph_dir else None
+            if _ep and _ep.exists():
+                _ex = pd.read_parquet(_ep)
+                if {"npi", "excl_date"} <= set(_ex.columns):
+                    _excl_events = _ex[["npi", "excl_date"]]
+        except Exception:
+            _excl_events = None
         adapter_frames = _run_npi_adapters(preclean, audit, skip=skip,
                                            max_year=vintage_cap,
                                            no_trends=args.no_trends,
-                                           trend_years=args.trend_years)
+                                           trend_years=args.trend_years,
+                                           processed=processed,
+                                           asof_cutoff=args.asof_cutoff,
+                                           exclusion_events=_excl_events)
         for _k, _v in cached_npi.items():
             adapter_frames.setdefault(_k, _v)
             # a used-status audit line supersedes the runner's "skipped:

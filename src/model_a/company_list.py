@@ -96,7 +96,11 @@ def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
     e = e[tier_mask(tiers["fca_tier"], keep).values]
     if cutoff:
         dt = pd.to_datetime(e.get("excl_date"), errors="coerce")
-        e = e[dt.notna() & (dt <= pd.Timestamp(f"{cutoff[:7]}-01") + pd.offsets.MonthEnd(0))]
+        # the freeze instant is the cutoff month's FIRST day everywhere else (the as-of
+        # graph keeps excl_date <= it; the forward label is strictly after it); a
+        # month-END here made late-month bans both a training positive and a forward
+        # positive (the one-month boundary leak)
+        e = e[dt.notna() & (dt <= pd.Timestamp(f"{cutoff[:7]}-01"))]
     pos = set(e["npi"].astype(str))
     y = matrix["npi"].astype(str).isin(pos).to_numpy()
     # DOJ case labels (settlements: the only label institutions generate) live

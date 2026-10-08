@@ -272,6 +272,18 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         n_before = len(df)
         df = df[df["conduct_start"].notna()
                 & (pd.to_numeric(df["conduct_start"], errors="coerce") <= cut_year)]
+        # information availability: a case settled AFTER the freeze was unknown at
+        # the freeze, however early its conduct began. Keep only cases announced on
+        # or before the cutoff month; undated announcements are dropped too (strict).
+        if "announced_date" in cases.columns and len(df):
+            ann = pd.to_datetime(df["case_ids"].astype(str).map(cases["announced_date"]), errors="coerce")
+            cut_ts = pd.Timestamp(f"{str(asof_cutoff)[:7]}-01") + pd.offsets.MonthEnd(0)
+            n_post = int(((ann > cut_ts) | ann.isna()).sum())
+            df = df[ann.notna() & (ann <= cut_ts)]
+            if n_post:
+                print(f"    [case_labels] {n_post:,} case rows dropped for the frozen run: "
+                      f"announced after {str(asof_cutoff)[:7]} or undated (conduct window alone "
+                      f"would have leaked a post-cutoff settlement into the label)")
         if not len(df):
             return pd.DataFrame(columns=cols)
 

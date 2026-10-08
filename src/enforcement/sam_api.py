@@ -51,8 +51,11 @@ def fetch_sam_exclusions(fetch_json=default_fetch_json, max_pages: int = 500,
                 "npi": "",                                   # SAM rarely carries NPI
                 "entity_name": name,
                 "name_key": norm_org_name(name),
-                "excl_type": str(details.get("exclusionType")
-                                 or e.get("exclusionType") or "sam"),
+                # "sam:<exclusionType>" so fca_relevance (prefix "sam") and the label
+                # provenance mapper recognise the source; the raw text alone read as
+                # an unmapped LEIE statute
+                "excl_type": "sam:" + str(details.get("exclusionType")
+                                          or e.get("exclusionType") or ""),
                 "excl_date": pd.to_datetime(
                     details.get("activateDate") or e.get("activateDate"),
                     errors="coerce"),

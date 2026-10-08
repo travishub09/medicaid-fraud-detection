@@ -575,7 +575,41 @@ committed. Never let this file go stale: stale reminders are worse than none.
   `affiliate_undisclosed` (org owners, no A-8-1) and ranks affiliate share of G-3
   opex within state x year; `--focus` details chosen CCNs. Wesleyan Village was the
   one home in its group with the gap; this gives the gap a base rate.
-  Full suite: `pytest tests/` (950 tests).
+  JULY-2026 CMS FILES (2026-10-08): `ingest_cms/medicaid_ndc.py` streams
+  "Medicaid Provider Spending by NDC" into processed/ndc_fact.parquet (row +
+  dollar conservation asserted; as-of cutoff; column candidates in NDC_COLS),
+  writes the NDC claim slice that un-gates drug_spread_anomaly when units exist,
+  and emits per-NPI rx_* (pharmacy: prescriber HHI / top-prescriber share /
+  excluded- and deactivated-prescriber fill shares) + px_* (prescriber: pharmacy
+  HHI, dollars per patient-month, brand share vs NADAC) features.
+  `ingest_cms/medicaid_enrollment.py` streams "Medicaid Provider Enrollment
+  Segments" into Parquet; per-NPI mcd_* tenure / churn / primary-state features as
+  of the cutoff; non-benign segment ends -> processed/exclusions_medicaid_enrollment
+  .parquet as label source `mcd_enroll:<ST>:<reason>` (fca_relevance tiers it by the
+  state-termination ruler; benign ends are never positives; REBUILD THE GRAPH after
+  the file lands); paid-after-enrollment-end per-se check; provider_dim state fill.
+  Both wired into `_run_npi_adapters` (processed + asof_cutoff + exclusion events
+  now passed in), the preflight registry and the reminders.
+  MODEL REVIEW 2026-10 (`docs/MODEL_REVIEW_2026-10.md` — read it before touching
+  training/evaluation code): the audit found and this bundle FIXED, with
+  regression tests in tests/test_audit_fixes_2026_10.py: label smear (org-grain
+  billing_after_deactivation/death broadcast to every member then flipped to
+  positive — now the NPI's own `deact_/death_paid_after`, org flag only for
+  single-NPI orgs); frozen runs manufactured zero clean negatives (percentile
+  compared to 0 — now <= 0.5); docket-only case labels raised NameError; label
+  provenance tagged state_term / state_board / SAM / research rows as "leie"
+  (`_label_source` fixed, SAM rows carry `sam:`); NUCC pooled no-taxonomy
+  providers into a fake "unknown" cohort; the in-matrix tier label froze at month
+  END while the graph + forward label freeze at month START; frozen-run DOJ labels
+  were boxed by conduct year only (now also announced <= cutoff);
+  `--skip-sources` ignored by org/CCN blocks. STILL OPEN and prioritized in the
+  review: the adjacent-leak fence is not applied in source_ablation / network_ab
+  (the gating metric is not the shipped model), substrate not frozen by default,
+  calibration / FDR / conformal / PU-prior modules have no caller, raw 0.5 hot
+  threshold, max-over-members rollup, src/model zero-anomaly negatives. Items
+  marked (re-register) change metric semantics — new pre-registered run, never a
+  silent swap.
+  Full suite: `pytest tests/` (966 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

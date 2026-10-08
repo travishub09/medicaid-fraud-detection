@@ -214,6 +214,18 @@ def fca_tier(excl_type) -> tuple[str, str]:
         body = re.sub(r"\|name_match$", "", body)
         body = re.sub(r"\s*\[[^\]]*\]\s*$", "", body)
         return _classify_state_reason(body)
+    if t.startswith("mcd_enroll"):
+        # "mcd_enroll:<ST>:<status | reason> [provider type]" (ingest_cms.medicaid_enrollment):
+        # the CMS enrollment-segment end. Benign ends never reach here (the adapter
+        # drops them) but are tiered 'excluded' defensively; the rest use the
+        # state-termination ruler, since the stated cause is the same vocabulary.
+        body = t.split(":", 2)[2] if t.count(":") >= 2 else ""
+        body = re.sub(r"\s*\[[^\]]*\]\s*$", "", body)
+        if re.search(r"voluntar|retire|deceas|death|moved|relocat|duplicate|revalidat|"
+                     r"administrative|no (claims|activity)|inactiv|expir|withdraw", body):
+            return "excluded", "Medicaid enrollment ended for a benign reason (never a positive)"
+        tier, basis = _classify_state_reason(body)
+        return tier, basis.replace("state termination", "Medicaid enrollment end", 1)
     if t.startswith("doj") or t.startswith("case"):
         return "hard", "DOJ / court case (direct tier)"
     # LEIE statute codes: normalize "1128(a)(1)", "1128 A1", "BRCH CIA" -> key

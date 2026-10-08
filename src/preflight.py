@@ -68,6 +68,19 @@ UNLOCKS = [
         "pharma_kickback (op_payment_concentration, utilization_corr)", "ingest_cms.openpayments"),
     Src("nadac", "NADAC drug acquisition cost", "nadac", ["nadac.csv"], [".csv"],
         "drug_spread_anomaly (with the NDC claim slice)", "ingest_cms.nadac", "gated"),
+    Src("medicaid_ndc", "Medicaid Provider Spending by NDC (CMS open data, July 2026)",
+        "medicaid_ndc", ["medicaid_ndc.csv"], [".csv"],
+        "pharmacy prescriber-concentration + excluded-prescriber fills, prescriber "
+        "pharmacy-concentration / dollars per patient / brand share (rx_* and px_* "
+        "features); writes the NDC claim slice that un-gates drug_spread_anomaly "
+        "(run python -m src.ingest_cms.medicaid_ndc after download)",
+        "ingest_cms.medicaid_ndc"),
+    Src("medicaid_enrollment", "Medicaid Provider Enrollment Segments (CMS open data, July 2026)",
+        "medicaid_enrollment", ["medicaid_enrollment.csv"], [".csv"],
+        "state dimension (mcd_primary_state), tenure / churn / ended-for-cause (mcd_*), "
+        "paid-after-enrollment-end per-se check, and the mcd_enroll:<ST>:<reason> label "
+        "source (run python -m src.ingest_cms.medicaid_enrollment after download)",
+        "ingest_cms.medicaid_enrollment"),
     Src("saturation", "Market Saturation & Utilization", "saturation", ["saturation.csv"],
         [".csv"], "saturation_fraud (market_saturation_index)", "ingest_cms.saturation"),
     Src("hrsa_340b", "340B OPAIS Covered Entity Daily Report", "hrsa_340b",

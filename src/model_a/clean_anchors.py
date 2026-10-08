@@ -81,7 +81,11 @@ def manufacture_negatives(matrix: pd.DataFrame) -> pd.DataFrame:
         # below the expected-billing twin, and zero cross-source consistency
         # flags. NaN comparisons stay False, so thin-evidence providers are never
         # forced negative.
-        checks = [pd.to_numeric(df[c], errors="coerce") <= 0
+        # billing_residual / volume_residual are one-sided PERCENTILES (0-1) of the
+        # twin residual within taxonomy (expected_billing), not signed residuals:
+        # "at or below expectation" is the lower half, so the benign test is <= 0.5
+        # (the old <= 0 could never be true, so frozen runs manufactured no negatives)
+        checks = [pd.to_numeric(df[c], errors="coerce") <= 0.5
                   for c in ("billing_residual", "volume_residual")
                   if c in df.columns]
         if "consistency_flags" in df.columns:

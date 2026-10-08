@@ -503,3 +503,11 @@ python -m src.model_a.label_verification --out-dir processed/fca_label/verify_st
 Then rerun the defendant resolver on the merged case CSV. Docket-only cases are allegations: they enter
 the label as source `docket_case` (weak) and never flip the hard label; a settlement or judgment for the
 same case (press release, OIG action, reviewed research) upgrades it to `doj_case`.
+
+## July 2026 CMS Medicaid open-data files (wired 2026-10-08)
+
+Both are public domain (CC0), need no registration, and carry the same 12/12 cell suppression as the by-HCPCS spending file. Save paths and the one-time build commands are in the operator reminders (`python -m src.reminders`).
+
+**Medicaid Provider Spending by NDC** — billing/pharmacy NPI x prescribing NPI x NDC x month, 2018-2024, FFS + managed care. Save the full CSV under `preclean/medicaid_ndc/`, then `python -m src.ingest_cms.medicaid_ndc --in preclean/medicaid_ndc --out-dir processed [--nadac preclean/nadac/<file>.csv]`. Writes `processed/ndc_fact.parquet`, `processed/ndc_claims.parquet` (the NADAC claim slice, only when the file carries units), `processed/medicaid_ndc_features.parquet` and `MEDICAID_NDC_REPORT.md` (column resolution, conservation, feature counts). The export picks up `ndc_fact.parquet` automatically (`[medicaid_ndc]` line in SOURCES_REPORT); a frozen run derives `ndc_fact__asof_<cutoff>.parquet` under its cutoff. If the header does not resolve, the build names the missing field; add the file's header to `NDC_COLS`.
+
+**Medicaid Provider Enrollment Segments** — NPI x state x enrollment start/end x status x program x provider type, 2018-2024. Save under `preclean/medicaid_enrollment/`, then `python -m src.ingest_cms.medicaid_enrollment --in preclean/medicaid_enrollment --out-dir processed --spending processed/spending_fact.parquet`. Writes `processed/medicaid_enrollment_segments.parquet`, `medicaid_enrollment_features.parquet`, `exclusions_medicaid_enrollment.parquet` (label rows `mcd_enroll:<ST>:<reason>`, tiered by `fca_relevance`) and `MEDICAID_ENROLLMENT_REPORT.md` (reason census with tiers: reasons tiered weak with "unmapped" in the basis are the ones to add to `STATE_TERM_RULES`). Rebuild the graph afterwards so the termination events become exclusion nodes; the export then re-derives the `mcd_*` features under the run's cutoff.

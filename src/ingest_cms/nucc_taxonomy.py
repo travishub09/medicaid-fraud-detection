@@ -105,7 +105,10 @@ def canonical_peer_group(provider_dim: pd.DataFrame,
     classification = p["taxonomy_code"].map(h["classification"]).fillna("")
     # most specific available coherent cohort, never empty
     key = classification.where(classification != "", grouping)
-    key = key.where(key != "", p["taxonomy_code"]).where(p["taxonomy_code"] != "", "unknown")
+    # a provider with NO taxonomy gets NO cohort (None): the peer ladder's sentinel
+    # guard then leaves it unranked, instead of pooling every no-taxonomy provider
+    # into one fake "unknown" cell and ranking them against each other
+    key = key.where(key != "", p["taxonomy_code"]).where(p["taxonomy_code"] != "", None)
     return pd.DataFrame({
         "npi": p["npi"],
         "peer_group_key": key,
