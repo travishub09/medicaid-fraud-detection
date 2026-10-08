@@ -63,7 +63,8 @@ def test_audit_exclusions_per_source_and_integrity():
     assert list(ex["collisions"]["npi"]) == [NPI_A]
     t = ex["totals"]
     assert t["rows"] == 7 and t["distinct_valid_npi"] == 3
-    assert t["future_dated"] == 1 and t["undated_rows"] == 1 and t["hard_npi"] == 2
+    # hard_npi: the two 1128a1 rows share one valid NPI; the (a)(3) felony revocation is weak since 2026-10-08
+    assert t["future_dated"] == 1 and t["undated_rows"] == 1 and t["hard_npi"] == 1
 
 
 def _matrix():

@@ -85,9 +85,13 @@ REVOCATION_RULES: list[tuple[str, str, str]] = [
     # felony revocations and 16.6% of (a)(12) program terminations are
     # followed by a fraud-tier event within ~14-18 months; no other
     # revocation ground exceeds 5%. They are the front edge of a case.
-    (r"felon", "hard", "424.535(a)(3) felony (20% convert to a fraud-tier event, median 14 mo)"),
-    (r"program termination", "hard",
-     "424.535(a)(12) terminated by another program (17% convert to a fraud-tier event, median 18 mo)"),
+    # 2026-10-08 label audit: 20% / 17% conversion means 80% of these revocations
+    # never become a fraud-tier event; as HARD positives they were mostly noise in
+    # the FCA-shaped training label. WEAK keeps them out of the hard label and, under
+    # the mask-not-negate policy (company_list.oof_scores), out of the negatives too.
+    (r"felon", "weak", "424.535(a)(3) felony, basis unstated (20% convert to a fraud-tier event)"),
+    (r"program termination", "weak",
+     "424.535(a)(12) terminated by another program (17% convert to a fraud-tier event)"),
     (r"prescrib", "weak", "prescribing abuses"),
     (r"exclusion|debar", "weak", "424.535(a)(2) derivative of exclusion/debarment"),
     (r"licen", "weak", "license action (basis unstated)"),
@@ -228,6 +232,15 @@ def fca_tier(excl_type) -> tuple[str, str]:
         return tier, basis.replace("state termination", "Medicaid enrollment end", 1)
     if t.startswith("doj") or t.startswith("case"):
         return "hard", "DOJ / court case (direct tier)"
+    if t.startswith("state_board"):
+        return "weak", "state licensing-board action (not FCA on its face)"
+    m = re.match(r"^([a-z]+)_([a-z]{2}):?(.*)$", t)   # research_evidence rows: "<src>_<st>:<action>"
+    if m and m.group(1) not in ("state", "medicare", "mcd"):
+        action = m.group(3)
+        if re.search(r"convict|guilty|plea|sentenc|settle|judgment|restitution|fraud|false claim|"
+                     r"kickback|indict.*(convict|plea)|civil penalt", action):
+            return "hard", f"state MFCU / research outcome: {action[:50]}"
+        return "weak", f"state MFCU / research action without an FCA-shaped outcome: {action[:40]}"
     # LEIE statute codes: normalize "1128(a)(1)", "1128 A1", "BRCH CIA" -> key
     key = _NORM.sub("", t)
     if key in LEIE_STATUTES:

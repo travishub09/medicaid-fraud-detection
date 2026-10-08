@@ -129,7 +129,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     only cases whose text mentions Medicaid (the §F filter for the Medicaid label)."""
     cols = ["npi", "fraud_label", "fraud_scheme", "case_sector", "conduct_start",
             "conduct_end", "case_ids", "amount_usd", "label_source",
-            "label_basis"]
+            "label_basis", "fca_strict_tier", "intervened", "qui_tam"]
     if case_db is None or not len(case_db) or org_nodes is None or not len(org_nodes):
         return pd.DataFrame(columns=cols)
     # v3+ case files carry QC provenance: superseded duplicates and
@@ -207,6 +207,37 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         return scheme, sector, start, end, \
             float(amt) if pd.notna(amt) else 0.0
 
+    # the strict label's OUTCOME rule, applied to the matrix line too (2026-10-08):
+    # an indictment or a complaint is an allegation; only a resolved outcome
+    # (settlement / judgment / conviction / plea / CMP) is a positive. Docket rows
+    # keep their allegation source and never flip the label anyway.
+    from .fca_label_export import evidence_strength, outcome_tier
+    stats = {"no_outcome": 0, "weak_strength": 0}
+
+    def _outcome(c) -> str:
+        if _case_source(c) == "docket_case":
+            return "docket"
+        text = f"{c.get('title', '') or ''} {c.get('summary', '') or ''}"
+        ct = str(c.get("case_type") or "").strip().lower()
+        if ct in ("", "nan", "none"):
+            # an UNTYPED case row (the pre-2026-09 harvest never typed its rows):
+            # a stated dollar amount or a civil-outcome phrase is the resolved
+            # outcome; otherwise the row is a bare announcement
+            amt = pd.to_numeric(pd.Series([c.get("amount_usd")]), errors="coerce").iloc[0]
+            if (pd.notna(amt) and float(amt) > 0) or outcome_tier("civil_fca", text, None)[0]:
+                return "fca_civil"
+            return ""
+        tier, _ = outcome_tier(ct, text, c.get("amount_usd"))
+        return tier
+
+    def _flag(v):
+        v = pd.to_numeric(pd.Series([v]), errors="coerce").iloc[0]
+        return int(v) if pd.notna(v) else None
+
+    def _extra(c, otier):
+        return {"fca_strict_tier": otier, "intervened": _flag(c.get("intervened")),
+                "qui_tam": _flag(c.get("qui_tam"))}
+
     rows = []
     n_guarded_org = 0
     # tier 1: NPIs named in the case file itself — the strongest basis
@@ -219,12 +250,16 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             c = cases.loc[str(r.case_id)] if str(r.case_id) in cases.index else None
             if c is None:
                 continue
+            otier = _outcome(c)
+            if not otier:
+                stats["no_outcome"] += 1
+                continue
             scheme, sector, start, end, amt = _case_fields(c)
             rows.append({"npi": str(getattr(r, npi_col)), "fraud_scheme": scheme,
                          "case_sector": sector, "conduct_start": start,
                          "conduct_end": end, "case_ids": str(r.case_id),
                          "amount_usd": amt, "label_basis": "named_npi",
-                         "label_source": _case_source(c)})
+                         "label_source": _case_source(c), **_extra(c, otier)})
     # tier 1b: defendants resolved to a unique NPPES record by the resolver
     if defendant_npis is not None and len(defendant_npis):
         ok = defendant_npis[(defendant_npis.get("status", "resolved") == "resolved")
@@ -233,16 +268,33 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             cid = str(r.case_id)
             if cid not in cases.index:
                 continue
-            scheme, sector, start, end, amt = _case_fields(cases.loc[cid])
+            c = cases.loc[cid]
+            otier = _outcome(c)
+            if not otier:
+                stats["no_outcome"] += 1
+                continue
+            # the evidence ladder's floor: a name-and-state match on a common name
+            # with no corroboration ('weak', 74% verified) never labels the matrix
+            strength = (evidence_strength("resolved_defendant", getattr(r, "match_level", ""),
+                                          getattr(r, "role_agree", ""), getattr(r, "name_national_hits", 0))
+                        if "match_level" in ok.columns else "moderate")   # no ladder columns: unknown, not weak
+            if strength == "weak":
+                stats["weak_strength"] += 1
+                continue
+            scheme, sector, start, end, amt = _case_fields(c)
             rows.append({"npi": str(r.npi), "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt, "label_basis": "resolved_defendant",
-                         "label_source": _case_source(cases.loc[cid])})
+                         "label_source": _case_source(c), **_extra(c, otier)})
     for s in settled.itertuples():
         cid = str(s.matched_case_id)
         if cid not in cases.index:
             continue
         c = cases.loc[cid]
+        otier = _outcome(c)                                   # the same outcome rule as
+        if not otier:                                         # the named / resolved tiers
+            stats["no_outcome"] += 1
+            continue
         scheme, sector, start, end, amt = _case_fields(c)
         oid = str(s.org_node_id)
         members = org_to_npis.get(oid, [])
@@ -253,13 +305,13 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt, "label_basis": "org_billing",
-                         "label_source": _case_source(c)})
+                         "label_source": _case_source(c), **_extra(c, otier)})
         for npi in org_to_individuals.get(oid, []):           # tier 3
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt,
                          "label_basis": "affiliated_individual",
-                         "label_source": _case_source(c)})
+                         "label_source": _case_source(c), **_extra(c, otier)})
     if n_guarded_org:
         print(f"    [case_labels] {n_guarded_org:,} settled-org billing broadcasts suppressed "
               f"(> {max_org_members} billing NPIs — a chain, not individual evidence)")
@@ -314,7 +366,15 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "label_source": "doj_case" if (g["label_source"] == "doj_case").any() else "docket_case",
             "label_basis": min(g["label_basis"],
                                key=lambda b: _BASIS_RANK.get(b, 9)),
+            "fca_strict_tier": _tag_union(g.get("fca_strict_tier", pd.Series(dtype=str))),
+            "intervened": (1 if (pd.to_numeric(g.get("intervened"), errors="coerce") == 1).any()
+                           else (0 if (pd.to_numeric(g.get("intervened"), errors="coerce") == 0).any() else None)),
+            "qui_tam": 1 if (pd.to_numeric(g.get("qui_tam"), errors="coerce") == 1).any() else None,
         })
+    if stats["no_outcome"] or stats["weak_strength"]:
+        print(f"    [case_labels] outcome rule: {stats['no_outcome']:,} case rows without a resolved "
+              f"outcome (charged / complaint only) and {stats['weak_strength']:,} weak-evidence "
+              f"defendant rows kept OUT of the label")
     return pd.DataFrame(out_rows, columns=cols)
 
 

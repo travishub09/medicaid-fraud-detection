@@ -24,7 +24,7 @@ from __future__ import annotations
 CORE_SOURCES = {
     "spending", "provider_stats", "billing_lm", "drug_markup", "sector_schemes",
     "growth", "plausibility", "facility_code", "expected_billing", "consistency",
-    "v3", "v3_concepts",
+    "v3", "v3_concepts", "servicing", "mue", "leads",
     "entity_graph", "graph", "graph_embeddings", "address",
     "owners", "ownership_churn", "ownership",
     "label", "smoking_gun_timeline", "leie",
@@ -47,6 +47,11 @@ EXTRA_SOURCE_GROUPS = {
     "nadac": {"nadac"},
     "docgraph": {"docgraph", "order_referring"},
     "doj_case": {"doj_case"},
+    # July-2026 CMS Medicaid files (docs/platform/12): the NDC spending file and the
+    # enrollment segments; capacity = POS certified beds vs volume (needs POS)
+    "medicaid_ndc": {"medicaid_ndc"},
+    "medicaid_enrollment": {"medicaid_enrollment"},
+    "capacity": {"capacity", "licensed_capacity"},
 }
 
 _SRC_TO_GROUP = {s: g for g, ss in EXTRA_SOURCE_GROUPS.items() for s in ss}
@@ -63,6 +68,12 @@ _DERIVED_CORE = {
     "betweenness", "within_2_hops_of_exclusion", "tenure_months",
     "n_active_months", "n_distinct_hcpcs", "gross_paid", "net_paid",
     "service_volume", "total_claim_lines",
+    # the v3 concept percentiles + the analytics pass-throughs (built from the
+    # spending fact; the export records them under 'v3' / 'growth' /
+    # 'plausibility' too, this is the belt to those braces)
+    "concentration", "payment_intensity", "service_intensity",
+    "specialty_mismatch", "temporal", "clinical_implausibility",
+    "local_volume_implausibility", "growth_level_shift", "new_code_burst",
 }
 
 
@@ -98,6 +109,14 @@ def partition_features(manifest: dict) -> dict:
             return feat_sources[c]
         if c.endswith("__peerpct"):
             return _resolve(c[: -len("__peerpct")])
+        # trend transforms inherit the base metric's source (em_level_mean_yoy →
+        # em_level_mean); the trend adapters usually record them, this is the fallback
+        for suf in ("_yoy", "_slope", "_delta"):
+            if c.endswith(suf) and c[: -len(suf)] != c:
+                base = c[: -len(suf)]
+                got = _resolve(base) if base != c else []
+                if got:
+                    return got
         if c.startswith("subscore_"):
             scheme = c[len("subscore_"):]
             srcs: list[str] = []

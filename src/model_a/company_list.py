@@ -188,8 +188,24 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
             print("[company_list] auto-dropped label-leaking feature(s): "
                   + ", ".join(f"{c} (single-column AUC {a})"
                               for c, a in leaked))
-    X = matrix[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy()
+    # NATIVE missing values (2026-10-08): a missing percentile means "no adequate
+    # peer group", a missing delta "no history", a zero-vector embedding "no
+    # neighbourhood". fillna(0) read every one of them as the most benign value a
+    # real provider can take (the smallest mid-rank percentile is 0.5/n) and threw
+    # away the scheme engine's skip-missing design. LightGBM routes NaN on its own.
+    X = matrix[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
     y = y_train
+    # MASK, never NEGATE (2026-10-08 label audit): a provider the in-matrix label
+    # calls positive but the tier policy does not keep (a license action, a loan
+    # default, a derivative exclusion, an allegation) is AMBIGUOUS, not clean. It
+    # used to train as y=0 — the most contaminated negatives available. Such rows
+    # are held out of every training fold and still scored out-of-fold.
+    ambiguous = ((_to_num(matrix[label_col]) > 0) & (np.asarray(y) == 0)) \
+        if label_col in matrix.columns else np.zeros(len(matrix), dtype=bool)
+    ambiguous = np.asarray(ambiguous, dtype=bool)
+    if ambiguous.any():
+        print(f"[company_list] {int(ambiguous.sum()):,} listed-but-not-kept providers masked "
+              f"from training (scored, never negatives)")
     groups = (matrix["group_id"].to_numpy()
               if "group_id" in matrix.columns else None)
     scores = np.zeros(len(matrix))
@@ -198,6 +214,7 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
                 else KFold(n_splits=n_splits, shuffle=True,
                            random_state=RANDOM_STATE))
     for k, (tr, te) in enumerate(splitter.split(X, y, groups)):
+        tr = tr[~ambiguous[tr]]
         scores[te] = _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k)
     # collapse guard (hard-fail, rule #2): a real probability ranking over a
     # large universe has thousands of distinct values; exact-0/1 saturation

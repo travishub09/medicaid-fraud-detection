@@ -137,6 +137,28 @@ IDENTIFIER_COLS = ["npi", "org_node_id", "entity_type", "primary_taxonomy",
                    "row_grain"]
 
 
+# diagnostic: model-internal scores/flags that are not trainable features
+DIAGNOSTIC_COLS = {"anomaly_score_v3", "anomaly_lead_v3", "n_concept_signals",
+                   "anomaly_contributing_concepts", "iforest_score_secondary",
+                   "not_scored", "not_scored_reason"}
+# raw_aggregate: source totals/denominators kept for provenance, never fed
+RAW_AGGREGATE_COLS = {"total_services", "total_benes", "total_allowed", "total_claims",
+                      "total_cost", "total_paid", "post_deactivation_paid", "jcode_paid",
+                      "n_jcodes", "n_manufacturers", "op_total_dollars", "opioid_claims",
+                      "services_per_bene", "allowed_per_bene", "code_concentration_hhi",
+                      "brand_generic_cost_ratio", "dme_code_concentration", "pos_bed_count",
+                      "first_service_month", "last_service_month",
+                      # ownership-churn raw counts (ownership_turnover is the feature) and
+                      # the NADAC name-match coverage denominator (brand_premium_share is
+                      # the feature)
+                      "n_owner_entries", "n_owner_exits", "nadac_matched_share",
+                      # servicing-grain raw totals (the sv_* RATES are the features) and the
+                      # July-2026 enrollment bookkeeping strings
+                      "sv_paid_total", "sv_rows", "sv_lines", "sv_patient_months",
+                      "sv_first_month", "sv_last_month", "mcd_last_end_date",
+                      "mcd_primary_state"}
+
+
 def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
     """Partition every column into exactly one meaningful class.
 
@@ -155,21 +177,8 @@ def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
             seen.update(keep)
 
     rest = [c for c in all_cols if c not in seen]
-    # diagnostic: model-internal scores/flags that are not trainable features
-    _diag = {"anomaly_score_v3", "anomaly_lead_v3", "n_concept_signals",
-             "anomaly_contributing_concepts", "iforest_score_secondary",
-             "not_scored", "not_scored_reason"}
-    # raw_aggregate: source totals/denominators kept for provenance, never fed
-    _agg = {"total_services", "total_benes", "total_allowed", "total_claims",
-            "total_cost", "total_paid", "post_deactivation_paid", "jcode_paid",
-            "n_jcodes", "n_manufacturers", "op_total_dollars", "opioid_claims",
-            "services_per_bene", "allowed_per_bene", "code_concentration_hhi",
-            "brand_generic_cost_ratio", "dme_code_concentration", "pos_bed_count",
-            "first_service_month", "last_service_month",
-            # ownership-churn raw counts (ownership_turnover is the feature) and
-            # the NADAC name-match coverage denominator (brand_premium_share is
-            # the feature)
-            "n_owner_entries", "n_owner_exits", "nadac_matched_share"}
+    _diag = DIAGNOSTIC_COLS
+    _agg = RAW_AGGREGATE_COLS
 
     def _bucket(c: str) -> str:
         if c.startswith("evidence_n_"):
@@ -271,7 +280,15 @@ def _one_sided_peer_pct(df: pd.DataFrame, cols: list[str],
     if "peer_group_key" in work.columns and work["peer_group_key"].astype(str).str.len().gt(0).any():
         ladder = DEFAULT_LADDER + (("peer_group_key",),)
     assigned = assign_peer_groups(work, ladder=ladder, min_peer=min_peer)
-    pct = one_sided_percentiles(assigned, present)
+    # min_peer enforced on the metric's NON-NULL count per cell (per-metric fallback):
+    # a Part-B metric present for 5 of a 30-row cell is ranked at the next level up
+    pct = one_sided_percentiles(assigned, present, min_peer=min_peer)
+    fb = [c for c in pct.columns if c.endswith("__peer_fallback")]
+    if fb:
+        moved = int(pct[fb].to_numpy().sum())
+        if moved:
+            print(f"    [peers] {moved:,} metric-rows fell back a ladder level because the "
+                  f"metric had < {min_peer} non-null peers in the assigned cell")
     return pct[[c for c in present if c in pct.columns]]
 
 
@@ -300,6 +317,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     records label / leakage / feature / coverage groupings for Travis.
     """
     m = leads.copy()
+    _base_cols = set(leads.columns)          # the base frame's own columns (for the source ledger)
     m["npi"] = m["npi"].astype(str)
     assert m["npi"].is_unique, "base leads must be one row per NPI"
     n0 = len(m)
@@ -319,6 +337,16 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                    .str.len().gt(0).astype(int))
 
     sources_used: dict[str, list[str]] = {}
+    # the BASE frame's own sources (2026-10-08 accuracy audit): the v3 concept
+    # percentiles and the billing stats were never recorded under a source, so
+    # feature_partition filed them 'unmapped' and company_list / every ablation
+    # harness silently trained WITHOUT the five Medicaid billing-pattern scores
+    v3_here = [c for c in V3_CONCEPTS if c in m.columns]
+    if v3_here:
+        sources_used["v3"] = v3_here
+    stats_here = [c for c in PROVIDER_STATS if c in m.columns]
+    if stats_here:
+        sources_used["provider_stats"] = stats_here
 
     if widened_label is not None and len(widened_label) and "npi" in widened_label.columns:
         wl = widened_label.copy()
@@ -337,7 +365,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         cl = case_labels.copy()
         cl["npi"] = cl["npi"].astype(str)
         meta = [c for c in ["npi", "fraud_scheme", "conduct_start", "conduct_end",
-                            "case_ids", "label_basis"] if c in cl.columns]
+                            "case_ids", "label_basis", "case_sector", "amount_usd",
+                            "fca_strict_tier", "intervened", "qui_tam"] if c in cl.columns]
         m = m.merge(cl[meta].drop_duplicates("npi"), on="npi", how="left")
         assert len(m) == n0, "case-label join fanned out"
         # affiliation-broadcast rows ("worked at a settling org") carry scheme
@@ -438,6 +467,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     cap = _capacity_mismatch(m)
     if cap is not None:
         m["capacity_mismatch"] = cap
+        sources_used["capacity"] = ["capacity_mismatch"]
 
     # --- peer-normalize the raw adapter metrics (one-sided taxonomy percentile) ---
     adapter_present = [c for c in ADAPTER_FEATURE_COLS if c in m.columns]
@@ -563,9 +593,24 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     _billing = _num("net_paid") if "net_paid" in out.columns else _num("gross_paid")
     out["assessable"] = (has_peer & ((_billing > 0) | (_num("service_volume") > 0))).astype(int)
 
+    # every NUMERIC column a source produced is a candidate feature, not only the
+    # ones the scheme registry happens to reference (2026-10-08: the rx_* / px_* /
+    # mcd_* / sv_* columns and capacity_mismatch were built, shipped, and never
+    # trained on). Raw aggregates, diagnostics, identifiers, label metadata and
+    # the hard-leak list stay out; strings never enter.
+    _not_feature = (set(RAW_AGGREGATE_COLS) | set(DIAGNOSTIC_COLS) | set(IDENTIFIER_COLS)
+                    | {"peer_group_key", "nucc_grouping", "nucc_classification",
+                       "fraud_scheme", "conduct_start", "conduct_end", "case_ids",
+                       "label_basis", "case_sector", "amount_usd", "fca_strict_tier",
+                       "intervened", "qui_tam", "provider_on_exclusion",
+                       "exclusion_label_sources", "excluded_owner_role"})
+    adapter_numeric = sorted({
+        c for cols in sources_used.values() for c in cols
+        if c in out.columns and c not in _not_feature and c not in LEAKAGE_HARD
+        and (pd.api.types.is_numeric_dtype(out[c]) or pd.api.types.is_bool_dtype(out[c]))})
     raw_feature_cols = sorted(
         [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
-                     + adapter_present + PROVIDER_STATS)
+                     + adapter_present + PROVIDER_STATS + adapter_numeric)
          if c in out.columns and c not in LEAKAGE_HARD])
     subscore_cols = [c for c in out.columns if c.startswith("subscore_")]
     peerpct_cols = [c for c in out.columns if c.endswith("__peerpct")]
@@ -611,7 +656,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # for scheme-stratified and out-of-time validation.
     label_metadata = [c for c in ["exclusion_label_sources", "fraud_scheme",
                                   "conduct_start", "conduct_end", "case_ids",
-                                  "label_basis",
+                                  "label_basis", "case_sector", "amount_usd",
+                                  "fca_strict_tier", "intervened", "qui_tam",
                                   "provider_on_leie", "confirmed_clean", "clean_basis",
                                   "weak_label_score", "weak_label", "weak_label_votes",
                                   "billing_implied_taxonomy"]
@@ -647,6 +693,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "partb_trend": "annual_capped", "partd_trend": "annual_capped",
         "dmepos_trend": "annual_capped", "opioid_trend": "annual_capped",
         "nucc_taxonomy": "reference",
+        "v3": "point_in_time", "provider_stats": "point_in_time",
+        "servicing": "point_in_time", "medicaid_ndc": "point_in_time",
+        "medicaid_enrollment": "point_in_time",
     }  # every unlisted source (entity_graph, address, facility, pos, hcris,
     #    saturation, ownership, graph_embeddings, order_referring_referrer, …)
     #    is current_state — the safe default direction.
@@ -731,7 +780,47 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "graph_substrate": graph_substrate or {"address_layer_frozen": False,
                                                "asof": None,
                                                "asof_nppes_edition": None},
+        # what the training harnesses do with this file (company_list / network_ab /
+        # source_ablation / label_ablation share these rules; a change here is a
+        # metric-semantics change and needs a new pre-registered run)
+        "training_policy": {
+            "missing_values": "native (LightGBM NaN routing; a missing percentile is "
+                              "unknown, never 'least suspicious')",
+            "ambiguous_rows": "masked from training folds, scored out-of-fold "
+                              "(listed-but-not-kept under the tier policy)",
+            "feature_gate": "feature_partition.unmapped == [] (enforced below)",
+        },
     }
+    # THE GATE (2026-10-08): every trainable column must trace to a source, or the
+    # harnesses would drop it silently. In-time runs lost the five v3 billing-pattern
+    # scores this way (no 'v3' source was ever recorded); v6/v7 lost capacity_mismatch
+    # (+ its percentile); the July-2026 rx_/px_/mcd_ and servicing sv_ columns would
+    # have gone the same way, because feature_partition filed them 'unmapped' and
+    # full_feature_list() skipped them. (Frozen runs drop the v3 scores EARLIER, as
+    # as-of-uncomputable: that is a separate, open gap, see docs/ACCURACY_PLAN.)
+    from .feature_partition import partition_features
+    # columns the LEADS frame carried in (v3 concepts, stats, owner flags) that no
+    # block recorded: a real leads file is wider than the fixed lists, so ledger
+    # them under 'leads' (core) instead of failing the gate on a base-frame column
+    _recorded = {c for cols in sources_used.values() for c in cols}
+    _from_leads = [c for c in raw_feature_cols if c in _base_cols and c not in _recorded]
+    if _from_leads:
+        sources_used["leads"] = _from_leads
+    part = partition_features(manifest)
+    manifest["feature_partition"] = {
+        "n_core": part["n_core"], "n_extra": part["n_extra"],
+        "extra_groups": {g: len(cs) for g, cs in part["extra"].items()},
+        "unmapped": part["unmapped"],
+    }
+    if part["unmapped"]:
+        raise ValueError(
+            f"{len(part['unmapped'])} trainable column(s) trace to no source and would be "
+            f"dropped from every model silently: {part['unmapped'][:12]} — record the "
+            f"producing block in sources_used (build_provider_matrix) or map the prefix "
+            f"in feature_partition._resolve")
+    print(f"  [feature_partition] core={part['n_core']} extra={part['n_extra']} "
+          f"({', '.join(f'{g}:{n}' for g, n in manifest['feature_partition']['extra_groups'].items())}); "
+          f"unmapped=0 (gate passed)")
     return out, manifest
 
 

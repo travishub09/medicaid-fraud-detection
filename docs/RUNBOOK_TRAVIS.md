@@ -350,8 +350,12 @@ in three steps:
 
 #### Dormant by data (stay null until the data exists — not a code gap)
 - **`impossible_day`** — more services/procedure-minutes in a day than physically
-  possible. Needs claim/line-level data with service dates (the annual PUF can't
-  express per-day counts).
+  possible. LIVE since the MUE and servicing-grain work: `mue_violation_share` is the
+  CMS Medically Unlikely Edit pigeonhole at month grain (claim lines over MUE x days
+  x patients, per billing x rendering NPI x code x month; a monthly fact cannot see a
+  single day, so it under-counts, never over-counts) and `sv_peak_lines_month` is the
+  rendering clinician's busiest month across every organization that billed for them.
+  `time_minutes_per_day` needs line-level service dates and stays null.
 - **`dme_ring` ordering-MD concentration** — one physician funneling one supplier.
   Needs DMEPOS line-level pairing supplier ↔ ordering MD.
 

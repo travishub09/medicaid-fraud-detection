@@ -120,10 +120,44 @@ def _levels_in(df: pd.DataFrame) -> list[int]:
                   if c.startswith("__peer_key_L"))
 
 
-def one_sided_percentiles(df: pd.DataFrame, metric_cols: list[str]) -> pd.DataFrame:
+def _effective_levels(df: pd.DataFrame, vals: pd.Series, min_peer: int) -> pd.Series:
+    """Per-METRIC level assignment (2026-10-08): the ladder assigns a row to the most
+    specific level whose cell holds ``min_peer`` ROWS, but a metric only some sources
+    populate (Part B, facility, opioid) can have five non-null values in a cell of
+    thirty. The percentile then divides by the metric's non-null count, so a
+    'guarded' percentile came from five peers. Here a row whose cell has fewer than
+    ``min_peer`` NON-NULL values of this metric reads its percentile from the next
+    coarser level that does; none → NaN (not scored on this metric)."""
+    eff = df["peer_level"].copy()
+    levels = _levels_in(df)
+    counts = {}
+    for i in levels:
+        keycol = _KEY.format(i=i)
+        counts[i] = vals.groupby(df[keycol]).transform("count").where(df[keycol].notna(), 0).fillna(0)
+    for i in levels:
+        need = (eff == i) & (counts[i] < min_peer)
+        if not need.any():
+            continue
+        for j in levels:
+            if j <= i:
+                continue
+            move = need & (counts[j] >= min_peer)
+            if move.any():
+                eff[move] = j
+                need &= ~move
+        eff[need] = -1
+    return eff
+
+
+def one_sided_percentiles(df: pd.DataFrame, metric_cols: list[str],
+                          min_peer: int | None = None) -> pd.DataFrame:
     """Percentiles within each row's ASSIGNED level, baselined on that level's
     full population. Degenerate cells → NaN + a ``<metric>__degenerate`` flag.
-    Not-scored rows → NaN."""
+    Not-scored rows → NaN.
+
+    ``min_peer`` (optional): enforce the minimum on the metric's NON-NULL count
+    per cell, falling back a level per metric (``<metric>__peer_fallback`` flags
+    the rows that moved). None keeps the row-count assignment only."""
     out = pd.DataFrame(index=df.index)
     for m in metric_cols:
         if m not in df.columns:
@@ -131,9 +165,13 @@ def one_sided_percentiles(df: pd.DataFrame, metric_cols: list[str]) -> pd.DataFr
         vals = pd.to_numeric(df[m], errors="coerce")
         result = pd.Series(np.nan, index=df.index)
         degenerate = pd.Series(False, index=df.index)
+        level_of = df["peer_level"]
+        if min_peer is not None:
+            level_of = _effective_levels(df, vals, int(min_peer))
+            out[f"{m}__peer_fallback"] = (level_of != df["peer_level"]) & vals.notna()
         for i in _levels_in(df):
             keycol = _KEY.format(i=i)
-            at_level = df["peer_level"] == i
+            at_level = level_of == i
             if not at_level.any():
                 continue
             # mid-rank percentile (r-0.5)/n, not r/n: plain pct=True hands the

@@ -37,7 +37,7 @@ _DOJ_DEFERRED = {"open_payments", "opioid", "facility_quality", "hcris", "satura
 
 def _numeric_frame(matrix: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     keep = [c for c in cols if c in matrix.columns]
-    X = matrix[keep].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    X = matrix[keep].apply(pd.to_numeric, errors="coerce")      # NaN stays NaN (native routing)
     return X
 
 

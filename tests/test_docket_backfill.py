@@ -67,6 +67,9 @@ def test_docket_cases_never_flip_the_hard_label():
     assert len(lbl) == 1 and lbl["label_source"].iloc[0] == "docket_case"
     # add a prosecuted case resolving to the same NPI: doj_case wins
     doj = cases.iloc[:1].copy(); doj["case_id"] = "u9"; doj["case_type"] = "criminal_hcf"
+    # a prosecuted case needs a resolved OUTCOME to label (the 2026-10-08 outcome rule);
+    # a criminal row that only restates the complaint stays an allegation
+    doj["summary"] = "The defendant pleaded guilty to health care fraud and was sentenced to 24 months."
     both = pd.concat([cases, doj], ignore_index=True)
     dn2 = pd.concat([dn, pd.DataFrame([{"case_id": "u9", "npi": "1679576722", "status": "resolved"}])])
     lbl2 = build_case_labels(both, org_nodes, npi_to_org, fuzzy_threshold=None, defendant_npis=dn2)

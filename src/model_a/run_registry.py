@@ -211,6 +211,20 @@ def parse_run_dir(run_dir: str | Path) -> dict:
         row["sources_used"] = _search(r"_(\d+) source\(s\) contributed", srp, int)
         row["sources_skipped"] = _search(r";\s*(\d+) skipped", srp, int)
 
+    # the business-outcome KPIs (model_a/accuracy_diagnostics.py): read from its JSON,
+    # never regexed off the markdown. acc_* fields are flat and enforceable with
+    # --check (aliases below): hits / precision at the org budgets a human reads,
+    # the random-pool baseline, lead time, institutional share, calibration, stability
+    acc = d / "accuracy_diagnostics.json"
+    if acc.exists():
+        try:
+            aj = json.loads(_read(acc))
+            for k, v in (aj.get("kpis") or {}).items():
+                if k.startswith("acc_"):
+                    row[k] = v
+        except Exception:
+            pass
+
     try:
         row["git_commit"] = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True,
@@ -332,6 +346,17 @@ CHECK_ALIASES = {
     "columns": "n_columns", "providers": "n_providers",
     "frozen": "substrate_frozen", "policy": "label_policy",
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
+    # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)
+    "hits50": "acc_org_hits50", "hits16": "acc_org_hits16",
+    "prec50": "acc_org_prec50", "prec50_lo": "acc_org_prec50_lo",
+    "base50": "acc_base50", "p50_vs_random": "acc_org_p50_vs_random",
+    "lift50_vs_dollar": "acc_org_lift50_vs_dollar",
+    "npi_prec1pct": "acc_npi_prec1pct", "npi_lift1pct": "acc_npi_lift1pct",
+    "lead_median": "acc_lead_median_mo", "lead_ge_gap": "acc_hits_lead_ge_gap_share",
+    "inst_share50": "acc_inst_share50", "known_share50": "acc_known_share50",
+    "ece_top": "acc_ece_top1000", "top50_jaccard": "acc_top50_jaccard",
+    "prec50_sd": "acc_prec50_sd", "eval_policy": "acc_eval_policy",
+    "horizon": "acc_horizon_mo", "dollar_recall50": "acc_dollar_recall50",
 }
 _CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"
                        r"(>=|<=|==|!=|=|>|<)\s*(.+?)\s*$")

@@ -23,17 +23,18 @@ def _mue_csv(tmp_path):
 
 def _fact(tmp_path):
     rows = [
-        # violator: 200 lines of J2505 in a 30-day month; bound = 1*30 = 30
-        {"billing_npi": "1588799746", "hcpcs_code": "J2505",
+        # violator: 200 lines of J2505 for 3 patients in a 30-day month; bound = 1*30*3 = 90
+        {"billing_npi": "1588799746", "hcpcs_code": "J2505", "total_patients": 3,
          "service_month": "2023-06", "total_claim_lines": 200, "total_paid": 100_000},
-        # same provider, clean cell on 99213: 100 lines vs 4*30=120 bound
-        {"billing_npi": "1588799746", "hcpcs_code": "99213",
+        # same provider, clean cell on 99213: 100 lines for 1 patient vs 4*30*1=120 bound
+        {"billing_npi": "1588799746", "hcpcs_code": "99213", "total_patients": 1,
          "service_month": "2023-06", "total_claim_lines": 100, "total_paid": 50_000},
-        # clean provider
-        {"billing_npi": "1033128848", "hcpcs_code": "99213",
-         "service_month": "2023-06", "total_claim_lines": 80, "total_paid": 40_000},
+        # clean HIGH-VOLUME clinic: 400 lines of 99213 across 150 patients (the old
+        # patient-blind bound 4*30=120 flagged this; the per-patient bound 4*30*150 does not)
+        {"billing_npi": "1033128848", "hcpcs_code": "99213", "total_patients": 150,
+         "service_month": "2023-06", "total_claim_lines": 400, "total_paid": 40_000},
         # code not in the MUE table: never judged
-        {"billing_npi": "1033128848", "hcpcs_code": "T2046",
+        {"billing_npi": "1033128848", "hcpcs_code": "T2046", "total_patients": 1,
          "service_month": "2023-06", "total_claim_lines": 9_999, "total_paid": 1_000_000},
     ]
     p = tmp_path / "fact.parquet"
@@ -54,9 +55,34 @@ def test_conservative_bound_flags_only_true_violations(tmp_path):
     # violation share = violating dollars / judged dollars = 100k / 150k
     assert abs(v["mue_violation_share"] - 100_000 / 150_000) < 1e-9
     assert v["n_mue_violation_cells"] == 1
-    assert v["worst_mue_ratio"] == pytest.approx(200 / 30, rel=1e-6)
+    assert v["worst_mue_ratio"] == pytest.approx(200 / 90, rel=1e-6)
     clean = res.loc["1033128848"]
-    assert clean["mue_violation_share"] == 0.0       # T2046 cell never judged
+    assert clean["mue_violation_share"] == 0.0       # T2046 never judged; 99213 volume is not impossibility
+    assert clean["n_mue_violation_cells"] == 0
+
+
+def test_bound_is_per_patient_and_per_rendering_npi(tmp_path):
+    """Two rendering clinicians under one biller, 2 patients each on a 1/day code in a
+    30-day month: 70 lines for one clinician (bound 60) violates; 50 for the other does
+    not. Summed at the billing grain (120 lines vs 4 patients x 30 = 120) nothing would
+    have tripped: the finer cell is tighter, never wrong."""
+    rows = [
+        {"billing_npi": "1111111111", "servicing_npi": "2222222222", "hcpcs_code": "J2505",
+         "service_month": "2023-06", "total_claim_lines": 70, "total_patients": 2, "total_paid": 7_000},
+        {"billing_npi": "1111111111", "servicing_npi": "3333333333", "hcpcs_code": "J2505",
+         "service_month": "2023-06", "total_claim_lines": 50, "total_patients": 2, "total_paid": 5_000},
+    ]
+    p = tmp_path / "fact_sv.parquet"
+    pd.DataFrame(rows).to_parquet(p)
+    res = compute_mue_violations(p, load_mue_table(_mue_csv(tmp_path))).set_index("npi")
+    r = res.loc["1111111111"]
+    assert r["n_mue_violation_cells"] == 1 and r["mue_violation_dollars"] == 7_000
+    assert r["worst_mue_ratio"] == pytest.approx(70 / 60, rel=1e-6)
+    # no patient column: the one-patient fallback (the old bound) still works
+    pd.DataFrame([{k: v for k, v in r_.items() if k != "total_patients"} for r_ in rows]).to_parquet(p)
+    res2 = compute_mue_violations(p, load_mue_table(_mue_csv(tmp_path))).set_index("npi")
+    assert res2.loc["1111111111", "n_mue_violation_cells"] == 2        # both cells exceed 1 x 30
+    assert res2.loc["1111111111", "worst_mue_ratio"] == pytest.approx(70 / 30, rel=1e-6)
 
 
 def test_scheme_wiring():
@@ -100,18 +126,18 @@ def test_negative_paid_cells_cannot_push_share_outside_unit_interval(tmp_path):
     share_out_of_bounds FAIL. One-sided rule: only positive dollars count."""
     rows = [
         # violating cell (200 lines vs bound 30) that was REFUNDED
-        {"billing_npi": "1111111111", "hcpcs_code": "J2505",
+        {"billing_npi": "1111111111", "hcpcs_code": "J2505", "total_patients": 1,
          "service_month": "2023-06", "total_claim_lines": 200,
          "total_paid": -5_000},
-        {"billing_npi": "1111111111", "hcpcs_code": "99213",
+        {"billing_npi": "1111111111", "hcpcs_code": "99213", "total_patients": 1,
          "service_month": "2023-06", "total_claim_lines": 10,
          "total_paid": 50_000},
         # violator whose CLEAN cell is a big refund: raw share would be
         # 100k / (100k - 90k) = 10.0
-        {"billing_npi": "2222222222", "hcpcs_code": "J2505",
+        {"billing_npi": "2222222222", "hcpcs_code": "J2505", "total_patients": 1,
          "service_month": "2023-06", "total_claim_lines": 200,
          "total_paid": 100_000},
-        {"billing_npi": "2222222222", "hcpcs_code": "99213",
+        {"billing_npi": "2222222222", "hcpcs_code": "99213", "total_patients": 1,
          "service_month": "2023-06", "total_claim_lines": 10,
          "total_paid": -90_000},
     ]

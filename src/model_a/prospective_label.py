@@ -146,6 +146,94 @@ def _load(path: str) -> pd.DataFrame:
     return pd.read_csv(p, dtype=str)
 
 
+
+def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame,
+                             npi_to_org: pd.DataFrame, defendant_npis: pd.DataFrame | None = None,
+                             horizon_months: int | None = None) -> pd.DataFrame:
+    """The FORWARD FCA RULER (2026-10-08): providers named in a DOJ / OIG case that
+    was ANNOUNCED strictly after the cutoff (and, when a horizon is given, within
+    ``horizon_months`` of it), whose conduct window began on or before the cutoff
+    year, and whose case carries a resolved outcome (case_labels' outcome rule).
+    This is the only label that scores the business target itself: an FCA case
+    that became public after the model could have ranked the provider.
+
+    Same columns as ``build_prospective_label`` so every harness that takes
+    ``--future-label`` accepts it: npi, first_excl_date (the announcement), excl_type
+    ('doj:<strict tier>'), entity_name, is_prospective_positive,
+    was_excluded_pre_cutoff (announced on/before the cutoff), undated_exclusion,
+    fca_tier ('fca'), fca_basis, label_policy ('fca_case'). Cases announced on/before
+    the cutoff are listed with was_excluded_pre_cutoff = 1 so the evaluator drops
+    them from the universe (already known at the freeze)."""
+    from .case_labels import build_case_labels
+    cols = ["npi", "first_excl_date", "excl_type", "entity_name", "is_prospective_positive",
+            "was_excluded_pre_cutoff", "undated_exclusion", "fca_tier", "fca_basis", "label_policy"]
+    lab = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
+    if lab is None or not len(lab):
+        return pd.DataFrame(columns=cols)
+    lab = lab[(lab["label_source"] == "doj_case") & (lab.get("fca_strict_tier", "").astype(str) != "")]
+    if not len(lab):
+        return pd.DataFrame(columns=cols)
+    cases = case_db.drop_duplicates("case_id").set_index(case_db.drop_duplicates("case_id")["case_id"].astype(str))
+    ann = pd.to_datetime(cases.get("announced_date"), errors="coerce")
+
+    def _first_announce(ids: str):
+        ds = [ann.get(i) for i in str(ids).split(";") if i in ann.index]
+        ds = [d for d in ds if pd.notna(d)]
+        return min(ds) if ds else pd.NaT
+    lab = lab.copy()
+    lab["_ann"] = lab["case_ids"].map(_first_announce)
+    cutoff_ts = _cutoff_ts(cutoff)
+    cut_year = int(str(cutoff)[:4])
+    horizon_end = (cutoff_ts + pd.DateOffset(months=int(horizon_months))) if horizon_months else None
+    dated = lab["_ann"].notna()
+    conduct_ok = pd.to_numeric(lab["conduct_start"], errors="coerce").fillna(cut_year) <= cut_year
+    after = dated & (lab["_ann"] > cutoff_ts) & conduct_ok
+    if horizon_end is not None:
+        after &= lab["_ann"] <= horizon_end
+    before = dated & (lab["_ann"] <= cutoff_ts)
+    out = pd.DataFrame({
+        "npi": lab["npi"].astype(str),
+        "first_excl_date": lab["_ann"].dt.strftime("%Y-%m-%d").where(dated, ""),
+        "excl_type": "doj:" + lab["fca_strict_tier"].astype(str),
+        "entity_name": "",
+        "is_prospective_positive": after.astype(int),
+        "was_excluded_pre_cutoff": before.astype(int),
+        "undated_exclusion": (~dated).astype(int),
+        "fca_tier": "fca",
+        "fca_basis": "DOJ / OIG case with a resolved outcome, announced after the cutoff"
+                     + (f" within {horizon_months} months" if horizon_months else ""),
+        "label_policy": "fca_case",
+    })
+    # a provider in both sets (an old case and a new one): the new case is the event
+    # only if the old one was not already public; keep the pre-cutoff flag (known)
+    out = out.sort_values(["npi", "was_excluded_pre_cutoff"], ascending=[True, False]).drop_duplicates("npi")
+    return out[cols].reset_index(drop=True)
+
+
+def merge_forward_labels(exclusion_label: pd.DataFrame, case_label: pd.DataFrame) -> pd.DataFrame:
+    """Union of the exclusion ruler and the FCA-case ruler: a provider is a forward
+    positive under either; 'known at the freeze' under either drops it. The
+    `label_policy` column names which ruler(s) contributed."""
+    if case_label is None or not len(case_label):
+        return exclusion_label
+    if exclusion_label is None or not len(exclusion_label):
+        return case_label
+    a = exclusion_label.copy(); b = case_label.copy()
+    a["npi"] = a["npi"].astype(str); b["npi"] = b["npi"].astype(str)
+    m = a.merge(b, on="npi", how="outer", suffixes=("", "_case"))
+    for c in ("is_prospective_positive", "was_excluded_pre_cutoff", "undated_exclusion"):
+        m[c] = pd.to_numeric(m[c], errors="coerce").fillna(0).astype(int) | \
+               pd.to_numeric(m.get(f"{c}_case"), errors="coerce").fillna(0).astype(int)
+    # a provider known at the freeze under either ruler is never a forward positive
+    m.loc[m["was_excluded_pre_cutoff"] == 1, "is_prospective_positive"] = 0
+    both = m["label_policy"].notna() & m["label_policy_case"].notna()
+    m["label_policy"] = m["label_policy"].fillna(m["label_policy_case"])
+    m.loc[both, "label_policy"] = m.loc[both, "label_policy"] + "+" + m.loc[both, "label_policy_case"]
+    for c in ("first_excl_date", "excl_type", "entity_name", "fca_tier", "fca_basis"):
+        m[c] = m[c].fillna(m.get(f"{c}_case"))
+    return m[[c for c in a.columns]].reset_index(drop=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -170,6 +258,16 @@ def main() -> None:
                          "Loan defaults, paperwork failures, not-operational "
                          "revocations and OpenSanctions are never positives under a "
                          "tier policy.")
+    ap.add_argument("--case-db", default=None,
+                    help="DOJ/OIG case table (enforcement/doj_cases_v3.csv): adds the FORWARD "
+                         "FCA RULER (cases announced after the cutoff with a resolved outcome) "
+                         "to the exclusion ruler; needs --graph-dir")
+    ap.add_argument("--graph-dir", default=None, help="graph root (nodes/org_nodes + npi_to_org) for --case-db")
+    ap.add_argument("--defendant-npis", default=None, help="processed/case_defendant_npis.parquet (optional)")
+    ap.add_argument("--horizon-months", type=int, default=None,
+                    help="count only events within this many months after the cutoff (both rulers)")
+    ap.add_argument("--fca-case-only", action="store_true",
+                    help="write ONLY the FCA-case ruler (ignore the exclusion ruler)")
     ap.add_argument("--tier-report", default=None,
                     help="write the per-tier/basis positive counts as Markdown "
                          "(default: <out>.TIERS.md)")
@@ -179,6 +277,26 @@ def main() -> None:
 
     nodes = _load(args.exclusion_nodes)
     label = build_prospective_label(nodes, args.cutoff, fca_tier=args.fca_tier)
+    if args.horizon_months:
+        end = _cutoff_ts(args.cutoff) + pd.DateOffset(months=int(args.horizon_months))
+        d = pd.to_datetime(label["first_excl_date"], errors="coerce")
+        late = (label["is_prospective_positive"] == 1) & d.notna() & (d > end)
+        label.loc[late, "is_prospective_positive"] = 0
+        label = label[~late]              # beyond the horizon: not in this ruler's universe
+        print(f"[prospective_label] horizon {args.horizon_months} months: {int(late.sum()):,} later events dropped")
+    if args.case_db:
+        if not args.graph_dir:
+            ap.error("--case-db needs --graph-dir")
+        g = Path(args.graph_dir)
+        case_db = pd.read_csv(args.case_db, dtype=str) if str(args.case_db).endswith(".csv") \
+            else pd.read_parquet(args.case_db)
+        dn = pd.read_parquet(args.defendant_npis) if args.defendant_npis else None
+        case_label = build_forward_case_label(case_db, args.cutoff, pd.read_parquet(g / "nodes" / "org_nodes.parquet"),
+                                              pd.read_parquet(g / "npi_to_org.parquet"), defendant_npis=dn,
+                                              horizon_months=args.horizon_months)
+        print(f"[prospective_label] FCA-case ruler: {int(case_label['is_prospective_positive'].sum()):,} "
+              f"forward positives, {int(case_label['was_excluded_pre_cutoff'].sum()):,} known at the freeze")
+        label = case_label if args.fca_case_only else merge_forward_labels(label, case_label)
     pos = int(label["is_prospective_positive"].sum())
     pre = int(label["was_excluded_pre_cutoff"].sum())
     und = int(label["undated_exclusion"].sum())

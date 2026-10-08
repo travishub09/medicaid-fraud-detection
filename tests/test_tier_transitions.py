@@ -10,7 +10,7 @@ from src.model_a.tier_transitions import transitions, to_markdown
 
 
 def test_multi_ground_revocation_keeps_the_strongest_ground():
-    assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report;424.535(a)(3) felonies")[0] == "hard"
+    assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report;424.535(a)(3) felonies")[0] == "weak"   # (a)(3) weak since 2026-10-08 (20% convert)
     assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report;"
                     "424.535(a)(8)(ii) abuse of billing privileges: pattern or practice")[0] == "hard"
     assert fca_tier("medicare_revocation: 424.535(a)(9) failure to report")[0] == "excluded"

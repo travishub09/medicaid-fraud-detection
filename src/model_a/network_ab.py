@@ -161,8 +161,8 @@ def _ab_once(frame, y, with_net, without, groups, test_groups_for_boot,
         tr, te = _grouped_split(len(frame), groups, seed=RANDOM_STATE + s)
         scores = {}
         for tag, cols in (("with", with_net), ("without", without)):
-            Xtr = frame.iloc[tr][cols].fillna(0.0).to_numpy()
-            Xte = frame.iloc[te][cols].fillna(0.0).to_numpy()
+            Xtr = frame.iloc[tr][cols].to_numpy(dtype=float)     # NaN stays NaN (native routing)
+            Xte = frame.iloc[te][cols].to_numpy(dtype=float)
             scores[tag] = _fit_predict(Xtr, yv[tr], Xte, seed=RANDOM_STATE + s)
         yte = yv[te]
         n_te_all.append(len(te))

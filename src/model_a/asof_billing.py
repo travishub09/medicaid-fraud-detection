@@ -90,19 +90,26 @@ def asof_provider_stats(spending_path: str | Path, cutoff: str,
         f"DESCRIBE SELECT * FROM read_parquet('{p}')").fetchall()]
     lines_sel = (", CAST(total_claim_lines AS DOUBLE) AS lines"
                  if "total_claim_lines" in cols else ", NULL AS lines")
+    # PARITY with attempt_2/ingest/features.py (2026-10-08): service_volume is
+    # SUM(total_patients) and gross_paid is the POSITIVE-only sum there; the frozen
+    # path used COUNT(*) rows and gross = net, so the volume twin, the consistency
+    # flags, `assessable` and every per-volume rate meant something different on a
+    # frozen run than on the in-time run it was compared with.
+    pts_sel = (", CAST(total_patients AS DOUBLE) AS pts" if "total_patients" in cols
+               else ", 1.0 AS pts")
     out = con.execute(f"""
         WITH s AS (
             SELECT CAST(billing_npi AS VARCHAR) npi,
                    UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) hcpcs,
                    substr(CAST(service_month AS VARCHAR), 1, 7) ym,
-                   CAST(total_paid AS DOUBLE) paid{lines_sel}
+                   CAST(total_paid AS DOUBLE) paid{lines_sel}{pts_sel}
             FROM read_parquet('{p}')
             WHERE substr(CAST(service_month AS VARCHAR), 1, 7) < '{cut}'
         )
         SELECT npi,
-               SUM(paid) AS gross_paid,
+               SUM(CASE WHEN paid > 0 THEN paid ELSE 0 END) AS gross_paid,
                SUM(paid) AS net_paid,
-               COUNT(*) AS service_volume,
+               SUM(pts) AS service_volume,
                SUM(lines) AS total_claim_lines,
                COUNT(DISTINCT hcpcs) AS n_distinct_hcpcs,
                COUNT(DISTINCT ym) AS n_active_months,

@@ -11,14 +11,22 @@ percentile.
 
 Our spending fact is MONTHLY (npi × hcpcs × month × claim lines), so exact
 per-day units are not observable. The detector therefore uses a CONSERVATIVE
-pigeonhole bound: every claim line carries at least one unit, so if
+pigeonhole bound. An MUE is a PER-PATIENT, per-day limit, and every claim line
+carries at least one unit, so if
 
-    total_claim_lines(npi, code, month)  >  MUE(code) × days_in_month
+    total_claim_lines(cell)  >  MUE(code) × days_in_month × total_patients(cell)
 
-then AT LEAST ONE day that month necessarily exceeded the published daily
-maximum, no matter how the lines were distributed. Under-counts violations
-(a provider can violate daily MUEs without tripping the monthly bound), never
-over-counts — the right direction for a fraud flag.
+then AT LEAST ONE patient on at least one day that month necessarily exceeded
+the published daily maximum, no matter how the lines were distributed. The cell
+is billing NPI × servicing NPI × code × month when the fact carries a servicing
+NPI (the practitioner MUE applies per rendering provider; a finer cell can only
+make the bound tighter, never wrong), else billing NPI × code × month. Before
+2026-10-08 the rule left the patient count out (lines > MUE × days), which
+flagged any clinic seeing more than ~120 patients a month on a 4-per-day code:
+it measured volume, not impossibility. Under-counts violations (a provider can
+violate daily MUEs without tripping the monthly bound), never over-counts — the
+right direction for a fraud flag. A fact without a patient column falls back to
+one patient per cell (the old bound), stated in the log.
 
 Emits per NPI:
     mue_violation_share    share of the provider's paid dollars sitting on
@@ -115,29 +123,39 @@ def compute_mue_violations(spending_path: str | Path,
     month_c = _c("service_month", "claim_from_month", "month")
     lines_c = _c("total_claim_lines", "claim_lines", "lines")
     paid_c = _c("total_paid", "net_paid", "paid")
+    pts_c = _c("total_patients", "patients", "total_benes", "benes")
+    sv_c = _c("servicing_npi", "rendering_npi")
     if not all((npi_c, code_c, month_c, lines_c, paid_c)):
         raise ValueError(f"spending fact missing npi/code/month/lines/paid; "
                          f"saw {list(cols)[:12]}")
+    if pts_c is None:
+        print("    [mue] no patient column on the fact: bound falls back to ONE patient "
+              "per cell (lines > MUE x days), which over-flags high-volume clinics")
     con.register("mue", mue)
     days_case = "CASE CAST(SUBSTR(m,6,2) AS INT) " + " ".join(
         f"WHEN {k} THEN {v}" for k, v in _DAYS.items()) + " ELSE 31 END"
+    pts_sel = (f'GREATEST(SUM(CAST(s."{pts_c}" AS DOUBLE)), 1)' if pts_c else "1")
+    sv_sel = (f'CAST(s."{sv_c}" AS VARCHAR)' if sv_c else "''")
     out = con.execute(f"""
         WITH cell AS (
             SELECT CAST(s."{npi_c}" AS VARCHAR)   AS npi,
+                   {sv_sel}                        AS sv,
                    UPPER(CAST(s."{code_c}" AS VARCHAR)) AS hcpcs,
                    CAST(s."{month_c}" AS VARCHAR) AS m,
                    SUM(CAST(s."{lines_c}" AS DOUBLE)) AS lines,
+                   {pts_sel}                       AS pts,
                    SUM(CAST(s."{paid_c}" AS DOUBLE))  AS paid
             FROM read_parquet('{spending_path}') s
-            GROUP BY 1, 2, 3
+            GROUP BY 1, 2, 3, 4
         ),
         judged AS (
             -- refund/adjustment cells carry negative paid; as raw dollars they
             -- push the share outside [0,1] (negative numerator, or a shrunken
             -- denominator under the violating dollars). One-sided rule: only
             -- positive dollars are service activity a share can sit on.
+            -- The per-patient pigeonhole: lines over (MUE x days x patients).
             SELECT c.npi, GREATEST(c.paid, 0) AS paid,
-                   c.lines / (mue.mue_units * ({days_case})) AS ratio
+                   c.lines / (mue.mue_units * ({days_case}) * c.pts) AS ratio
             FROM cell c JOIN mue ON c.hcpcs = mue.hcpcs
         )
         SELECT npi,

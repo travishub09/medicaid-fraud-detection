@@ -38,8 +38,10 @@ INSTITUTIONAL_TAXONOMIES = {
     "261QF0400X",   # Federally Qualified Health Center
     "261QR1300X",   # Rural Health Clinic
     "261QR0400X",   # Health Service / public health clinic
-    "282N00000X",   # General Acute Care Hospital
-    "282NC2000X",   # Critical Access Hospital
+    # 282N00000X / 282NC2000X (acute-care and critical-access hospitals) were anchors
+    # here until 2026-10-08: hospitals have institutional oversight but are among the
+    # largest FCA settlers by dollars (Stark, kickback, upcoding, outlier payments), so
+    # for the FCA-shaped target they are the wrong clean negatives.
     "313M00000X",   # Nursing facility (county/state-run subset, name-gated below)
 }
 INSTITUTIONAL_NAME = re.compile(

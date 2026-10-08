@@ -371,6 +371,10 @@ def _index_nppes(provider_dim: pd.DataFrame, person_keys: set, org_keys: set,
         hit = ok[ok.isin(org_keys)]
         for idx, k in hit.items():
             orgs.setdefault((k, st[idx]), []).append((npi[idx], city[idx], "", ""))
+            # commonness for businesses too (2026-10-08): the evidence ladder reads
+            # name_national_hits for every resolved row, and an org that never had
+            # a count was graded 'weak' (hits 0) however distinctive its name
+            national[k] = national.get(k, 0) + 1
     return people, orgs, national
 
 
@@ -714,8 +718,7 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame,
                     cands, level = narrowed, level + "_middle"
         uniq = sorted({c[0] for c in cands})
         out.at[i, "n_candidates"] = len(uniq)
-        if out.at[i, "kind"] == "person":
-            out.at[i, "name_national_hits"] = int(national.get(key, 0))
+        out.at[i, "name_national_hits"] = int(national.get(key, 0))
         if len(uniq) == 1 and out.at[i, "kind"] == "person" and not level.endswith("_middle"):
             # "Matthew David Carter" is not NPPES "MATTHEW R CARTER": a middle name in the release
             # that contradicts the candidate's middle name is the wrong person (5 of 10 wrong_npi

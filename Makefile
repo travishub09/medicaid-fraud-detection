@@ -13,6 +13,11 @@ ASOF_CUTOFF ?= 2023-12
 # FROZEN_GRAPH_FLAGS=--no-embeddings (the DeepWalk step needs ~64 GB at full
 # graph scale; the forward test stays valid on flags + structural features).
 FROZEN_GRAPH_FLAGS ?=
+# Extra flags for the frozen EXPORT. --with-analytics keeps the frozen run
+# like-for-like with the in-time run (growth / plausibility / billing-LM /
+# billing-implied specialty; all DuckDB-native since the §9 batch). Clear it
+# (FROZEN_EXPORT_FLAGS=) to skip on a machine that cannot afford the pass.
+FROZEN_EXPORT_FLAGS ?= --with-analytics
 
 help:
 	@echo "Targets:"
@@ -123,7 +128,7 @@ frozen-package:
 		--out $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) --asof $(ASOF_CUTOFF) $(FROZEN_GRAPH_FLAGS)
 	$(PY) -m src.model_a.provider_features_export \
 		--graph-dir $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) \
-		--asof-cutoff $(ASOF_CUTOFF) \
+		--asof-cutoff $(ASOF_CUTOFF) $(FROZEN_EXPORT_FLAGS) \
 		--leads $(DATA_ROOT)/detection/fraud_leads_v3.parquet \
 		--preclean $(DATA_ROOT)/preclean --processed $(DATA_ROOT)/processed \
 		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)

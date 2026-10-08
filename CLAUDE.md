@@ -631,7 +631,52 @@ committed. Never let this file go stale: stale reminders are worse than none.
   manifest); duplicate G0480 key. NOT verifiable: src/model (config asserts 308,038
   PU rows / 578 positives / 617,062 universe rows — Travis's call, same fix class),
   backtest_leie (no argparse; --help runs the backtest).
-  Full suite: `pytest tests/` (982 tests).
+  ACCURACY SPRINT 2026-10-08 (`docs/ACCURACY_PLAN_2026-10.md` — the deep
+  audit the operator asked for: label vs target, features/data vs typologies,
+  evaluation vs the business outcome, with v6/v7 evidence and the ranked
+  experiments; read it before planning v8). Built and tested: the FORWARD FCA
+  RULER (`prospective_label.build_forward_case_label` + `merge_forward_labels`,
+  CLI `--case-db --graph-dir --defendant-npis --horizon-months --fca-case-only`:
+  DOJ/OIG cases with a resolved outcome announced after the cutoff, conduct
+  begun on/before it; the exclusion ruler takes the same horizon so two freezes
+  share one ruler length); the outcome rule on EVERY case-label tier (org_billing /
+  affiliated rows need a settlement / judgment / conviction / plea too, and carry
+  fca_strict_tier / intervened / qui_tam); the evidence ladder counts national
+  name hits for BUSINESSES (a unique org match is moderate, not weak); the
+  TRAINABILITY GATE (the export records `v3` / `provider_stats` / `capacity`
+  sources, every NUMERIC adapter column is a candidate feature, trend suffixes
+  inherit their base, new partition groups medicaid_ndc / medicaid_enrollment /
+  capacity / servicing, and `build_provider_matrix` RAISES when any trainable
+  column maps to no source — in-time runs trained without the five v3 billing
+  scores and v6/v7 without capacity_mismatch because feature_partition filed
+  them `unmapped`, and the July / servicing columns would have followed; frozen
+  runs drop the v3 scores earlier as as-of-uncomputable, an OPEN gap; the
+  manifest now carries `feature_partition` + `training_policy`); NATIVE missing values in company_list / network_ab /
+  source_ablation (no zero fill in the training frame; the single-column leak
+  screen keeps its fill); the PER-PATIENT MUE rule (lines > MUE x days x
+  patients at billing x servicing x code x month; one-patient fallback logged);
+  frozen-run PARITY (`asof_provider_stats`: service_volume = SUM(total_patients),
+  gross = positive-only; Makefile `FROZEN_EXPORT_FLAGS ?= --with-analytics`);
+  the peer engine's minimum on the metric's NON-NULL count with per-metric
+  ladder fallback (`one_sided_percentiles(min_peer=)`, `<metric>__peer_fallback`);
+  (a)(3) felony / (a)(12) program-termination revocations tiered weak; and
+  ACCURACY DIAGNOSTICS (`model_a/accuracy_diagnostics.py`, run on every frozen
+  run folder): org hits@16/@50 on the SHIPPED priority list (or a refit of the
+  shipped scorer) with Wilson / exact intervals against random-from-pool
+  (hypergeometric), dollar-ranked and size-matched baselines, tie-aware; lead
+  time per horizon + the share of hits beyond the gap; the error taxonomy of
+  the top 50 / 250; segments with EB-shrunk lift; eval-side label-noise
+  sensitivity (ambiguous negatives); cross-fitted isotonic calibration on rank
+  bins + org P(any) + FDR-bounded list size; `--repeats` stability (Jaccard of
+  the top sets, precision SD); settlement-dollar recall per case; everything
+  known at the freeze dropped first; headline = the FCA ruler. Writes
+  ACCURACY_DIAGNOSTICS.md + accuracy_diagnostics.json (acc_* KPIs the registry
+  reads; `--check` aliases hits50 / prec50_lo / base50 / lead_median /
+  lead_ge_gap / inst_share50 / top50_jaccard / eval_policy / horizon /
+  dollar_recall50) + accuracy_topk_rows.csv. RULE: v8 is a NEW pre-registration
+  (feature set, NaN policy, MUE, peers, label rule and ruler all changed);
+  grade it on hits@50 vs random under the FCA ruler, never on decile lift.
+  Full suite: `pytest tests/` (994 tests + 4 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
