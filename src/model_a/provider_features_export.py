@@ -131,7 +131,10 @@ PROVIDER_STATS = ["gross_paid", "net_paid", "service_volume", "total_claim_lines
                   "org_member_count"]
 
 IDENTIFIER_COLS = ["npi", "org_node_id", "entity_type", "primary_taxonomy",
-                   "practice_state", "org_legal_name"]
+                   "practice_state", "org_legal_name",
+                   # 'billing' (has its own billing-NPI row) or 'servicing' (a rendering
+                   # clinician with no billing row; model_a/servicing_grain.py)
+                   "row_grain"]
 
 
 def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
@@ -2033,6 +2036,9 @@ def main() -> None:
                          "year-over-year delta (default); 3+ ALSO fits a "
                          "per-provider multi-year slope (<col>_slope) — each "
                          "extra year is another full PUF read")
+    ap.add_argument("--no-servicing-grain", action="store_true",
+                    help="skip the rendering-clinician grain (servicing_grain.py): no sv_* "
+                         "features and no matrix rows for rendering NPIs without a billing row")
     ap.add_argument("--no-trends", action="store_true",
                     help="skip the year-over-year PUF trend features (saves one "
                          "extra prior-year read per multi-year source)")
@@ -2087,6 +2093,7 @@ def main() -> None:
         # they were never bound, so build-info and the identifier enrichment failed
         # with a misleading "cannot access local variable" message
         g, processed = tmp, tmp
+        asof_spend_p = None
     else:
         if not args.graph_dir or not args.leads:
             ap.error("--graph-dir and --leads are required (or use --fixture)")
@@ -2525,6 +2532,40 @@ def main() -> None:
                       "Rebuild the graph with --asof-nppes to close it.")
     except Exception as e:
         print(f"  [graph] build-info unreadable ({e}); substrate assumed unfrozen")
+    # --- the rendering-clinician grain (model_a/servicing_grain.py) -----------------
+    # Every feature so far is per BILLING NPI; the servicing NPI on each line was an
+    # attribute nobody read, and the v7 LABEL_LAG showed only 20% of the FCA-shaped
+    # forward positives in the scored universe (a convicted physician renders under a
+    # group's billing NPI and never had a row). This adds sv_* features for every NPI
+    # that renders, and a matrix ROW for every rendering NPI that has no billing row,
+    # on the same (as-of) spending fact the billing features used.
+    if not args.no_servicing_grain:
+        try:
+            from .servicing_grain import servicing_only_rows, servicing_stats
+            sv_spend = (asof_spend_p if (args.asof_cutoff and asof_spend_p is not None)
+                        else _first_existing(processed, "spending_fact.parquet"))
+            pdim_sv = _first_existing(processed, "provider_dim.parquet")
+            if sv_spend and pdim_sv:
+                sv = servicing_stats(sv_spend)
+                adapter_frames["servicing"] = sv
+                pos = set(widened["npi"].astype(str)) if (widened is not None and len(widened)
+                                                           and "npi" in widened.columns) else set()
+                extra = servicing_only_rows(sv, leads["npi"].astype(str), pd.read_parquet(pdim_sv), pos)
+                if "row_grain" not in leads.columns:
+                    leads["row_grain"] = "billing"
+                if len(extra):
+                    leads = pd.concat([leads, extra], ignore_index=True)
+                    leads["npi"] = leads["npi"].astype(str)
+                    assert leads["npi"].is_unique, "servicing-only rows collided with billing rows"
+                audit(f"    [servicing] {len(sv):,} rendering NPIs from {Path(sv_spend).name}; "
+                      f"{len(extra):,} servicing-only rows added to the universe "
+                      f"(now {len(leads):,}); {int(extra['provider_on_leie'].sum()) if len(extra) else 0:,} "
+                      f"of them carry an exclusion")
+            else:
+                audit("    [servicing] skipped: needs processed/spending_fact.parquet + provider_dim.parquet")
+        except Exception as e:
+            audit(f"    [servicing] skipped: {e}")
+
     # the 14-provider fixture can never fill a 30-provider peer cell: without a
     # small min_peer every percentile and subscore came back NaN and the demo's
     # EXPECTATIONS report listed 11 "all_nan_feature" FAILs that were fixture

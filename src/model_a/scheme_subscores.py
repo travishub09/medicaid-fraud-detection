@@ -102,6 +102,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # source). Skip-missing keeps the scheme silent (never mis-fires) until that
     # data lands; do not interpret its absence as "no impossible-day risk".
     "impossible_day": {"bene_per_day_p95": 0.6, "time_minutes_per_day": 0.4,
+                       # rendering-grain peak (model_a/servicing_grain.py): the busiest
+                       # month's claim lines on THIS clinician's NPI, across every
+                       # organization that billed for them — a producer this scheme
+                       # never had before 2026-10-08
+                       "sv_peak_lines_month": 0.5,
                        # CMS MUE conservative bound (ingest_cms/mue.py): monthly
                        # claim lines exceed the PUBLISHED daily unit maximum ×
                        # days — a categorical, CMS-citable impossible-units flag
@@ -165,6 +170,15 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # as a model input (entity_graph/code_rings.compute_facility_code_share;
     # individuals only, organizations stay unscored on this scheme)
     "facility_code_billing": {"facility_code_share": 1.0},
+    # rendering identity (model_a/servicing_grain.py, 2026-10-08): the rendering
+    # clinician's NPI appears on many organizations' claims in the SAME month, at a
+    # volume one person cannot render, for dollars per patient peers do not reach —
+    # the identity-lending / phantom-rendering shape. Individual NPIs are the natural
+    # subject; an organization NPI as servicing NPI is scored the same way (it is
+    # then "one org rendering for many billers", the pass-through shape).
+    "rendering_identity": {"sv_max_orgs_same_month": 0.6, "sv_peak_lines_month": 0.5,
+                           "sv_n_billing_orgs": 0.3, "sv_paid_per_patient_month": 0.3,
+                           "sv_lines_per_active_month": 0.3},
 }
 
 
