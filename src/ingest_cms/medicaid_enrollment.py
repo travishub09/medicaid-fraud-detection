@@ -182,7 +182,9 @@ def enrollment_features(segments: pd.DataFrame, asof_cutoff: str | None = None) 
         "mcd_last_end_date": g["end_date"].max(),
     }).reset_index()
     out = out.merge(primary[["npi", "state"]].rename(columns={"state": "mcd_primary_state"}), on="npi", how="left")
-    out["mcd_gap_share"] = (1 - out["mcd_enrolled_months"] / out["mcd_tenure_months"].replace(0, pd.NA)).clip(0, 1).astype(float)
+    _ten = pd.to_numeric(out["mcd_tenure_months"], errors="coerce").astype(float)
+    out["mcd_gap_share"] = (1 - pd.to_numeric(out["mcd_enrolled_months"], errors="coerce").astype(float)
+                            / _ten.where(_ten != 0)).clip(0, 1)
     # an NPI with an open segment has no "last end" that matters
     out.loc[out["mcd_open_segments"] > 0, "mcd_last_end_date"] = pd.NaT
     cols = ["npi", "mcd_states_enrolled", "mcd_primary_state", "mcd_segments", "mcd_tenure_months",
@@ -257,7 +259,11 @@ def paid_after_enrollment_end(spending_path: str | Path, features: pd.DataFrame,
         from _ends e join read_parquet('{_pq(spending_path)}') s on cast(s.billing_npi as varchar) = e.npi
         group by e.npi""").df()
     df["mcd_last_end_date"] = pd.to_datetime(df["end_month"] + "-01")
-    df["mcd_paid_after_end_share"] = (df["mcd_paid_after_end"] / df["total_paid"].replace(0, pd.NA)).astype(float)
+    # float NaN, never pd.NA: pandas 2.x on Python 3.14 cannot cast an object column
+    # holding NAType to float (the 2026-10-08 crash after 65.9M segments loaded)
+    _tot = pd.to_numeric(df["total_paid"], errors="coerce").astype(float)
+    df["mcd_paid_after_end_share"] = (pd.to_numeric(df["mcd_paid_after_end"], errors="coerce").astype(float)
+                                      / _tot.where(_tot != 0))
     df["npi"] = df["npi"].astype(str)
     return df[cols]
 
