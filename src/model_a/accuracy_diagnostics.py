@@ -464,16 +464,18 @@ def error_taxonomy(orgs_hit: pd.DataFrame, matrix: pd.DataFrame, ks=(50, 250)) -
         if not len(top):
             continue
         names = top.get("org_name", pd.Series("", index=top.index)).fillna("").astype(str)
-        gov = government_mask(names).to_numpy()
-        known = (_col(top, "n_excluded_members", 0.0) > 0).to_numpy()
+        gov = np.array(government_mask(names).to_numpy(), dtype=bool, copy=True)
+        known = np.array((_col(top, "n_excluded_members", 0.0) > 0).to_numpy(), dtype=bool, copy=True)
         n_prov = _col(top, "n_providers", 1.0).to_numpy()
         billed = _col(top, "total_billed", 0.0).to_numpy()
-        inst = (names.str.contains(_INSTITUTIONAL_RE, regex=True, na=False)
-                | names.str.contains(INSTITUTIONAL_NAME, na=False)).to_numpy() | (n_prov >= 25)
+        inst = np.array((names.str.contains(_INSTITUTIONAL_RE, regex=True, na=False)
+                         | names.str.contains(INSTITUTIONAL_NAME, na=False)).to_numpy(), dtype=bool, copy=True) | (n_prov >= 25)
         inter = (n_prov == 1) & (billed >= INTERMEDIARY_SCALE)
         capped = top.get("case_size_capped", pd.Series(False, index=top.index)).astype(str).str.lower().isin(["true", "1"]).to_numpy()
         tiny = capped | (billed < 250_000)
-        artifact = names.str.startswith("UNNAMED").to_numpy()
+        # a writable copy: Arrow-backed string columns hand back READ-ONLY numpy
+        # views, and the per-org loop below writes into this mask
+        artifact = np.array(names.str.startswith("UNNAMED").to_numpy(), dtype=bool, copy=True)
         if tax is not None and assess is not None:
             for i, s in enumerate(top["member_npis"].fillna("").astype(str)):
                 npis = [x for x in s.split(";") if x]
