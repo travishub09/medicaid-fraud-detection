@@ -268,15 +268,6 @@ python -m src.reminders --done-task build_nursing_home_dollar_basis
 python -m src.reminders --done-task wesleyan_balance_sheet_readout
 ```
 
-- [ ] **rerun_corruption_audit_sidecar** — ONE-TIME after merging bundle 225: the stage chain now reconciles the provider base against processed/corruption_audit.json (written by audit_corruption.py) instead of the 2024-vintage constants baked into features.py / company_lead_tracker.py / score_universe.py. Your processed/ folder was audited before that sidecar existed, so rerun the audit once (reads spending_fact.parquet, ~minutes, read-only on inputs); until then those stages fall back to the legacy constants and say so in their reports. Also required whenever Spending.csv is refreshed. (added 2026-10-08)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.attempt_2.audit.audit_corruption
-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\corruption_audit.json"
-python -m src.reminders --done-task rerun_corruption_audit_sidecar
-```
-
 
 ## After ANY download session (standing rule)
 
