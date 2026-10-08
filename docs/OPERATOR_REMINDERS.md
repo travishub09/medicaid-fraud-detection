@@ -267,6 +267,16 @@ python -m src.model_a.run_registry --register "C:\Users\treyr\OneDrive\Desktop\d
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
 ```
 
+- [ ] **medicaid_enrollment_build_rerun** — REOPENED 2026-10-08 (the dir check showed the 01:11 PM segments file from the crashed run, no report, no exclusions file): the enrollment build has not completed since bundle 229. Rerun it (about a minute; the quoting and NaN fixes are in), upload processed\MEDICAID_ENROLLMENT_REPORT.md, then rebuild the graph so the termination events become exclusion nodes. (added 2026-10-08)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --spending "C:\Users\treyr\OneDrive\Desktop\data\processed\spending_fact.parquet"
+dir "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_ENROLLMENT_REPORT.md" "C:\Users\treyr\OneDrive\Desktop\data\processed\exclusions_medicaid_enrollment.parquet"
+python -m src.entity_graph --input "C:\Users\treyr\OneDrive\Desktop\data\processed" --out "C:\Users\treyr\OneDrive\Desktop\data\graph"
+python -m src.reminders --done-task medicaid_enrollment_build_rerun
+```
+
 
 ## After ANY download session (standing rule)
 
