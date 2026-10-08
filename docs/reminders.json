@@ -645,16 +645,6 @@
     "REM upload processed\\MEDICAID_NDC_REPORT.md",
     "python -m src.reminders --done-task medicaid_ndc_rebuild_after_230"
    ]
-  },
-  {
-   "key": "graph_rebuild_after_232",
-   "what": "The graph rebuild has NOT run since the Medicaid enrollment termination events landed: the 2026-10-08 attempt died in the co-location edge step (MemoryError, fixed in bundle 232) and the retry line lost its first two letters when pasted ('thon' is not recognized). Run it now (20 to 40 minutes); the termination events become exclusion nodes only after it finishes. Then the NDC rebuild and the diagnostics baseline.",
-   "added": "2026-10-08",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.entity_graph --input \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\"",
-    "python -m src.reminders --done-task graph_rebuild_after_232"
-   ]
   }
  ]
 }
