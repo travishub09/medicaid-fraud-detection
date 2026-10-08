@@ -2083,6 +2083,10 @@ def main() -> None:
             adapter_frames["address"] = af
         org_grain = {}
         nucc_pg, widened, case_lbls = None, None, None
+        # the later blocks read `g` (graph dir) and `processed`; on the fixture path
+        # they were never bound, so build-info and the identifier enrichment failed
+        # with a misleading "cannot access local variable" message
+        g, processed = tmp, tmp
     else:
         if not args.graph_dir or not args.leads:
             ap.error("--graph-dir and --leads are required (or use --fixture)")
@@ -2521,11 +2525,15 @@ def main() -> None:
                       "Rebuild the graph with --asof-nppes to close it.")
     except Exception as e:
         print(f"  [graph] build-info unreadable ({e}); substrate assumed unfrozen")
+    # the 14-provider fixture can never fill a 30-provider peer cell: without a
+    # small min_peer every percentile and subscore came back NaN and the demo's
+    # EXPECTATIONS report listed 11 "all_nan_feature" FAILs that were fixture
+    # artifacts, not calculation faults
     matrix, manifest = build_provider_matrix(
         leads, npi_to_org, org_graph_features=gf,
         adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
         nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls,
-        graph_substrate=graph_substrate)
+        graph_substrate=graph_substrate, min_peer=(2 if args.fixture else 30))
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

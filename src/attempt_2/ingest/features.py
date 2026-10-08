@@ -218,15 +218,24 @@ def main() -> None:
     n_base, paid_base, bad_pm, bad_ceil = chk
     require("base_all_provider_matched", bad_pm == 0, f"{bad_pm} rows not matched")
     require("base_under_ceiling", bad_ceil == 0, f"{bad_ceil} rows over ${C:,.0f}")
-    require("base_rows_reconcile_audit", n_base == AUDIT_BASE_ROWS,
-            f"base={n_base:,} audit={AUDIT_BASE_ROWS:,}")
+    # reconcile against the corruption audit that ran on THIS spending fact
+    # (processed/corruption_audit.json, written by audit_corruption.py). The module
+    # constants are the 2024-vintage national file and remain only as the fallback
+    # for a processed/ folder audited before the sidecar existed; on any other
+    # vintage (a refresh, a state cut, the synthetic fixture) they were a guaranteed
+    # assertion failure that blocked the whole stage chain.
+    from ..audit_basis import audit_base
+    audit_rows, audit_paid, audit_basis = audit_base(Path(sf).parent)
+    log(f"    reconciliation basis: {audit_basis}")
+    require("base_rows_reconcile_audit", n_base == audit_rows,
+            f"base={n_base:,} audit={audit_rows:,} [{audit_basis}]")
     require("base_dollars_reconcile_audit",
-            abs(paid_base - AUDIT_BASE_PAID) <= max(1.0, 1e-6 * AUDIT_BASE_PAID),
-            f"base=${paid_base:,.2f} audit=${AUDIT_BASE_PAID:,.2f}")
+            abs(paid_base - audit_paid) <= max(1.0, 1e-6 * audit_paid),
+            f"base=${paid_base:,.2f} audit=${audit_paid:,.2f} [{audit_basis}]")
     expected = con.execute("SELECT COUNT(DISTINCT billing_npi) FROM base").fetchone()[0]
     rep.append("\n## Base reconciliation (step 0)\n"
                f"- spending_provider_base.parquet: {n_base:,} rows, ${paid_base:,.2f}\n"
-               f"- reconciles to audit ({AUDIT_BASE_ROWS:,} rows, ${AUDIT_BASE_PAID:,.0f}) ✓\n"
+               f"- reconciles to audit ({audit_rows:,} rows, ${audit_paid:,.0f}; {audit_basis}) ✓\n"
                f"- distinct billing NPIs (= final feature row count): {expected:,}\n"
                f"- filter: `provider_matched = TRUE AND COALESCE(total_paid,0) <= {C:,.0f}`\n")
 

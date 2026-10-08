@@ -136,6 +136,13 @@ def main() -> None:
     rawdf = con.execute(f"SELECT * FROM read_csv_auto('{raw}', all_varchar=true)").df()
     rawdf["npi_canon"] = canonicalize_series(rawdf["NPI"])
     rec = rawdf[rawdf["npi_canon"].isin(leie_npis)].copy()
+    # the waiver / reinstatement columns are LEIE-edition features; an edition (or a
+    # state list dropped in as Caught.csv) without them means "no waivers recorded",
+    # not a crash
+    for col in ["WVRSTATE", "WAIVERDATE", "REINDATE"]:
+        if col not in rec.columns:
+            log(f"    raw LEIE has no {col} column: treated as blank for every record")
+            rec[col] = ""
     for col in ["LASTNAME", "FIRSTNAME", "BUSNAME", "EXCLTYPE", "WVRSTATE"]:
         rec[col] = rec[col].fillna("").astype(str).str.strip()
     rec["excl_month"] = rec["EXCLDATE"].map(_ymd_month)

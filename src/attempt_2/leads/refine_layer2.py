@@ -254,9 +254,9 @@ def write_report(rep: list[str], df: pd.DataFrame, out_dir: Path) -> None:
     rep.append(f"- **near-zero-MAD peer-group×feature cells** under the OLD taxonomy-only method "
                f"(the source of the z=50 wall): **{near0:,}**\n")
     rep.append(f"- **rare-code presence** (share>0): old taxonomy-level = {old_rare:,}/{gp:,} "
-               f"({old_rare/gp:.1%}) → new taxonomy×entity = {new_rare:,}/{gp:,} ({new_rare/gp:.1%}). "
+               f"({(old_rare/gp if gp else 0.0):.1%}) → new taxonomy×entity = {new_rare:,}/{gp:,} ({(new_rare/gp if gp else 0.0):.1%}). "
                f"More importantly, as a SCORING SIGNAL it now fires only when in the top 1% of the "
-               f"peer group: **{rare_signal:,}/{n_scored:,} scored ({rare_signal/n_scored:.2%})** reach "
+               f"peer group: **{rare_signal:,}/{n_scored:,} scored ({(rare_signal/n_scored if n_scored else 0.0):.2%})** reach "
                f"P{int(P99*100)} — vs the old method where rare_for_taxonomy hit the z=50 clip "
                f"near-universally among top leads.\n")
 

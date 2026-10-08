@@ -68,6 +68,10 @@ def main() -> None:
     thr = args.min_net_paid
     data = PRECLEAN_DIR.parent
     out_dir = data / "detection"
+    # reconcile against the corruption audit of THIS fact (not a vintage constant)
+    from ..audit_basis import audit_base
+    _, AUDIT_BASE_PAID, _audit_basis = audit_base(data / "processed")
+    log(f"audit basis: {_audit_basis}")
 
     rollup = _find("company_rollup.parquet", data)
     npimap = _find("npi_to_company_map.parquet", data)
@@ -287,7 +291,9 @@ def write_report(df, leads, direct_under, thr, base_total, out_dir):
     # Step 3 check: top-25 company-anomaly composition — giants must NOT dominate
     anom = leads[leads["priority_tier"] == "3_company_anomaly"].copy()
     top = anom.head(25)
-    gov_top = top["company_name"].fillna("").map(lambda s: bool(GOV_RE.search(s)))
+    # .map on an EMPTY object Series yields an empty object Series whose sum() is ''
+    # (not 0), so int() crashed the report on a book with no company-anomaly tier
+    gov_top = top["company_name"].fillna("").map(lambda s: bool(GOV_RE.search(s))).astype(bool)
     et = top["entity_type"].map({"1": "individual", "2": "organization"}).fillna("?").value_counts()
     r.append("\n## Top-25 company-anomaly leads — composition (giants should NOT dominate)\n"
              f"- government/public-style names in top 25: **{int(gov_top.sum())}/25**\n"

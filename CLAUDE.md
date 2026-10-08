@@ -609,7 +609,29 @@ committed. Never let this file go stale: stale reminders are worse than none.
   threshold, max-over-members rollup, src/model zero-anomaly negatives. Items
   marked (re-register) change metric semantics — new pre-registered run, never a
   silent swap.
-  Full suite: `pytest tests/` (966 tests).
+  VERIFICATION CAMPAIGN 2026-10-08 (`docs/VERIFICATION_2026-10-08.md`): pyflakes
+  over src (0 undefined names), coverage (68%; the stage-one chain and src/model
+  were 0%), 14 planted-answer invariant tests (`tests/test_model_invariants_2026_10
+  .py`: peers / subscores / fence / OOF scorer / calibration / conformal / FDR /
+  PU prior / point-in-time / twin residual / case-control), and the whole stage
+  chain run end to end on the raw fixture (`tests/test_stage_chain_end_to_end.py`,
+  the Makefile `pipeline` order as subprocesses, planted truths asserted). Fixed:
+  `src/attempt_2/audit_basis.py` (NEW) — features.py / company_lead_tracker.py /
+  backtest score_universe.py reconciled against HARD-CODED 2024-vintage totals
+  (230,133,234 rows / $1.1T) and could not run on any other spending file; they now
+  read processed/corruption_audit.json, which audit_corruption.py writes (legacy
+  constants only as the fallback; the report names the basis — operator reruns the
+  audit once, reminder queued). integrate writes the EMPTY facility-flags table when
+  preclean/owners/ is absent (features.py requires the file); audit_corruption NULL
+  format; verify_layer1 tolerates a LEIE without waiver columns; refine_layer2 /
+  company_rollup / tracker report crashes on a small or empty book; the export's
+  --fixture path never bound `g`/`processed` and used min_peer 30 on 14 rows (11
+  phantom expectation FAILs); company_list.oof_scores hard-coded the label column
+  (pursuit dossier crashed on any matrix without the widened label — now reads the
+  manifest); duplicate G0480 key. NOT verifiable: src/model (config asserts 308,038
+  PU rows / 578 positives / 617,062 universe rows — Travis's call, same fix class),
+  backtest_leie (no argparse; --help runs the backtest).
+  Full suite: `pytest tests/` (982 tests).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -86,7 +86,7 @@ HCPCS_DESC = {
     "80053": "comprehensive metabolic panel", "80061": "lipid panel",
     "83036": "hemoglobin A1c", "84443": "TSH (thyroid)", "36415": "routine venipuncture",
     "81001": "urinalysis", "85025": "complete blood count (CBC)",
-    "G0480": "drug test, definitive (1-7 classes)", "80305": "drug test, presumptive",
+    "80305": "drug test, presumptive",
     # therapy / clinic
     "97110": "therapeutic exercise, per 15 min", "97530": "therapeutic activities, per 15 min",
     "T1015": "clinic visit / encounter", "T1016": "case management, per 15 min",

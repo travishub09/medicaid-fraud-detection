@@ -233,7 +233,10 @@ def main() -> None:
     # ---- company leads CSV (>= threshold AND flagged) ----
     leads = comp[(comp["company_net_paid"] >= thr) & comp["flagged"]].copy()
     leads = leads.sort_values(["best_priority_rank", "company_net_paid"], ascending=[True, False])
-    leads["reasons"] = leads.apply(company_reason, axis=1)
+    # DataFrame.apply on ZERO rows returns an empty DataFrame, which cannot be
+    # assigned to one column (crashed the stage on a small or fully-filtered book)
+    leads["reasons"] = (leads.apply(company_reason, axis=1) if len(leads)
+                        else pd.Series(dtype=str, index=leads.index))
     leads_csv = leads.assign(
         company_total_billing_size_proxy_not_case_value=leads["company_net_paid"].round(0)
     )[["company_id", "company_name", "best_priority_tier", "reasons",

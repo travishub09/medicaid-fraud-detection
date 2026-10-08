@@ -40,6 +40,8 @@ def _find(name, data):
 
 
 def main():
+    from ..attempt_2.audit_basis import audit_base
+    AUDIT_BASE_PAID = audit_base(PRECLEAN_DIR.parent / "processed")[1]
     data = PRECLEAN_DIR.parent
     rollup = _find("company_rollup.parquet", data)
     npimap = _find("npi_to_company_map.parquet", data)

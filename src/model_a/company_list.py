@@ -152,6 +152,17 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     from sklearn.model_selection import GroupKFold, KFold
     from src.model_a.network_ab import LABEL_ADJACENT_NET
 
+    # the matrix's label is whatever the manifest says it is (provider_on_exclusion
+    # when the widened label was built, provider_on_leie otherwise); a hard-coded
+    # column name crashed the pursuit dossier on any matrix without the widened label
+    if label_col not in matrix.columns:
+        for cand in (manifest.get("label"), "provider_on_leie"):
+            if cand and cand in matrix.columns:
+                label_col = cand
+                break
+        else:
+            raise KeyError(f"no label column in the matrix (looked for {label_col}, "
+                           f"{manifest.get('label')}, provider_on_leie)")
     banned = set(LABEL_ADJACENT_NET) \
         | set(manifest.get("leakage_adjacent", []) or []) \
         | set(manifest.get("leakage_hard", []) or [])

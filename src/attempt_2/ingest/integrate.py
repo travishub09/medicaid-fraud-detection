@@ -690,7 +690,18 @@ def main() -> None:
 
         if len(owner_edges):
             flags = build_facility_flags(owner_edges, exclusions, qa)
-            flags.to_parquet(processed / "facility_owner_exclusion_flags.parquet", index=False)
+        else:
+            # no owners files under preclean/owners/: write the EMPTY flags table with
+            # the contract columns, because features.py requires the file and the whole
+            # stage chain stopped here on a data root without owners (the 2026-10-08
+            # synthetic end-to-end run)
+            flags = pd.DataFrame(columns=["facility_npi", "facility_type", "facility_name",
+                                          "n_owners", "n_high", "n_probable", "weighted_high",
+                                          "weighted_probable", "has_high_excluded_owner",
+                                          "has_probable_excluded_owner"])
+            log("    no owners files: facility_owner_exclusion_flags written EMPTY (ownership "
+                "schemes stay dormant; place the All-Owners CSVs under preclean/owners/)")
+        flags.to_parquet(processed / "facility_owner_exclusion_flags.parquet", index=False)
 
         # npi_quarantine (rule 2: never dropped silently)
         quar = pd.concat(quarantine, ignore_index=True) if quarantine else \

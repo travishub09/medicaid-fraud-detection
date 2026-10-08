@@ -159,6 +159,9 @@ def main() -> None:
         f"SELECT MIN(total_paid) FROM sf WHERE COALESCE(total_paid,0) > {C}").fetchone()[0]
     matched_max = con.execute(
         "SELECT MAX(total_paid) FROM sf WHERE provider_matched").fetchone()[0]
+    # a fact with no rows in a bucket returns NULL from MAX/MIN (a small or clean
+    # file): format as 0 instead of crashing the audit on a None
+    legit_max, corrupt_min, matched_max = (0.0 if v is None else v for v in (legit_max, corrupt_min, matched_max))
     out.append("\n## 2. Corruption rule\n")
     out.append(f"- **Rule:** `TOTAL_PAID > ${C:,.0f}` per row ⇒ corrupt (physically impossible "
                f"Medicaid line payment).\n")
@@ -219,6 +222,13 @@ def main() -> None:
     # partition assertions (every row in exactly one bucket; total preserved)
     assert n_corrupt + n_agg + n_base == n_total, \
         f"partition broken: {n_corrupt}+{n_agg}+{n_base} != {n_total}"
+    # machine-readable sidecar: features.py reconciles its provider base against
+    # THIS run's certified partition instead of a constant baked in from one vintage
+    import json as _json
+    (proc / "corruption_audit.json").write_text(_json.dumps({
+        "n_base": int(n_base), "paid_base": float(p_base), "n_corrupt": int(n_corrupt),
+        "n_aggregate": int(n_agg), "n_total": int(n_total), "ceiling": float(C)}, indent=2),
+        encoding="utf-8")
     assert abs((p_corrupt + p_agg + p_base) - p_total) <= max(0.01, 1e-9 * abs(p_total)), \
         "dollar partition does not reconcile"
     post_total = p_total - p_corrupt
