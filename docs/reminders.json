@@ -634,18 +634,6 @@
     "python -m src.model_a.run_registry --register \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\"",
     "python -m src.reminders --done-task v8_prereg_accuracy_sprint"
    ]
-  },
-  {
-   "key": "medicaid_enrollment_build_rerun",
-   "what": "The enrollment file is downloaded and in place (medicaid-provider-enrollment-segments FILE.csv; its header resolved) but the 2026-10-08 build died on line 74,854: the CSV sniffer saw no quotes in the first 20k rows, so the first quoted reason with a comma split into an 11th column. Fixed in bundle 228 (quoting stated explicitly in both July readers). After merging 228, rerun the build, upload processed\\MEDICAID_ENROLLMENT_REPORT.md, then rebuild the graph (make graph) before the next export so the termination events become exclusion nodes.",
-   "added": "2026-10-08",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.ingest_cms.medicaid_enrollment --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_enrollment\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\" --spending \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\spending_fact.parquet\"",
-    "REM upload processed\\MEDICAID_ENROLLMENT_REPORT.md, then:",
-    "make graph",
-    "python -m src.reminders --done-task medicaid_enrollment_build_rerun"
-   ]
   }
  ]
 }
