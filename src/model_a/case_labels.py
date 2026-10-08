@@ -67,7 +67,18 @@ def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
     orgs = org_nodes[["org_node_id", name_col]].dropna().copy()
     orgs["key"] = orgs[name_col].astype(str).map(norm_org_name)
     orgs = orgs[orgs["key"].str.len() >= 8]           # short keys over-match
-    org_keys = orgs["key"].unique().tolist()
+    # key -> org ids built ONCE (2026-10-08): the previous per-hit scan compared a
+    # 500k-row string column for every matched case and ran out of memory on the
+    # operator's laptop (ArrowMemoryError inside the Arrow string comparison)
+    key_to_ids: dict[str, list[str]] = {}
+    for k, oid in zip(orgs["key"].astype(str).to_numpy(), orgs["org_node_id"].astype(str).to_numpy()):
+        key_to_ids.setdefault(k, []).append(oid)
+    # candidate buckets by the first four characters: at a 0.92 similarity cutoff a
+    # match shares its opening characters, and difflib over the whole national key
+    # list (500k+ strings) per case was minutes per case
+    buckets: dict[str, list[str]] = {}
+    for k in key_to_ids:
+        buckets.setdefault(k[:4], []).append(k)
     amount = pd.to_numeric(case_db.get("amount_usd"), errors="coerce").fillna(0.0)
     live = case_db[(amount > 0) & ~case_db["case_id"].astype(str).isin(already)]
     rows = []
@@ -75,11 +86,13 @@ def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
         dkey = norm_org_name(str(getattr(r, def_col, "") or ""))
         if len(dkey) < 8:
             continue
-        hit = difflib.get_close_matches(dkey, org_keys, n=1, cutoff=threshold)
+        cands = buckets.get(dkey[:4])
+        if not cands:
+            continue
+        hit = difflib.get_close_matches(dkey, cands, n=1, cutoff=threshold)
         if hit:
-            for oid in orgs.loc[orgs["key"] == hit[0], "org_node_id"]:
-                rows.append({"org_node_id": str(oid),
-                             "matched_case_id": str(r.case_id)})
+            for oid in key_to_ids.get(hit[0], []):
+                rows.append({"org_node_id": oid, "matched_case_id": str(r.case_id)})
     return pd.DataFrame(rows, columns=cols)
 
 
