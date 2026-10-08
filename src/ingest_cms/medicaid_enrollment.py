@@ -96,9 +96,14 @@ def build_segments(paths, out_parquet: Path, con=None) -> dict:
         files += sorted(p.glob("*.csv")) if p.is_dir() else [p]
     if not files:
         raise FileNotFoundError(f"no Medicaid enrollment csv under {paths}")
+    # quote/escape stated explicitly (2026-10-08): the CMS file's first 20k rows carry
+    # no quoted field, so the sniffer chose "no quotes" and the first quoted reason
+    # ("TERM - STATE EXCLUSION/ DEBARMENT, ETC.", a comma inside) split into an
+    # 11th column and the read failed on line 74,854
+    _csv = "all_varchar=true, encoding='latin-1', header=true, quote='\"', escape='\"', delim=','"
     header = [r[0] for r in con.execute(
-        f"describe select * from read_csv_auto('{_pq(files[0])}', all_varchar=true, "
-        f"encoding='latin-1', sample_size=20480)").fetchall()]
+        f"describe select * from read_csv_auto('{_pq(files[0])}', {_csv}, sample_size=20480)").fetchall()]
+    print(f"    [medicaid_enrollment] header: {header}")
     resolved = resolve_enrollment_columns(header)
 
     def q(k):
@@ -112,7 +117,7 @@ def build_segments(paths, out_parquet: Path, con=None) -> dict:
     src = ", ".join(f"'{_pq(f)}'" for f in files)
     con.execute(f"""
         create or replace view _enr_raw as
-        select * from read_csv_auto([{src}], all_varchar=true, encoding='latin-1', union_by_name=true)""")
+        select * from read_csv_auto([{src}], {_csv}, union_by_name=true)""")
     raw_n = con.execute("select count(*) from _enr_raw").fetchone()[0]
     out_parquet = Path(out_parquet)
     out_parquet.parent.mkdir(parents=True, exist_ok=True)

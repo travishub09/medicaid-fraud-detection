@@ -122,7 +122,7 @@ def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
              if asof_cutoff else "")
     con.execute(f"""
         create or replace view _ndc_raw as
-        select * from read_csv_auto([{src}], all_varchar=true, encoding='latin-1',
+        select * from read_csv_auto([{src}], all_varchar=true, encoding='latin-1', header=true, quote='\"', escape='\"', delim=',',
                                     union_by_name=true, ignore_errors=false)""")
     raw_n, raw_paid = con.execute(
         f"select count(*), coalesce(sum(try_cast(\"{resolved['total_paid']}\" as double)),0) "
