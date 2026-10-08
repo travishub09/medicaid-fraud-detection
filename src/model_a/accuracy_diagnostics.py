@@ -334,21 +334,26 @@ def org_outcomes(orgs: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:
     """Per listed org: hit (any member a forward positive in the eval universe),
     earliest event lead, members in universe. Orgs with NO member in the eval
     universe stay listed (a hit is impossible for them, which is the truth of the
-    list, not a reason to drop the row)."""
-    pos = ev[ev["y"] == 1].set_index("npi")
-    uni = set(ev["npi"])
-    lead = pos["lead_months"].to_dict()
-    hits, leads, in_uni = [], [], []
-    for s in orgs["member_npis"].fillna("").astype(str):
-        npis = [x for x in s.split(";") if x]
-        h = [lead[n] for n in npis if n in lead]
-        hits.append(1 if h else 0)
-        leads.append(float(np.nanmin(h)) if h and not all(pd.isna(h)) else np.nan)
-        in_uni.append(sum(1 for n in npis if n in uni))
+    list, not a reason to drop the row). Vectorized: explode the rosters once."""
     out = orgs.copy()
-    out["hit"] = hits
-    out["lead_months"] = leads
-    out["members_in_universe"] = in_uni
+    members = out["member_npis"].fillna("").astype(str).str.split(";")
+    ex = pd.DataFrame({"_i": np.repeat(np.arange(len(out)), members.str.len().to_numpy()),
+                       "npi": np.concatenate(members.to_list()) if len(out) else np.array([], dtype=str)})
+    ex = ex[ex["npi"] != ""]
+    uni = ev.set_index("npi")
+    ex["in_uni"] = ex["npi"].isin(uni.index)
+    ex["lead"] = ex["npi"].map(uni.loc[uni["y"] == 1, "lead_months"])
+    g = ex.groupby("_i")
+    out["hit"] = 0
+    out["lead_months"] = np.nan
+    out["members_in_universe"] = 0
+    if len(ex):
+        lead_min = g["lead"].min()
+        has = g["lead"].count() > 0
+        out.loc[has.index[has.to_numpy()], "hit"] = 1
+        out.loc[lead_min.index, "lead_months"] = lead_min.to_numpy()
+        n_uni = g["in_uni"].sum()
+        out.loc[n_uni.index, "members_in_universe"] = n_uni.to_numpy().astype(int)
     return out
 
 
@@ -567,13 +572,21 @@ def crossfit_calibration(ev: pd.DataFrame, scores: np.ndarray, fold: np.ndarray,
     return out
 
 
+def _log(msg: str) -> None:
+    import datetime as _dt
+    print(f"[accuracy_diagnostics {_dt.datetime.now():%H:%M:%S}] {msg}", flush=True)
+
+
 def dollar_recall(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame, npi_to_org: pd.DataFrame,
                   ev_universe: set, orgs: pd.DataFrame, budgets, defendant_npis=None,
-                  horizon_months: int | None = None) -> dict:
+                  horizon_months: int | None = None, case_labels: pd.DataFrame | None = None) -> dict:
     """Per CASE (deduplicated): settlement dollars whose provider sits in the top-k
-    orgs, over the dollars resolvable to the eval universe at all."""
+    orgs, over the dollars resolvable to the eval universe at all. ``case_labels`` =
+    a prebuilt build_case_labels frame (the resolver + fuzzy pass over the whole case
+    DB takes minutes on a national graph; build it once, pass it everywhere)."""
     from .case_labels import build_case_labels
-    lab = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
+    lab = case_labels if case_labels is not None else \
+        build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
     if lab is None or not len(lab):
         return {"available": False}
     cases = case_db.drop_duplicates("case_id").set_index(case_db.drop_duplicates("case_id")["case_id"].astype(str))
@@ -607,26 +620,49 @@ def dollar_recall(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame, n
             "post_cutoff_dollars_unresolvable_to_universe": unresolvable, "rows": rows}
 
 
+def _fast_org_top(matrix: pd.DataFrame, scores: np.ndarray, k_org: int) -> set:
+    """Top-k orgs by the dollar-weighted mean member score (pandas groupby sums; the
+    dossier's per-org Python rollup is minutes per pass on 500k orgs and is not needed
+    to measure how much the top set moves between fold assignments)."""
+    org_col = "org_node_id" if "org_node_id" in matrix.columns else "group_id"
+    paid = pd.to_numeric(matrix.get("net_paid", matrix.get("gross_paid", 0)), errors="coerce").fillna(0.0).clip(lower=0)
+    sc = pd.Series(np.nan_to_num(scores, nan=0.0))
+    df = pd.DataFrame({"org": matrix[org_col].astype(str).to_numpy(), "sp": (sc * paid).to_numpy(), "p": paid.to_numpy(),
+                       "s": sc.to_numpy()})
+    g = df.groupby("org").agg(sp=("sp", "sum"), p=("p", "sum"), s=("s", "mean"))
+    g["w"] = np.where(g["p"] > 0, g["sp"] / g["p"].replace(0, np.nan), g["s"])
+    return set(g["w"].sort_values(ascending=False).head(k_org).index)
+
+
 def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler: dict, repeats: int,
-              k_org: int = 50, min_damages: float = 10_000_000.0, top_frac: float = 0.01) -> dict:
-    """R re-shuffled fold assignments: SD of precision@k, Jaccard of the top sets."""
+              k_org: int = 50, min_damages: float = 10_000_000.0, top_frac: float = 0.01,
+              base: tuple[np.ndarray, np.ndarray] | None = None) -> dict:
+    """R re-shuffled fold assignments: SD of precision@k, Jaccard of the top sets.
+    ``base`` = (scores, fold) of the main refit, reused as repeat 0."""
     if repeats <= 0:
         return {"repeats": 0}
     npi_sets, org_sets, prec = [], [], {r: [] for r in ev_by_ruler}
     org_freq: dict[str, int] = {}
+    org_col = "org_node_id" if "org_node_id" in matrix.columns else "group_id"
+    members = matrix.groupby(matrix[org_col].astype(str))["npi"].apply(lambda s_: ";".join(s_.astype(str)))
     for rep in range(repeats + 1):
-        scores, fold, _ = refit_scores(matrix, manifest, repeat=rep, cols=cols)
+        if rep == 0 and base is not None:
+            scores = base[0]
+        else:
+            _log(f"stability: refit {rep} of {repeats}")
+            scores, _, _ = refit_scores(matrix, manifest, repeat=rep, cols=cols)
         k = max(1, int(round(len(matrix) * top_frac)))
         order = np.argsort(-np.nan_to_num(scores, nan=-np.inf), kind="stable")
         npi_sets.append(set(matrix["npi"].astype(str).to_numpy()[order[:k]]))
-        orgs = org_table_from_refit(matrix, scores, min_damages=min_damages)
-        top = set(orgs.head(k_org)["org_id"].astype(str))
+        top = _fast_org_top(matrix, scores, k_org)
         org_sets.append(top)
         for o in top:
             org_freq[o] = org_freq.get(o, 0) + 1
+        orgs = pd.DataFrame({"org_id": sorted(top)})
+        orgs["member_npis"] = orgs["org_id"].map(members).fillna("")
         for name, ev in ev_by_ruler.items():
             oh = org_outcomes(orgs, ev)
-            prec[name].append(float(oh.head(k_org)["hit"].mean()) if len(oh) else float("nan"))
+            prec[name].append(float(oh["hit"].mean()) if len(oh) else float("nan"))
 
     def _jac(sets):
         vals = []
@@ -639,7 +675,9 @@ def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler
             "precision_sd": {r: float(np.nanstd(v)) for r, v in prec.items()},
             "precision_mean": {r: float(np.nanmean(v)) for r, v in prec.items()},
             "orgs_in_every_top": int(sum(1 for v in org_freq.values() if v == repeats + 1)),
-            "orgs_ever_in_top": int(len(org_freq))}
+            "orgs_ever_in_top": int(len(org_freq)),
+            "note": "org sets here are the top-k by dollar-weighted mean score over ALL orgs (no "
+                    "government / damages filter), a stability measure only"}
 
 
 def sanity(ev: pd.DataFrame, scores: np.ndarray | None, fold: np.ndarray | None, matrix: pd.DataFrame, k: int) -> dict:
@@ -678,6 +716,7 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
     names = list(rulers)
     headline = headline or ("fca" if "fca" in rulers else ("hard" if "hard" in rulers else names[0]))
     res["headline_ruler"] = headline
+    _log(f"{len(matrix):,} matrix rows; rulers {names}; headline {headline}; score source {score_source}")
     # eval frames per ruler (ambiguous = positive under another ruler)
     ev_by: dict[str, pd.DataFrame] = {}
     for name in names:
@@ -689,17 +728,26 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
     scores = fold = None
     cols: list[str] = []
     if score_source == "refit" or priority_list is None:
+        _log("refit: out-of-fold scores (5 grouped folds, LightGBM)")
         scores, fold, cols = refit_scores(matrix, manifest)
+        _log("refit: rolling up to organizations the dossier's way (minutes on a national matrix)")
         orgs = org_table_from_refit(matrix, scores, min_damages=min_damages)
         res["org_list_source"] = "refit (company_list policy, rolled up like the dossier)"
     else:
         orgs = priority_list
         res["org_list_source"] = "provider_priority_list.csv (the shipped order; no training)"
         if score_source == "priority_list+refit":
+            _log("refit: out-of-fold scores for the NPI-grain tables (5 grouped folds, LightGBM)")
             scores, fold, cols = refit_scores(matrix, manifest)
+    case_labels = None
+    if case_db is not None and org_nodes is not None and npi_to_org is not None:
+        from .case_labels import build_case_labels
+        _log("case labels: resolving the case DB to NPIs once (shared by the dollar-recall tables)")
+        case_labels = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
     res["n_orgs_listed"] = int(len(orgs))
     top_rows = None
     for name, ev in ev_by.items():
+        _log(f"ruler {name}: budgets, lead time, taxonomy, segments, calibration")
         block = res["rulers"][name]
         oh = org_outcomes(orgs, ev)
         block["org_budgets"] = budget_rows_org(oh, budgets_org)
@@ -722,12 +770,15 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
             block["sanity"] = sanity(ev, None, None, matrix, k=50)
         if case_db is not None and org_nodes is not None and npi_to_org is not None:
             block["dollars"] = dollar_recall(case_db, cutoff, org_nodes, npi_to_org, set(ev["npi"]), oh, budgets_org,
-                                             defendant_npis=defendant_npis, horizon_months=horizon_months)
+                                             defendant_npis=defendant_npis, horizon_months=horizon_months,
+                                             case_labels=case_labels)
         if name == headline:
             top_rows = oh.head(250).copy()
             top_rows.insert(0, "ruler", name)
     if repeats and cols:
-        res["stability"] = stability(matrix, manifest, cols, ev_by, repeats, min_damages=min_damages)
+        res["stability"] = stability(matrix, manifest, cols, ev_by, repeats, min_damages=min_damages,
+                                     base=(scores, fold) if scores is not None else None)
+    _log("done")
     res["kpis"] = kpi_block(res)
     res["_top_rows"] = top_rows
     return res
