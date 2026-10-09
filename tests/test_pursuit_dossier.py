@@ -316,3 +316,28 @@ def test_dispatch_refuses_a_second_concurrent_run(tmp_path):
     lock.unlink()
     out2 = dispatch_research(pj, reg, transport=_T(), sleep=lambda s: None)
     assert out2["dispatched"] == 1 and not lock.exists()          # lock released after a normal run
+
+
+def test_pursuit_book_is_operator_only_basis_first_p_any_sorted(tmp_path):
+    """The companion pursuit list (2026-10-09): operator book only, cap-pinned case
+    sizes after basis-backed ones, sorted by the calibrated P(any member)."""
+    m, man = _matrix()
+    m["expected_net_paid"] = m["net_paid"] * 0.4
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+    from src.model_a.pursuit_dossier import build_priority_list
+    build_priority_list(tmp_path, min_damages=1.0)
+    main = pd.read_csv(tmp_path / "provider_priority_list.csv")
+    assert {"score_p_any", "score_p_max"} <= set(main.columns)
+    pur = pd.read_csv(tmp_path / "provider_priority_list_pursuit.csv")
+    assert len(pur) > 0 and (pur["entity_segment"] == "operator").all()
+    assert pur["pursuit_rank"].tolist() == list(range(1, len(pur) + 1))
+    capped = pur["case_size_capped"].astype(str).str.lower().isin(["true", "1"]).to_numpy()
+    assert not (capped[:-1] & ~capped[1:]).any()                 # once capped, never uncapped after
+    for blk in (pur[~capped], pur[capped]):
+        v = blk["score_p_any"].to_numpy()
+        assert (v[:-1] >= v[1:] - 1e-12).all()
+    # the main list is untouched: still signal-sorted on the dollar-weighted score
+    dw = main["score_dollar_weighted"].to_numpy()
+    assert (dw[:-1] >= dw[1:] - 1e-12).all()
+    assert set(pur["org_id"]) <= set(main["org_id"])

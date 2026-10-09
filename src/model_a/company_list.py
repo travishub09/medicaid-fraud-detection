@@ -136,6 +136,44 @@ def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
     return y
 
 
+def fold_assignments(y, groups, n_splits: int = 5):
+    """The scorer's folds: StratifiedGroupKFold (2026-10-09; balanced on positives so
+    one fold's model does not run hot: the v6 / v7 diagnostics found fold 1 supplying
+    33% of the top 1% against 20% expected) when the groups and positives allow,
+    GroupKFold otherwise, plain shuffled KFold without groups. Deterministic."""
+    from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold
+    y = np.asarray(y)
+    if groups is not None and pd.Series(groups).nunique() > n_splits:
+        if 0 < int(y.sum()) and int(y.sum()) >= n_splits and int((y == 0).sum()) >= n_splits:
+            return list(StratifiedGroupKFold(n_splits=n_splits, shuffle=False).split(np.zeros(len(y)), y, groups))
+        return list(GroupKFold(n_splits=n_splits).split(np.zeros(len(y)), y, groups))
+    return list(KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE).split(np.zeros(len(y))))
+
+
+def calibrate_oof(matrix: pd.DataFrame, scores: np.ndarray, label_col: str | None = None,
+                  n_splits: int = 5) -> np.ndarray:
+    """Cross-fitted isotonic calibration of out-of-fold scores against the training
+    label: the calibrator for fold k is fitted on the OTHER folds' (score, y) pairs,
+    so every row's probability comes from a map that never saw it. Returns
+    P(training positive | score) per row, the sort key the organization rollup uses
+    for P(any member) (model_a/calibration.py holds the fitter)."""
+    from .calibration import fit_calibrator
+    label_col = label_col or ("provider_on_exclusion" if "provider_on_exclusion" in matrix.columns
+                              else "provider_on_leie")
+    y = _training_label(matrix, label_col) if label_col in matrix.columns else np.zeros(len(matrix), int)
+    y = np.asarray(y).astype(int)
+    groups = matrix["group_id"].to_numpy() if "group_id" in matrix.columns else None
+    s = np.nan_to_num(np.asarray(scores, dtype=float), nan=0.0)
+    out = np.full(len(s), float(y.mean()) if len(y) else 0.0)
+    if y.sum() < 5:
+        return out
+    for tr, te in fold_assignments(y, groups, n_splits):
+        if y[tr].sum() == 0:
+            continue
+        out[te] = fit_calibrator(s[tr], y[tr]).predict(s[te])
+    return out
+
+
 def oof_scores(matrix: pd.DataFrame, manifest: dict,
                label_col: str = "provider_on_exclusion",
                n_splits: int = 5) -> np.ndarray:
@@ -209,11 +247,7 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     groups = (matrix["group_id"].to_numpy()
               if "group_id" in matrix.columns else None)
     scores = np.zeros(len(matrix))
-    splitter = (GroupKFold(n_splits=n_splits)
-                if groups is not None and pd.Series(groups).nunique() > n_splits
-                else KFold(n_splits=n_splits, shuffle=True,
-                           random_state=RANDOM_STATE))
-    for k, (tr, te) in enumerate(splitter.split(X, y, groups)):
+    for k, (tr, te) in enumerate(fold_assignments(y, groups, n_splits)):
         tr = tr[~ambiguous[tr]]
         scores[te] = _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k)
     # collapse guard (hard-fail, rule #2): a real probability ranking over a
@@ -232,7 +266,8 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
 
 
 def rollup(matrix: pd.DataFrame, scores: np.ndarray,
-           top_k_schemes: int = 3, drop_excluded: bool = False) -> pd.DataFrame:
+           top_k_schemes: int = 3, drop_excluded: bool = False,
+           probs: np.ndarray | None = None) -> pd.DataFrame:
     """Provider scores → one row per org with named drivers.
 
     ``drop_excluded`` removes providers already ON the exclusion label before
@@ -243,6 +278,8 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
     ``n_excluded_members`` column preserves the corroboration context."""
     m = matrix.copy()
     m["_score"] = scores
+    m["_prob"] = (np.nan_to_num(np.asarray(probs, dtype=float), nan=0.0) if probs is not None
+                  else np.nan)
     n_excl = None
     if drop_excluded and "provider_on_exclusion" in m.columns:
         excl = pd.to_numeric(m["provider_on_exclusion"],
@@ -278,6 +315,13 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
             "score_max": float(s.max()),
             "score_dollar_weighted": wmean,
         }
+        if probs is not None:
+            # P(any member is a positive) from calibrated member probabilities,
+            # treated as independent; the 2026-10-08 diagnostics: a dollar-weighted
+            # MEAN of raw scores put hospitals and no-basis rows in the first 50
+            pr = np.clip(g["_prob"].to_numpy(dtype=float), 0.0, 1.0)
+            row["score_p_any"] = float(1.0 - np.prod(1.0 - pr))
+            row["score_p_max"] = float(pr.max()) if len(pr) else 0.0
         if sub_cols:
             means = {c: pd.to_numeric(g[c], errors="coerce").mean()
                      for c in sub_cols}

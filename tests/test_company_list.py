@@ -174,3 +174,30 @@ def test_tie_break_prefers_dollars():
     })
     out = rollup(m, np.array([0.9, 0.9]))          # identical scores
     assert out.iloc[0]["org_id"] == "org:b"        # dollars break the tie
+
+
+def test_stratified_folds_calibration_and_p_any():
+    """2026-10-09: folds balanced on positives, cross-fit isotonic probabilities, and the
+    organization P(any member) that the pursuit book sorts on."""
+    import numpy as np
+    from src.model_a.company_list import calibrate_oof, fold_assignments
+    m = _matrix(n=400, seed=2)
+    y = m["provider_on_exclusion"].to_numpy()
+    folds = fold_assignments(y, m["group_id"].to_numpy(), n_splits=4)
+    assert len(folds) == 4
+    shares = [y[te].mean() for _, te in folds]
+    assert max(shares) - min(shares) < 0.08                      # positives spread across folds
+    for tr, te in folds:                                         # no group straddles a fold
+        assert not set(m["group_id"].to_numpy()[tr]) & set(m["group_id"].to_numpy()[te])
+    s = oof_scores(m, _manifest(), n_splits=4)
+    p = calibrate_oof(m, s, n_splits=4)
+    assert len(p) == len(m) and (p >= 0).all() and (p <= 1).all()
+    assert p[y == 1].mean() > p[y == 0].mean()                   # calibrated, still ordered
+    out = rollup(m, s, probs=p).set_index("org_id")
+    assert {"score_p_any", "score_p_max"} <= set(out.columns)
+    assert out["score_p_any"].between(0, 1).all() and (out["score_p_any"] >= out["score_p_max"] - 1e-12).all()
+    # P(any) over a two-member org equals 1 - (1-p1)(1-p2)
+    org = m.groupby("group_id").size().idxmax()
+    members = m["group_id"].to_numpy() == org
+    expect = 1 - np.prod(1 - np.clip(p[members], 0, 1))
+    assert abs(out.loc[org, "score_p_any"] - expect) < 1e-9

@@ -181,14 +181,25 @@ def test_cli_reads_the_shipped_priority_list(tmp_path):
     pl.insert(0, "priority_rank", pl.index + 1)
     pl.to_csv(run / "provider_priority_list.csv", index=False)
     assert load_priority_list(run) is not None
+    # default score source = the shipped list for the org tables plus a refit for the NPI tables
+    # (the refit is what makes the tie block); 1,500 rows keep it to seconds
     r = subprocess.run([sys.executable, "-m", "src.model_a.accuracy_diagnostics", "--run-dir", str(run),
-                        "--score-source", "priority_list", "--min-damages", "0"],
+                        "--min-damages", "0"],
                        capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[1]), timeout=600)
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-3000:]
     assert (run / "ACCURACY_DIAGNOSTICS.md").exists() and (run / "accuracy_topk_rows.csv").exists()
     kp = json.loads((run / "accuracy_diagnostics.json").read_text())
     assert kp["org_list_source"].startswith("provider_priority_list.csv")
     assert kp["kpis"]["acc_org_hits50"] >= 0 and kp["headline_ruler"] == "all"
+    assert kp["list_name"] == "provider_priority_list.csv"
+    tie = pd.read_csv(run / "accuracy_tie_block.csv")                      # the max-score block, for inspection
+    assert {"npi", "score", "n_nonnull_numeric", "forward_positive"} <= set(tie.columns) and len(tie) >= 1
+    assert (tie["score"] == tie["score"].max()).all()
+    # the pursuit book can be graded in place of the main list
+    pl2 = pl.rename(columns={"priority_rank": "pursuit_rank"}).iloc[::-1].reset_index(drop=True)
+    pl2["pursuit_rank"] = range(1, len(pl2) + 1)
+    pl2.to_csv(run / "provider_priority_list_pursuit.csv", index=False)
+    assert load_priority_list(run, "provider_priority_list_pursuit.csv")["priority_rank"].tolist()[:3] == [1, 2, 3]
     # the registry reads the KPI block
     from src.model_a.run_registry import parse_run_dir
     row = parse_run_dir(run)

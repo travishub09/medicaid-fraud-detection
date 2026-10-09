@@ -315,8 +315,8 @@ def org_table_from_refit(matrix: pd.DataFrame, scores: np.ndarray, min_damages: 
     return orgs
 
 
-def load_priority_list(run_dir: Path) -> pd.DataFrame | None:
-    p = run_dir / "provider_priority_list.csv"
+def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") -> pd.DataFrame | None:
+    p = run_dir / name
     if not p.exists():
         return None
     df = pd.read_csv(p, dtype=str)
@@ -324,6 +324,8 @@ def load_priority_list(run_dir: Path) -> pd.DataFrame | None:
               "score_max", "n_excluded_members"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+    if "pursuit_rank" in df.columns:                     # the pursuit book: its own order is the rank
+        df["priority_rank"] = pd.to_numeric(df["pursuit_rank"], errors="coerce")
     if "priority_rank" not in df.columns:
         df.insert(0, "priority_rank", np.arange(1, len(df) + 1))
     df["member_npis"] = df.get("member_npis", pd.Series("", index=df.index)).fillna("").astype(str)
@@ -472,7 +474,7 @@ def error_taxonomy(orgs_hit: pd.DataFrame, matrix: pd.DataFrame, ks=(50, 250)) -
                          | names.str.contains(INSTITUTIONAL_NAME, na=False)).to_numpy(), dtype=bool, copy=True) | (n_prov >= 25)
         inter = (n_prov == 1) & (billed >= INTERMEDIARY_SCALE)
         capped = top.get("case_size_capped", pd.Series(False, index=top.index)).astype(str).str.lower().isin(["true", "1"]).to_numpy()
-        tiny = capped | (billed < 250_000)
+        tiny = billed < 250_000                      # cap-pinned rows are their own cause (no damages basis)
         # a writable copy: Arrow-backed string columns hand back READ-ONLY numpy
         # views, and the per-org loop below writes into this mask
         artifact = np.array(names.str.startswith("UNNAMED").to_numpy(), dtype=bool, copy=True)
@@ -484,8 +486,9 @@ def error_taxonomy(orgs_hit: pd.DataFrame, matrix: pd.DataFrame, ks=(50, 250)) -
                     if (a == 0).all():
                         artifact[i] = True
         cause = np.full(len(top), "other", dtype=object)
-        for mask, name in ((artifact, "data_artifact"), (tiny, "tiny_dollars"), (inter, "intermediary_shaped"),
-                           (inst, "institutional"), (known, "already_known"), (gov, "government")):
+        for mask, name in ((artifact, "data_artifact"), (capped, "capped_no_basis"), (tiny, "tiny_dollars"),
+                           (inter, "intermediary_shaped"), (inst, "institutional"), (known, "already_known"),
+                           (gov, "government")):
             cause[mask] = name                      # later assignments win: government first in precedence
         top["cause"] = cause
         for c, g in top.groupby("cause"):
@@ -682,6 +685,26 @@ def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler
                     "government / damages filter), a stability measure only"}
 
 
+def tie_block(matrix: pd.DataFrame, scores: np.ndarray, ev: pd.DataFrame, max_rows: int = 2000) -> pd.DataFrame:
+    """The providers sharing the MAXIMUM score (the v6 / v7 head: 219 and 285 rows at
+    one value, no future case among them), with the columns that explain a tie: how
+    many features they carry, their grain, size, state, taxonomy, org. Written to
+    accuracy_tie_block.csv so the block can be read instead of guessed at."""
+    s = np.nan_to_num(np.asarray(scores, dtype=float), nan=-np.inf)
+    top = s.max() if len(s) else 0.0
+    idx = np.where(s >= top - 1e-12)[0][:max_rows]
+    cols = [c for c in ("npi", "org_node_id", "org_name", "practice_state", "primary_taxonomy", "entity_type",
+                        "row_grain", "net_paid", "n_distinct_hcpcs", "n_active_months", "tenure_months",
+                        "assessable", "exclusion_label_sources") if c in matrix.columns]
+    tb = matrix.iloc[idx][cols].copy()
+    tb.insert(0, "score", s[idx])
+    num = matrix.select_dtypes(include=[np.number])
+    tb["n_nonnull_numeric"] = num.iloc[idx].notna().sum(axis=1).to_numpy()
+    uni = ev.set_index("npi")["y"]
+    tb["forward_positive"] = tb["npi"].astype(str).map(uni).fillna(-1).astype(int)   # -1 = not in the eval universe
+    return tb.reset_index(drop=True)
+
+
 def sanity(ev: pd.DataFrame, scores: np.ndarray | None, fold: np.ndarray | None, matrix: pd.DataFrame, k: int) -> dict:
     out = {}
     if scores is not None:
@@ -777,12 +800,16 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
         if name == headline:
             top_rows = oh.head(250).copy()
             top_rows.insert(0, "ruler", name)
+            if scores is not None:
+                res["_tie_block"] = tie_block(matrix, scores, ev)
     if repeats and cols:
         res["stability"] = stability(matrix, manifest, cols, ev_by, repeats, min_damages=min_damages,
                                      base=(scores, fold) if scores is not None else None)
     _log("done")
+    tie = res.pop("_tie_block", None)
     res["kpis"] = kpi_block(res)
     res["_top_rows"] = top_rows
+    res["_tie_block"] = tie
     return res
 
 
@@ -931,8 +958,8 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
             L.append(f"| {name} | {r['k']} | {r['cause']} | {r['n']} | {r['hits']} | {_f(r['hit_rate'], '{:.1%}')} |")
     L += ["", "_Causes in precedence order: government, already known (a member excluded before the freeze), "
           "institutional (hospital / system name or 25+ providers), intermediary-shaped (one NPI at fiscal-agent "
-          "scale), tiny dollars (case size at the cap or under $250k billed), data artifact (unnamed or no "
-          "assessable member), other._", ""]
+          "scale), tiny dollars (under $250k billed), capped / no basis (the case size sits at the 40%-of-billed "
+          "ceiling: no scheme-specific damages basis), data artifact (unnamed or no assessable member), other._", ""]
     any_seg = any(b.get("segments") for b in res["rulers"].values())
     if any_seg:
         L += ["## 5. Segments (NPI grain, top 1% within the segment; lift shrunk toward the global rate)", "",
@@ -1033,6 +1060,9 @@ def main() -> None:
     ap.add_argument("--active-within", type=int, default=12)
     ap.add_argument("--min-damages", type=float, default=10_000_000.0)
     ap.add_argument("--repeats", type=int, default=0, help="extra re-shuffled fold assignments for stability")
+    ap.add_argument("--list-name", default="provider_priority_list.csv",
+                    help="which shipped list to grade: provider_priority_list.csv (default) or "
+                         "provider_priority_list_pursuit.csv (the operator book)")
     ap.add_argument("--out", default=None, help="default <run-dir>/ACCURACY_DIAGNOSTICS.md")
     a = ap.parse_args()
 
@@ -1075,7 +1105,9 @@ def main() -> None:
         print(f"[accuracy_diagnostics] FCA ruler: {int(fca['is_prospective_positive'].sum()):,} forward positives")
     if not rulers:
         ap.error("no ruler: pass --forward-label NAME=PATH or --case-db, or run prospective_label first")
-    pl = load_priority_list(run_dir) if a.score_source != "refit" else None
+    pl = load_priority_list(run_dir, a.list_name) if a.score_source != "refit" else None
+    if a.score_source != "refit" and pl is None:
+        ap.error(f"{a.list_name} not found in {run_dir}; use --score-source refit or build the list first")
     res = run_diagnostics(matrix, manifest, rulers, cutoff, priority_list=pl, score_source=a.score_source,
                           budgets_org=[int(x) for x in a.budgets_org.split(",")],
                           budgets_npi=[int(x) for x in a.budgets_npi.split(",")],
@@ -1087,6 +1119,10 @@ def main() -> None:
     out = Path(a.out) if a.out else run_dir / "ACCURACY_DIAGNOSTICS.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     top_rows = res.pop("_top_rows", None)
+    tie = res.pop("_tie_block", None)
+    if tie is not None and len(tie):
+        tie.to_csv(out.parent / "accuracy_tie_block.csv", index=False)
+    res["list_name"] = a.list_name
     out.write_text(to_markdown(res, run_dir.name), encoding="utf-8")
     (out.parent / "accuracy_diagnostics.json").write_text(json.dumps(res, indent=2, default=str), encoding="utf-8")
     if top_rows is not None and len(top_rows):

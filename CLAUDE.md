@@ -676,7 +676,17 @@ committed. Never let this file go stale: stale reminders are worse than none.
   dollar_recall50) + accuracy_topk_rows.csv. RULE: v8 is a NEW pre-registration
   (feature set, NaN policy, MUE, peers, label rule and ruler all changed);
   grade it on hits@50 vs random under the FCA ruler, never on decile lift.
-  Full suite: `pytest tests/` (994 tests + 4 skipped).
+  READ-OUTS 2026-10-08/09 (`docs/ACCURACY_READOUT_v7_2026-10-08.md`): v7 and v6
+  graded on the shipped list: FCA ruler hits@50 = 1 and 0 (random 0.2 / 0.1),
+  the top 50 = institutional + cap-pinned rows with zero operator-class, the NPI
+  head a 285 / 219-way tie with no case in the first 1,000 while the top 1%
+  carries lift 3 to 4; both HOLD. Built in response: `company_list.fold_assignments`
+  (StratifiedGroupKFold), `calibrate_oof` (cross-fit isotonic P), `rollup(probs=)`
+  -> `score_p_any` / `score_p_max`; the dossier's companion
+  `provider_priority_list_pursuit.csv` (operator book, basis-backed first, P(any)
+  sort; the main list unchanged); diagnostics `--list-name` + accuracy_tie_block.csv
+  + the `capped_no_basis` cause. v8 grades the pursuit file.
+  Full suite: `pytest tests/` (997 tests + 4 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

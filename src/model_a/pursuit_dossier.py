@@ -612,7 +612,9 @@ def build_priority_list(run_dir: str | Path,
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
     scores = oof_scores(matrix, manifest)
-    orgs = rollup(matrix, scores, drop_excluded=True)
+    from .company_list import calibrate_oof
+    probs = calibrate_oof(matrix, scores)
+    orgs = rollup(matrix, scores, drop_excluded=True, probs=probs)
     orgs = orgs.merge(org_case_size(matrix), on="org_id", how="left")
     orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"],
                                          errors="coerce").fillna(0.0)
@@ -683,12 +685,31 @@ def build_priority_list(run_dir: str | Path,
                         "org_id", "member_npis",
                         "states", "cities",
                         "n_providers", "score_dollar_weighted", "score_max",
+                        "score_p_any", "score_p_max",
                         "score_pct", "top_schemes", "case_size_yr",
                         "case_size_basis", "case_size_capped", "total_billed",
                         "n_excluded_members", "screening_cautions")
             if c in out.columns]
     csv_path = d / "provider_priority_list.csv"
     out[cols].to_csv(csv_path, index=False)
+
+    # THE PURSUIT BOOK (2026-10-09, from the v6 / v7 accuracy diagnostics): the
+    # dollar-weighted list's first 50 were 19-24 institutional + 24-30 case-size-
+    # capped organizations and zero operator-class ones, with zero or one future
+    # case among them. This companion file holds the OPERATOR book only (no
+    # hospital / system / 25+ provider orgs, no solo individuals), basis-backed
+    # case sizes before cap-pinned ones, sorted by the calibrated probability that
+    # ANY member is a positive (score_p_any), dollar-weighted score as the
+    # tiebreak. The main list above is unchanged for registry continuity.
+    pursuit = out[out["entity_segment"] == "operator"].copy()
+    capped = pursuit.get("case_size_capped", pd.Series(False, index=pursuit.index))
+    pursuit["_capped"] = capped.astype(str).str.lower().isin(["true", "1"]).astype(int)
+    sort_keys = ["_capped"] + (["score_p_any"] if "score_p_any" in pursuit.columns else []) + ["score_dollar_weighted"]
+    pursuit = pursuit.sort_values(sort_keys, ascending=[True] + [False] * (len(sort_keys) - 1)).drop(columns=["_capped"])
+    pursuit = pursuit.reset_index(drop=True)
+    pursuit.insert(0, "pursuit_rank", pursuit.index + 1)
+    pursuit_cols = ["pursuit_rank"] + [c for c in cols if c != "priority_rank"] + ["priority_rank"]
+    pursuit[[c for c in pursuit_cols if c in pursuit.columns]].to_csv(d / "provider_priority_list_pursuit.csv", index=False)
 
     md = d / "PRIORITY_LIST.md"
     md.write_text("\n".join([

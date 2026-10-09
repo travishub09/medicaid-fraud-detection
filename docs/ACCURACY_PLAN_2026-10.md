@@ -113,6 +113,10 @@ Every experiment is measured on the FCA ruler with a fixed horizon, at organizat
 | 11 | Repeated cross-fitting intervals (5 to 10 re-shuffled fold assignments, Nadeau-Bengio correction) alongside the cluster bootstrap; later, the cluster bootstrap with refit | Every OOF number was one realization | overnight | `--repeats` built; the corrected interval open |
 | 12 | Card-level outcomes: log the 50-card packets (which 16, why, what happened) so the diagnostics' `--cards` input exists | The business outcome is otherwise unmeasurable | operator | open |
 
+## 4b. Built after the v6 and v7 read-outs (2026-10-09)
+
+Three of the six items the read-out called for are now code: the scorer's folds are stratified on positives (so one fold cannot supply a third of the top), every out-of-fold score gets a cross-fitted isotonic probability, and the organization rollup carries P(any member positive) and the maximum member probability. The dossier writes a companion `provider_priority_list_pursuit.csv`: the operator book only (no hospital, system, 25-plus-provider or solo-individual rows), basis-backed case sizes before cap-pinned ones, sorted by P(any member). The main list is unchanged so the registry can compare runs. The diagnostics grade either file (`--list-name`) and write the top tie block to `accuracy_tie_block.csv` so the tied head can be read instead of guessed at. The cap-pinned rows now have their own cause in the error taxonomy (`capped_no_basis`), separate from under-$250k billers.
+
 ## 5. How to read v8 against v7
 
 Do not compare lifts. Compare, on the FCA ruler with the same horizon: organization hits at 50 against the random baseline from the same pool; the lead-time share beyond the gap; the institutional and already-known shares of the top 50; the Jaccard of the top 50 under re-shuffled folds; dollar recall at 50. A run that raises hits at 50 while the institutional share and the tie count fall is an improvement. A run that raises decile lift while hits at 50 stay flat is not.
