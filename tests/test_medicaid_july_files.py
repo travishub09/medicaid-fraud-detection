@@ -236,3 +236,34 @@ def test_ndc_quarantine_and_self_prescribed_split(tmp_path):
     assert abs(feats.loc[DR1, "px_self_billed_share"] - (9000 / 27000)) < 1e-9
     assert abs(feats.loc[DR1, "px_top_pharmacy_share_ext"] - (16000 / 18000)) < 1e-9
     assert feats.loc[DR1, "px_top_pharmacy_share"] < feats.loc[DR1, "px_top_pharmacy_share_ext"]
+
+
+def test_ndc_null_billing_npi_rows_are_quarantined_not_lost(tmp_path):
+    """2026-10-09, the first quarantined real build: 582,523 rows carried a blank billing
+    NPI but only 1,937 were quarantined; the other 580,586 rows ($15B) were in NEITHER
+    bucket because length(NULL) = 10 is NULL and `where not (NULL)` drops the row. The
+    clean rule is NULL-safe and the split is asserted to conserve rows and dollars."""
+    raw = _ndc_csv(tmp_path, with_units=False)
+    f = raw / "medicaid_ndc.csv"
+    base = pd.read_csv(f, dtype=str)
+    extra = pd.DataFrame([
+        dict(BILLING_PROVIDER_NPI_NUM=None, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00071015523",
+             CLAIM_FROM_MONTH="2023-03", TOTAL_PATIENTS="1", TOTAL_CLAIM_LINES="1", TOTAL_PAID="123.0"),
+        dict(BILLING_PROVIDER_NPI_NUM=PH1, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="88888888888",
+             CLAIM_FROM_MONTH="2023-03", TOTAL_PATIENTS="2", TOTAL_CLAIM_LINES="2", TOTAL_PAID="50.0"),
+        dict(BILLING_PROVIDER_NPI_NUM=PH1, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00071015523",
+             CLAIM_FROM_MONTH="2023-03", TOTAL_PATIENTS="1", TOTAL_CLAIM_LINES="1", TOTAL_PAID=None),
+    ])
+    pd.concat([base, extra]).to_csv(f, index=False, na_rep="")          # an EMPTY field -> NULL in DuckDB
+    fact = tmp_path / "ndc_fact.parquet"
+    info = mndc.build_ndc_fact(raw, fact)
+    q = info["quarantine"]
+    assert info["rows"] == 19
+    assert q["blank_billing_npi"]["rows"] == 1 and q["blank_billing_npi"]["paid"] == 123.0
+    assert info["kept_rows"] + sum(v["rows"] for v in q.values()) == info["rows"]       # nothing lost
+    assert abs(info["kept_paid"] + sum(v["paid"] for v in q.values()) - info["paid"]) < 1e-6
+    assert info["kept_placeholder_ndc"] == {"rows": 1, "paid": 50.0}
+    qf = pd.read_parquet(tmp_path / "ndc_quarantine.parquet")
+    assert len(qf) == 1 and qf["billing_npi"].isna().all()
+    rep = mndc.write_report(tmp_path, info, 0, mndc.npi_features(fact)).read_text(encoding="utf-8")
+    assert "placeholder NDC" in rep and "clean + quarantine = the fact" in rep

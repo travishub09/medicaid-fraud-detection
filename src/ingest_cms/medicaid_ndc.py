@@ -106,7 +106,17 @@ def _canonical_select(resolved: dict[str, str]) -> str:
 # impossible single-row totals) must be quarantined before any feature is built.
 # Rule 4: quarantine with a reason, never delete; the fact keeps every row.
 NDC_ROW_CEILING = 500_000_000.0
-CLEAN_ROW = f"length(billing_npi) = 10 and total_paid <= {NDC_ROW_CEILING}"
+# Every term is NULL-safe so CLEAN_ROW is TRUE or FALSE for every row, never NULL:
+# 2026-10-09, the first quarantined build lost 580,586 rows ($15B) with a NULL
+# billing NPI into NEITHER bucket, because length(NULL) = 10 is NULL, `not NULL`
+# is NULL, and both WHERE clauses dropped the row. Rule 2 now asserts
+# clean + quarantine = fact in rows and dollars.
+CLEAN_ROW = (f"billing_npi is not null and length(billing_npi) = 10 "
+             f"and coalesce(total_paid, 0) <= {NDC_ROW_CEILING}")
+# placeholder NDCs (all one digit: 88888888888 'other drugs', 99999999999) are
+# real dollars on a real biller and stay CLEAN for the concentration features,
+# but they can never match NADAC; the report counts them so nobody is surprised
+PLACEHOLDER_NDC = "ndc is not null and length(ndc) >= 9 and ndc = repeat(substr(ndc, 1, 1), length(ndc))"
 
 
 def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
@@ -163,6 +173,14 @@ def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
         select reason, count(*), coalesce(sum(total_paid), 0) from read_parquet('{_pq(q_parquet)}') group by 1""").fetchall()
     kept_n, kept_paid = con.execute(f"""
         select count(*), coalesce(sum(total_paid), 0) from read_parquet('{_pq(out_parquet)}') where {CLEAN_ROW}""").fetchone()
+    q_n, q_paid = sum(int(n) for _, n, _ in q), sum(float(d) for _, _, d in q)
+    assert int(kept_n) + q_n == int(fact_n), \
+        f"quarantine split lost rows: clean {kept_n} + quarantine {q_n} != fact {fact_n}"
+    assert abs(float(kept_paid) + q_paid - float(fact_paid)) <= max(1.0, 1e-9 * abs(float(fact_paid))), \
+        f"quarantine split lost dollars: clean {kept_paid} + quarantine {q_paid} != fact {fact_paid}"
+    ph_n, ph_paid = con.execute(f"""
+        select count(*), coalesce(sum(total_paid), 0) from read_parquet('{_pq(out_parquet)}')
+        where {CLEAN_ROW} and {PLACEHOLDER_NDC}""").fetchone()
     by_year = con.execute(f"""
         select substr(service_month, 1, 4) as yr, count(*), coalesce(sum(total_paid), 0)
         from read_parquet('{_pq(out_parquet)}') where {CLEAN_ROW} group by 1 order by 1""").fetchall()
@@ -179,6 +197,7 @@ def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
             "asof_cutoff": asof_cutoff,
             "quarantine": {r: {"rows": int(n), "paid": float(d)} for r, n, d in q},
             "kept_rows": int(kept_n), "kept_paid": float(kept_paid),
+            "kept_placeholder_ndc": {"rows": int(ph_n), "paid": float(ph_paid)},
             "kept_by_year": [(y, int(n), float(d)) for y, n, d in by_year],
             "largest_rows": [(b, n, m, float(d or 0)) for b, n, m, d in largest],
             "kept_paid_blank_prescriber": float(bad_presc_clean[0]),
@@ -380,9 +399,12 @@ def write_report(out_dir: Path, info: dict, slice_rows: int, feats: pd.DataFrame
          "", "## Quarantine (rule 4: kept with a reason, never deleted; features read clean rows only)", ""]
     for reason, qq in (info.get("quarantine") or {}).items():
         L.append(f"- {reason}: {qq['rows']:,} rows, ${qq['paid']:,.0f}")
+    ph = info.get("kept_placeholder_ndc") or {"rows": 0, "paid": 0.0}
     L += [f"- clean rows: {info.get('kept_rows', 0):,}, ${info.get('kept_paid', 0):,.0f} "
-          f"(national Medicaid drug spend is near $80B a year; a kept total far above that per year means "
-          f"more aggregate rows to quarantine, paste this report)",
+          f"(clean + quarantine = the fact, asserted; this file is the fee-for-service pharmacy slice, "
+          f"so $13B to $21B a year is its expected size, not the $80B of all Medicaid drug spend)",
+          f"- clean rows on a placeholder NDC (all one digit, e.g. 88888888888 'other'): {ph['rows']:,} rows, "
+          f"${ph['paid']:,.0f} (kept: real dollars on a real biller; they never match NADAC)",
           "", "| year | clean rows | clean paid |", "|---|--:|--:|"]
     for y, n, d in info.get("kept_by_year") or []:
         L.append(f"| {y} | {n:,} | ${d:,.0f} |")

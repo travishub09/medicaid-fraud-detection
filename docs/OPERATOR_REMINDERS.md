@@ -261,13 +261,12 @@ python -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
 ```
 
-- [ ] **medicaid_ndc_rebuild_after_230** — The first NDC load (2026-10-08) summed to $20.4 TRILLION over 2018-2024 (national Medicaid drug spend is near $80B a year): aggregate rows (582,523 with a blank billing NPI, plus any single row above $500M) were feeding the features, and 87% of billers read as 'fed by one prescriber' because a clinic billing the drugs its own clinicians administer is biller = prescriber. Bundle 230 quarantines the aggregate rows with a reason (processed/ndc_quarantine.parquet) and adds the external-only concentration features (rx_*_ext / px_*_ext). After merging 230, rebuild the NDC features and upload the new MEDICAID_NDC_REPORT.md: the clean dollars per year must land near $60B to $90B; if they do not, paste the report (more aggregate shapes to quarantine). HOW TO CHECK: the post-230 build writes processed\ndc_quarantine.parquet; if the dir line below finds it, the rebuild is done and only the report upload remains; if 'File Not Found', run the build line (hours; one window, nothing else running). (added 2026-10-08)
+- [ ] **medicaid_ndc_rebuild_after_230** — REBUILD ONCE MORE after bundle 246. The 2026-10-09 14:35 build (post-230) quarantined the $20.28T aggregate rows correctly, but 580,586 rows (about $15B) with a NULL billing NPI fell into NEITHER the clean set nor the quarantine (SQL three-valued logic: length(NULL) = 10 is NULL, so both WHERE clauses dropped the row); the report showed it as 582,523 bad-NPI rows against 1,937 quarantined. Bundle 246 makes the rule NULL-safe, asserts clean + quarantine = fact, and counts placeholder NDCs (88888888888). Expected after the rebuild: blank_billing_npi about 582,000 rows, clean total still near $123B over 2018-2024 ($13B to $21B a year is the fee-for-service pharmacy slice, not the $80B of all Medicaid drug spend). Then upload the report. The build took about an hour on 10-09; one window, nothing else running. (added 2026-10-08)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\ndc_quarantine.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_NDC_REPORT.md"
-python -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
-REM upload processed\MEDICAID_NDC_REPORT.md
+python -u -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
+REM upload "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_NDC_REPORT.md"
 python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
 ```
 
