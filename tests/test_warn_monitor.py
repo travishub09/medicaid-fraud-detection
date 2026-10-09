@@ -124,3 +124,15 @@ def test_read_warn_file_finds_the_data_sheet_in_a_multi_sheet_workbook(tmp_path)
     raw = read_warn_file(f)
     assert len(raw) == 1 and raw["STATE"].iloc[0] == "CA"
     assert "Company" in raw.columns and raw["Company"].iloc[0] == "Golden State Home Health"
+
+
+def test_warn_summary_reports_each_file_and_the_live_window(tmp_path):
+    from src.sourcing.warn_monitor import load_warn, warn_summary
+    d = tmp_path / "warn"
+    d.mkdir()
+    pd.DataFrame({"Company": ["A Corp", "B LLC"], "Notice Date": ["2026-07-01", "2020-01-01"],
+                  "Effective Date": ["2026-09-01", "2020-03-01"], "No. Of Employees": ["10", "20"]}).to_csv(
+        d / "warn_RI_202610.csv", index=False)
+    out = warn_summary(load_warn(d))
+    assert "warn_RI_202610.csv | 2 | RI | 2020-01-01 to 2026-07-01" in out
+    assert "still open or ahead" in out and ": 1 of 2" in out

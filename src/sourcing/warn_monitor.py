@@ -221,17 +221,44 @@ def surge_leads(matched: pd.DataFrame, erv_ranked: pd.DataFrame,
     return leads[cols].sort_values(["window_status", "erv_rank"]).reset_index(drop=True)
 
 
+def warn_summary(warn: pd.DataFrame) -> str:
+    """Per posting file: rows, state(s), date ranges, employees, and how many rows
+    carry no usable date (those never get an outreach window)."""
+    L = ["file | rows | state | notice dates | layoff dates | employees | rows without a date"]
+    for f, g in warn.groupby("source_file", sort=True):
+        def rng(col):
+            d = g[col].dropna()
+            return f"{d.min().date()} to {d.max().date()}" if len(d) else "none"
+        nodate = int((g["notice_date"].isna() & g["layoff_date"].isna()).sum())
+        emp = pd.to_numeric(g["employees"], errors="coerce").sum()
+        L.append(f"{f} | {len(g):,} | {','.join(sorted(set(g['state'].astype(str))) or ['?'])} | "
+                 f"{rng('notice_date')} | {rng('layoff_date')} | {int(emp) if pd.notna(emp) else 0:,} | {nodate:,}")
+    anchor = pd.Timestamp.today().normalize()
+    live = warn[(warn["layoff_date"].fillna(warn["notice_date"]) >= anchor - pd.DateOffset(months=SURGE_WINDOW_CLOSE_MONTHS))]
+    L.append(f"rows whose outreach window is still open or ahead (departure within the last "
+             f"{SURGE_WINDOW_CLOSE_MONTHS} months): {len(live):,} of {len(warn):,}")
+    return "\n".join(L)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--warn", required=True,
                     help="a raw WARN posting (csv or xlsx, any state's format) or the folder "
                          "preclean/warn/ holding warn_<ST>_<yyyymm>.csv|xlsx files")
-    ap.add_argument("--graph-dir", required=True)
-    ap.add_argument("--erv", required=True, help="erv_ranked.parquet from src.model_a")
+    ap.add_argument("--graph-dir", default=None)
+    ap.add_argument("--erv", default=None, help="erv_ranked.parquet from src.model_a")
     ap.add_argument("--out", default="/tmp/sourcing_out")
+    ap.add_argument("--summary", action="store_true",
+                    help="only read the postings and print, per file: rows, state, the "
+                         "notice-date and layoff-date ranges, employees; no graph needed")
     args = ap.parse_args()
 
+    if args.summary:
+        print(warn_summary(load_warn(args.warn)))
+        return
+    if not (args.graph_dir and args.erv):
+        ap.error("--graph-dir and --erv are required (or pass --summary)")
     org_nodes = pd.read_parquet(Path(args.graph_dir) / "nodes" / "org_nodes.parquet")
     erv = pd.read_parquet(args.erv)
     warn = load_warn(args.warn)

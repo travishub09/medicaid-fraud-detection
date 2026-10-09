@@ -86,7 +86,7 @@
   },
   {
    "key": "warn_notices",
-   "what": "WARN layoff notices for the surge monitor (whistleblower timing)",
+   "what": "WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.",
    "where": "preclean/warn/",
    "url": "",
    "every_months": 1,
@@ -102,6 +102,7 @@
    ],
    "commands": [
     "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"",
+    "python -m src.sourcing.warn_monitor --warn \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\" --summary",
     "for %f in (\"%USERPROFILE%\\Downloads\\California warn_report*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_CA_202610.xlsx\"",
     "for %f in (\"%USERPROFILE%\\Downloads\\texas warn-act-listings*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_TX_202610.xlsx\"",
     "for %f in (\"%USERPROFILE%\\Downloads\\north carolina warn summary report*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_NC_202610.csv\"",
