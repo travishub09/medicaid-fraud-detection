@@ -17,7 +17,11 @@
     "copy \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_%date:~10,4%%date:~4,2%.csv.bak\"",
     "move \"%USERPROFILE%\\Downloads\\UPDATED.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\"",
     "python -m src.reminders --done leie"
-   ]
+   ],
+   "proof": [
+    "preclean/caught.csv"
+   ],
+   "proof_recent_days": 45
   },
   {
    "key": "nppes_deactivation",
@@ -33,7 +37,12 @@
    "commands": [
     "move \"%USERPROFILE%\\Downloads\\NPPES_Deactivated_*.zip\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes_deactivation\\\"",
     "python -m src.reminders --done nppes_deactivation"
-   ]
+   ],
+   "proof": [
+    "preclean/nppes_deactivation/*.zip",
+    "preclean/nppes_deactivation/*.xlsx"
+   ],
+   "proof_recent_days": 45
   },
   {
    "key": "sam_exclusions",
@@ -49,7 +58,11 @@
    "commands": [
     "move \"%USERPROFILE%\\Downloads\\SAM_Exclusions*.CSV\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_%date:~10,4%%date:~4,2%.csv\"",
     "python -m src.reminders --done sam_exclusions"
-   ]
+   ],
+   "proof": [
+    "preclean/sam/*.csv"
+   ],
+   "proof_recent_days": 45
   },
   {
    "key": "owner_snapshot",
@@ -78,6 +91,10 @@
     "Google '<state> WARN notices' for target states (start: RI, NC, FL, TX, CA) \u2014 each state DOL posts a table",
     "Download/export the current-year table as CSV or XLSX per state",
     "Save as \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_<state>_<yyyymm>.csv\""
+   ],
+   "proof": [
+    "preclean/warn/warn_*.csv",
+    "preclean/warn/warn_*.xlsx"
    ]
   },
   {
@@ -91,7 +108,12 @@
     "Open the MUE page (url above); download BOTH quarterly zips: 'Practitioner Services MUE Table' + 'Facility Outpatient Hospital Services MUE Table'",
     "Extract each zip; take the DATA sheet (the AMA-copyright cover sheet is the known trap)",
     "Save as \"...preclean\\mue\\mue_practitioner_<yyyyQq>.csv\" and \"...preclean\\mue\\mue_facility_<yyyyQq>.csv\""
-   ]
+   ],
+   "proof": [
+    "preclean/mue/*.csv",
+    "preclean/mue/*.xlsx"
+   ],
+   "proof_recent_days": 120
   },
   {
    "key": "pos",
@@ -104,7 +126,12 @@
     "Open the POS page (url above) \u2192 newest quarter \u2192 download the CSV set",
     "Keep the quarter in every filename (e.g. pos_other_<yyyyQq>.csv)",
     "IMPORTANT: while the 2023-12 frozen builds are the working runs, save CURRENT editions to preclean\\pos_current_hold\\ so they never leak into a frozen build"
-   ]
+   ],
+   "proof": [
+    "preclean/pos_current_hold/*.csv",
+    "preclean/pos/*.csv"
+   ],
+   "proof_recent_days": 120
   },
   {
    "key": "pbj",
@@ -116,7 +143,12 @@
    "steps": [
     "Open the PBJ page (url above) \u2192 newest quarter \u2192 download the Nurse Staffing CSV (the one WITH Hrs_RN columns \u2014 the 'non-nurse' file is the known trap)",
     "Save as \"...preclean\\facility_current_hold\\pbj_daily_staffing_<yyyyQq>.csv\" while frozen builds are the working runs (the frozen 2023Q4 edition stays in facility\\)"
-   ]
+   ],
+   "proof": [
+    "preclean/facility_current_hold/pbj_daily_staffing_*.csv",
+    "preclean/facility/pbj_daily_staffing_*.csv"
+   ],
+   "proof_recent_days": 120
   },
   {
    "key": "care_compare",
@@ -129,7 +161,12 @@
     "Open https://data.cms.gov/provider-data/archived-data \u2192 'Hospice care' + 'Nursing homes' \u2192 newest month's zip",
     "From the hospice zip keep Hospice_Provider; from the NH zip keep HealthCitations, Ownership, Penalties, SurveyDates",
     "Rename each with the month (e.g. Hospice_Provider_<Mon><yyyy>.csv) and save to preclean\\facility_current_hold\\ (frozen Nov2023 editions stay in facility\\)"
-   ]
+   ],
+   "proof": [
+    "preclean/facility_current_hold/*.csv",
+    "preclean/facility/Hospice_Provider_*.csv"
+   ],
+   "proof_recent_days": 120
   },
   {
    "key": "nadac",
@@ -142,7 +179,11 @@
     "Open https://data.medicaid.gov/datasets and search 'NADAC (National Average Drug Acquisition Cost)'",
     "Download the current full CSV",
     "Save as \"...preclean\\nadac\\nadac_<yyyymm>.csv\""
-   ]
+   ],
+   "proof": [
+    "preclean/nadac/*.csv"
+   ],
+   "proof_recent_days": 120
   },
   {
    "key": "work_plan",
@@ -166,7 +207,12 @@
    "steps": [
     "Open https://340bopais.hrsa.gov/reports \u2192 'Covered Entity Daily Report' \u2192 Excel export (must be the 3-worksheet .xlsx with Contract Pharmacies)",
     "Save as \"...preclean\\hrsa_340b\\opais_covered_entity_<yyyymmdd>.xlsx\""
-   ]
+   ],
+   "proof": [
+    "preclean/hrsa_340b/*.xlsx",
+    "preclean/hrsa_340b/*.csv"
+   ],
+   "proof_recent_days": 120
   },
   {
    "key": "cms_pufs",
@@ -195,6 +241,9 @@
     "Open https://openpaymentsdata.cms.gov/about/download \u2192 newest Program Year \u2192 General Payments detail file (it's large; the zip is fine to store)",
     "Save to \"...preclean\\open_payments\\\" with the program year in the name",
     "If the NPI column name differs from Covered_Recipient_NPI (older layouts), send Claude the header row"
+   ],
+   "proof": [
+    "preclean/open_payments/*.csv"
    ]
   },
   {
@@ -208,6 +257,10 @@
     "Open the Cost Reports page (url above) \u2192 'Hospital 2010 form' (HOSPITAL10) newest fiscal year",
     "Use the FLATTENED csv version, not the raw worksheet format (known trap)",
     "Save to \"...preclean\\hcris\\\" with the fiscal year in the name"
+   ],
+   "proof": [
+    "preclean/hcris/*.csv",
+    "preclean/hcris/raw/*.zip"
    ]
   },
   {
@@ -239,6 +292,9 @@
     "Open https://careset.com/docgraph/ \u2192 DocGraph Hop Teaming, newest year window",
     "Required columns: from_npi, to_npi, patient_count",
     "Save to \"...preclean\\docgraph\\\" keeping the year window in the filename"
+   ],
+   "proof": [
+    "preclean/docgraph/*.csv"
    ]
   },
   {
@@ -251,6 +307,9 @@
    "steps": [
     "Open the NUCC csv page (url above) \u2192 newest 'Health Care Provider Taxonomy Code Set' CSV",
     "Save as \"...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv\""
+   ],
+   "proof": [
+    "preclean/nucc/*.csv"
    ]
   },
   {
@@ -270,6 +329,9 @@
     "move \"%USERPROFILE%\\Downloads\\npidata_pfile_20050523-2021*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\\"",
     "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\npidata_pfile_*2021*.csv\"",
     "python -m src.reminders --done nppes_2021_12"
+   ],
+   "proof": [
+    "preclean/nppes/npidata_pfile_20050523-2021*.csv"
    ]
   },
   {
@@ -289,6 +351,12 @@
     "move \"%USERPROFILE%\\Downloads\\Hospice_Provider*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\facility\\\"",
     "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\facility\\Hospice_Provider*.csv\"",
     "python -m src.reminders --done hospice_2021_archive"
+   ],
+   "proof": [
+    "preclean/facility/Hospice_Provider_20????.csv",
+    "preclean/facility/Hospice_Provider_2021*.csv",
+    "preclean/facility/Hospice_Provider_2022*.csv",
+    "preclean/facility/Hospice_Provider.csv"
    ]
   },
   {
@@ -307,6 +375,9 @@
     "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\"",
     "move \"%USERPROFILE%\\Downloads\\cia_list.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\\cia_list.csv\"",
     "python -m src.reminders --done oig_cia"
+   ],
+   "proof": [
+    "preclean/cia/cia_list.csv"
    ]
   },
   {
@@ -325,6 +396,9 @@
     "for %f in (\"%USERPROFILE%\\Downloads\\NPPES_Data_Dissemination_*.zip\") do tar -xf \"%f\" -C \"%USERPROFILE%\\Downloads\" \"pl_pfile_*.csv\"",
     "move \"%USERPROFILE%\\Downloads\\pl_pfile_*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\\"",
     "python -m src.reminders --done nppes_practice_locations"
+   ],
+   "proof": [
+    "preclean/nppes/pl_pfile*.csv"
    ]
   },
   {
@@ -359,7 +433,10 @@
     "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_licensed_capacity.bat\"",
     "python -m src.reminders --done state_capacity_rosters"
    ],
-   "progress": "2026-09-16: NY (Certification + General Information) and NJ (Acute-Care + All_LTC_NJ.xlsx) loaded: 2,335 licensed sites, 19,075 NPIs matched. Next: IL, CA, MA, FL, RI."
+   "progress": "2026-09-16: NY (Certification + General Information) and NJ (Acute-Care + All_LTC_NJ.xlsx) loaded: 2,335 licensed sites, 19,075 NPIs matched. Next: IL, CA, MA, FL, RI.",
+   "proof": [
+    "preclean/state_capacity/*.csv"
+   ]
   },
   {
    "what": "State Medicaid terminated/excluded provider lists for the Southeast (Medicaid-side FCA labels that lead the LEIE by years and carry NPIs). Seven download; Florida and Louisiana need a records request. Tier by stated reason when loading (fraud/abuse/conviction/program integrity = hard; license/paperwork = weak).",
@@ -386,7 +463,10 @@
    ],
    "key": "state_terminations",
    "every_months": 3,
-   "where": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)"
+   "where": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)",
+   "proof": [
+    "preclean/state_terminations/*"
+   ]
   }
  ],
  "tasks": [

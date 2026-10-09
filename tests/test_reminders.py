@@ -113,3 +113,53 @@ def test_seed_written_when_missing(tmp_path, monkeypatch):
     task_cmds = [t for t in cfg["tasks"] if t.get("commands")]
     assert task_cmds and any("pursuit_dossier" in "\n".join(t["commands"])
                              for t in task_cmds)
+
+
+def test_done_refuses_without_proof_file(state, tmp_path):
+    """2026-10-09: the operator pasted a whole command block before opening the
+    browser; every move failed and every --done still closed the item. A --done
+    on an item with `proof` now refuses until the file is on disk."""
+    state["data_root"] = str(tmp_path / "data")
+    state["cadence"].append({"key": "cia", "what": "x", "where": "preclean/cia/cia_list.csv",
+                             "url": "https://example.gov", "every_months": 12, "last_done": None,
+                             "proof": ["preclean/cia/cia_list.csv"]})
+    with pytest.raises(SystemExit) as e:
+        rem.mark_done(state, "cia", "2026-10-09")
+    assert "REFUSED" in str(e.value) and "cia_list.csv" in str(e.value)
+    assert state["cadence"][-1]["last_done"] is None               # no state change
+    assert not any(t["key"] == "post_download_checks" for t in state["tasks"])
+    # --force overrides (the file is there under another name)
+    msg = rem.mark_done(state, "cia", "2026-10-09", force=True)
+    assert "marked done" in msg
+    state["cadence"][-1]["last_done"] = None
+    # the file lands -> the same --done passes; an empty file does not count
+    f = tmp_path / "data" / "preclean" / "cia" / "cia_list.csv"
+    f.parent.mkdir(parents=True)
+    f.write_text("")
+    with pytest.raises(SystemExit):
+        rem.mark_done(state, "cia", "2026-10-09")
+    f.write_text("Party,State\nA,RI\n")
+    assert "marked done" in rem.mark_done(state, "cia", "2026-10-09")
+    # items without proof are unchanged (the old behaviour)
+    assert "marked done" in rem.mark_done(state, "monthly_stale", "2026-10-09")
+
+
+def test_done_recency_proof(state, tmp_path):
+    """A glob that also matches the previous edition (LEIE's caught.csv) needs
+    the newest copy to be younger than proof_recent_days."""
+    import os, time
+    state["data_root"] = str(tmp_path / "data")
+    f = tmp_path / "data" / "preclean" / "caught.csv"
+    f.parent.mkdir(parents=True)
+    f.write_text("npi\n1\n")
+    old = time.time() - 200 * 86400
+    os.utime(f, (old, old))
+    state["cadence"].append({"key": "leie2", "what": "x", "where": "preclean/caught.csv",
+                             "url": "https://example.gov", "every_months": 1, "last_done": None,
+                             "proof": ["preclean/caught.csv"], "proof_recent_days": 45})
+    with pytest.raises(SystemExit) as e:
+        rem.mark_done(state, "leie2", str(date.today()))
+    assert "older than 45 days" in str(e.value)
+    now = time.time()
+    os.utime(f, (now, now))
+    assert "marked done" in rem.mark_done(state, "leie2", str(date.today()))

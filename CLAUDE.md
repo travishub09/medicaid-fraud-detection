@@ -129,6 +129,12 @@ operator confirms an action (or new work creates one), update the JSON and ship
 it in the next bundle so the state ports forward; (4) exception: `*.csv` is
 gitignored but `docs/reminders.json` is state, not data — it MUST stay
 committed. Never let this file go stale: stale reminders are worse than none.
+(5) PROOF GUARD (2026-10-09): download items carry `proof` globs (+ optional
+`proof_recent_days`) and `--done <key>` REFUSES, with no state change, when
+no matching non-empty file is on disk under data_root (`--force` overrides).
+The operator pastes whole command blocks before opening the browser; every
+new download reminder MUST carry a `proof`, and the chat must say "download
+first, then paste" above every move/done block.
 
 ## Hard rules (enforced in code — keep them enforced)
 

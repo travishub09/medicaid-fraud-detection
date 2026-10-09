@@ -240,14 +240,60 @@ def save(cfg: dict) -> None:
     VIEW.write_text(render_md(cfg, date.today()), encoding="utf-8")
 
 
-def mark_done(cfg: dict, key: str, when: str) -> str:
+def proof_of_download(cfg: dict, item: dict, today: date | None = None) -> tuple[bool, list[str]]:
+    """Is the file this reminder stands for actually on disk?
+
+    `proof` on a cadence item = one or more globs relative to `data_root`
+    (the FIRST matching file is enough). `proof_recent_days` (optional)
+    additionally requires that the newest match was modified within that many
+    days, for items whose glob also matches the previous edition (LEIE's
+    caught.csv, the SAM extract). Items without `proof` are not checked.
+
+    Returns (ok, expected_paths). 2026-10-09 lesson: the operator pasted the
+    whole command block without opening the browser first; every `move` said
+    "cannot be found" and every `--done` right after it closed the item
+    anyway. Three downloads and a roster were marked done with nothing on
+    disk. The done line now refuses unless the file is there (or --force).
+    """
+    globs = item.get("proof") or []
+    if isinstance(globs, str):
+        globs = [globs]
+    if not globs:
+        return True, []
+    root = Path(cfg.get("data_root", "")).expanduser()
+    expected = [str(root / g) for g in globs]
+    matches: list[Path] = []
+    for g in globs:
+        matches.extend(p for p in root.glob(g) if p.is_file() and p.stat().st_size > 0)
+    if not matches:
+        return False, expected
+    recent = item.get("proof_recent_days")
+    if recent:
+        today = today or date.today()
+        newest = max(date.fromtimestamp(p.stat().st_mtime) for p in matches)
+        if (today - newest).days > int(recent):
+            return False, [f"{e}  (newest copy is from {newest}, older than {recent} days)"
+                           for e in expected]
+    return True, expected
+
+
+def mark_done(cfg: dict, key: str, when: str, force: bool = False) -> str:
     """Mark a cadence item done. Downloads AUTO-QUEUE the post-download
     checks with exact commands — the operator never has to remember the
-    standing rule; the queue carries it."""
+    standing rule; the queue carries it. Refuses (no state change) when the
+    item names a `proof` file that is not on disk, unless force=True."""
     hit = [i for i in cfg["cadence"] if i["key"] == key]
     if not hit:
         raise SystemExit(f"unknown cadence key: {key} "
                          f"(have: {', '.join(i['key'] for i in cfg['cadence'])})")
+    ok, expected = proof_of_download(cfg, hit[0], date.fromisoformat(when))
+    if not ok and not force:
+        raise SystemExit(
+            f"[reminders] REFUSED: {key} is NOT done. The file it stands for is not on disk:\n"
+            + "\n".join(f"    {e}" for e in expected)
+            + "\n[reminders] Do the browser steps first (open the URL, download, then the move line),"
+              " then run this --done again. If the file is already there under another name,"
+              " tell Claude the name, or re-run with --force.")
     hit[0]["last_done"] = when
     msg = f"[reminders] {key} marked done {when}"
     if hit[0].get("url"):                      # it was a download
@@ -362,6 +408,10 @@ def render_md(cfg: dict, today: date) -> str:
                      + (f"  ({it['note']})" if it.get("note") else ""))
             for i, s in enumerate(it.get("steps", []), 1):
                 L.append(f"  - step {i}: {s}")
+            if it.get("proof"):
+                pr = it["proof"] if isinstance(it["proof"], list) else [it["proof"]]
+                L.append("  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. "
+                         "The --done line refuses until this exists: " + " or ".join(pr))
             if it.get("commands"):
                 L += ["", "```bat"] + it["commands"] + ["```", ""]
     else:
@@ -415,10 +465,13 @@ def main() -> None:
     ap.add_argument("--run-complete", metavar="RUN_FOLDER",
                     help="a model run finished (e.g. frozen_2023-12_v4): "
                          "queue the full post-run checklist")
+    ap.add_argument("--force", action="store_true",
+                    help="with --done: mark done even when the item's proof "
+                         "file is not on disk (the file is there under another name)")
     args = ap.parse_args()
     cfg = load()
     if args.done:
-        print(mark_done(cfg, args.done, args.date))
+        print(mark_done(cfg, args.done, args.date, force=args.force))
         save(cfg)
     if args.run_complete:
         print(mark_run_complete(cfg, args.run_complete, args.date))

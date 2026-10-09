@@ -12,6 +12,7 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
   - step 1: Google '<state> WARN notices' for target states (start: RI, NC, FL, TX, CA) — each state DOL posts a table
   - step 2: Download/export the current-year table as CSV or XLSX per state
   - step 3: Save as "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_<state>_<yyyymm>.csv"
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/warn/warn_*.csv or preclean/warn/warn_*.xlsx
 - **nppes_2021_12** — NPPES December-2021 monthly edition (freezes the address layer for the v7 2021-12 rolling-origin run; one-time)
   - save to: preclean/nppes/npidata_pfile_20050523-20211212.csv (extracted CSV, several GB; next to the 2023 edition)  |  https://data.nber.org/npi/
   - due: freshness unknown
@@ -19,6 +20,7 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
   - step 2: Find the December 2021 full NPPES Data Dissemination (the zip whose main csv is named npidata_pfile_20050523-20211212.csv or the closest December-2021 date)
   - step 3: Download and EXTRACT the zip; keep only the big npidata_pfile_*.csv
   - step 4: Then paste the commands below (moves it next to the 2023 edition and marks the item done)
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/nppes/npidata_pfile_20050523-2021*.csv
 
 ```bat
 move "%USERPROFILE%\Downloads\npidata_pfile_20050523-2021*.csv" "C:/Users/treyr/OneDrive/Desktop/data\preclean\nppes\"
@@ -33,6 +35,7 @@ python -m src.reminders --done nppes_2021_12
   - step 2: Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip
   - step 3: Extract; keep the Hospice_Provider_*.csv (the provider-level file with live-discharge / GIP / NF-care measures)
   - step 4: Then paste the commands below
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility/Hospice_Provider_20????.csv or preclean/facility/Hospice_Provider_2021*.csv or preclean/facility/Hospice_Provider_2022*.csv or preclean/facility/Hospice_Provider.csv
 
 ```bat
 move "%USERPROFILE%\Downloads\Hospice_Provider*.csv" "C:/Users/treyr/OneDrive/Desktop/data\preclean\facility\"
@@ -46,6 +49,7 @@ python -m src.reminders --done hospice_2021_archive
   - step 1: Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
   - step 2: Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link
   - step 3: Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/cia/cia_list.csv
 
 ```bat
 mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia"
@@ -71,6 +75,7 @@ python -m src.reminders --done oig_cia
   - step 13: CO: https://cdphe.colorado.gov/health-facilities -> 'find and compare' facility data download (assisted living, group homes, adult day); save as CO_<type>.csv
   - step 14: Any state: the file needs a facility name, street address, city, zip and a capacity/beds column under any common header; unusual headers are fine, tell Claude and a column map is added
   - step 15: Then build the capacity table with the commands below
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/state_capacity/*.csv
 
 ```bat
 mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\state_capacity"
