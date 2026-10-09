@@ -54,6 +54,16 @@ YEAR_RE = re.compile(r"(?<!\d)(20[0-9]{2})(?!\d)")
 # 8-digit YYYYMMDD stamps (e.g. 'Report 20260608.xlsx') — YEAR_RE can't see
 # the year inside these because of its no-adjacent-digit guards
 DATE8_RE = re.compile(r"(?<!\d)(20[0-9]{2})[01][0-9][0-3][0-9](?!\d)")
+# 6-digit YYYYMM stamps ('sam_exclusions_202609.csv', 'GA_terminations_202609.xlsx'):
+# the operator's sorter and the SAM save line both date files this way, and
+# YEAR_RE's no-adjacent-digit guard made them read as undated (2026-10-09 report:
+# nine such files on the "true re-download list" that were dated in their names)
+DATE6_RE = re.compile(r"(?<!\d)(20[0-9]{2})(?:0[1-9]|1[0-2])(?!\d)")
+
+
+def name_dates(name: str) -> list[str]:
+    """Every year-like stamp in a filename: bare years, YYYYMM and YYYYMMDD."""
+    return YEAR_RE.findall(name) + DATE6_RE.findall(name) + DATE8_RE.findall(name)
 
 # sources whose canonical file NAMES are contracts (never auto-rename);
 # code_legality is a built, reviewed reference other modules cite by path
@@ -223,7 +233,7 @@ def inspect_tree(data_root: Path) -> list[dict]:
         rel = str(p.relative_to(pre)).replace("\\", "/")
         held = "_hold" in rel or rel.endswith(".bak")
         # 8-digit YYYYMMDD stamps in filenames count as dated too
-        name_years = YEAR_RE.findall(p.name) + DATE8_RE.findall(p.name)
+        name_years = name_dates(p.name)
         rec = {"file": rel, "size_mb": round(p.stat().st_size / 1e6, 1),
                "held": held, "year_in_name": "/".join(name_years),
                "columns": None, "date_cols": {}, "zip_inner": [],
@@ -232,8 +242,7 @@ def inspect_tree(data_root: Path) -> list[dict]:
         if p.suffix.lower() == ".zip":
             rec["zip_inner"] = _zip_peek(p)
             inner_years = sorted({y for n in rec["zip_inner"]
-                                  for y in (YEAR_RE.findall(n)
-                                            + DATE8_RE.findall(n))})
+                                  for y in name_dates(n)})
             if inner_years:
                 rec["inferred_period"] = "/".join(inner_years)
                 rec["verdict"] = "PERIOD FROM INNER FILENAMES"

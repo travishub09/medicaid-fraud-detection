@@ -194,3 +194,15 @@ def test_sam_month_name_dates_parse(tmp_path: Path):
     rec = rows["sam/sam_exclusions.CSV"]
     assert rec["verdict"] == "PERIOD FOUND INSIDE"
     assert rec["inferred_period"].startswith("2019-12-05")
+
+
+def test_yyyymm_filename_stamps_count_as_dates():
+    """2026-10-09 report: sam_exclusions_202609.csv and the seven *_terminations_202609.xlsx
+    files sat on the TRUE re-download list although their names carry the month."""
+    from src.vintage_inspect import name_dates
+    assert name_dates("sam_exclusions_202609.csv") == ["2026"]
+    assert name_dates("GA_terminations_202609.xlsx") == ["2026"]
+    assert name_dates("NPPES_Deactivated_NPI_Report_060826_V2.zip") == []      # MMDDYY is not a stamp
+    assert "2026" in name_dates("deactivation_20260608.zip")
+    assert name_dates("partb_2021.csv") == ["2021"]
+    assert name_dates("sam_exclusions.CSV") == []

@@ -13,21 +13,6 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
   - step 2: Download/export the current-year table as CSV or XLSX per state
   - step 3: Save as "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_<state>_<yyyymm>.csv"
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/warn/warn_*.csv or preclean/warn/warn_*.xlsx
-- **nppes_2021_12** — NPPES December-2021 monthly edition (freezes the address layer for the v7 2021-12 rolling-origin run; one-time)
-  - save to: preclean/nppes/npidata_pfile_20050523-20211212.csv (extracted CSV, several GB; next to the 2023 edition)  |  https://data.nber.org/npi/
-  - due: freshness unknown
-  - step 1: Open https://data.nber.org/npi/ (NBER archives every monthly NPPES release; CMS itself keeps only the current month)
-  - step 2: Find the December 2021 full NPPES Data Dissemination (the zip whose main csv is named npidata_pfile_20050523-20211212.csv or the closest December-2021 date)
-  - step 3: Download and EXTRACT the zip; keep only the big npidata_pfile_*.csv
-  - step 4: Then paste the commands below (moves it next to the 2023 edition and marks the item done)
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/nppes/npidata_pfile_20050523-2021*.csv
-
-```bat
-move "%USERPROFILE%\Downloads\npidata_pfile_20050523-2021*.csv" "C:/Users/treyr/OneDrive/Desktop/data\preclean\nppes\"
-dir "C:/Users/treyr/OneDrive/Desktop/data\preclean\nppes\npidata_pfile_*2021*.csv"
-python -m src.reminders --done nppes_2021_12
-```
-
 - **hospice_2021_archive** — Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)
   - save to: preclean/facility/Hospice_Provider_<yyyymm>.csv (keep the Nov-2023 file too; the export picks the edition by vintage)  |  https://data.cms.gov/provider-data/archived-data/hospice-care
   - due: freshness unknown
@@ -59,7 +44,7 @@ python -m src.reminders --done oig_cia
 
 - **state_capacity_rosters** — LOW PRIORITY (2026-09-16: the Northeast PI packet is clinics and therapy offices; a roster only moves a bed-based check). State licensed-facility rosters with LICENSED CAPACITY for waiver group homes, residential habilitation, adult day, assisted living, hospice houses. The one Northeast item that moves a current card: NJ DHS/DDD group homes (Special Homes of NJ). Everything else (FL AHCA, IL, IN, DC, TX, CA, MA, RI) is for a future capacity pass
   - save to: preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)  |  https://health.ri.gov/licenses/
-  - due: freshness unknown
+  - due: freshness unknown  (2026-10-09 inventory: NY_certification.csv, NY_facilities.csv, NJ_acute_care.csv and NJ_ltc.xlsx are already under preclean/state_capacity/ (the three direct downloads are DONE); what remains is the optional hand-copied state lists (FL, NJ DDD group homes, IN, DC, TX, IL, RI, ME, MO, CO))
   - step 1: FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type PPEC (prescribed pediatric extended care), then Assisted Living, then Adult Day Care -> Download/Export with the licensed capacity column; save as FL_ppec.csv, FL_assisted_living.csv, FL_adult_day.csv
   - step 2: NJ (group homes): https://www.nj.gov/humanservices/ddd/ -> licensed community residences / provider search (DHS licenses developmental-disability group homes; the DOH long-term-care file already loaded does not cover them); save as NJ_ddd_homes.csv
   - step 3: IN: https://www.in.gov/fssa/ddrs/ -> BDDS licensed group homes / supervised group living list with capacity; save as IN_group_homes.csv (retires the occupancy-artifact rows)
@@ -165,12 +150,15 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -m src.model_a.scheme_triage --run "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7"
 ```
 
-- [ ] **vintage_rerun_after_172** — Rerun vintage_inspect + scheme_discovery AFTER bundle 172 merges (the 2026-09-16 reports came from pre-merge code: saturation/opais 8-digit dates, nadac/nucc/iQIES column checks all flagged falsely). Expected after the rerun: re-download list drops to the genuinely undated reference files (PECOS.csv, hud, nucc, opensanctions); no WRONG-FILE rows. Upload both .md again. (added 2026-09-16)
+- [ ] **vintage_rerun_after_172** — RERUN NEEDED (2026-10-09): the VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md uploaded today predate the July files (no medicaid_ndc/ or medicaid_enrollment/ rows in the inventory) and the 2026-10-07 inspector fix (state_terminations / state_capacity / nppes / nppes_history still listed as orphans), so today's run either did not execute or did not finish. Run the two commands below with python -u in a window of their own, paste the LAST 10 lines of console output, then upload both .md files again. Bundle 242 also dates sam_exclusions_202609.csv and the *_terminations_202609.xlsx files from their names, so the TRUE re-download list should shrink to PECOS.csv, hud/*, nucc/*, opensanctions/* and sam_exclusions.CSV (the undated older SAM copy; delete it if sam_exclusions_202609.csv is the one the loader reads). (added 2026-09-16)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.vintage_inspect --data-root "C:/Users/treyr/OneDrive/Desktop/data"
-python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+python -u -m src.vintage_inspect --data-root "C:\Users\treyr\OneDrive\Desktop\data"
+python -u -m src.model_a.scheme_discovery --data-root "C:\Users\treyr\OneDrive\Desktop\data"
+dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md" "C:\Users\treyr\OneDrive\Desktop\data\preclean\SCHEME_DISCOVERY.md"
+REM upload both .md files, then:
+python -m src.reminders --done-task vintage_rerun_after_172
 ```
 
 - [ ] **editions_undated_reference** — LOW: fill EDITIONS.csv data_period for the reference files that carry no date inside or in their name (PECOS.csv, hud/zip_county.*, nucc/*, opensanctions/targets.simple.csv): the download date is the period. Operator entries are never overwritten. (added 2026-09-16)
@@ -183,12 +171,6 @@ notepad "C:\Users\treyr\OneDrive\Desktop\data\preclean\EDITIONS.csv"
 
 ```bat
 dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\pecos" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes"
-```
-
-- [ ] **nppes_2021_12_locate** — The 2026-09-16 inventory has no npidata_pfile_20050523-20211212.csv under preclean (only nppes_history/...20231210). The deactivated-NPI names were looked up in it, so it exists somewhere. Find it and move it next to the 2023 edition (closes the nppes_2021_12 reminder). (added 2026-09-16)
-
-```bat
-dir /s /b "C:\Users\treyr\OneDrive\Desktop\data\npidata_pfile_20050523-2021*.csv" "C:\Users\treyr\Downloads\npidata_pfile_20050523-2021*.csv"
 ```
 
 - [ ] **build_ready_to_wire_schemes** — CLAUDE build queue from SCHEME_DISCOVERY 2026-09-16: three READY TO WIRE (nh_ownership_stakes from NH_Ownership_Nov2023 Ownership Percentage/Role; nh_penalties from NH_Penalties_Nov2023 Fine Amount; pbj_weekend_staffing from pbj_daily_staffing Hrs_RN by WorkDate weekday); the six hospice candidates need the long-format Measure Code pivot (facility.py already pivots hospice, so the discovery check should read the pivoted view); new idea: HCRIS HHA discipline visit counts (RN/LPN/PT/OT/SLP visits, Medicaid Title XIX) as a home-health capacity check (visits per licensed nurse). No operator action. (added 2026-09-16)
@@ -249,7 +231,7 @@ python -m src.reminders --done-task build_nursing_home_dollar_basis
 python -m src.reminders --done-task wesleyan_balance_sheet_readout
 ```
 
-- [ ] **v8_prereg_accuracy_sprint** — v8 is a NEW pre-registration, never a rerun of v7: the feature set (trainability gate: v3 scores, capacity, July rx_/px_/mcd_, servicing sv_ now trained), the missing-value policy (native NaN), the MUE rule (per patient), the peer rule (non-null minimum), the label rule (masked ambiguous rows, outcome rule on every case tier) and the ruler (FCA cases, 36-month horizon) all changed, so v8's numbers are not comparable with v7's. Register with the checks below BEFORE the run; grade on ACCURACY_DIAGNOSTICS (FCA ruler, hits@50 vs random), never on decile lift. Read docs/ACCURACY_PLAN_2026-10.md section 5 first UPDATE 2026-10-09 (bundle 239): the dossier also writes provider_priority_list_pursuit.csv, the OPERATOR book only, sorted on score_dollar_weighted then score_max. The v7 order sweep settled the sort: dollar-weighted 1/2/3/4 hits at 16/50/100/250, P(any) 0/0/0/2, every basis-backed-first variant 0 at 16/50/100; the operator filter is the win (main list 0/1/2/3). The PI packet draws from the pursuit file and the diagnostics grade it with --list-name provider_priority_list_pursuit.csv (the main list stays for registry continuity). Folds are stratified on positives; score_p_any / score_p_max ship as columns only. The v7 pursuit book at this order already reads hits50 = 2, so v8 must not read below it. (added 2026-10-08)
+- [ ] **v8_prereg_accuracy_sprint** — v8 is a NEW pre-registration, never a rerun of v7: the feature set (trainability gate: v3 scores, capacity, July rx_/px_/mcd_, servicing sv_ now trained), the missing-value policy (native NaN), the MUE rule (per patient), the peer rule (non-null minimum), the label rule (masked ambiguous rows, outcome rule on every case tier) and the ruler (FCA cases, 36-month horizon) all changed, so v8's numbers are not comparable with v7's. Register with the checks below BEFORE the run; grade on ACCURACY_DIAGNOSTICS (FCA ruler, hits@50 vs random), never on decile lift. Read docs/ACCURACY_PLAN_2026-10.md section 5 first UPDATE 2026-10-09 (bundle 239): the dossier also writes provider_priority_list_pursuit.csv, the OPERATOR book only, sorted on score_dollar_weighted then score_max. The v7 order sweep settled the sort: dollar-weighted 1/2/3/4 hits at 16/50/100/250, P(any) 0/0/0/2, every basis-backed-first variant 0 at 16/50/100; the operator filter is the win (main list 0/1/2/3). The PI packet draws from the pursuit file and the diagnostics grade it with --list-name provider_priority_list_pursuit.csv (the main list stays for registry continuity). Folds are stratified on positives; score_p_any / score_p_max ship as columns only. The v7 pursuit book at this order already reads hits50 = 2, so v8 must not read below it. NPPES Dec-2021 edition confirmed on disk 2026-10-09: the as-of graph build takes --asof-nppes "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes\npidata_pfile_20050523-20211212.csv" (without it address_layer_frozen is false and post-cutoff addresses leak, the v6 lesson). (added 2026-10-08)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -268,6 +250,15 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
 REM upload processed\MEDICAID_NDC_REPORT.md
 python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
+```
+
+- [ ] **mue_files_unreadable_check** — The 2026-10-09 VINTAGE_INSPECT marks all three MUE files UNREADABLE (preclean/reference/mue/mue_practitioner.csv, mue_facility.csv, mue_dme.csv): DuckDB and the pandas sniffing fallback both failed to find a header. The per-patient MUE rule (impossible_day / mue_excess) reads these through pandas; if they are really unreadable the v7 SOURCES_REPORT would show mue as skipped and v8 would train without the MUE features. Paste the first three lines of each file (the command below prints them) and Claude either fixes the reader or asks for a re-download (CMS publishes MUE as .xlsx; a 'Save as CSV' from Excel of the multi-row banner sheet is the usual cause). (added 2026-10-09)
+
+```bat
+powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_practitioner.csv' -TotalCount 3"
+powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_facility.csv' -TotalCount 3"
+powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_dme.csv' -TotalCount 3"
+REM paste the output into the chat
 ```
 
 
