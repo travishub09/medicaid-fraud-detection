@@ -190,6 +190,22 @@ def _read_header_inner(p: Path) -> list[str] | None:
             _READ_ERRORS[str(p)] = f"pandas fallback saw {len(named)} named columns: {list(df.columns)[:4]}"
         except Exception as e:
             _READ_ERRORS[str(p)] = f"pandas fallback: {type(e).__name__}: {str(e)[:120]}"
+        # last resort: the plain C-engine reader, comma delimiter, header probed a
+        # few rows deep. 2026-10-09: the three CMS MUE csvs are plain ASCII with a
+        # bare line feed INSIDE the quoted first header cell ("HCPCS/\nCPT Code");
+        # the operator's DuckDB build rejected that header and the sniffing
+        # fallback above (python engine) choked on the same quoted newline, so the
+        # files read UNREADABLE on Windows while the adapters (read_csv_text, the
+        # same C engine) loaded them without complaint.
+        for skip in (0, 1, 2, 3, 4, 5, 8, 10):
+            try:
+                df = pd.read_csv(p, nrows=5, skiprows=skip, dtype=str, encoding="latin-1")
+            except Exception as e:
+                _READ_ERRORS[str(p)] = f"C-engine fallback: {type(e).__name__}: {str(e)[:120]}"
+                continue
+            named = [c for c in df.columns if not str(c).startswith("Unnamed")]
+            if len(named) >= 3:
+                return [str(c) for c in df.columns]
         return None
     except Exception as e:
         _READ_ERRORS[str(p)] = f"{type(e).__name__}: {str(e)[:120]}"

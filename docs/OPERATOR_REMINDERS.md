@@ -39,7 +39,6 @@ python -m src.reminders --done state_capacity_rosters
 ## COMING UP (30 days)
 
 - leie — due 2026-10-16: OIG LEIE exclusion list (THE label source — new bans are training labels)
-- sam_exclusions — due 2026-10-16: SAM.gov exclusions extract (widens the PU label)
 - nppes_practice_locations — due 2026-10-16: NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
 - mue — due 2026-11-02: CMS MUE quarterly files (practitioner + facility)
 - pos — due 2026-11-02: Provider of Services file (quarterly)
@@ -215,21 +214,6 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
 REM upload "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_NDC_REPORT.md"
 python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
-```
-
-- [ ] **mue_unreadable_bytes** — The 2026-10-09 vintage rerun (on code with the BOM fix from bundle 243) STILL marks the three MUE csvs UNREADABLE, so the cause is not UTF-16. The pipeline reads them fine (per-patient MUE rule unaffected); this is the inspector's probe only. Paste the first 48 bytes of one file (command below); bundle 249 also makes the inspector print the probe error next to UNREADABLE in the inventory, so the next rerun explains itself. (added 2026-10-09)
-
-```bat
-powershell -Command "Get-Content -Encoding Byte -TotalCount 48 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_practitioner.csv' | Format-Hex"
-REM paste the output into the chat
-```
-
-- [ ] **sam_extract_first_load** — One-time after bundle 250 merges: load the September SAM extract into the exclusions schema (seconds) and paste the summary line (rows / with an NPI / excluded by HHS / active). This replaces the paged-API parquet; the v8 graph build picks it up. (added 2026-10-09)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.enforcement.sam_api --from-csv "C:\Users\treyr\OneDrive\Desktop\data\preclean\sam" --out "C:\Users\treyr\OneDrive\Desktop\data\processed"
-python -m src.reminders --done-task sam_extract_first_load
 ```
 
 

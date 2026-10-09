@@ -224,3 +224,32 @@ def test_bom_and_utf16_csvs_are_readable(tmp_path: Path):
     for f in (plain, bom, u16):
         got = _read_header(f)
         assert got is not None and [c.replace("\r", "") for c in got] == [c.replace("\r", "") for c in want], f.name
+
+
+def test_quoted_newline_header_survives_a_failing_duckdb_probe(tmp_path: Path, monkeypatch):
+    """The operator's bytes (2026-10-09): plain ASCII, no BOM, a bare LF inside the quoted
+    first header cell. DuckDB on that machine rejects it and the sniffing fallback chokes;
+    the plain C-engine read must still find the four columns."""
+    import src.vintage_inspect as vi
+    body = ('"HCPCS/\nCPT Code",Practitioner Services MUE Values,MUE Adjudication Indicator,MUE Rationale\n'
+            '0001U,1,2 Date of Service Edit: Policy,Code Descriptor / CPT Instruction\n')
+    f = tmp_path / "mue_practitioner.csv"
+    f.write_bytes(body.encode())
+
+    class _BrokenDuck:
+        def execute(self, *a, **k):
+            raise RuntimeError("simulated duckdb header rejection")
+    monkeypatch.setattr(vi, "_duck", lambda: _BrokenDuck())
+    monkeypatch.setattr(pd, "read_csv", _python_engine_fails(pd.read_csv))
+    cols = vi._read_header(f)
+    assert cols is not None and len(cols) == 4 and cols[1] == "Practitioner Services MUE Values"
+
+
+def _python_engine_fails(real):
+    """Make the sniffing (python-engine) fallback fail the way it did on Windows, while
+    the plain C-engine read still works."""
+    def _rc(*a, **k):
+        if k.get("engine") == "python":
+            raise pd.errors.ParserError("simulated sniffer failure on a quoted newline")
+        return real(*a, **k)
+    return _rc

@@ -50,7 +50,7 @@
    "where": "preclean/sam/",
    "url": "https://sam.gov/data-services",
    "every_months": 1,
-   "last_done": "2026-09-16",
+   "last_done": "2026-10-09",
    "steps": [
     "Open https://sam.gov/data-services and pick 'Exclusions' -> 'Public V2' current extract (CSV); no login needed",
     "Save it as sam_exclusions_<yyyymm>.csv under preclean\\sam\\ (replace <yyyymm> in the move line)",
@@ -66,7 +66,7 @@
     "preclean/sam/*.csv"
    ],
    "proof_recent_days": 45,
-   "note": "Bundle 250: the public extract is now the SAM source (enforcement/sam_api.py --from-csv): it writes processed/exclusions_sam.parquet in the exclusions schema with the NPI the extract carries and the agency in excl_type (HHS debarments tier weak). Run the load line after each download; the graph rebuild (part of every frozen run) merges it. The older undated sam_exclusions.CSV can be deleted."
+   "note": "Bundle 250: the public extract is now the SAM source (enforcement/sam_api.py --from-csv): it writes processed/exclusions_sam.parquet in the exclusions schema with the NPI the extract carries and the agency in excl_type (HHS debarments tier weak). Run the load line after each download; the graph rebuild (part of every frozen run) merges it. The older undated sam_exclusions.CSV can be deleted. FIRST LOAD 2026-10-09: 168,445 exclusions, 19,357 with an NPI, 69,978 placed by HHS, all active -> processed/exclusions_sam.parquet (the paged-API parquet is superseded)."
   },
   {
    "key": "owner_snapshot",
@@ -724,25 +724,6 @@
     "python -u -m src.ingest_cms.medicaid_ndc --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_ndc\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\" --nadac \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nadac\\nadac_2026.csv\"",
     "REM upload \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\MEDICAID_NDC_REPORT.md\"",
     "python -m src.reminders --done-task medicaid_ndc_rebuild_after_230"
-   ]
-  },
-  {
-   "key": "mue_unreadable_bytes",
-   "what": "The 2026-10-09 vintage rerun (on code with the BOM fix from bundle 243) STILL marks the three MUE csvs UNREADABLE, so the cause is not UTF-16. The pipeline reads them fine (per-patient MUE rule unaffected); this is the inspector's probe only. Paste the first 48 bytes of one file (command below); bundle 249 also makes the inspector print the probe error next to UNREADABLE in the inventory, so the next rerun explains itself.",
-   "added": "2026-10-09",
-   "commands": [
-    "powershell -Command \"Get-Content -Encoding Byte -TotalCount 48 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\reference\\mue\\mue_practitioner.csv' | Format-Hex\"",
-    "REM paste the output into the chat"
-   ]
-  },
-  {
-   "key": "sam_extract_first_load",
-   "what": "One-time after bundle 250 merges: load the September SAM extract into the exclusions schema (seconds) and paste the summary line (rows / with an NPI / excluded by HHS / active). This replaces the paged-API parquet; the v8 graph build picks it up.",
-   "added": "2026-10-09",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.sam_api --from-csv \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\"",
-    "python -m src.reminders --done-task sam_extract_first_load"
    ]
   }
  ]
