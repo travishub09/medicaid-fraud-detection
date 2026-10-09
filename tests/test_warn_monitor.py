@@ -68,3 +68,42 @@ def test_window_status_transitions(world):
     late = surge_leads(matched, erv, top_fraction=1.0, asof=pd.Timestamp("2027-01-01"))
     assert (early["window_status"] == "pending").all()
     assert (late["window_status"] == "expired").all()
+
+
+def test_load_warn_folder_reads_xlsx_with_banner_and_state_from_filename(tmp_path):
+    """2026-10-09: the operator's four state postings were three Excel files (California,
+    Texas, Rhode Island) and one csv (North Carolina); the monitor read one csv only.
+    A folder of warn_<ST>_<yyyymm>.* files loads as one frame; an xlsx with a title
+    row above its header is probed; the state comes from the filename when the
+    sheet carries none."""
+    from src.sourcing.warn_monitor import load_warn, read_warn_file
+    d = tmp_path / "warn"
+    d.mkdir()
+    # California-style xlsx: a banner row, then the header
+    ca = pd.DataFrame([["WARN Report 2026", None, None, None],
+                       ["Company", "Notice Date", "Effective Date", "No. Of Employees"],
+                       ["Sunrise Home Care LLC", "2026-07-01", "2026-09-01", "45"],
+                       ["Valley Clinic Inc", "2026-08-15", "2026-10-15", "12"]])
+    ca.to_excel(d / "warn_CA_202610.xlsx", index=False, header=False)
+    # Texas-style xlsx: TWC headers, no banner
+    tx = pd.DataFrame({"JOB_SITE_NAME": ["Lone Star Rehab"], "NOTICE_DATE": ["2026-06-02"],
+                       "LayOff_Date": ["2026-08-01"], "TOTAL_LAYOFF_NUMBER": ["80"]})
+    tx.to_excel(d / "warn_TX_202610.xlsx", index=False)
+    # North Carolina csv with its own state column
+    nc = pd.DataFrame({"Company Name": ["Piedmont Hospice"], "State": ["NC"],
+                       "Notice Date": ["2026-05-05"], "Effective Date": ["2026-07-05"],
+                       "Number of Employees": ["30"]})
+    nc.to_csv(d / "warn_NC_202610.csv", index=False)
+    (d / "notes.txt").write_text("ignored")
+    w = load_warn(d)
+    assert len(w) == 4 and set(w["source_file"]) == {"warn_CA_202610.xlsx", "warn_TX_202610.xlsx", "warn_NC_202610.csv"}
+    by = w.set_index("employer_raw")
+    assert by.loc["Sunrise Home Care LLC", "state"] == "CA" and by.loc["Lone Star Rehab", "state"] == "TX"
+    assert by.loc["Piedmont Hospice", "state"] == "NC"
+    assert int(by.loc["Lone Star Rehab", "employees"]) == 80
+    assert str(by.loc["Sunrise Home Care LLC", "layoff_date"])[:10] == "2026-09-01"
+    # a single file still works, and a sheet with no employer column says so
+    assert len(read_warn_file(d / "warn_NC_202610.csv")) == 1
+    pd.DataFrame({"foo": [1]}).to_excel(d / "warn_ZZ_202610.xlsx", index=False)
+    with pytest.raises(ValueError):
+        read_warn_file(d / "warn_ZZ_202610.xlsx")

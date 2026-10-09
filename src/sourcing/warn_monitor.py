@@ -27,6 +27,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -35,12 +36,87 @@ from src.entity_graph.resolve_entities import norm_org_name
 
 # canonical name → candidate headers across state WARN postings
 WARN_COLS = {
-    "employer": ["COMPANY", "COMPANY NAME", "EMPLOYER", "BUSINESS NAME", "Company"],
+    "employer": ["COMPANY", "COMPANY NAME", "EMPLOYER", "EMPLOYER NAME", "BUSINESS NAME", "Company",
+                 "JOB_SITE_NAME", "Job Site Name", "Name of Company", "Business"],
     "state": ["STATE", "State"],
-    "notice_date": ["NOTICE_DATE", "NOTICE DATE", "WARN RECEIVED DATE", "Date Received"],
-    "layoff_date": ["LAYOFF_DATE", "LAYOFF DATE", "EFFECTIVE DATE", "Layoff Date"],
-    "employees": ["EMPLOYEES", "NUMBER OF EMPLOYEES", "AFFECTED WORKERS", "No. Of Employees"],
+    "notice_date": ["NOTICE_DATE", "NOTICE DATE", "WARN RECEIVED DATE", "Date Received", "Received Date",
+                    "Date of Notice", "Notice Received", "NOTICE DATE RECEIVED", "Date Notice Received"],
+    "layoff_date": ["LAYOFF_DATE", "LAYOFF DATE", "EFFECTIVE DATE", "Layoff Date", "LayOff_Date",
+                    "Layoff/Closure Date", "Effective_Date", "Layoff Effective Date", "Closure Date"],
+    "employees": ["EMPLOYEES", "NUMBER OF EMPLOYEES", "AFFECTED WORKERS", "No. Of Employees",
+                  "TOTAL_LAYOFF_NUMBER", "# of Employees", "Employees Affected", "Number Affected",
+                  "No. of Workers", "Affected Employees", "Total Employees"],
 }
+
+# the operator's save name is warn_<ST>_<yyyymm>.<csv|xlsx>; the state code in it
+# fills the state column when the posting itself carries none (most do not)
+_STATE_IN_NAME = re.compile(r"warn[_-]([A-Za-z]{2})[_-]", re.IGNORECASE)
+
+
+def _resolve(columns) -> dict:
+    lower = {str(c).lower().strip(): c for c in columns}
+    resolved = {}
+    for canon, candidates in WARN_COLS.items():
+        for cand in candidates:
+            if cand.lower().strip() in lower:
+                resolved[canon] = lower[cand.lower().strip()]
+                break
+    return resolved
+
+
+def read_warn_file(path) -> pd.DataFrame:
+    """One state posting, csv or xlsx, as raw strings. State sites export Excel
+    with a banner row or two above the header (California, Rhode Island), so an
+    xlsx is probed up to eight rows deep for the row that carries an employer
+    column. A `state` column is added from the filename (warn_CA_202610.xlsx)
+    when the sheet has none."""
+    p = Path(path)
+    if p.suffix.lower() in (".xlsx", ".xls"):
+        raw = None
+        for skip in range(0, 9):
+            try:
+                cand = pd.read_excel(p, dtype=str, header=skip)
+            except Exception:
+                break
+            if "employer" in _resolve(cand.columns):
+                raw = cand
+                break
+        if raw is None:
+            raise ValueError(f"WARN file {p.name}: no employer column in the first 9 rows; "
+                             f"paste its first lines")
+    else:
+        from src.attempt_2.clean_data import read_csv_text
+        raw = read_csv_text(str(p))
+        if "employer" not in _resolve(raw.columns):
+            for skip in range(1, 9):               # csv exports with a title row
+                cand = read_csv_text(str(p), skiprows=skip)
+                if "employer" in _resolve(cand.columns):
+                    raw = cand
+                    break
+    if "state" not in _resolve(raw.columns):
+        m = _STATE_IN_NAME.search(p.name)
+        if m:
+            raw = raw.copy()
+            raw["STATE"] = m.group(1).upper()
+    raw = raw.copy()
+    raw["source_file"] = p.name
+    return raw
+
+
+def load_warn(path) -> pd.DataFrame:
+    """A single posting or a folder of warn_*.csv / warn_*.xlsx postings ->
+    one canonical frame (normalize_warn per file, concatenated)."""
+    p = Path(path)
+    files = sorted(list(p.glob("warn_*.csv")) + list(p.glob("warn_*.xlsx")) + list(p.glob("warn_*.xls"))) \
+        if p.is_dir() else [p]
+    if not files:
+        raise FileNotFoundError(f"no warn_*.csv / warn_*.xlsx under {p}")
+    frames = []
+    for f in files:
+        w = normalize_warn(read_warn_file(f))
+        w["source_file"] = f.name
+        frames.append(w)
+    return pd.concat(frames, ignore_index=True)
 
 SURGE_WINDOW_OPEN_MONTHS = 6     # outreach sweet spot opens ~6 months post-departure
 SURGE_WINDOW_CLOSE_MONTHS = 18   # and fades by ~18
@@ -48,13 +124,7 @@ SURGE_WINDOW_CLOSE_MONTHS = 18   # and fades by ~18
 
 def normalize_warn(raw: pd.DataFrame) -> pd.DataFrame:
     """Map a raw WARN posting to the canonical schema; parse dates; keep strings."""
-    resolved = {}
-    lower = {c.lower().strip(): c for c in raw.columns}
-    for canon, candidates in WARN_COLS.items():
-        for cand in candidates:
-            if cand.lower().strip() in lower:
-                resolved[canon] = lower[cand.lower().strip()]
-                break
+    resolved = _resolve(raw.columns)
     if "employer" not in resolved:
         raise ValueError(f"WARN file missing an employer column; saw {list(raw.columns)}")
 
@@ -144,7 +214,9 @@ def surge_leads(matched: pd.DataFrame, erv_ranked: pd.DataFrame,
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--warn", required=True, help="raw WARN CSV (any state's format)")
+    ap.add_argument("--warn", required=True,
+                    help="a raw WARN posting (csv or xlsx, any state's format) or the folder "
+                         "preclean/warn/ holding warn_<ST>_<yyyymm>.csv|xlsx files")
     ap.add_argument("--graph-dir", required=True)
     ap.add_argument("--erv", required=True, help="erv_ranked.parquet from src.model_a")
     ap.add_argument("--out", default="/tmp/sourcing_out")
@@ -152,7 +224,7 @@ def main() -> None:
 
     org_nodes = pd.read_parquet(Path(args.graph_dir) / "nodes" / "org_nodes.parquet")
     erv = pd.read_parquet(args.erv)
-    warn = normalize_warn(pd.read_csv(args.warn, dtype=str))
+    warn = load_warn(args.warn)
     matched, unmatched = match_warn_to_orgs(warn, org_nodes)
     leads = surge_leads(matched, erv)
 

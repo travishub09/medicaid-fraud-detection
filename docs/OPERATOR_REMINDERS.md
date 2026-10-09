@@ -9,11 +9,21 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
 - **warn_notices** — WARN layoff notices for the surge monitor (whistleblower timing)
   - save to: preclean/warn/
   - due: freshness unknown
-  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"  (the --done line also refuses until the file is there)
-  - step 2: Google '<state> WARN notices' for target states (start: RI, NC, FL, TX, CA) — each state DOL posts a table
-  - step 3: Download/export the current-year table as CSV or XLSX per state
-  - step 4: Save as "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_<state>_<yyyymm>.csv"
+  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"  (the --done line also refuses until files are there)
+  - step 2: 2026-10-09: CA, TX, NC and RI postings downloaded (three .xlsx, one .csv); the copy lines below file them as warn_<ST>_<yyyymm>.<ext>; the monitor (bundle 247) reads the whole folder, Excel included, and takes the state from the filename. FL did not download (a 37 KB 'Unconfirmed ...crdownload' in Downloads is the failed attempt): retry FloridaJobs WARN notices and save it as warn_FL_<yyyymm>.csv or .xlsx
+  - step 3: Each month: Google '<state> WARN notices' (RI, NC, FL, TX, CA first); each state DOL posts a table; export the current year as CSV or XLSX; save as warn_<ST>_<yyyymm>.<ext> under preclean\warn\
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/warn/warn_*.csv or preclean/warn/warn_*.xlsx
+
+```bat
+mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"
+for %f in ("%USERPROFILE%\Downloads\California warn_report*.xlsx") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_CA_202610.xlsx"
+for %f in ("%USERPROFILE%\Downloads\texas warn-act-listings*.xlsx") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_TX_202610.xlsx"
+for %f in ("%USERPROFILE%\Downloads\north carolina warn summary report*.csv") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_NC_202610.csv"
+for %f in ("%USERPROFILE%\Downloads\rhode island Warn Report*.xlsx") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_RI_202610.xlsx"
+dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"
+python -m src.reminders --done warn_notices
+```
+
 - **hospice_2021_archive** — Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)
   - save to: preclean/facility/Hospice_Provider_<yyyymm>.csv (keep the Nov-2023 file too; the export picks the edition by vintage)  |  https://data.cms.gov/provider-data/archived-data/hospice-care
   - due: freshness unknown
