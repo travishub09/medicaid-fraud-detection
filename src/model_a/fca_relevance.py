@@ -198,7 +198,10 @@ def fca_tier(excl_type) -> tuple[str, str]:
     if t.startswith("opensanctions"):
         return "excluded", "OpenSanctions: not an FCA source"
     if t.startswith("sam"):
-        if re.search(r"fraud|health|medicare|medicaid", t):
+        # the extract loader appends |<Excluding Agency>|<Program>: an HHS
+        # debarment is a healthcare cause even when the type says only
+        # "Ineligible (Proceedings Completed)"
+        if re.search(r"fraud|health|medicare|medicaid|\|hhs\b", t):
             return "weak", "SAM debarment with a healthcare cause"
         return "excluded", "SAM debarment without a healthcare-fraud cause"
     if t.startswith("preclusion"):

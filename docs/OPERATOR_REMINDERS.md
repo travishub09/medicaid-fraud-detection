@@ -229,18 +229,19 @@ REM paste the two 'graded' lines + the two hits@50 lines; upload ACCURACY_DIAGNO
 python -m src.reminders --done-task v7_pursuit_regrade_after_244
 ```
 
-- [ ] **sam_extract_loader** — CLAUDE BUILD, one operator paste first: the SAM.gov public V2 extract under preclean/sam/ has no reader (the label's SAM rows come from the paged API). Paste the first TWO lines of sam_exclusions_202609.csv (the header and one row) with the command below; Claude adds --from-csv to enforcement/sam_api.py so the complete extract writes processed/exclusions_sam.parquet in the same schema, and the old undated sam_exclusions.CSV can then be deleted (it is the last undated file on the re-download list besides the reference tables). (added 2026-10-09)
-
-```bat
-powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\sam\sam_exclusions_202609.csv' -TotalCount 2"
-REM paste the output into the chat
-```
-
 - [ ] **mue_unreadable_bytes** — The 2026-10-09 vintage rerun (on code with the BOM fix from bundle 243) STILL marks the three MUE csvs UNREADABLE, so the cause is not UTF-16. The pipeline reads them fine (per-patient MUE rule unaffected); this is the inspector's probe only. Paste the first 48 bytes of one file (command below); bundle 249 also makes the inspector print the probe error next to UNREADABLE in the inventory, so the next rerun explains itself. (added 2026-10-09)
 
 ```bat
-powershell -Command "Format-Hex -Path 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_practitioner.csv' -Count 48"
+powershell -Command "Get-Content -Encoding Byte -TotalCount 48 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_practitioner.csv' | Format-Hex"
 REM paste the output into the chat
+```
+
+- [ ] **sam_extract_first_load** — One-time after bundle 250 merges: load the September SAM extract into the exclusions schema (seconds) and paste the summary line (rows / with an NPI / excluded by HHS / active). This replaces the paged-API parquet; the v8 graph build picks it up. (added 2026-10-09)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.enforcement.sam_api --from-csv "C:\Users\treyr\OneDrive\Desktop\data\preclean\sam" --out "C:\Users\treyr\OneDrive\Desktop\data\processed"
+python -m src.reminders --done-task sam_extract_first_load
 ```
 
 

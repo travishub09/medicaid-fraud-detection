@@ -52,18 +52,21 @@
    "every_months": 1,
    "last_done": "2026-09-16",
    "steps": [
-    "Open https://sam.gov/data-services and pick 'Exclusions' \u2192 'Public V2' current extract (CSV)",
-    "No login needed for the public extract"
+    "Open https://sam.gov/data-services and pick 'Exclusions' -> 'Public V2' current extract (CSV); no login needed",
+    "Save it as sam_exclusions_<yyyymm>.csv under preclean\\sam\\ (replace <yyyymm> in the move line)",
+    "Then the load line below (seconds); the next graph build merges it into the exclusion nodes + the PU label"
    ],
    "commands": [
-    "move \"%USERPROFILE%\\Downloads\\SAM_Exclusions*.CSV\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_%date:~10,4%%date:~4,2%.csv\"",
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "move \"%USERPROFILE%\\Downloads\\SAM_Exclusions_Public_Extract*.CSV\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_<yyyymm>.csv\"",
+    "python -m src.enforcement.sam_api --from-csv \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\"",
     "python -m src.reminders --done sam_exclusions"
    ],
    "proof": [
     "preclean/sam/*.csv"
    ],
    "proof_recent_days": 45,
-   "note": "FINDING 2026-10-09: no adapter reads preclean/sam/*.csv. The SAM rows in the label come from the API fetcher (enforcement/sam_api.py -> exclusions_sam.parquet, up to 500 pages). The monthly extract is the complete file and should replace the paged API pull; Claude builds the extract loader once the header is known (task sam_extract_loader). Until then the download is filed, not used."
+   "note": "Bundle 250: the public extract is now the SAM source (enforcement/sam_api.py --from-csv): it writes processed/exclusions_sam.parquet in the exclusions schema with the NPI the extract carries and the agency in excl_type (HHS debarments tier weak). Run the load line after each download; the graph rebuild (part of every frozen run) merges it. The older undated sam_exclusions.CSV can be deleted."
   },
   {
    "key": "owner_snapshot",
@@ -738,21 +741,22 @@
    ]
   },
   {
-   "key": "sam_extract_loader",
-   "what": "CLAUDE BUILD, one operator paste first: the SAM.gov public V2 extract under preclean/sam/ has no reader (the label's SAM rows come from the paged API). Paste the first TWO lines of sam_exclusions_202609.csv (the header and one row) with the command below; Claude adds --from-csv to enforcement/sam_api.py so the complete extract writes processed/exclusions_sam.parquet in the same schema, and the old undated sam_exclusions.CSV can then be deleted (it is the last undated file on the re-download list besides the reference tables).",
-   "added": "2026-10-09",
-   "commands": [
-    "powershell -Command \"Get-Content 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_202609.csv' -TotalCount 2\"",
-    "REM paste the output into the chat"
-   ]
-  },
-  {
    "key": "mue_unreadable_bytes",
    "what": "The 2026-10-09 vintage rerun (on code with the BOM fix from bundle 243) STILL marks the three MUE csvs UNREADABLE, so the cause is not UTF-16. The pipeline reads them fine (per-patient MUE rule unaffected); this is the inspector's probe only. Paste the first 48 bytes of one file (command below); bundle 249 also makes the inspector print the probe error next to UNREADABLE in the inventory, so the next rerun explains itself.",
    "added": "2026-10-09",
    "commands": [
-    "powershell -Command \"Format-Hex -Path 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\reference\\mue\\mue_practitioner.csv' -Count 48\"",
+    "powershell -Command \"Get-Content -Encoding Byte -TotalCount 48 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\reference\\mue\\mue_practitioner.csv' | Format-Hex\"",
     "REM paste the output into the chat"
+   ]
+  },
+  {
+   "key": "sam_extract_first_load",
+   "what": "One-time after bundle 250 merges: load the September SAM extract into the exclusions schema (seconds) and paste the summary line (rows / with an NPI / excluded by HHS / active). This replaces the paged-API parquet; the v8 graph build picks it up.",
+   "added": "2026-10-09",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.enforcement.sam_api --from-csv \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\"",
+    "python -m src.reminders --done-task sam_extract_first_load"
    ]
   }
  ]

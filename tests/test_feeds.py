@@ -247,3 +247,34 @@ def test_state_cursor_roundtrip(tmp_path):
     set_cursor("x", "2026-06-12", p)
     assert get_cursor("x", p) == "2026-06-12"
     assert json.loads(p.read_text(encoding="utf-8"))["x"]["cursor"] == "2026-06-12"
+
+
+def test_sam_public_extract_loads_into_the_exclusions_schema(tmp_path):
+    """2026-10-09: the monthly SAM public V2 extract under preclean/sam had no reader
+    (the label's SAM rows came from the paged API). The extract loader writes the same
+    schema, keeps the NPI the extract carries, builds a person's name from its parts,
+    and appends the agency so an HHS debarment tiers as a healthcare cause."""
+    from src.enforcement.sam_api import load_sam_extract
+    from src.model_a.fca_relevance import fca_tier
+    d = tmp_path / "sam"
+    d.mkdir()
+    hdr = ('"Classification","Name","Prefix","First","Middle","Last","Suffix","Address 1","Address 2","Address 3",'
+           '"Address 4","City","State / Province","Country","Zip Code","Open Data Flag","Blank (Deprecated)",'
+           '"Unique Entity ID","Exclusion Program","Excluding Agency","CT Code","Exclusion Type","Additional Comments",'
+           '"Active Date","Termination Date","Record Status","Cross-Reference","SAM Number","CAGE","NPI","Creation_Date"\n')
+    r1 = ('"Individual","","#1","Simone","Courtney","Gueringer","","","","","","San Pedro","CA","USA","90733","","","",'
+          '"Reciprocal","FEMA","","Ineligible (Proceedings Completed)","","2024-10-09","2028-10-23","Active","","x","","","2024-10-09"\n')
+    r2 = ('"Firm","Sunrise Home Health LLC","","","","","","1 Main St","","","","Miami","FL","USA","33101","","","",'
+          '"Nonprocurement","HHS","","Ineligible (Proceedings Completed)","","2023-03-01","Indefinite","Active","","y","","1234567893","2023-03-01"\n')
+    (d / "sam_exclusions.CSV").write_text(hdr + r1)                 # the older undated copy
+    (d / "sam_exclusions_202609.csv").write_text(hdr + r1 + r2)     # the dated one wins
+    df = load_sam_extract(d)
+    assert len(df) == 2 and df["source_file"].iloc[0] == "sam_exclusions_202609.csv"
+    assert set(["npi", "entity_name", "name_key", "excl_type", "excl_date", "reinstate_date",
+                "currently_active"]) <= set(df.columns)
+    person, firm = df.iloc[0], df.iloc[1]
+    assert person["entity_name"] == "Simone Courtney Gueringer" and person["npi"] == ""
+    assert firm["npi"] == "1234567893" and str(firm["excl_date"])[:10] == "2023-03-01"
+    assert pd.isna(firm["reinstate_date"]) and firm["currently_active"] == 1      # 'Indefinite'
+    assert fca_tier(person["excl_type"])[0] == "excluded"                          # FEMA: no healthcare cause
+    assert fca_tier(firm["excl_type"])[0] == "weak"                                # HHS: healthcare cause
