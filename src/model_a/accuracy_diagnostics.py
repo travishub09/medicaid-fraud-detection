@@ -344,6 +344,18 @@ def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") 
 
 
 SORT_KEY_CANDIDATES = ("score_dollar_weighted", "score_p_any", "score_p_max", "score_max")
+MAIN_LIST_NAME = "provider_priority_list.csv"
+
+
+def output_suffix(list_name: str) -> str:
+    """'' for the main list; '__<stem minus the common prefix>' for a companion
+    (provider_priority_list_pursuit.csv -> '__pursuit')."""
+    stem = Path(list_name).stem
+    if list_name == MAIN_LIST_NAME:
+        return ""
+    base = Path(MAIN_LIST_NAME).stem
+    tail = stem[len(base):].lstrip("_") if stem.startswith(base) else stem
+    return "__" + (tail or stem)
 
 
 def infer_sort_key(df: pd.DataFrame) -> str | None:
@@ -1195,18 +1207,34 @@ def main() -> None:
                           gap_months=a.gap_months, active_within=a.active_within, min_damages=a.min_damages,
                           repeats=a.repeats, case_db=case_db, org_nodes=org_nodes, npi_to_org=npi_to_org,
                           defendant_npis=dn)
-    out = Path(a.out) if a.out else run_dir / "ACCURACY_DIAGNOSTICS.md"
+    # A companion list (the pursuit book) gets its own output set so it never
+    # overwrites the main list's report / accuracy_diagnostics.json (the file the
+    # run registry reads). 2026-10-09: two pursuit re-grades clobbered v7's main
+    # diagnostics because the default path ignored --list-name.
+    suffix = output_suffix(a.list_name)
+    out = Path(a.out) if a.out else run_dir / f"ACCURACY_DIAGNOSTICS{suffix}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     top_rows = res.pop("_top_rows", None)
     tie = res.pop("_tie_block", None)
     if tie is not None and len(tie):
-        tie.to_csv(out.parent / "accuracy_tie_block.csv", index=False)
+        tie.to_csv(out.parent / f"accuracy_tie_block{suffix}.csv", index=False)
     res["list_name"] = a.list_name
+    res["list_order_key"] = (pl.attrs.get("sort_key") if pl is not None else None) or "rank only"
+    res["list_rows"] = int(len(pl)) if pl is not None else None
     out.write_text(to_markdown(res, run_dir.name), encoding="utf-8")
-    (out.parent / "accuracy_diagnostics.json").write_text(json.dumps(res, indent=2, default=str), encoding="utf-8")
+    (out.parent / f"accuracy_diagnostics{suffix}.json").write_text(json.dumps(res, indent=2, default=str), encoding="utf-8")
     if top_rows is not None and len(top_rows):
-        top_rows.to_csv(out.parent / "accuracy_topk_rows.csv", index=False)
+        top_rows.to_csv(out.parent / f"accuracy_topk_rows{suffix}.csv", index=False)
     k = res["kpis"]
+    if pl is not None:
+        # the paste-able fingerprint of WHAT was graded: file, size, the order
+        # the loader read, and the first row's scores (a re-sorted or stale
+        # file is visible here without opening anything)
+        head = pl.iloc[0]
+        fp = ", ".join(f"{c}={head[c]:.4f}" for c in SORT_KEY_CANDIDATES
+                       if c in pl.columns and pd.notna(head[c]))
+        print(f"[accuracy_diagnostics] graded {a.list_name}: {len(pl):,} rows, order read as "
+              f"{res['list_order_key']}; rank 1 -> {fp}")
     print(f"[accuracy_diagnostics] {res['headline_ruler']} ruler: org hits@50 = {k.get('acc_org_hits50')} "
           f"(random {_f(k.get('acc_base50'), '{:.3f}')} per slot), median lead {_f(k.get('acc_lead_median_mo'), '{:.0f}')} mo "
           f"-> {out}")

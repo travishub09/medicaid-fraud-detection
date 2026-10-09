@@ -215,13 +215,21 @@ def parse_run_dir(run_dir: str | Path) -> dict:
     # never regexed off the markdown. acc_* fields are flat and enforceable with
     # --check (aliases below): hits / precision at the org budgets a human reads,
     # the random-pool baseline, lead time, institutional share, calibration, stability
-    acc = d / "accuracy_diagnostics.json"
+    # The PURSUIT book's diagnostics (accuracy_diagnostics__pursuit.json, written
+    # when the diagnostics ran with --list-name provider_priority_list_pursuit.csv)
+    # take precedence over the main list's: from v8 the pre-registered checks
+    # (hits50 >= 2 ...) are graded on the pursuit file. acc_list records which.
+    acc = d / "accuracy_diagnostics__pursuit.json"
+    if not acc.exists():
+        acc = d / "accuracy_diagnostics.json"
     if acc.exists():
         try:
             aj = json.loads(_read(acc))
             for k, v in (aj.get("kpis") or {}).items():
                 if k.startswith("acc_"):
                     row[k] = v
+            row["acc_list"] = aj.get("list_name") or "provider_priority_list.csv"
+            row["acc_list_order"] = aj.get("list_order_key")
         except Exception:
             pass
 

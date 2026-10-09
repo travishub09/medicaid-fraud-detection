@@ -254,6 +254,18 @@ REM upload processed\MEDICAID_NDC_REPORT.md
 python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
 ```
 
+- [ ] **v7_pursuit_regrade_after_244** — The pursuit-book re-grade on v7 read 0 hits at 50 three times today. Two causes are now fixed in code: (bundle 241) the diagnostics loader assumed a pursuit book was sorted on P(any) and re-sorted it; (bundle 244) the pursuit run wrote over the MAIN list's ACCURACY_DIAGNOSTICS.md and accuracy_diagnostics.json (the registry file) because the default output path ignored --list-name, and the console gave no way to see which file or order was graded. A third possibility is that the pursuit file on disk is still the pre-239 one (P(any) sorted, basis-first), which the fixed loader grades as 'rank only' = 0 hits. The commands below, in ORDER and AFTER bundle 244 is merged and no other window is running: rebuild the pursuit list (writes the dollar-weighted order), grade it (outputs now go to ACCURACY_DIAGNOSTICS__pursuit.md / accuracy_diagnostics__pursuit.json), then re-grade the MAIN list to restore the clobbered v7 report. Paste BOTH 'graded ...' console lines and the two hits@50 lines. Expected: pursuit 'order read as score_dollar_weighted', hits@50 = 2; main list hits@50 = 1. (added 2026-10-09)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git log --oneline -1
+python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --priority-list
+python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --list-name provider_priority_list_pursuit.csv --score-source priority_list
+python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --score-source priority_list
+REM paste the two 'graded' lines + the two hits@50 lines; upload ACCURACY_DIAGNOSTICS__pursuit.md
+python -m src.reminders --done-task v7_pursuit_regrade_after_244
+```
+
 
 ## After ANY download session (standing rule)
 

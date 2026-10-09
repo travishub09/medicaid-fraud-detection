@@ -241,3 +241,10 @@ def test_sort_key_is_inferred_from_the_file_order(tmp_path):
     book3 = book.sample(frac=1.0, random_state=1).reset_index(drop=True)
     book3["pursuit_rank"] = range(1, n + 1)
     assert infer_sort_key(book3) is None
+
+
+def test_companion_list_outputs_get_their_own_suffix():
+    from src.model_a.accuracy_diagnostics import output_suffix
+    assert output_suffix("provider_priority_list.csv") == ""
+    assert output_suffix("provider_priority_list_pursuit.csv") == "__pursuit"
+    assert output_suffix("some_other_list.csv") == "__some_other_list"
