@@ -377,7 +377,7 @@
    "where": "preclean/cia/cia_list.csv",
    "url": "https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp",
    "every_months": 3,
-   "last_done": null,
+   "last_done": "2026-10-09",
    "steps": [
     "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\"  (the --done line also refuses until the file is there)",
     "Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp",
@@ -391,7 +391,8 @@
    ],
    "proof": [
     "preclean/cia/cia_list.csv"
-   ]
+   ],
+   "note": "closed 2026-10-09: cia_list.csv moved into preclean/cia/ (the guard accepted the --done); header check pending in chat"
   },
   {
    "key": "nppes_practice_locations",

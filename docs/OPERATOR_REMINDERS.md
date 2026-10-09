@@ -6,21 +6,6 @@ _As of 2026-10-09. Regenerate/update: `python -m src.reminders` (`--done <key>` 
 
 _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
 
-- **oig_cia** — LOW PRIORITY: OIG Corporate Integrity Agreement list (recall benchmark for the DOJ case DB in the label audit + a mild risk prior; changes no PI lead). Five-minute copy from the 'CIA Documents' table page, not the overview page; never worth Manus money
-  - save to: preclean/cia/cia_list.csv  |  https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
-  - due: freshness unknown
-  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia"  (the --done line also refuses until the file is there)
-  - step 2: Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
-  - step 3: Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link
-  - step 4: Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/cia/cia_list.csv
-
-```bat
-mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia"
-move "%USERPROFILE%\Downloads\cia_list.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia\cia_list.csv"
-python -m src.reminders --done oig_cia
-```
-
 - **state_capacity_rosters** — LOW PRIORITY (2026-09-16: the Northeast PI packet is clinics and therapy offices; a roster only moves a bed-based check). State licensed-facility rosters with LICENSED CAPACITY for waiver group homes, residential habilitation, adult day, assisted living, hospice houses. The one Northeast item that moves a current card: NJ DHS/DDD group homes (Special Homes of NJ). Everything else (FL AHCA, IL, IN, DC, TX, CA, MA, RI) is for a future capacity pass
   - save to: preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)  |  https://health.ri.gov/licenses/
   - due: freshness unknown  (2026-10-09 inventory: NY_certification.csv, NY_facilities.csv, NJ_acute_care.csv and NJ_ltc.xlsx are already under preclean/state_capacity/ (the three direct downloads are DONE); what remains is the optional hand-copied state lists (FL, NJ DDD group homes, IN, DC, TX, IL, RI, ME, MO, CO))
