@@ -117,7 +117,7 @@ python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop
 python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6
 ```
 
-- [ ] **registry_verdict__frozen_2023-12_v6** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v6 — close only when you have them (added 2026-09-12)
+- [ ] **registry_verdict__frozen_2023-12_v6** — VERDICT RETURNED 2026-10-08: HOLD (docs/ACCURACY_READOUT_v7_2026-10-08.md section 3). On the FCA ruler (24-month horizon) the shipped v6 list holds 0 hits in the top 50 and 2 in the top 250 (random 0.4, p 0.06); top 50 = 19 institutional + 30 tiny-dollars + 1 intermediary, zero operator-class; NPI head a 219-way tie, no case in the first 1,000, top 1% lift 3.0, top 10% lift 4.8 (48% of FCA positives); $521B of post-cutoff settlements unresolved. Illinois all-ruler cluster (17 of the top 1%) is probably a state-termination batch, check before reading it as skill. Close when read. (added 2026-09-12)
 - [ ] **pi_facts_deep:_after_merging_bundle** — pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins (added 2026-09-13)
 - [ ] **run_packet__frozen_2021-12_v7** — Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-09-14)
 

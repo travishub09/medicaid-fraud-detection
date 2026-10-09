@@ -61,7 +61,24 @@ Lead time of the one top-50 hit: 34 months. Calibration at the top: mean calibra
 
 Settlement dollars: 89 post-cutoff cases ($1.4 billion) resolve to a scored provider; $199.6 billion more does not. Dollar recall: 8 percent at 50 organizations, 32 percent at 100, 33 percent at 250.
 
-## 2. What this changes for v8
+## 3. The v6 run says the same thing (2023-12 freeze, 24-month horizon, graded 2026-10-08)
+
+The v6 list (4,834 organizations after the filters) was graded with the same module and a shorter horizon, because its freeze is two years later and the public record has had less time to catch up.
+
+| ruler | positives in universe | hits at 50 | hits at 250 | random at 250 | one-sided p at 250 |
+|---|--:|--:|--:|--:|--:|
+| all exclusions | 967 | 0 | 1 | 0.5 | 0.41 |
+| hard exclusions | 233 | 0 | 0 | 0.1 | 1.00 |
+| hard plus weak | 544 | 0 | 0 | 0.2 | 1.00 |
+| FCA cases (headline) | 133 | 0 | 2 | 0.4 | 0.06 |
+
+The top 50 is 19 institutional, 30 tiny-dollars and 1 intermediary-shaped; zero operator-class, zero hits. The provider ranking has the same shape as v7: a 219-way tie at the top, no future case in the first 1,000, then real signal at the top 1 percent (lift 3.0 on the FCA ruler, 3.7 to 4.3 on the exclusion rulers) and the top 10 percent (lift 4.8 on FCA, with 48 percent of all FCA positives inside it). Fold 1 again supplies 33 percent of the top 1 percent. FCA positives are the most visible at the freeze (70 percent still billing in the last 12 months; the hard exclusion tier only 39 percent). Dollars: 65 post-cutoff cases ($954 million) resolve to a scored provider; $521 billion do not; the top 250 touches 3 cases, 41 percent of the gradable dollars.
+
+One segment stands out in v6: Illinois, where 17 of the all-ruler positives sit in the state's top 1 percent (shrunk lift 23). That is most likely a batch of state terminations arriving as one event, which is a label artifact to check before it is read as model skill.
+
+The two freezes agree on the diagnosis. The shipped list is built from the two classes that do not produce cases; the model's signal lives in the top 1 to 10 percent of providers and in large billers; the head of the ranking is a tie block; the exclusion rulers cannot grade the organization list; most settlement dollars are unresolved. Verdict for v6 on the FCA ruler: HOLD, same as v7.
+
+## 4. What this changes for v8
 
 Ranked by how much of the gap above each item explains:
 
