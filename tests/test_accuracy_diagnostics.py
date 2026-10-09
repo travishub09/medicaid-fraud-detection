@@ -150,6 +150,9 @@ def test_run_diagnostics_end_to_end_refit_and_markdown(tmp_path):
     npi1 = next(x for x in hb["npi_budgets"] if x["budget"] == "top 1.0%")
     assert npi1["lift_vs_random"] > 1.5                                 # the planted signal is found
     assert hb["lead_time"]["k"] == 50 and 0 <= hb["lead_time"]["share_lead_ge_gap"] <= 1
+    sw = hb["order_sweep"]
+    assert {r["order"] for r in sw} >= {"score_dollar_weighted", "score_dollar_weighted (basis-backed first)"}
+    assert all(0 <= r["hits@50"] <= r["pool_hits"] for r in sw)
     assert hb["visibility"]["available"] and 0 <= hb["visibility"]["positives_active_share"] <= 1
     assert sum(r["n"] for r in hb["error_taxonomy"] if r["k"] == 50) == 50
     assert any(r["dimension"] == "state" for r in hb["segments"])

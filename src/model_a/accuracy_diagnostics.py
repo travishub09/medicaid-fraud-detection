@@ -413,6 +413,30 @@ def budget_rows_org(orgs: pd.DataFrame, budgets, pool: pd.DataFrame | None = Non
     return rows
 
 
+def order_sweep(orgs_hit: pd.DataFrame, budgets=(16, 50, 100, 250)) -> list[dict]:
+    """The same book under every candidate ordering: each score column present
+    (score_p_any, score_p_max, score_dollar_weighted, score_max), each with and
+    without basis-backed case sizes ranked before cap-pinned ones. One run answers
+    'which sort key finds the cases' instead of one rerun per key."""
+    keys = [k for k in ("score_p_any", "score_p_max", "score_dollar_weighted", "score_max") if k in orgs_hit.columns]
+    capped = orgs_hit.get("case_size_capped", pd.Series(False, index=orgs_hit.index))
+    capped = capped.astype(str).str.lower().isin(["true", "1"]).astype(int).to_numpy()
+    pool_pos = int(orgs_hit["hit"].sum())
+    out = []
+    for key in keys:
+        v = pd.to_numeric(orgs_hit[key], errors="coerce").fillna(-1).to_numpy()
+        for basis_first in (False, True):
+            order = np.lexsort((-v, capped)) if basis_first else np.argsort(-v, kind="stable")
+            y = orgs_hit["hit"].to_numpy()[order]
+            row = {"order": f"{key}{' (basis-backed first)' if basis_first else ''}"}
+            for k in budgets:
+                k = int(min(k, len(y)))
+                row[f"hits@{k}"] = int(y[:k].sum()) if k else 0
+            row["pool_hits"] = pool_pos
+            out.append(row)
+    return out
+
+
 def budget_rows_npi(ev: pd.DataFrame, scores: np.ndarray, budgets, top_fracs) -> list[dict]:
     y = ev["y"].to_numpy()
     n, pos = len(y), int(y.sum())
@@ -790,6 +814,7 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
         block = res["rulers"][name]
         oh = org_outcomes(orgs, ev)
         block["org_budgets"] = budget_rows_org(oh, budgets_org)
+        block["order_sweep"] = order_sweep(oh, budgets_org)
         block["lead_time"] = lead_time_rows(oh, horizons, k=min(50, len(oh)) or 1, gap_months=gap_months)
         block["visibility"] = visibility(ev, matrix, cutoff, active_within)
         block["error_taxonomy"] = error_taxonomy(oh, matrix)
@@ -950,6 +975,19 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
                 L.append(f"| {r['budget']} | {r['k']:,} | {r['hits']} | {r['ties_at_boundary']} | {_f(r['precision'], '{:.2%}')} | "
                          f"{_f(r['wilson_lo'], '{:.2%}')} to {_f(r['wilson_hi'], '{:.2%}')} | {_f(r['recall'], '{:.1%}')} | "
                          f"{_f(r['random_expected'], '{:.1f}')} | {_f(r['lift_vs_random'], '{:.2f}')} |")
+        L.append("")
+    L += ["## 2b. The same book under every ordering (hits by budget)", "",
+          "_Which sort key finds the cases: each score column the list carries, with and without "
+          "basis-backed case sizes ranked ahead of cap-pinned ones. The list's shipped order is one row of this table._", ""]
+    for name, b in res["rulers"].items():
+        sw = b.get("order_sweep") or []
+        if not sw:
+            continue
+        ks = [c for c in sw[0] if c.startswith("hits@")]
+        L += [f"### {name} (pool hits {sw[0]['pool_hits']})", "", "| order | " + " | ".join(ks) + " |",
+              "|---|" + "--:|" * len(ks)]
+        for r in sw:
+            L.append(f"| {r['order']} | " + " | ".join(str(r[k]) for k in ks) + " |")
         L.append("")
     L += ["## 3. Lead time (how far ahead of the public record the top 50 were)", ""]
     for name, b in res["rulers"].items():
