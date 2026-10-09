@@ -644,12 +644,14 @@
   },
   {
    "key": "fca_strict_label_export",
-   "what": "2026-09-29 FINAL: resolver rerun with --nppes-file (bundle 211): 63 middle-name conflicts quarantined, 31 ties settled by a middle name; 1,546 mentions resolved, 1,211 NPIs, 1,382 cases. PurpleLab file (--min-strength moderate, processed\\fca_label_strong\\labels_fca_strict.csv): 5,155 rows / 4,672 NPIs / 5,104 cases (exact_id 4,322, strong 526, moderate 307; weak 389 held out). Full ladder (processed\\fca_label\\): 5,544 rows / 4,977 NPIs. Verification: strong 39/40, moderate 69/75 (92%), weak 65/88 (74%). STOP RULE agreed: no more precision passes on the label; next levers are the PurpleLab join and recall (research residue: 1,879 mentions). Handoff brief v4 delivered by Claude (PurpleLab_POC_Handoff_Brief_v4.pdf, section 11b = the label file). CLOSE this task only when Trey confirms the brief is received and the PurpleLab file is the moderate one. Bundle 212 keeps npi_candidate on resolver rows (quarantine shows the rejected NPI); rerunning the resolver + exports is optional cosmetics, not required. labels_fca_strict.csv never enters the repo.",
+   "what": "SEND TO PURPLELAB (operator confirmed 2026-10-09: NOTHING HAS GONE TO PURPLELAB YET). Two attachments: (1) the handoff brief PurpleLab_POC_Handoff_Brief_v4.pdf (delivered in chat 2026-09-29; if it is not in Downloads, tell Claude and it is re-rendered), (2) the label file processed\\fca_label_strong\\labels_fca_strict.csv (5,155 rows / 4,672 NPIs, strength exact_id + strong + moderate). NEVER the processed\\fca_label\\ copy (5,544 rows: it carries the 389 weak rows that verified at 74%). The dir line below shows the right file exists; the second shows the row count. After sending, say 'PurpleLab sent' in chat and Claude closes this. Background: strict label policy enforced per row (FCA civil outcome / criminal conviction / LEIE fraud statute; Luhn NPI; conduct window), verification strong 39/40, moderate 69/75; STOP RULE on further precision work; next levers are the PurpleLab join and recall.",
    "added": "2026-09-27",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv\"",
-    "python -m src.reminders --done-task fca_strict_label_export"
+    "powershell -Command \"(Get-Content 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv').Count - 1\"",
+    "dir \"%USERPROFILE%\\Downloads\\PurpleLab_POC_Handoff_Brief_v4.pdf\"",
+    "REM attach both to the PurpleLab email; then say 'PurpleLab sent' in chat (Claude closes the task)"
    ]
   },
   {
