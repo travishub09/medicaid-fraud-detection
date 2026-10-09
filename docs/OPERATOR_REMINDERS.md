@@ -9,17 +9,19 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
 - **warn_notices** — WARN layoff notices for the surge monitor (whistleblower timing)
   - save to: preclean/warn/
   - due: freshness unknown
-  - step 1: Google '<state> WARN notices' for target states (start: RI, NC, FL, TX, CA) — each state DOL posts a table
-  - step 2: Download/export the current-year table as CSV or XLSX per state
-  - step 3: Save as "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_<state>_<yyyymm>.csv"
+  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"  (the --done line also refuses until the file is there)
+  - step 2: Google '<state> WARN notices' for target states (start: RI, NC, FL, TX, CA) — each state DOL posts a table
+  - step 3: Download/export the current-year table as CSV or XLSX per state
+  - step 4: Save as "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_<state>_<yyyymm>.csv"
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/warn/warn_*.csv or preclean/warn/warn_*.xlsx
 - **hospice_2021_archive** — Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)
   - save to: preclean/facility/Hospice_Provider_<yyyymm>.csv (keep the Nov-2023 file too; the export picks the edition by vintage)  |  https://data.cms.gov/provider-data/archived-data/hospice-care
   - due: freshness unknown
-  - step 1: Open https://data.cms.gov/provider-data/archived-data/hospice-care
-  - step 2: Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip
-  - step 3: Extract; keep the Hospice_Provider_*.csv (the provider-level file with live-discharge / GIP / NF-care measures)
-  - step 4: Then paste the commands below
+  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\facility\Hospice_Provider*.csv"  (the --done line also refuses until the file is there)
+  - step 2: Open https://data.cms.gov/provider-data/archived-data/hospice-care
+  - step 3: Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip
+  - step 4: Extract; keep the Hospice_Provider_*.csv (the provider-level file with live-discharge / GIP / NF-care measures)
+  - step 5: Then paste the commands below
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility/Hospice_Provider_20????.csv or preclean/facility/Hospice_Provider_2021*.csv or preclean/facility/Hospice_Provider_2022*.csv or preclean/facility/Hospice_Provider.csv
 
 ```bat
@@ -31,9 +33,10 @@ python -m src.reminders --done hospice_2021_archive
 - **oig_cia** — LOW PRIORITY: OIG Corporate Integrity Agreement list (recall benchmark for the DOJ case DB in the label audit + a mild risk prior; changes no PI lead). Five-minute copy from the 'CIA Documents' table page, not the overview page; never worth Manus money
   - save to: preclean/cia/cia_list.csv  |  https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
   - due: freshness unknown
-  - step 1: Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
-  - step 2: Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link
-  - step 3: Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)
+  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\cia"  (the --done line also refuses until the file is there)
+  - step 2: Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
+  - step 3: Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link
+  - step 4: Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/cia/cia_list.csv
 
 ```bat
@@ -154,6 +157,9 @@ python -m src.model_a.scheme_triage --run "C:\Users\treyr\OneDrive\Desktop\data\
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
+REM --- already done? the dir shows the time; the findstr prints July-file rows only from a run on current code ---
+dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md" "C:\Users\treyr\OneDrive\Desktop\data\preclean\SCHEME_DISCOVERY.md"
+findstr /c:"medicaid_ndc" "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md"
 python -u -m src.vintage_inspect --data-root "C:\Users\treyr\OneDrive\Desktop\data"
 python -u -m src.model_a.scheme_discovery --data-root "C:\Users\treyr\OneDrive\Desktop\data"
 dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md" "C:\Users\treyr\OneDrive\Desktop\data\preclean\SCHEME_DISCOVERY.md"
@@ -198,14 +204,13 @@ python -m src.enforcement.research_evidence mfcu-cases --in "C:\Users\treyr\OneD
 python -m src.reminders --done-task case_harvest_sources_1_6
 ```
 
-- [ ] **fca_strict_label_export** — SEND TO PURPLELAB (operator confirmed 2026-10-09: NOTHING HAS GONE TO PURPLELAB YET). Two attachments: (1) the handoff brief PurpleLab_POC_Handoff_Brief_v4.pdf (delivered in chat 2026-09-29; if it is not in Downloads, tell Claude and it is re-rendered), (2) the label file processed\fca_label_strong\labels_fca_strict.csv (5,155 rows / 4,672 NPIs, strength exact_id + strong + moderate). NEVER the processed\fca_label\ copy (5,544 rows: it carries the 389 weak rows that verified at 74%). The dir line below shows the right file exists; the second shows the row count. After sending, say 'PurpleLab sent' in chat and Claude closes this. Background: strict label policy enforced per row (FCA civil outcome / criminal conviction / LEIE fraud statute; Luhn NPI; conduct window), verification strong 39/40, moderate 69/75; STOP RULE on further precision work; next levers are the PurpleLab join and recall. (added 2026-09-27)
+- [ ] **fca_strict_label_export** — PARKED UNTIL THE PURPLELAB POC STARTS (operator 2026-10-09: nothing sent, POC not started). When it starts, send two attachments: the handoff brief PurpleLab_POC_Handoff_Brief_v4.pdf (chat, 2026-09-29; re-rendered on request) and processed\fca_label_strong\labels_fca_strict.csv (5,155 rows / 4,672 NPIs: exact_id + strong + moderate). NEVER the processed\fca_label\ copy (5,544 rows, carries the 389 weak rows that verified at 74%). STATUS OF THE LABEL: verified by the research agent on 249 rows (strong 39/40, moderate 69/75 = 92%, weak 65/88 = 74%, so weak is held out); tiered by FCA relevance; graded by label_audit. It has been used as the EVALUATION ruler (the forward FCA ruler that graded v6 and v7 today) but NO model has been TRAINED with the resolved-defendant rows yet: v7 was built 2026-09-14, the resolver ran 2026-09-28; v8 is the first such run. Say 'PurpleLab sent' after sending. (added 2026-09-27)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
 dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_strong\labels_fca_strict.csv"
 powershell -Command "(Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_strong\labels_fca_strict.csv').Count - 1"
-dir "%USERPROFILE%\Downloads\PurpleLab_POC_Handoff_Brief_v4.pdf"
-REM attach both to the PurpleLab email; then say 'PurpleLab sent' in chat (Claude closes the task)
+REM attach both to the PurpleLab email when the POC starts; then say 'PurpleLab sent' in chat
 ```
 
 - [ ] **storage_sense_off** — OneDrive Storage Sense dehydrated the data folder on 2026-10-02 (86.4 GB freed; every parquet became a cloud-only placeholder and queries died with 'The cloud file provider is not running'). The folder is pinned (attrib +P) but the setting must be changed or it recurs in 30 days: Settings > System > Storage > Storage Sense: set 'Content will become online-only if not opened for more than' to Never, and turn 'Automatic User content cleanup' Off. Then check free disk space; the overnight runs need tens of GB. (added 2026-10-05)
@@ -233,22 +238,34 @@ python -m src.reminders --done-task build_nursing_home_dollar_basis
 python -m src.reminders --done-task wesleyan_balance_sheet_readout
 ```
 
-- [ ] **v8_prereg_accuracy_sprint** — v8 is a NEW pre-registration, never a rerun of v7: the feature set (trainability gate: v3 scores, capacity, July rx_/px_/mcd_, servicing sv_ now trained), the missing-value policy (native NaN), the MUE rule (per patient), the peer rule (non-null minimum), the label rule (masked ambiguous rows, outcome rule on every case tier) and the ruler (FCA cases, 36-month horizon) all changed, so v8's numbers are not comparable with v7's. Register with the checks below BEFORE the run; grade on ACCURACY_DIAGNOSTICS (FCA ruler, hits@50 vs random), never on decile lift. Read docs/ACCURACY_PLAN_2026-10.md section 5 first UPDATE 2026-10-09 (bundle 239): the dossier also writes provider_priority_list_pursuit.csv, the OPERATOR book only, sorted on score_dollar_weighted then score_max. The v7 order sweep settled the sort: dollar-weighted 1/2/3/4 hits at 16/50/100/250, P(any) 0/0/0/2, every basis-backed-first variant 0 at 16/50/100; the operator filter is the win (main list 0/1/2/3). The PI packet draws from the pursuit file and the diagnostics grade it with --list-name provider_priority_list_pursuit.csv (the main list stays for registry continuity). Folds are stratified on positives; score_p_any / score_p_max ship as columns only. The v7 pursuit book at this order already reads hits50 = 2, so v8 must not read below it. NPPES Dec-2021 edition confirmed on disk 2026-10-09: the as-of graph build takes --asof-nppes "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes\npidata_pfile_20050523-20211212.csv" (without it address_layer_frozen is false and post-cutoff addresses leak, the v6 lesson). (added 2026-10-08)
+- [ ] **v8_prereg_accuracy_sprint** — v8 is a NEW pre-registration, never a rerun of v7 (feature set, NaN policy, MUE, peers, label rule and ruler all changed; numbers not comparable with v7). ORDER: (0) bundle 244+ merged, NDC rebuild after 230 done, nothing else running; (1) the label audit on the current exclusion graph + case DB (LABEL_AUDIT.md + label_audit.json: paste the findings list); (2) pre-register with the checks below BEFORE the run (one --check with every expression after it; the registry refuses a duplicate tag); (3) the frozen night-runner with ASOF_CUTOFF=2021-12, the as-of graph build with --asof-nppes on the Dec-2021 NPPES file, --with-analytics on the export; (4) the forward FCA label; (5) the pursuit rebuild + the diagnostics on the PURSUIT file (its outputs carry the __pursuit suffix; the registry reads them first); (6) register the run folder. HOW TO CHECK WHERE YOU ARE: the two findstr/dir lines at the top print the pre-registration entry if it exists and the run folder if the run started. Grade on ACCURACY_DIAGNOSTICS__pursuit (FCA ruler, hits@50 vs random; v7 at the dollar-weighted order reads 2), never on decile lift. v8 is the FIRST run trained with the resolved-defendant DOJ rows in the label. (added 2026-10-08)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.model_a.run_registry --prereg frozen_2021-12_v8 --expected "accuracy sprint: trainability gate + native NaN + servicing grain + per-patient MUE + peer fallback + masked ambiguous rows, graded on the FCA ruler at the budgets a human reads" --check "hits50 >= 2" --check "prec50_lo > base50" --check "lead_ge_gap >= 0.5" --check "inst_share50 <= 0.4" --check "top50_jaccard >= 0.6" --check "eval_policy = fca" --check "horizon = 36" --check "frozen = True"
-REM then run the frozen package with the usual night-runner (ASOF_CUTOFF=2021-12, --asof-nppes on the graph build, --with-analytics on the export), then:
-python -m src.model_a.prospective_label --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --cutoff 2021-12 --fca-tier hard --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8\future_bans_after_2021-12__fca36.csv"
-python -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --repeats 3 --list-name provider_priority_list_pursuit.csv
-python -m src.model_a.run_registry --register "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8"
+REM --- where am I? (both read-only) ---
+findstr /c:"frozen_2021-12_v8" "C:\Users\treyr\OneDrive\Desktop\data\model_a\preregistrations.jsonl"
+dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8"
+REM --- (1) label audit ---
+python -u -m src.model_a.label_audit --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --org-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\org_nodes.parquet" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --matrix "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\provider_features_for_model.parquet" --cutoff 2021-12 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\LABEL_AUDIT_2026-10.md"
+REM --- (2) pre-register (ONE --check, every expression after it) ---
+python -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --preregister --tag frozen_2021-12_v8 --goal "accuracy sprint: trainability gate + native NaN + servicing grain + per-patient MUE + peer fallback + masked ambiguous rows + resolved-defendant labels, operator pursuit book graded on the FCA ruler at the budgets a human reads" --expected "pursuit book hits@50 >= 2 on the FCA ruler (v7 at the dollar-weighted order reads 2), institutional share of the top 50 <= 40%, top-50 stable under re-shuffled folds" --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.6" "eval_policy = fca" "horizon = 36" "frozen = True"
+REM --- (3) the frozen night-runner (ASOF_CUTOFF=2021-12; graph build with --asof-nppes below; export --with-analytics) ---
+REM   --asof-nppes "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes\npidata_pfile_20050523-20211212.csv"
+REM --- (4) forward FCA label ---
+python -u -m src.model_a.prospective_label --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --cutoff 2021-12 --fca-tier hard --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8\future_bans_after_2021-12__fca36.csv"
+REM --- (5) pursuit book + its diagnostics ---
+python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --priority-list
+python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --repeats 3 --list-name provider_priority_list_pursuit.csv
+REM --- (6) register ---
+python -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8"
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
 ```
 
-- [ ] **medicaid_ndc_rebuild_after_230** — The first NDC load (2026-10-08) summed to $20.4 TRILLION over 2018-2024 (national Medicaid drug spend is near $80B a year): aggregate rows (582,523 with a blank billing NPI, plus any single row above $500M) were feeding the features, and 87% of billers read as 'fed by one prescriber' because a clinic billing the drugs its own clinicians administer is biller = prescriber. Bundle 230 quarantines the aggregate rows with a reason (processed/ndc_quarantine.parquet) and adds the external-only concentration features (rx_*_ext / px_*_ext). After merging 230, rebuild the NDC features and upload the new MEDICAID_NDC_REPORT.md: the clean dollars per year must land near $60B to $90B; if they do not, paste the report (more aggregate shapes to quarantine). (added 2026-10-08)
+- [ ] **medicaid_ndc_rebuild_after_230** — The first NDC load (2026-10-08) summed to $20.4 TRILLION over 2018-2024 (national Medicaid drug spend is near $80B a year): aggregate rows (582,523 with a blank billing NPI, plus any single row above $500M) were feeding the features, and 87% of billers read as 'fed by one prescriber' because a clinic billing the drugs its own clinicians administer is biller = prescriber. Bundle 230 quarantines the aggregate rows with a reason (processed/ndc_quarantine.parquet) and adds the external-only concentration features (rx_*_ext / px_*_ext). After merging 230, rebuild the NDC features and upload the new MEDICAID_NDC_REPORT.md: the clean dollars per year must land near $60B to $90B; if they do not, paste the report (more aggregate shapes to quarantine). HOW TO CHECK: the post-230 build writes processed\ndc_quarantine.parquet; if the dir line below finds it, the rebuild is done and only the report upload remains; if 'File Not Found', run the build line (hours; one window, nothing else running). (added 2026-10-08)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
+dir "C:\Users\treyr\OneDrive\Desktop\data\processed\ndc_quarantine.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_NDC_REPORT.md"
 python -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
 REM upload processed\MEDICAID_NDC_REPORT.md
 python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
