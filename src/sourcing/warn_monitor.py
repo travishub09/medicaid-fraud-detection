@@ -53,6 +53,17 @@ WARN_COLS = {
 _STATE_IN_NAME = re.compile(r"warn[_-]([A-Za-z]{2})[_-]", re.IGNORECASE)
 
 
+# keyword fallback when no exact header matches (North Carolina 2026: employer =
+# "WARN Notice: WARN Notice Name", count = "Number affected at this location")
+WARN_KEYWORDS = {
+    "employer": ["company", "employer", "business", "notice name", "job site", "firm name"],
+    "employees": ["affected", "employee", "workers", "layoff number", "layoff_number", "headcount"],
+    "notice_date": ["notice date", "date of notice", "date received", "received date", "notice_date"],
+    "layoff_date": ["effective", "layoff date", "layoff_date", "closure date", "separation"],
+    "state": [],
+}
+
+
 def _resolve(columns) -> dict:
     lower = {str(c).lower().strip(): c for c in columns}
     resolved = {}
@@ -60,6 +71,14 @@ def _resolve(columns) -> dict:
         for cand in candidates:
             if cand.lower().strip() in lower:
                 resolved[canon] = lower[cand.lower().strip()]
+                break
+        if canon in resolved:
+            continue
+        for kw in WARN_KEYWORDS.get(canon, []):
+            hit = next((orig for low, orig in lower.items() if kw in low
+                        and orig not in resolved.values()), None)
+            if hit is not None:
+                resolved[canon] = hit
                 break
     return resolved
 

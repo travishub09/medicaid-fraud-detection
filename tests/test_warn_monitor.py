@@ -136,3 +136,21 @@ def test_warn_summary_reports_each_file_and_the_live_window(tmp_path):
     out = warn_summary(load_warn(d))
     assert "warn_RI_202610.csv | 2 | RI | 2020-01-01 to 2026-07-01" in out
     assert "still open or ahead" in out and ": 1 of 2" in out
+
+
+def test_north_carolina_header_resolves_by_keyword(tmp_path):
+    """NC 2026 export: employer under 'WARN Notice: WARN Notice Name', count under
+    'Number affected at this location'; no exact candidate matched before 2026-10-09."""
+    from src.sourcing.warn_monitor import load_warn
+    d = tmp_path / "warn"
+    d.mkdir()
+    pd.DataFrame({"County": ["Wake"], "Warn Number": ["1"], "Date of Notice": ["2026-07-01"],
+                  "Date Received by NC": ["2026-07-02"], "Effective Date": ["2026-09-01"],
+                  "WARN Notice: WARN Notice Name": ["Piedmont Home Health LLC"],
+                  "WARN notice type": ["Layoff"], "Type of layoff or closure": ["Permanent"],
+                  "Number affected at this location": ["42"], "Address 1": ["1 Main"], "City": ["Raleigh"],
+                  "STATE": ["NC"]}).to_csv(d / "warn_NC_202610.csv", index=False)
+    w = load_warn(d)
+    assert w["employer_raw"].iloc[0] == "Piedmont Home Health LLC" and w["state"].iloc[0] == "NC"
+    assert int(w["employees"].iloc[0]) == 42 and str(w["notice_date"].iloc[0])[:10] == "2026-07-01"
+    assert str(w["layoff_date"].iloc[0])[:10] == "2026-09-01"
