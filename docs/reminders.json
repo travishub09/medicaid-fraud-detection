@@ -521,11 +521,6 @@
    ]
   },
   {
-   "key": "registry_verdict__frozen_2023-12_v6",
-   "what": "VERDICT RETURNED 2026-10-08: HOLD (docs/ACCURACY_READOUT_v7_2026-10-08.md section 3). On the FCA ruler (24-month horizon) the shipped v6 list holds 0 hits in the top 50 and 2 in the top 250 (random 0.4, p 0.06); top 50 = 19 institutional + 30 tiny-dollars + 1 intermediary, zero operator-class; NPI head a 219-way tie, no case in the first 1,000, top 1% lift 3.0, top 10% lift 4.8 (48% of FCA positives); $521B of post-cutoff settlements unresolved. Illinois all-ruler cluster (17 of the top 1%) is probably a state-termination batch, check before reading it as skill. Close when read.",
-   "added": "2026-09-12"
-  },
-  {
    "key": "pi_facts_deep:_after_merging_bundle",
    "what": "pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins",
    "added": "2026-09-13"
@@ -560,11 +555,6 @@
     "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --poll",
     "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7"
    ]
-  },
-  {
-   "key": "registry_verdict__frozen_2021-12_v7",
-   "what": "VERDICT RETURNED 2026-10-08: HOLD. docs/ACCURACY_READOUT_v7_2026-10-08.md: on the FCA ruler (36-month horizon) the shipped v7 list holds 1 hit in the top 50 (random 0.2, p 0.18) and 3 in the top 250 (random 1.0, p 0.07); the top 50 is 24 institutional + 24 tiny-dollars + 2 other, zero operator-class; the NPI ranking's first 285 rows are one tie and the first 1,000 hold no future case while the top 1% carries lift 4.3; under the exclusion rulers the org list is ungradable (<= 1 org in the pool); $199.6B of post-cutoff settlements attach to no scored provider. v8 checks (hits50 >= 2, prec50_lo > base50, inst_share50 <= 0.4) all fail on v7. Scheme-triage follow-ups stay in consensus_v7_disagreement. Close when read. PURSUIT BOOK RE-GRADED 2026-10-09 18:29 on bundle 244+ code: 1,855 operator orgs, order read as score_dollar_weighted, FCA ruler hits@50 = 2 (random 0.2), median lead 29 months; the verdict stays HOLD (the bar is the v8 pre-registration), but the pursuit file is the list the PI packet draws from.",
-   "added": "2026-09-14"
   },
   {
    "key": "peer_hard2:_after_the_fraud",
