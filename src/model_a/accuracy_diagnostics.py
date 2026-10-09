@@ -331,10 +331,37 @@ def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") 
         df.insert(0, "priority_rank", np.arange(1, len(df) + 1))
     df["member_npis"] = df.get("member_npis", pd.Series("", index=df.index)).fillna("").astype(str)
     df = df.sort_values("priority_rank").reset_index(drop=True)
-    # the column that produced the order (ties at a budget boundary are real ties)
-    df.attrs["sort_key"] = ("score_p_any" if "pursuit_rank" in df.columns and "score_p_any" in df.columns
-                            else "score_dollar_weighted" if "score_dollar_weighted" in df.columns else None)
+    for c in ("score_p_any", "score_p_max"):
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    # the column that produced the order (ties at a budget boundary are real ties).
+    # INFERRED from the file, never assumed from its columns: bundle 238 assumed a
+    # pursuit book was sorted on score_p_any because it carried that column, and
+    # after bundle 239 changed the sort to score_dollar_weighted the diagnostics
+    # re-sorted the rebuilt book by P(any) and graded 0 hits at 50 instead of 2.
+    df.attrs["sort_key"] = infer_sort_key(df)
     return df
+
+
+SORT_KEY_CANDIDATES = ("score_dollar_weighted", "score_p_any", "score_p_max", "score_max")
+
+
+def infer_sort_key(df: pd.DataFrame) -> str | None:
+    """The score column that is non-increasing along the list's own order, if any.
+    Tried in SORT_KEY_CANDIDATES order; None when no column explains the order
+    (the budgets then fall back to the rank itself, with no tie block)."""
+    if len(df) < 2:
+        return next((c for c in SORT_KEY_CANDIDATES if c in df.columns), None)
+    for c in SORT_KEY_CANDIDATES:
+        if c not in df.columns:
+            continue
+        v = pd.to_numeric(df[c], errors="coerce").to_numpy(dtype=float)
+        if np.isnan(v).all():
+            continue
+        v = np.where(np.isnan(v), -np.inf, v)
+        if (v[:-1] >= v[1:] - 1e-12).all():
+            return c
+    return None
 
 
 def org_outcomes(orgs: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:

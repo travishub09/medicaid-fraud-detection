@@ -215,3 +215,29 @@ def test_cli_reads_the_shipped_priority_list(tmp_path):
     row = parse_run_dir(run)
     assert row.get("acc_org_hits50") == kp["kpis"]["acc_org_hits50"]
     assert row.get("acc_eval_policy") == "all"
+
+
+def test_sort_key_is_inferred_from_the_file_order(tmp_path):
+    """Bundle 239 changed the pursuit book's sort to score_dollar_weighted; the loader
+    still assumed score_p_any from the column's presence and re-sorted the book by
+    P(any), grading 0 hits at 50 instead of 2. The key is now read off the order."""
+    from src.model_a.accuracy_diagnostics import load_priority_list, infer_sort_key
+    n = 30
+    rng = np.random.default_rng(3)
+    dw = np.sort(rng.random(n))[::-1]
+    p_any = rng.random(n)                                   # NOT monotone along the order
+    book = pd.DataFrame({"pursuit_rank": range(1, n + 1), "org_id": [f"org:{i}" for i in range(n)],
+                         "member_npis": "", "score_dollar_weighted": dw, "score_max": dw,
+                         "score_p_any": p_any, "score_p_max": p_any})
+    book.to_csv(tmp_path / "provider_priority_list_pursuit.csv", index=False)
+    df = load_priority_list(tmp_path, "provider_priority_list_pursuit.csv")
+    assert df.attrs["sort_key"] == "score_dollar_weighted"
+    # a book genuinely sorted on P(any) is recognised as such
+    book2 = book.sort_values("score_p_any", ascending=False).reset_index(drop=True)
+    book2["pursuit_rank"] = range(1, n + 1)
+    book2.to_csv(tmp_path / "provider_priority_list_pursuit.csv", index=False)
+    assert load_priority_list(tmp_path, "provider_priority_list_pursuit.csv").attrs["sort_key"] == "score_p_any"
+    # no column explains the order -> None (rank fallback)
+    book3 = book.sample(frac=1.0, random_state=1).reset_index(drop=True)
+    book3["pursuit_rank"] = range(1, n + 1)
+    assert infer_sort_key(book3) is None
