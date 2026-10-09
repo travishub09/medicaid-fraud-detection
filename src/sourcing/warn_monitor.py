@@ -58,8 +58,10 @@ _STATE_IN_NAME = re.compile(r"warn[_-]([A-Za-z]{2})[_-]", re.IGNORECASE)
 WARN_KEYWORDS = {
     "employer": ["company", "employer", "business", "notice name", "job site", "firm name"],
     "employees": ["affected", "employee", "workers", "layoff number", "layoff_number", "headcount"],
-    "notice_date": ["notice date", "date of notice", "date received", "received date", "notice_date"],
-    "layoff_date": ["effective", "layoff date", "layoff_date", "closure date", "separation"],
+    "notice_date": ["notice date", "date of notice", "date received", "received date", "notice_date",
+                    "notification date", "notification"],
+    "layoff_date": ["effective", "layoff date", "layoff_date", "layoff start", "closure date", "separation",
+                    "start date"],
     "state": [],
 }
 

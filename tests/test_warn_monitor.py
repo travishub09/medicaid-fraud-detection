@@ -154,3 +154,21 @@ def test_north_carolina_header_resolves_by_keyword(tmp_path):
     assert w["employer_raw"].iloc[0] == "Piedmont Home Health LLC" and w["state"].iloc[0] == "NC"
     assert int(w["employees"].iloc[0]) == 42 and str(w["notice_date"].iloc[0])[:10] == "2026-07-01"
     assert str(w["layoff_date"].iloc[0])[:10] == "2026-09-01"
+
+
+def test_florida_header_resolves(tmp_path):
+    """FloridaJobs 2026 export: 'State Notification Date', 'Layoff Start Date', 'Employees Affected'."""
+    from src.sourcing.warn_monitor import load_warn
+    d = tmp_path / "warn"
+    d.mkdir()
+    pd.DataFrame({"Company Name": ["TH Opco LLC d/b/a Terrace of Hialeah"], "Address Line 1": ["190 W. 28th Street"],
+                  "Address Line 2": [""], "City": ["HIALEAH"], "State": ["FL"], "ZIP Code": ["33010"],
+                  "State Notification Date": ["2026-10-07"], "Layoff Start Date": ["2026-12-06"],
+                  "Layoff End Date": ["2026-12-20"], "Employees Affected": ["175"],
+                  "Industry": ["Health Care and Social Assistance"], "Attachment Filename": ["x.pdf"],
+                  "Source Link": ["https://reactwarn.floridajobs.org/WarnList/Records?year=2026"]}).to_csv(
+        d / "warn_FL_202610.csv", index=False)
+    w = load_warn(d)
+    r = w.iloc[0]
+    assert r["employer_raw"].startswith("TH Opco") and r["state"] == "FL" and int(r["employees"]) == 175
+    assert str(r["notice_date"])[:10] == "2026-10-07" and str(r["layoff_date"])[:10] == "2026-12-06"
