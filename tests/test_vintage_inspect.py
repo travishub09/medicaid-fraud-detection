@@ -206,3 +206,21 @@ def test_yyyymm_filename_stamps_count_as_dates():
     assert "2026" in name_dates("deactivation_20260608.zip")
     assert name_dates("partb_2021.csv") == ["2021"]
     assert name_dates("sam_exclusions.CSV") == []
+
+
+def test_bom_and_utf16_csvs_are_readable(tmp_path: Path):
+    """2026-10-09: the three CMS MUE csvs (quoted multi-line first header cell,
+    saved UTF-16 by Excel) read as UNREADABLE; the adapters' read_csv_text had
+    the BOM sniff, the inspector's probe did not."""
+    from src.vintage_inspect import _read_header, _bom_encoding
+    body = ('"HCPCS/\r\nCPT Code",Practitioner Services MUE Values,MUE Adjudication Indicator,MUE Rationale\r\n'
+            '0001U,1,2 Date of Service Edit: Policy,Code Descriptor / CPT Instruction\r\n')
+    want = ["HCPCS/\r\nCPT Code", "Practitioner Services MUE Values", "MUE Adjudication Indicator", "MUE Rationale"]
+    plain, bom, u16 = tmp_path / "plain.csv", tmp_path / "bom.csv", tmp_path / "u16.csv"
+    plain.write_bytes(body.encode())
+    bom.write_bytes(b"\xef\xbb\xbf" + body.encode())
+    u16.write_bytes(body.encode("utf-16"))
+    assert _bom_encoding(plain) is None and _bom_encoding(bom) == "utf-8-sig" and _bom_encoding(u16) == "utf-16"
+    for f in (plain, bom, u16):
+        got = _read_header(f)
+        assert got is not None and [c.replace("\r", "") for c in got] == [c.replace("\r", "") for c in want], f.name

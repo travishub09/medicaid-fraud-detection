@@ -254,15 +254,6 @@ REM upload processed\MEDICAID_NDC_REPORT.md
 python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
 ```
 
-- [ ] **mue_files_unreadable_check** — The 2026-10-09 VINTAGE_INSPECT marks all three MUE files UNREADABLE (preclean/reference/mue/mue_practitioner.csv, mue_facility.csv, mue_dme.csv): DuckDB and the pandas sniffing fallback both failed to find a header. The per-patient MUE rule (impossible_day / mue_excess) reads these through pandas; if they are really unreadable the v7 SOURCES_REPORT would show mue as skipped and v8 would train without the MUE features. Paste the first three lines of each file (the command below prints them) and Claude either fixes the reader or asks for a re-download (CMS publishes MUE as .xlsx; a 'Save as CSV' from Excel of the multi-row banner sheet is the usual cause). (added 2026-10-09)
-
-```bat
-powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_practitioner.csv' -TotalCount 3"
-powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_facility.csv' -TotalCount 3"
-powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_dme.csv' -TotalCount 3"
-REM paste the output into the chat
-```
-
 
 ## After ANY download session (standing rule)
 

@@ -105,6 +105,25 @@ def _duck():
     return duckdb.connect()
 
 
+def _bom_encoding(p: Path) -> str | None:
+    """'utf-16' / 'utf-8-sig' when the file opens with a byte-order mark, else
+    None. Excel's "Unicode Text" save and the CMS MUE spreadsheets exported as
+    CSV arrive UTF-16; PowerShell's Get-Content decodes them silently, so the
+    operator sees clean text while a Latin-1 probe sees NUL-interleaved bytes
+    (the 2026-10-09 inventory marked all three MUE files UNREADABLE for this).
+    Mirrors the sniff in clean_data.read_csv_text, which the adapters use."""
+    try:
+        with open(p, "rb") as fh:
+            head = fh.read(4)
+    except OSError:
+        return None
+    if head.startswith(b"\xff\xfe") or head.startswith(b"\xfe\xff"):
+        return "utf-16"
+    if head.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    return None
+
+
 def _read_header(p: Path) -> list[str] | None:
     """Header columns for csv/xlsx/parquet; None when unreadable. Banner-row
     files (the AMA-copyright class) are probed a few rows deep."""
@@ -115,6 +134,21 @@ def _read_header(p: Path) -> list[str] | None:
         if p.suffix.lower() in (".xlsx", ".xls"):
             df = pd.read_excel(p, nrows=5)
             return [str(c) for c in df.columns]
+        enc = _bom_encoding(p)
+        if enc:
+            # DuckDB's Latin-1 probe cannot see through a BOM: UTF-16 reads as
+            # garbage and a UTF-8 BOM makes skip=0 fail and skip=1 "succeed"
+            # with the header's second physical line. pandas with the sniffed
+            # encoding handles both (and the quoted multi-line MUE header).
+            for skip in (0, 1, 2, 3, 4, 5, 8, 10):
+                try:
+                    df = pd.read_csv(p, nrows=5, skiprows=skip, encoding=enc, dtype=str)
+                except Exception:
+                    continue
+                named = [c for c in df.columns if not str(c).startswith("Unnamed")]
+                if len(named) >= 3:
+                    return [str(c) for c in df.columns]
+            return None
         # csv/txt: find the first row that looks like a header (>=3 named cols)
         con = _duck()
         for skip in (0, 1, 2, 3, 4, 5, 8, 10):
@@ -149,6 +183,19 @@ def _date_minmax(p: Path, cols: list[str]) -> dict[str, tuple[str, str]]:
     Returns {col: (min, max)} for columns where any format parsed."""
     cand = [c for c in cols
             if DATE_NAME_RE.search(str(c)) and not NOT_DATE_NAME_RE.search(str(c))]
+    if cand and p.suffix.lower() in (".csv", ".txt") and _bom_encoding(p) == "utf-16":
+        # the DuckDB stream below is Latin-1; a UTF-16 file is read by pandas
+        # instead (these files are small: MUE tables, Excel 'Unicode' saves)
+        try:
+            df = pd.read_csv(p, usecols=cand, encoding="utf-16", dtype=str)
+        except Exception:
+            return {}
+        out = {}
+        for c in cand:
+            d = pd.to_datetime(df[c], errors="coerce")
+            if d.notna().any():
+                out[c] = (str(d.min().date()), str(d.max().date()))
+        return out
     if not cand or p.suffix.lower() not in (".csv", ".txt", ".parquet"):
         # xlsx are small: pandas fallback
         if cand and p.suffix.lower() in (".xlsx", ".xls"):
