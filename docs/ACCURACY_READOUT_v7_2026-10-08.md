@@ -107,6 +107,8 @@ Plain version: cutting the hospitals and the solo individuals out of the book do
 
 Why P(any) lost: the cross-fitted isotonic map is flat across the head of the book (section 7 of the pursuit report: mean calibrated probability 0.0032 in ranks 1 to 50, 0.0032 in 51 to 250, 0.0027 in 251 to 1,000 on the FCA ruler), so sorting on it reshuffles the first few hundred rows by noise. The dollar-weighted score carries the same signal with more resolution. Item 1 above stays open as a v8 question (untie the head with native NaN and the trainability gate), but the sort-key half of it is settled: not P(any), not on this scorer.
 
+Confirmed on the rebuilt file (2026-10-09, 18:29): the diagnostics read the pursuit book as 1,855 rows in the dollar-weighted order and scored 2 hits at 50 on the FCA ruler against 0.2 by chance, with a median lead of 29 months. That is the number v8 must not fall below.
+
 What this means for v8: grade `provider_priority_list_pursuit.csv` with `--list-name`, under the FCA ruler, with `hits50 >= 2` as the enforced bar (the v7 operator book at the dollar-weighted order already reads 2; v8 must not read below it).
 
 _Leads for counsel review, never accusations._
