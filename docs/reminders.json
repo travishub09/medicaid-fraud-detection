@@ -693,30 +693,20 @@
   },
   {
    "key": "v8_prereg_accuracy_sprint",
-   "what": "v8 is a NEW pre-registration, never a rerun of v7 (feature set, NaN policy, MUE, peers, label rule and ruler all changed; numbers not comparable with v7). ORDER: (0) bundle 244+ merged, NDC rebuild after 230 done, nothing else running; (1) the label audit on the current exclusion graph + case DB (LABEL_AUDIT.md + label_audit.json: paste the findings list); (2) pre-register with the checks below BEFORE the run (one --check with every expression after it; the registry refuses a duplicate tag); (3) the frozen night-runner with ASOF_CUTOFF=2021-12, the as-of graph build with --asof-nppes on the Dec-2021 NPPES file, --with-analytics on the export; (4) the forward FCA label; (5) the pursuit rebuild + the diagnostics on the PURSUIT file (its outputs carry the __pursuit suffix; the registry reads them first); (6) register the run folder. HOW TO CHECK WHERE YOU ARE: the two findstr/dir lines at the top print the pre-registration entry if it exists and the run folder if the run started. Grade on ACCURACY_DIAGNOSTICS__pursuit (FCA ruler, hits@50 vs random; v7 at the dollar-weighted order reads 2), never on decile lift. v8 is the FIRST run trained with the resolved-defendant DOJ rows in the label.",
+   "what": "PRE-REGISTERED 2026-10-09 22:40 UTC (goal locked; 8 enforced checks). LABEL AUDIT read the same night (LABEL_AUDIT_2026-10.md): nothing blocks the run. Findings carried as build tasks: 2,929 case pairs are the same settlement harvested twice ($594B double-counted in the dollar-recall denominators), 65 providers with a known exclusion sit in the v7 matrix unflagged (re-check on the v8 matrix), top 5 DOJ cases supply 64% of the 4,044 DOJ positives (org-billing broadcast; folds are grouped by org), only 1% of usable DOJ cases resolve to a scored NPI ($1.9T of settlements carry no label: the recall lever). RUN: run_v8_night.bat (delivered 2026-10-09; copy it from Downloads into the repo folder once) chains the nine steps with stop-on-error: as-of graph with --asof-nppes, the matrix with analytics, both forward labels, network A/B, scheme triage, pursuit list + book, diagnostics on the pursuit book, digest + dossier (no Manus), registration. When it prints DONE say 'v8 finished'; Claude then queues the post-run checklist (packet, dossier dispatch + poll, registry verdict). NEVER merge a bundle while it runs.",
    "added": "2026-10-08",
    "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "REM --- where am I? (both read-only) ---",
-    "findstr /c:\"frozen_2021-12_v8\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\preregistrations.jsonl\"",
-    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\"",
-    "REM --- (0) one 5-second NDC feature refresh after bundle 253 (prescriber shares now measured over known-prescriber dollars) ---",
-    "python -u -m src.ingest_cms.medicaid_ndc --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\medicaid_ndc\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\" --nadac \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nadac\\nadac_2026.csv\"",
-    "REM --- (1) label audit ---",
-    "python -u -m src.model_a.label_audit --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --org-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\org_nodes.parquet\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --matrix \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\\provider_features_for_model.parquet\" --cutoff 2021-12 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\LABEL_AUDIT_2026-10.md\"",
-    "REM --- (2) pre-register (ONE --check, every expression after it) ---",
-    "python -m src.model_a.run_registry --data-root \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\" --preregister --tag frozen_2021-12_v8 --goal \"accuracy sprint: trainability gate + native NaN + servicing grain + per-patient MUE + peer fallback + masked ambiguous rows + resolved-defendant labels, operator pursuit book graded on the FCA ruler at the budgets a human reads\" --expected \"pursuit book hits@50 >= 2 on the FCA ruler (v7 at the dollar-weighted order reads 2), institutional share of the top 50 <= 40%, top-50 stable under re-shuffled folds\" --check \"hits50 >= 2\" \"prec50_lo > base50\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\"",
-    "REM --- (3) the frozen night-runner (ASOF_CUTOFF=2021-12; graph build with --asof-nppes below; export --with-analytics) ---",
-    "REM   --asof-nppes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\npidata_pfile_20050523-20211212.csv\"",
-    "REM --- (4) forward FCA label ---",
-    "python -u -m src.model_a.prospective_label --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --cutoff 2021-12 --fca-tier hard --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --horizon-months 36 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\\future_bans_after_2021-12__fca36.csv\"",
-    "REM --- (5) pursuit book + its diagnostics ---",
-    "python -u -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\" --priority-list",
-    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --horizon-months 36 --repeats 3 --list-name provider_priority_list_pursuit.csv",
-    "REM --- (6) register ---",
-    "python -m src.model_a.run_registry --data-root \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\" --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\"",
+    "copy /y \"%USERPROFILE%\\Downloads\\run_v8_night.bat\" \"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v8_night.bat\"",
+    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v8_night.bat\"",
+    "REM when it prints [v8] DONE: say 'v8 finished' in chat",
+    "powershell -Command \"Compress-Archive -Force -Path 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\\*.md','C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet_v8.zip'\"",
     "python -m src.reminders --done-task v8_prereg_accuracy_sprint"
    ]
+  },
+  {
+   "key": "case_db_duplicate_settlements",
+   "what": "CLAUDE BUILD (from LABEL_AUDIT 2026-10-09): 2,929 case pairs share the same amount, year and a defendant-name token (DOJ national + the local USAO release, or a sentencing re-announcement): $593,532M double-counted in the dollar-recall denominators and the 'unresolved settlement dollars' figure. Dedupe in case_db.merge_case_files (keep the earlier announcement, carry the other URL as a cross-reference); the labels themselves are unaffected (same NPI). Also: 65 providers with a known exclusion sat in the v7 matrix unflagged; re-run label_audit on the v8 matrix and, if they persist, trace the join. No operator action.",
+   "added": "2026-10-09"
   }
  ]
 }
