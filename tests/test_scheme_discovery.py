@@ -45,7 +45,9 @@ def test_tree_headers_skips_held(pre):
 
 def test_scheme_status(pre):
     st = {s["scheme"]: s for s in scheme_status(_tree_headers(pre))}
-    assert st["nh_ownership_stakes"]["status"] == "READY TO WIRE"
+    # the ownership file is present and complete, and the scheme is already wired
+    # in the export: the report says WIRED, never READY TO WIRE forever (2026-10-09)
+    assert st["nh_ownership_stakes"]["status"].startswith("WIRED (facility.compute_nh_ownership")
     assert st["nh_ownership_stakes"]["file"] == \
         "facility/NH_Ownership_Nov2023.csv"
     assert st["nh_penalties"]["status"].startswith("CHECK ROWS")

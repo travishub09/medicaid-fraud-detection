@@ -124,9 +124,25 @@ def _bom_encoding(p: Path) -> str | None:
     return None
 
 
+_READ_ERRORS: dict[str, str] = {}      # file -> why the header probe gave up
+
+
 def _read_header(p: Path) -> list[str] | None:
     """Header columns for csv/xlsx/parquet; None when unreadable. Banner-row
-    files (the AMA-copyright class) are probed a few rows deep."""
+    files (the AMA-copyright class) are probed a few rows deep. The reason a
+    file is unreadable is kept in _READ_ERRORS for the report."""
+    cols = _read_header_inner(p)
+    if cols is None and str(p) not in _READ_ERRORS:
+        try:
+            with open(p, "rb") as fh:
+                head = fh.read(24)
+            _READ_ERRORS[str(p)] = f"no header found; first bytes {head.hex(' ')}"
+        except OSError as e:
+            _READ_ERRORS[str(p)] = str(e)
+    return cols
+
+
+def _read_header_inner(p: Path) -> list[str] | None:
     try:
         if p.suffix.lower() == ".parquet":
             import pyarrow.parquet as pq
@@ -171,10 +187,12 @@ def _read_header(p: Path) -> list[str] | None:
                      if not str(c).startswith("Unnamed")]
             if len(named) >= 3:
                 return [str(c) for c in df.columns]
-        except Exception:
-            pass
+            _READ_ERRORS[str(p)] = f"pandas fallback saw {len(named)} named columns: {list(df.columns)[:4]}"
+        except Exception as e:
+            _READ_ERRORS[str(p)] = f"pandas fallback: {type(e).__name__}: {str(e)[:120]}"
         return None
-    except Exception:
+    except Exception as e:
+        _READ_ERRORS[str(p)] = f"{type(e).__name__}: {str(e)[:120]}"
         return None
 
 
@@ -312,6 +330,7 @@ def inspect_tree(data_root: Path) -> list[dict]:
                 rec["verdict"] = "named"
             elif cols is None:
                 rec["verdict"] = "UNREADABLE"
+                rec["inferred_period"] = _READ_ERRORS.get(str(p), "")
             else:
                 rec["verdict"] = "UNRESOLVED (no dates inside or in name)"
         rows.append(rec)

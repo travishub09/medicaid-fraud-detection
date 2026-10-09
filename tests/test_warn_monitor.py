@@ -107,3 +107,20 @@ def test_load_warn_folder_reads_xlsx_with_banner_and_state_from_filename(tmp_pat
     pd.DataFrame({"foo": [1]}).to_excel(d / "warn_ZZ_202610.xlsx", index=False)
     with pytest.raises(ValueError):
         read_warn_file(d / "warn_ZZ_202610.xlsx")
+
+
+def test_read_warn_file_finds_the_data_sheet_in_a_multi_sheet_workbook(tmp_path):
+    """California's WARN workbook opens with an introduction sheet; the postings sit on
+    sheet 3 under a title row. The reader probes every sheet."""
+    from src.sourcing.warn_monitor import read_warn_file
+    f = tmp_path / "warn_CA_202610.xlsx"
+    with pd.ExcelWriter(f) as xw:
+        pd.DataFrame({"Intro": ["This workbook contains 3 sheets."]}).to_excel(xw, sheet_name="Introduction", index=False)
+        pd.DataFrame({"Summary": ["totals"]}).to_excel(xw, sheet_name="WARN Report Summary", index=False)
+        pd.DataFrame([["Detailed WARN Report", None, None, None],
+                      ["Company", "Notice Date", "Effective Date", "No. Of Employees"],
+                      ["Golden State Home Health", "2026-07-01", "2026-09-01", "60"]]).to_excel(
+            xw, sheet_name="Detailed WARN Report", index=False, header=False)
+    raw = read_warn_file(f)
+    assert len(raw) == 1 and raw["STATE"].iloc[0] == "CA"
+    assert "Company" in raw.columns and raw["Company"].iloc[0] == "Golden State Home Health"

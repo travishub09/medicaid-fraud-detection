@@ -120,6 +120,17 @@ def _tree_headers(pre: Path) -> dict[str, list[str]]:
     return out
 
 
+# candidates that ARE wired (the export computes them): the report says so instead
+# of "READY TO WIRE" forever. 2026-10-09: all three facility candidates had been
+# wired since 2026-09 (facility.compute_nh_ownership / compute_nh_penalties /
+# compute_pbj_weekend_gap) and the report kept listing them as waiting.
+WIRED_CANDIDATES = {
+    "nh_ownership_stakes": "facility.compute_nh_ownership -> nh_owner_count, nh_owner_concentration",
+    "nh_penalties": "facility.compute_nh_penalties -> nh_penalty_count, nh_fine_total",
+    "pbj_weekend_staffing": "facility.compute_pbj_weekend_gap -> pbj_weekend_understaffing",
+}
+
+
 def scheme_status(headers: dict[str, list[str]]) -> list[dict]:
     """Check every candidate scheme against the current tree."""
     out = []
@@ -137,7 +148,9 @@ def scheme_status(headers: dict[str, list[str]]) -> list[dict]:
             miss = [f for f in need if f.lower() not in joined.lower()]
             if len(miss) < len(missing):
                 best_file, missing = rel, miss
-        if not matches:
+        if name in WIRED_CANDIDATES and matches and not missing:
+            status = f"WIRED ({WIRED_CANDIDATES[name]})"
+        elif not matches:
             status = "BLOCKED: no candidate file"
         elif not missing:
             status = "READY TO WIRE"

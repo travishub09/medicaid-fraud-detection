@@ -72,18 +72,28 @@ def read_warn_file(path) -> pd.DataFrame:
     when the sheet has none."""
     p = Path(path)
     if p.suffix.lower() in (".xlsx", ".xls"):
+        # every sheet, header probed up to eight rows deep: California's workbook
+        # opens with an introduction sheet and keeps the postings on sheet 3
+        # ("Detailed WARN Report"); Rhode Island puts a title row above the header
         raw = None
-        for skip in range(0, 9):
-            try:
-                cand = pd.read_excel(p, dtype=str, header=skip)
-            except Exception:
-                break
-            if "employer" in _resolve(cand.columns):
-                raw = cand
+        try:
+            sheets = pd.ExcelFile(p).sheet_names
+        except Exception as e:
+            raise ValueError(f"WARN file {p.name}: cannot open the workbook ({e})")
+        for sheet in sheets:
+            for skip in range(0, 9):
+                try:
+                    cand = pd.read_excel(p, sheet_name=sheet, dtype=str, header=skip)
+                except Exception:
+                    break
+                if "employer" in _resolve(cand.columns) and len(cand):
+                    raw = cand
+                    break
+            if raw is not None:
                 break
         if raw is None:
-            raise ValueError(f"WARN file {p.name}: no employer column in the first 9 rows; "
-                             f"paste its first lines")
+            raise ValueError(f"WARN file {p.name}: no sheet carries an employer column in its "
+                             f"first 9 rows (sheets: {', '.join(sheets)}); paste its first lines")
     else:
         from src.attempt_2.clean_data import read_csv_text
         raw = read_csv_text(str(p))

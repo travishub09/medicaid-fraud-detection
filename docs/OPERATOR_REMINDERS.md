@@ -114,20 +114,6 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -m src.model_a.scheme_triage --run "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7"
 ```
 
-- [ ] **vintage_rerun_after_172** — RERUN NEEDED (2026-10-09): the VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md uploaded today predate the July files (no medicaid_ndc/ or medicaid_enrollment/ rows in the inventory) and the 2026-10-07 inspector fix (state_terminations / state_capacity / nppes / nppes_history still listed as orphans), so today's run either did not execute or did not finish. Run the two commands below with python -u in a window of their own, paste the LAST 10 lines of console output, then upload both .md files again. Bundle 242 also dates sam_exclusions_202609.csv and the *_terminations_202609.xlsx files from their names, so the TRUE re-download list should shrink to PECOS.csv, hud/*, nucc/*, opensanctions/* and sam_exclusions.CSV (the undated older SAM copy; delete it if sam_exclusions_202609.csv is the one the loader reads). (added 2026-09-16)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-REM --- already done? the dir shows the time; the findstr prints July-file rows only from a run on current code ---
-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md" "C:\Users\treyr\OneDrive\Desktop\data\preclean\SCHEME_DISCOVERY.md"
-findstr /c:"medicaid_ndc" "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md"
-python -u -m src.vintage_inspect --data-root "C:\Users\treyr\OneDrive\Desktop\data"
-python -u -m src.model_a.scheme_discovery --data-root "C:\Users\treyr\OneDrive\Desktop\data"
-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\VINTAGE_INSPECT.md" "C:\Users\treyr\OneDrive\Desktop\data\preclean\SCHEME_DISCOVERY.md"
-REM upload both .md files, then:
-python -m src.reminders --done-task vintage_rerun_after_172
-```
-
 - [ ] **editions_undated_reference** — LOW: fill EDITIONS.csv data_period for the reference files that carry no date inside or in their name (PECOS.csv, hud/zip_county.*, nucc/*, opensanctions/targets.simple.csv): the download date is the period. Operator entries are never overwritten. (added 2026-09-16)
 
 ```bat
@@ -241,6 +227,20 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --score-source priority_list
 REM paste the two 'graded' lines + the two hits@50 lines; upload ACCURACY_DIAGNOSTICS__pursuit.md
 python -m src.reminders --done-task v7_pursuit_regrade_after_244
+```
+
+- [ ] **sam_extract_loader** — CLAUDE BUILD, one operator paste first: the SAM.gov public V2 extract under preclean/sam/ has no reader (the label's SAM rows come from the paged API). Paste the first TWO lines of sam_exclusions_202609.csv (the header and one row) with the command below; Claude adds --from-csv to enforcement/sam_api.py so the complete extract writes processed/exclusions_sam.parquet in the same schema, and the old undated sam_exclusions.CSV can then be deleted (it is the last undated file on the re-download list besides the reference tables). (added 2026-10-09)
+
+```bat
+powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\sam\sam_exclusions_202609.csv' -TotalCount 2"
+REM paste the output into the chat
+```
+
+- [ ] **mue_unreadable_bytes** — The 2026-10-09 vintage rerun (on code with the BOM fix from bundle 243) STILL marks the three MUE csvs UNREADABLE, so the cause is not UTF-16. The pipeline reads them fine (per-patient MUE rule unaffected); this is the inspector's probe only. Paste the first 48 bytes of one file (command below); bundle 249 also makes the inspector print the probe error next to UNREADABLE in the inventory, so the next rerun explains itself. (added 2026-10-09)
+
+```bat
+powershell -Command "Format-Hex -Path 'C:\Users\treyr\OneDrive\Desktop\data\preclean\reference\mue\mue_practitioner.csv' -Count 48"
+REM paste the output into the chat
 ```
 
 
