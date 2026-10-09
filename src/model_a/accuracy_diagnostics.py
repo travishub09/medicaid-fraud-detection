@@ -312,6 +312,7 @@ def org_table_from_refit(matrix: pd.DataFrame, scores: np.ndarray, min_damages: 
     orgs = orgs[orgs["case_size_yr"] >= float(min_damages)] if min_damages else orgs
     orgs = orgs.sort_values(["score_dollar_weighted", "score_max"], ascending=False).reset_index(drop=True)
     orgs.insert(0, "priority_rank", orgs.index + 1)
+    orgs.attrs["sort_key"] = "score_dollar_weighted"
     return orgs
 
 
@@ -329,7 +330,11 @@ def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") 
     if "priority_rank" not in df.columns:
         df.insert(0, "priority_rank", np.arange(1, len(df) + 1))
     df["member_npis"] = df.get("member_npis", pd.Series("", index=df.index)).fillna("").astype(str)
-    return df.sort_values("priority_rank").reset_index(drop=True)
+    df = df.sort_values("priority_rank").reset_index(drop=True)
+    # the column that produced the order (ties at a budget boundary are real ties)
+    df.attrs["sort_key"] = ("score_p_any" if "pursuit_rank" in df.columns and "score_p_any" in df.columns
+                            else "score_dollar_weighted" if "score_dollar_weighted" in df.columns else None)
+    return df
 
 
 def org_outcomes(orgs: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:
@@ -338,6 +343,7 @@ def org_outcomes(orgs: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:
     universe stay listed (a hit is impossible for them, which is the truth of the
     list, not a reason to drop the row). Vectorized: explode the rosters once."""
     out = orgs.copy()
+    out.attrs = dict(getattr(orgs, "attrs", {}) or {})
     members = out["member_npis"].fillna("").astype(str).str.split(";")
     ex = pd.DataFrame({"_i": np.repeat(np.arange(len(out)), members.str.len().to_numpy()),
                        "npi": np.concatenate(members.to_list()) if len(out) else np.array([], dtype=str)})
@@ -369,8 +375,16 @@ def budget_rows_org(orgs: pd.DataFrame, budgets, pool: pd.DataFrame | None = Non
     pool = orgs if pool is None else pool
     pool_n, pool_pos = int(len(pool)), int(pool["hit"].sum())
     rows = []
-    score = pd.to_numeric(orgs.get("score_dollar_weighted"), errors="coerce").fillna(-1).to_numpy() \
-        if "score_dollar_weighted" in orgs.columns else -orgs["priority_rank"].to_numpy(dtype=float)
+    # the budget is read in the LIST'S OWN ORDER. The sort key names the column that
+    # produced that order (so ties at the boundary are real ties); without one the
+    # rank itself is the score. Before 2026-10-09 this always re-sorted by the
+    # dollar-weighted score, which graded the pursuit book (sorted by P(any member))
+    # in the wrong order while the lead-time section read the true order.
+    key = orgs.attrs.get("sort_key") if hasattr(orgs, "attrs") else None
+    if key and key in orgs.columns:
+        score = pd.to_numeric(orgs[key], errors="coerce").fillna(-1).to_numpy()
+    else:
+        score = -pd.to_numeric(orgs["priority_rank"], errors="coerce").to_numpy(dtype=float)
     y = orgs["hit"].to_numpy()
     billed = _col(orgs, "total_billed", 0.0).to_numpy()
     size = _col(orgs, "n_providers", 1.0).to_numpy()

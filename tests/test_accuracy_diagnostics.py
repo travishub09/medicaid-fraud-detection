@@ -115,6 +115,13 @@ def test_org_budgets_beat_random_on_a_planted_signal():
     oh = org_outcomes(orgs, ev)
     rows = budget_rows_org(oh, (16, 50, 100))
     r50 = next(x for x in rows if x["budget"] == 50)
+    # the budget reads the LIST ORDER: a list whose rank disagrees with its dollar-weighted
+    # score (the pursuit book) must be graded by rank, not re-sorted
+    rev = oh.iloc[::-1].reset_index(drop=True)
+    rev["priority_rank"] = range(1, len(rev) + 1)
+    rev.attrs["sort_key"] = None
+    r50_rev = next(x for x in budget_rows_org(rev, (50,)) if x["budget"] == 50)
+    assert r50_rev["hits"] == int(oh["hit"].to_numpy()[-50:].sum())
     assert r50["hits"] > r50["random_expected"] and r50["random_p"] < 0.05
     assert r50["wilson_lo"] <= r50["precision"] <= r50["wilson_hi"]
     assert r50["cp_lo"] <= r50["precision"] <= r50["cp_hi"]
