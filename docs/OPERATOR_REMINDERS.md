@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-08. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-09. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -242,15 +242,6 @@ python -m src.reminders --done-task build_nursing_home_dollar_basis
 
 ```bat
 python -m src.reminders --done-task wesleyan_balance_sheet_readout
-```
-
-- [ ] **accuracy_diagnostics__frozen_2021-12_v7** — v7 HALF DONE 2026-10-08 (read-out in docs/ACCURACY_READOUT_v7_2026-10-08.md). Remaining: the v6 run (2023-12 freeze, 24-month horizon), one command below, then upload its ACCURACY_DIAGNOSTICS.md + accuracy_diagnostics.json. Press Enter once before pasting if the previous command was a batch file. (added 2026-10-08)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v6" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --score-source priority_list+refit --horizon-months 24
-REM upload ACCURACY_DIAGNOSTICS.md and accuracy_diagnostics.json from the v6 run folder
-python -m src.reminders --done-task accuracy_diagnostics__frozen_2021-12_v7
 ```
 
 - [ ] **v8_prereg_accuracy_sprint** — v8 is a NEW pre-registration, never a rerun of v7: the feature set (trainability gate: v3 scores, capacity, July rx_/px_/mcd_, servicing sv_ now trained), the missing-value policy (native NaN), the MUE rule (per patient), the peer rule (non-null minimum), the label rule (masked ambiguous rows, outcome rule on every case tier) and the ruler (FCA cases, 36-month horizon) all changed, so v8's numbers are not comparable with v7's. Register with the checks below BEFORE the run; grade on ACCURACY_DIAGNOSTICS (FCA ruler, hits@50 vs random), never on decile lift. Read docs/ACCURACY_PLAN_2026-10.md section 5 first (added 2026-10-08)
