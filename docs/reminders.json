@@ -351,7 +351,7 @@
    "where": "preclean/facility/Hospice_Provider_Feb2022.csv (CMS's own name inside the Feb-2022 archive zip; keep the Nov-2023 file too; bundle 248 picks the edition by vintage: a 2021-12 freeze reads Feb2022, a current-day run reads the newest)",
    "url": "https://data.cms.gov/provider-data/archived-data/hospice-care",
    "every_months": 120,
-   "last_done": null,
+   "last_done": "2026-10-09",
    "steps": [
     "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"  (two files = done)",
     "2026-10-09: hospice-care_2022-02-16.zip downloaded and extracted to Downloads\\hospice_2022_02; the provider-level file inside is Hospice_Provider_Feb2022.csv (38 MB). The copy line below files it.",
@@ -368,7 +368,8 @@
     "preclean/facility/Hospice_Provider_*2022*.csv",
     "preclean/facility/Hospice_Provider_*2021*.csv",
     "preclean/facility/Hospice_Provider_20????.csv"
-   ]
+   ],
+   "note": "closed 2026-10-09: Hospice_Provider_Feb2022.csv (38 MB) on disk beside Hospice_Provider_Nov2023.csv (operator's dir listing)"
   },
   {
    "key": "oig_cia",

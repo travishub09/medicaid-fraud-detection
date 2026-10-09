@@ -6,22 +6,6 @@ _As of 2026-10-09. Regenerate/update: `python -m src.reminders` (`--done <key>` 
 
 _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
 
-- **hospice_2021_archive** — Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)
-  - save to: preclean/facility/Hospice_Provider_Feb2022.csv (CMS's own name inside the Feb-2022 archive zip; keep the Nov-2023 file too; bundle 248 picks the edition by vintage: a 2021-12 freeze reads Feb2022, a current-day run reads the newest)  |  https://data.cms.gov/provider-data/archived-data/hospice-care
-  - due: freshness unknown
-  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\facility\Hospice_Provider*.csv"  (two files = done)
-  - step 2: 2026-10-09: hospice-care_2022-02-16.zip downloaded and extracted to Downloads\hospice_2022_02; the provider-level file inside is Hospice_Provider_Feb2022.csv (38 MB). The copy line below files it.
-  - step 3: Open https://data.cms.gov/provider-data/archived-data/hospice-care (only if the zip is not in Downloads)
-  - step 4: Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility/Hospice_Provider_*2022*.csv or preclean/facility/Hospice_Provider_*2021*.csv or preclean/facility/Hospice_Provider_20????.csv
-
-```bat
-powershell -Command "Expand-Archive -Force -Path '%USERPROFILE%\Downloads\hospice-care_2022-02-16.zip' -DestinationPath '%USERPROFILE%\Downloads\hospice_2022_02'"
-copy /y "%USERPROFILE%\Downloads\hospice_2022_02\Hospice_Provider_Feb2022.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\facility\Hospice_Provider_Feb2022.csv"
-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\facility\Hospice_Provider*.csv"
-python -m src.reminders --done hospice_2021_archive
-```
-
 - **oig_cia** — LOW PRIORITY: OIG Corporate Integrity Agreement list (recall benchmark for the DOJ case DB in the label audit + a mild risk prior; changes no PI lead). Five-minute copy from the 'CIA Documents' table page, not the overview page; never worth Manus money
   - save to: preclean/cia/cia_list.csv  |  https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp
   - due: freshness unknown
