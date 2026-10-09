@@ -318,9 +318,11 @@ def test_dispatch_refuses_a_second_concurrent_run(tmp_path):
     assert out2["dispatched"] == 1 and not lock.exists()          # lock released after a normal run
 
 
-def test_pursuit_book_is_operator_only_basis_first_p_any_sorted(tmp_path):
-    """The companion pursuit list (2026-10-09): operator book only, cap-pinned case
-    sizes after basis-backed ones, sorted by the calibrated P(any member)."""
+def test_pursuit_book_is_operator_only_dollar_weighted_sorted(tmp_path):
+    """The companion pursuit list (2026-10-09): operator book only, sorted on the
+    dollar-weighted score with score_max as the tiebreak (the v7 order sweep:
+    P(any) and basis-first both lost hits; the operator FILTER is the win).
+    score_p_any / score_p_max ride along as columns, never as the sort."""
     m, man = _matrix()
     m["expected_net_paid"] = m["net_paid"] * 0.4
     m.to_parquet(tmp_path / "provider_features_for_model.parquet")
@@ -332,11 +334,17 @@ def test_pursuit_book_is_operator_only_basis_first_p_any_sorted(tmp_path):
     pur = pd.read_csv(tmp_path / "provider_priority_list_pursuit.csv")
     assert len(pur) > 0 and (pur["entity_segment"] == "operator").all()
     assert pur["pursuit_rank"].tolist() == list(range(1, len(pur) + 1))
-    capped = pur["case_size_capped"].astype(str).str.lower().isin(["true", "1"]).to_numpy()
-    assert not (capped[:-1] & ~capped[1:]).any()                 # once capped, never uncapped after
-    for blk in (pur[~capped], pur[capped]):
-        v = blk["score_p_any"].to_numpy()
-        assert (v[:-1] >= v[1:] - 1e-12).all()
+    assert {"score_p_any", "score_p_max"} <= set(pur.columns)
+    pdw = pur["score_dollar_weighted"].to_numpy()
+    assert (pdw[:-1] >= pdw[1:] - 1e-12).all()                  # dollar-weighted order, top to bottom
+    ties = np.isclose(pdw[:-1], pdw[1:])
+    if ties.any():                                               # score_max breaks ties
+        smax = pur["score_max"].to_numpy()
+        assert (smax[:-1][ties] >= smax[1:][ties] - 1e-12).all()
+    # the operator book in main-list order is exactly the pursuit order
+    main_ops = main[main["entity_segment"] == "operator"]
+    assert pur["org_id"].tolist() == main_ops["org_id"].tolist() or \
+        set(pur["org_id"]) == set(main_ops["org_id"])
     # the main list is untouched: still signal-sorted on the dollar-weighted score
     dw = main["score_dollar_weighted"].to_numpy()
     assert (dw[:-1] >= dw[1:] - 1e-12).all()

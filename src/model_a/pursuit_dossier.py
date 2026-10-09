@@ -697,15 +697,22 @@ def build_priority_list(run_dir: str | Path,
     # dollar-weighted list's first 50 were 19-24 institutional + 24-30 case-size-
     # capped organizations and zero operator-class ones, with zero or one future
     # case among them. This companion file holds the OPERATOR book only (no
-    # hospital / system / 25+ provider orgs, no solo individuals), basis-backed
-    # case sizes before cap-pinned ones, sorted by the calibrated probability that
-    # ANY member is a positive (score_p_any), dollar-weighted score as the
-    # tiebreak. The main list above is unchanged for registry continuity.
+    # hospital / system / 25+ provider orgs, no solo individuals). The main list
+    # above is unchanged for registry continuity.
+    #
+    # SORT KEY (settled by the v7 order sweep, ACCURACY_DIAGNOSTICS section 2b,
+    # FCA ruler, 1,855 operator orgs, 8 future cases in the pool):
+    #   score_dollar_weighted   1 / 2 / 3 / 4 hits at 16 / 50 / 100 / 250
+    #   score_p_max, score_max  0 / 2 / 2 / 3
+    #   score_p_any             0 / 0 / 0 / 2
+    #   basis-backed first, any key   0 / 0 / 0 / 0-3
+    # The operator FILTER is the win (the main list had 0 / 1 / 2 / 3 at the
+    # same budgets); the calibrated P(any) sort and the basis-first block both
+    # LOST hits, so the book keeps the dollar-weighted order with score_max as
+    # the tiebreak. score_p_any / score_p_max stay as COLUMNS for the reader.
     pursuit = out[out["entity_segment"] == "operator"].copy()
-    capped = pursuit.get("case_size_capped", pd.Series(False, index=pursuit.index))
-    pursuit["_capped"] = capped.astype(str).str.lower().isin(["true", "1"]).astype(int)
-    sort_keys = ["_capped"] + (["score_p_any"] if "score_p_any" in pursuit.columns else []) + ["score_dollar_weighted"]
-    pursuit = pursuit.sort_values(sort_keys, ascending=[True] + [False] * (len(sort_keys) - 1)).drop(columns=["_capped"])
+    sort_keys = ["score_dollar_weighted"] + (["score_max"] if "score_max" in pursuit.columns else [])
+    pursuit = pursuit.sort_values(sort_keys, ascending=False, kind="mergesort")
     pursuit = pursuit.reset_index(drop=True)
     pursuit.insert(0, "pursuit_rank", pursuit.index + 1)
     pursuit_cols = ["pursuit_rank"] + [c for c in cols if c != "priority_rank"] + ["priority_rank"]

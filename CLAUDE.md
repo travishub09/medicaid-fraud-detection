@@ -683,9 +683,16 @@ committed. Never let this file go stale: stale reminders are worse than none.
   carries lift 3 to 4; both HOLD. Built in response: `company_list.fold_assignments`
   (StratifiedGroupKFold), `calibrate_oof` (cross-fit isotonic P), `rollup(probs=)`
   -> `score_p_any` / `score_p_max`; the dossier's companion
-  `provider_priority_list_pursuit.csv` (operator book, basis-backed first, P(any)
-  sort; the main list unchanged); diagnostics `--list-name` + accuracy_tie_block.csv
-  + the `capped_no_basis` cause. v8 grades the pursuit file.
+  `provider_priority_list_pursuit.csv` (operator book ONLY; the main list
+  unchanged); diagnostics `--list-name` + `order_sweep` (section 2b: the same
+  book under every sort key) + accuracy_tie_block.csv + the `capped_no_basis`
+  cause. SORT KEY SETTLED BY THE SWEEP (v7, FCA, 1,855 operator orgs, 8 pool
+  hits): dollar-weighted 1/2/3/4 at 16/50/100/250, p_max 0/2/2/3, p_any
+  0/0/0/2, every basis-backed-first variant 0/0/0/x; the operator FILTER is
+  the win (main list 0/1/2/3), so the pursuit file sorts on
+  score_dollar_weighted then score_max, and score_p_any / score_p_max are
+  columns only — never re-introduce a probability sort or a basis-first block
+  without a sweep that beats 1/2/3/4. v8 grades the pursuit file.
   Full suite: `pytest tests/` (997 tests + 4 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

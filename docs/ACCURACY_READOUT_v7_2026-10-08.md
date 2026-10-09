@@ -89,4 +89,24 @@ Ranked by how much of the gap above each item explains:
 5. **Train and rank within the band that works.** The over-$10-million band shows 4.6 percent precision at the top; a within-band ranking (or a size-aware objective) would surface it instead of burying it under hospitals and small agencies.
 6. **Fold balance.** Use a positive-stratified grouped split so one fold cannot supply a third of the top.
 
+## 5. The pursuit book, graded on v7 (2026-10-09)
+
+Items 1, 2 and 6 above were built the same day and the operator book was re-graded on the v7 run before anything shipped. The companion file `provider_priority_list_pursuit.csv` holds the operator segment only: 1,855 organizations, 8 of them with a future FCA case in the pool. The diagnostics' order sweep (section 2b of the report) ranks the same 1,855 rows under every candidate sort key and counts hits at the four budgets a human reads.
+
+| sort key (operator book) | hits at 16 | at 50 | at 100 | at 250 |
+|---|--:|--:|--:|--:|
+| score_dollar_weighted (the main list's key) | 1 | 2 | 3 | 4 |
+| score_p_max (max member probability) | 0 | 2 | 2 | 3 |
+| score_max (max member raw score) | 0 | 2 | 2 | 3 |
+| score_p_any (calibrated P(any member)) | 0 | 0 | 0 | 2 |
+| basis-backed first, then any key above | 0 | 0 | 0 | 0 to 3 |
+| the full main list, for reference | 0 | 1 | 2 | 3 |
+| random draw from the pool | 0.1 | 0.2 | 0.4 | 1.0 |
+
+Plain version: cutting the hospitals and the solo individuals out of the book doubled the hits at every budget. Changing the sort to the calibrated probability, or putting the basis-backed case sizes first, threw those hits away again. So the pursuit file keeps the dollar-weighted order (score_max breaks ties); the calibrated columns ride along for the reader and nothing sorts on them. The first shipped version of the pursuit file sorted on P(any) with basis-backed first and graded at 0 hits at 50, which is why the sort was changed before v8.
+
+Why P(any) lost: the cross-fitted isotonic map is flat across the head of the book (section 7 of the pursuit report: mean calibrated probability 0.0032 in ranks 1 to 50, 0.0032 in 51 to 250, 0.0027 in 251 to 1,000 on the FCA ruler), so sorting on it reshuffles the first few hundred rows by noise. The dollar-weighted score carries the same signal with more resolution. Item 1 above stays open as a v8 question (untie the head with native NaN and the trainability gate), but the sort-key half of it is settled: not P(any), not on this scorer.
+
+What this means for v8: grade `provider_priority_list_pursuit.csv` with `--list-name`, under the FCA ruler, with `hits50 >= 2` as the enforced bar (the v7 operator book at the dollar-weighted order already reads 2; v8 must not read below it).
+
 _Leads for counsel review, never accusations._
