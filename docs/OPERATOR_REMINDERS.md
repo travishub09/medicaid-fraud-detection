@@ -191,6 +191,8 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 REM --- where am I? (both read-only) ---
 findstr /c:"frozen_2021-12_v8" "C:\Users\treyr\OneDrive\Desktop\data\model_a\preregistrations.jsonl"
 dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8"
+REM --- (0) one 5-second NDC feature refresh after bundle 253 (prescriber shares now measured over known-prescriber dollars) ---
+python -u -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
 REM --- (1) label audit ---
 python -u -m src.model_a.label_audit --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --org-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\org_nodes.parquet" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --matrix "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7\provider_features_for_model.parquet" --cutoff 2021-12 --out "C:\Users\treyr\OneDrive\Desktop\data\model_a\LABEL_AUDIT_2026-10.md"
 REM --- (2) pre-register (ONE --check, every expression after it) ---
@@ -205,15 +207,6 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 REM --- (6) register ---
 python -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8"
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
-```
-
-- [ ] **medicaid_ndc_rebuild_after_230** — REBUILD ONCE MORE after bundle 246. The 2026-10-09 14:35 build (post-230) quarantined the $20.28T aggregate rows correctly, but 580,586 rows (about $15B) with a NULL billing NPI fell into NEITHER the clean set nor the quarantine (SQL three-valued logic: length(NULL) = 10 is NULL, so both WHERE clauses dropped the row); the report showed it as 582,523 bad-NPI rows against 1,937 quarantined. Bundle 246 makes the rule NULL-safe, asserts clean + quarantine = fact, and counts placeholder NDCs (88888888888). Expected after the rebuild: blank_billing_npi about 582,000 rows, clean total still near $123B over 2018-2024 ($13B to $21B a year is the fee-for-service pharmacy slice, not the $80B of all Medicaid drug spend). Then upload the report. The build took about an hour on 10-09; one window, nothing else running. (added 2026-10-08)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.ingest_cms.medicaid_ndc --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_ndc" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed" --nadac "C:\Users\treyr\OneDrive\Desktop\data\preclean\nadac\nadac_2026.csv"
-REM upload "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_NDC_REPORT.md"
-python -m src.reminders --done-task medicaid_ndc_rebuild_after_230
 ```
 
 

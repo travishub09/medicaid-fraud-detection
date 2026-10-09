@@ -267,3 +267,25 @@ def test_ndc_null_billing_npi_rows_are_quarantined_not_lost(tmp_path):
     assert len(qf) == 1 and qf["billing_npi"].isna().all()
     rep = mndc.write_report(tmp_path, info, 0, mndc.npi_features(fact)).read_text(encoding="utf-8")
     assert "placeholder NDC" in rep and "clean + quarantine = the fact" in rep
+
+
+def test_prescriber_concentration_ignores_the_blank_prescriber_bucket(tmp_path):
+    """2026-10-09 real build: 85% of clean dollars carry no prescriber NPI, so the blank
+    bucket was the 'top prescriber' for most billers. The shares are measured over the
+    dollars whose prescriber is known; rx_missing_prescriber_share carries the coverage."""
+    raw = _ndc_csv(tmp_path, with_units=False)
+    f = raw / "medicaid_ndc.csv"
+    base = pd.read_csv(f, dtype=str)
+    # PH1 gets a large blank-prescriber row on top of its real prescribers
+    extra = pd.DataFrame([dict(BILLING_PROVIDER_NPI_NUM=PH1, PRESCRIBING_PROVIDER_NPI_NUM="", NDC="00071015523",
+                               CLAIM_FROM_MONTH="2023-03", TOTAL_PATIENTS="50", TOTAL_CLAIM_LINES="50", TOTAL_PAID="100000.0")])
+    pd.concat([base, extra]).to_csv(f, index=False, na_rep="")
+    fact = tmp_path / "ndc_fact.parquet"
+    mndc.build_ndc_fact(raw, fact)
+    feats = mndc.npi_features(fact).set_index("npi")
+    known = base[(base["BILLING_PROVIDER_NPI_NUM"] == PH1)]
+    known_paid = known["TOTAL_PAID"].astype(float).sum()
+    top = known.groupby("PRESCRIBING_PROVIDER_NPI_NUM")["TOTAL_PAID"].apply(lambda s: s.astype(float).sum()).max()
+    assert abs(feats.loc[PH1, "rx_top_prescriber_share"] - top / known_paid) < 1e-9      # not 100000 / total
+    assert feats.loc[PH1, "rx_top_prescriber_share"] <= 1.0
+    assert abs(feats.loc[PH1, "rx_missing_prescriber_share"] - 100000.0 / (known_paid + 100000.0)) < 1e-9

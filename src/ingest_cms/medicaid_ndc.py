@@ -267,6 +267,12 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
         by_presc as (select billing_npi, prescribing_npi, sum(total_paid) as paid from f group by 1, 2),
         by_ndc as (select billing_npi, ndc, sum(total_paid) as paid from f group by 1, 2),
         tp as (select billing_npi, sum(paid) as tp from by_presc group by 1),
+        -- dollars whose prescriber IS known: the concentration shares are measured
+        -- over these (2026-10-09 real build: 85% of clean dollars carry no
+        -- prescriber NPI, so the blank bucket WAS the 'top prescriber' for most
+        -- billers; rx_missing_prescriber_share carries the coverage separately)
+        tpv as (select billing_npi, sum(paid) as tpv from by_presc
+                where length(prescribing_npi) = 10 group by 1),
         -- EXTERNAL prescribers only: a clinic billing the drugs its own clinicians
         -- administer (billing NPI = prescribing NPI) is one organization, not a
         -- captive pharmacy; the 2026-10-08 load showed 87% of billers at >= 50% from
@@ -277,13 +283,13 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
         conc as (
             select b.billing_npi,
                    count(distinct case when length(b.prescribing_npi) = 10 then b.prescribing_npi end) as rx_distinct_prescribers,
-                   sum(power(b.paid / nullif(t.tp, 0), 2)) as rx_prescriber_hhi,
-                   max(b.paid) / nullif(max(t.tp), 0) as rx_top_prescriber_share,
+                   sum(case when length(b.prescribing_npi) = 10 then power(b.paid / nullif(v.tpv, 0), 2) end) as rx_prescriber_hhi,
+                   max(case when length(b.prescribing_npi) = 10 then b.paid end) / nullif(max(v.tpv), 0) as rx_top_prescriber_share,
                    sum(case when length(coalesce(b.prescribing_npi, '')) <> 10 then b.paid else 0 end)
                        / nullif(max(t.tp), 0) as rx_missing_prescriber_share,
                    sum(case when b.prescribing_npi = b.billing_npi then b.paid else 0 end)
                        / nullif(max(t.tp), 0) as rx_self_prescribed_share
-            from by_presc b join tp t using (billing_npi) group by b.billing_npi),
+            from by_presc b join tp t using (billing_npi) left join tpv v using (billing_npi) group by b.billing_npi),
         conc_ext as (
             select e.billing_npi,
                    sum(power(e.paid / nullif(t.tpe, 0), 2)) as rx_prescriber_hhi_ext,
