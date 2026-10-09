@@ -86,7 +86,7 @@
    "where": "preclean/warn/",
    "url": "",
    "every_months": 1,
-   "last_done": null,
+   "last_done": "2026-10-09",
    "steps": [
     "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"  (the --done line also refuses until files are there)",
     "2026-10-09: CA, TX, NC and RI postings downloaded (three .xlsx, one .csv); the copy lines below file them as warn_<ST>_<yyyymm>.<ext>; the monitor (bundle 247) reads the whole folder, Excel included, and takes the state from the filename. FL did not download (a 37 KB 'Unconfirmed ...crdownload' in Downloads is the failed attempt): retry FloridaJobs WARN notices and save it as warn_FL_<yyyymm>.csv or .xlsx",
@@ -104,7 +104,8 @@
     "for %f in (\"%USERPROFILE%\\Downloads\\rhode island Warn Report*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_RI_202610.xlsx\"",
     "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"",
     "python -m src.reminders --done warn_notices"
-   ]
+   ],
+   "note": "2026-10-09: CA, TX, NC, RI filed under preclean/warn/ (guard accepted); FL still to retry"
   },
   {
    "key": "mue",
@@ -347,27 +348,26 @@
   {
    "key": "hospice_2021_archive",
    "what": "Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)",
-   "where": "preclean/facility/Hospice_Provider_<yyyymm>.csv (keep the Nov-2023 file too; the export picks the edition by vintage)",
+   "where": "preclean/facility/Hospice_Provider_Feb2022.csv (CMS's own name inside the Feb-2022 archive zip; keep the Nov-2023 file too; bundle 248 picks the edition by vintage: a 2021-12 freeze reads Feb2022, a current-day run reads the newest)",
    "url": "https://data.cms.gov/provider-data/archived-data/hospice-care",
    "every_months": 120,
    "last_done": null,
    "steps": [
-    "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"  (the --done line also refuses until the file is there)",
-    "Open https://data.cms.gov/provider-data/archived-data/hospice-care",
-    "Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip",
-    "Extract; keep the Hospice_Provider_*.csv (the provider-level file with live-discharge / GIP / NF-care measures)",
-    "Then paste the commands below"
+    "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"  (two files = done)",
+    "2026-10-09: hospice-care_2022-02-16.zip downloaded and extracted to Downloads\\hospice_2022_02; the provider-level file inside is Hospice_Provider_Feb2022.csv (38 MB). The copy line below files it.",
+    "Open https://data.cms.gov/provider-data/archived-data/hospice-care (only if the zip is not in Downloads)",
+    "Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip"
    ],
    "commands": [
-    "move \"%USERPROFILE%\\Downloads\\Hospice_Provider*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\facility\\\"",
-    "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\facility\\Hospice_Provider*.csv\"",
+    "powershell -Command \"Expand-Archive -Force -Path '%USERPROFILE%\\Downloads\\hospice-care_2022-02-16.zip' -DestinationPath '%USERPROFILE%\\Downloads\\hospice_2022_02'\"",
+    "copy /y \"%USERPROFILE%\\Downloads\\hospice_2022_02\\Hospice_Provider_Feb2022.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider_Feb2022.csv\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"",
     "python -m src.reminders --done hospice_2021_archive"
    ],
    "proof": [
-    "preclean/facility/Hospice_Provider_20????.csv",
-    "preclean/facility/Hospice_Provider_2021*.csv",
-    "preclean/facility/Hospice_Provider_2022*.csv",
-    "preclean/facility/Hospice_Provider.csv"
+    "preclean/facility/Hospice_Provider_*2022*.csv",
+    "preclean/facility/Hospice_Provider_*2021*.csv",
+    "preclean/facility/Hospice_Provider_20????.csv"
    ]
   },
   {

@@ -31,6 +31,9 @@ CCNs are strings; 6-digit numeric CCNs keep leading zeros (hard rule #1).
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -209,6 +212,50 @@ def _asof_filter(df: pd.DataFrame, date_key: str, resolved: dict,
         raise ValueError(f"{what}: {date_key} column resolved but no value "
                          f"parsed as a date — cannot apply the as-of filter")
     return df[d.notna() & (d <= _cutoff_ts(asof_cutoff))]
+
+
+_MON = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun",
+                                     "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+_EDITION_RES = [
+    re.compile(r"(?<!\d)(20\d{2})[-_]?(0[1-9]|1[0-2])(?:[-_]?[0-3]\d)?(?!\d)"),          # 202202, 2022-02, 20220216
+    re.compile(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-_ ]?(20\d{2})", re.I),  # Feb2022, Nov2023
+]
+
+
+def edition_date(name: str) -> str | None:
+    """'YYYY-MM' read from a Care Compare file name (Hospice_Provider_Feb2022.csv,
+    NH_Ownership_Nov2023.csv, hospice_202202.csv), else None."""
+    n = str(name)
+    m = _EDITION_RES[0].search(n)
+    if m:
+        return f"{m.group(1)}-{m.group(2)}"
+    m = _EDITION_RES[1].search(n)
+    if m:
+        return f"{m.group(2)}-{_MON[m.group(1).lower()[:3]]:02d}"
+    return None
+
+
+def pick_edition(paths, asof_cutoff: str | None = None):
+    """The one edition to read when a folder holds several (Hospice_Provider_Feb2022
+    + Hospice_Provider_Nov2023). Current-day: the newest dated edition. Frozen
+    (asof_cutoff 'YYYY-MM'): the EARLIEST edition dated on/after the cutoff, since
+    a release carries the measure periods that ENDED before it was published and
+    compute_hospice_* then keep only periods ending <= the cutoff (the Nov-2023
+    edition under a 2021-12 freeze filtered to nothing: hospice_live_discharge_rate
+    all-NaN in v7); with no edition after the cutoff, the newest before it.
+    Undated names rank last. Returns None for an empty list."""
+    paths = [Path(p) for p in paths]
+    if not paths:
+        return None
+    dated = [(edition_date(p.name), p) for p in paths]
+    known = [(d, p) for d, p in dated if d]
+    if not known:
+        return sorted(paths)[0]
+    if asof_cutoff:
+        after = [(d, p) for d, p in known if d >= asof_cutoff[:7]]
+        if after:
+            return min(after)[1]
+    return max(known)[1]
 
 
 def compute_hospice_metrics(raw: pd.DataFrame,

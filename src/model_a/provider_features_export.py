@@ -1966,8 +1966,18 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     except Exception as e:
         log(f"    [facility/pbj] skipped: {e}")
     try:
-        hos_p = _first_existing(pc / "facility", "hospice.csv", "hospice*.csv",
-                                "Hospice_Provider*.csv", "*Hospice*.csv")
+        # EVERY hospice edition in the folder, then the one for this run's vintage
+        # (2026-10-09: _first_existing took the alphabetically-first match, so the
+        # Feb-2022 archive would have replaced Nov-2023 in every current-day run)
+        hos_all = []
+        for pat in ("hospice.csv", "hospice*.csv", "Hospice_Provider*.csv", "*Hospice*.csv"):
+            hos_all += [q for q in sorted((pc / "facility").glob(pat)) if q.is_file()] \
+                if any(ch in pat for ch in "*?[") else ([pc / "facility" / pat] if (pc / "facility" / pat).exists() else [])
+        hos_all = sorted(set(hos_all))
+        hos_p = fac.pick_edition(hos_all, asof_cutoff) if hos_all else None
+        if hos_p and len(hos_all) > 1:
+            log(f"    [facility/hospice] editions on disk: {', '.join(q.name for q in hos_all)}; "
+                f"using {hos_p.name} for cutoff {asof_cutoff or 'current-day'}")
         if hos_p:
             m, _ = fac.compute_hospice_metrics(_read_any(hos_p),
                                                asof_cutoff=asof_cutoff)

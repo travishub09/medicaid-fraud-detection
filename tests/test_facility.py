@@ -166,3 +166,25 @@ def test_pbj_weekend_gap():
     assert out.loc["015010", "pbj_weekend_understaffing"] == 0.0
     empty = compute_pbj_weekend_gap(raw.drop(columns=["WorkDate"]))
     assert len(empty) == 0
+
+
+def test_pick_edition_by_vintage(tmp_path):
+    """Hospice_Provider_Feb2022.csv next to Hospice_Provider_Nov2023.csv: a 2021-12 freeze
+    reads the Feb-2022 release (the periods that ended before it), a current-day run reads
+    Nov-2023; the export used to take the alphabetically-first match."""
+    from src.ingest_cms.facility import edition_date, pick_edition
+    assert edition_date("Hospice_Provider_Feb2022.csv") == "2022-02"
+    assert edition_date("NH_Ownership_Nov2023.csv") == "2023-11"
+    assert edition_date("hospice_202202.csv") == "2022-02"
+    assert edition_date("Hospice_Provider_May2026.csv") == "2026-05"
+    assert edition_date("hospice.csv") is None
+    feb, nov, may = (tmp_path / "Hospice_Provider_Feb2022.csv", tmp_path / "Hospice_Provider_Nov2023.csv",
+                     tmp_path / "Hospice_Provider_May2026.csv")
+    for f in (feb, nov, may):
+        f.write_text("x")
+    assert pick_edition([nov, feb, may]) == may                       # current-day: newest
+    assert pick_edition([nov, feb, may], "2021-12") == feb            # earliest edition after the cutoff
+    assert pick_edition([nov, feb, may], "2023-12") == may            # Nov-2023 is before the cutoff; May-2026 after
+    assert pick_edition([nov, feb], "2024-06") == nov                 # nothing after: newest before
+    assert pick_edition([tmp_path / "hospice.csv", feb], "2021-12") == feb   # undated ranks last
+    assert pick_edition([], "2021-12") is None
