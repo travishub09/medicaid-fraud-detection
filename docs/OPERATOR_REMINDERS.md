@@ -194,17 +194,17 @@ powershell -Command "Compress-Archive -Force -Path 'C:\Users\treyr\OneDrive\Desk
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
 ```
 
-- [ ] **merge_bundle259_after_v8** — BUNDLE 259 (cut 2026-10-10; supersedes 257 and 258, never merged, bundles are cumulative; adds the v9 training policy: case-cluster folds, seed bagging, the broadcast A/B) carries the four post-audit levers built while v8 ran, plus the enrollment-file wiring check (state fill now applied in the export, resolver and contradictions; enrollment ends as their own Tier A contradiction; fraud-shaped enrollment ends in the fca_shaped strict label): duplicate settlements marked in the case DB (duplicate_of; dollar figures skip the copies), the resolver's fuzzy business tier (label recall; held out of training until verified), the per-case budget label_weight (the broadcast label: 5 cases = 64% of v7's DOJ positives; v9 semantics, v8 untouched), and the large-biller companion book provider_priority_list_large.csv. MERGE ONLY AFTER run_v8_night.bat PRINTS DONE (or FAILED): never merge during a run. Click the bundle259 file card first, then paste; press Enter once after the merge line finishes. (added 2026-10-10)
+- [ ] **merge_bundle261_after_v8** — BUNDLE 261 (cut 2026-10-10; supersedes 257 through 260, never merged, bundles are cumulative; adds the v9 training policy and the readable MODEL_RUNS.html dashboard with its Scoreboard) carries the four post-audit levers built while v8 ran, plus the enrollment-file wiring check (state fill now applied in the export, resolver and contradictions; enrollment ends as their own Tier A contradiction; fraud-shaped enrollment ends in the fca_shaped strict label): duplicate settlements marked in the case DB (duplicate_of; dollar figures skip the copies), the resolver's fuzzy business tier (label recall; held out of training until verified), the per-case budget label_weight (the broadcast label: 5 cases = 64% of v7's DOJ positives; v9 semantics, v8 untouched), and the large-biller companion book provider_priority_list_large.csv. MERGE ONLY AFTER run_v8_night.bat PRINTS DONE (or FAILED): never merge during a run. Click the bundle261 file card first, then paste; press Enter once after the merge line finishes. (added 2026-10-10)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle259*.bundle") do copy /y "%f" "C:\Users\treyr\bundle259.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle261*.bundle") do copy /y "%f" "C:\Users\treyr\bundle261.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle259.bundle"
-python -m src.reminders --done-task merge_bundle259_after_v8
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle261.bundle"
+python -m src.reminders --done-task merge_bundle261_after_v8
 ```
 
-- [ ] **grade_large_book_v7** — LEVER 4 (large-biller book), first grade on v7, after bundle 259 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes. (added 2026-10-10)
+- [ ] **grade_large_book_v7** — LEVER 4 (large-biller book), first grade on v7, after bundle 261 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -213,7 +213,7 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **fuzzy_tier_verification** — LEVER 2 (label recall), after bundle 259 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\fca_label_fuzzy; the PurpleLab folder processed\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat. (added 2026-10-10)
+- [ ] **fuzzy_tier_verification** — LEVER 2 (label recall), after bundle 261 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\fca_label_fuzzy; the PurpleLab folder processed\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -227,7 +227,7 @@ python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDri
 python -m src.reminders --done-task fuzzy_tier_verification
 ```
 
-- [ ] **v9_prereg_and_run** — v9 (built 2026-10-10, bundle 259): case-cluster folds (orgs sharing a DOJ case never straddle train and test), seed bagging (5 fits per fold), the per-case label budget (label_weight), and a weight-vs-mask broadcast A/B on the same matrix. ORDER: (1) wait for v8 to print DONE and read its verdict; (2) merge bundle 259; (3) copy run_v9_night.bat from Downloads into the repo folder; (4) pre-register v9 with the command below BEFORE the run (if v8's hits@50 on the pursuit book read above 2, raise 'hits50 >= 2' to that number first; the goal is locked once registered); (5) start the runner; say 'v9 finished' when it prints DONE. v9 reuses v8's as-of graph (graph_asof_2021-12) so it is shorter than v8. Never merge a bundle while it runs. (added 2026-10-10)
+- [ ] **v9_prereg_and_run** — v9 (built 2026-10-10, bundle 261): case-cluster folds (orgs sharing a DOJ case never straddle train and test), seed bagging (5 fits per fold), the per-case label budget (label_weight), and a weight-vs-mask broadcast A/B on the same matrix. ORDER: (1) wait for v8 to print DONE and read its verdict; (2) merge bundle 259; (3) copy run_v9_night.bat from Downloads into the repo folder; (4) pre-register v9 with the command below BEFORE the run (if v8's hits@50 on the pursuit book read above 2, raise 'hits50 >= 2' to that number first; the goal is locked once registered); (5) start the runner; say 'v9 finished' when it prints DONE. v9 reuses v8's as-of graph (graph_asof_2021-12) so it is shorter than v8. Never merge a bundle while it runs. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
