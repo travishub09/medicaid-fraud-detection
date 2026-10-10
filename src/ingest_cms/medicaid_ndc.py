@@ -238,8 +238,97 @@ def _events_view(con, name: str, events: pd.DataFrame | None, date_col: str) -> 
     return True
 
 
+# --- opioid classification from NADAC drug names (2026-10-10, the pill_mill lever) ---
+# The CMS opioid prescriber file is Medicare-only; the NDC file is Medicaid, prescriber
+# x drug x month, and needs an opioid flag per NDC. NADAC's description column names
+# the molecule ("OXYCODONE HCL 5 MG TABLET", "OXYCONTIN ER 10 MG"), so the flag is
+# data-derived: an opioid AGONIST token present, antagonist-only products out,
+# buprenorphine products out (treatment, which the CMS file also excludes).
+OPIOID_AGONISTS = ("OXYCODONE", "OXYCONTIN", "HYDROCODONE", "HYDROMORPHONE", "MORPHINE",
+                   "MS CONTIN", "FENTANYL", "OXYMORPHONE", "METHADONE", "TAPENTADOL",
+                   "CODEINE", "TRAMADOL", "MEPERIDINE", "LEVORPHANOL", "PENTAZOCINE",
+                   "BUTORPHANOL", "NALBUPHINE", "DIHYDROCODEINE", "OPIUM", "BENZHYDROCODONE")
+OPIOID_EXCLUDE = ("NALOXONE INJ", "NALTREXONE", "NARCAN", "BUPRENORPHINE", "SUBOXONE",
+                  "ZUBSOLV", "SUBLOCADE", "METHADONE DISKET")     # antagonist-only / MAT
+LONG_ACTING_TOKENS = ("ER", "XR", "SR", "CR", "LA", "EXTENDED", "CONTIN", "PATCH",
+                      "TRANSDERMAL", "METHADONE", "XTAMPZA", "HYSINGLA", "ZOHYDRO",
+                      "NUCYNTA ER", "EXALGO", "KADIAN", "EMBEDA", "BELBUCA", "DURAGESIC")
+
+
+def opioid_ndc_flags(nadac_raw: pd.DataFrame) -> pd.DataFrame:
+    """ndc, is_opioid, is_long_acting from NADAC descriptions (one row per NDC)."""
+    from .nadac import NADAC_COLS
+    from src.attempt_2.clean_data import _resolve_columns
+    resolved = _resolve_columns(list(nadac_raw.columns), NADAC_COLS)
+    if "ndc" not in resolved or "description" not in resolved:
+        return pd.DataFrame(columns=["ndc", "is_opioid", "is_long_acting"])
+    df = pd.DataFrame({"ndc": nadac_raw[resolved["ndc"]].fillna("").astype(str).str.replace(r"\D", "", regex=True),
+                       "desc": nadac_raw[resolved["description"]].fillna("").astype(str).str.upper()})
+    df = df[df["ndc"] != ""]
+    d = df["desc"]
+    agon = d.apply(lambda s: any(t in s for t in OPIOID_AGONISTS))
+    excl = d.apply(lambda s: any(t in s for t in OPIOID_EXCLUDE))
+    df["is_opioid"] = (agon & ~excl).astype(int)
+    toks = d.str.replace(r"[^A-Z0-9 ]", " ", regex=True).str.split()
+    la = toks.apply(lambda ts: any(t in LONG_ACTING_TOKENS for t in ts)) | d.apply(
+        lambda s: any(t in s for t in ("CONTIN", "PATCH", "TRANSDERMAL", "EXTENDED", "METHADONE")))
+    df["is_long_acting"] = (df["is_opioid"].astype(bool) & la).astype(int)
+    out = df.groupby("ndc", as_index=False).agg(is_opioid=("is_opioid", "max"), is_long_acting=("is_long_acting", "max"))
+    return out
+
+
+def _opioid_view(con, opioid_flags: pd.DataFrame | None) -> bool:
+    if opioid_flags is None or not len(opioid_flags) or not {"ndc", "is_opioid"} <= set(opioid_flags.columns):
+        return False
+    o = opioid_flags.copy()
+    o["ndc"] = o["ndc"].astype(str).str.replace(r"\D", "", regex=True)
+    if "is_long_acting" not in o.columns:
+        o["is_long_acting"] = 0
+    con.register("_opi", o[["ndc", "is_opioid", "is_long_acting"]].drop_duplicates("ndc"))
+    return True
+
+
+def pharmacy_spread_proxy(fact_parquet: Path, con=None, min_pairs: int = 20) -> pd.DataFrame:
+    """The drug-spread signal WITHOUT units (the 2026-10-09 file carries none, so the
+    NADAC paid-vs-acquisition test is impossible): per NDC, the national median paid
+    per claim line across (pharmacy, NDC) pairs with at least ``min_pairs`` pairs;
+    per pharmacy, the dollar-weighted excess of its paid per line over that median,
+    one-sided (only paying ABOVE peers for the same drug is suspicious).
+
+      rx_spread_proxy      sum(paid) / sum(lines x median_ppl_ndc) - 1, clipped at 0,
+                           over the pharmacy's reference-covered dollars
+      rx_spread_coverage   share of the pharmacy's dollars on NDCs with a reference
+      rx_spread_top_share  share of covered dollars on NDCs where this pharmacy paid
+                           >= 2x the national median per line
+    Placeholder NDCs (all one digit) are out of the reference."""
+    import duckdb
+    con = con or duckdb.connect()
+    df = con.execute(f"""
+        with f as (select * from read_parquet('{_pq(fact_parquet)}')
+                   where {CLEAN_ROW} and ndc <> repeat(substr(ndc, 1, 1), length(ndc))
+                     and total_claim_lines > 0),
+        pair as (select billing_npi, ndc, sum(total_paid) as paid, sum(total_claim_lines) as lines
+                 from f group by 1, 2),
+        ref as (select ndc, median(paid / lines) as med_ppl, count(*) as n_pairs
+                from pair group by 1 having count(*) >= {int(min_pairs)}),
+        tot as (select billing_npi, sum(paid) as all_paid from pair group by 1),
+        cov as (select p.billing_npi, sum(p.paid) as cov_paid,
+                       sum(p.lines * r.med_ppl) as expected_paid,
+                       sum(case when p.paid / p.lines >= 2 * r.med_ppl then p.paid else 0 end) as hot_paid
+                from pair p join ref r using (ndc) group by 1)
+        select t.billing_npi as npi,
+               greatest(c.cov_paid / nullif(c.expected_paid, 0) - 1, 0) as rx_spread_proxy,
+               c.cov_paid / nullif(t.all_paid, 0) as rx_spread_coverage,
+               c.hot_paid / nullif(c.cov_paid, 0) as rx_spread_top_share
+        from tot t left join cov c using (billing_npi)
+        """).df()
+    df["npi"] = df["npi"].astype(str)
+    return df
+
+
 def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None,
-                      deactivations: pd.DataFrame | None = None, con=None) -> pd.DataFrame:
+                      deactivations: pd.DataFrame | None = None, con=None,
+                      opioid_flags: pd.DataFrame | None = None) -> pd.DataFrame:
     """Per BILLING (pharmacy / dispensing) NPI. All one-sided, higher = more unusual:
 
       rx_paid_total, rx_claims, rx_patient_months, rx_paid_per_claim,
@@ -251,17 +340,26 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
       rx_excluded_prescriber_share  (paid share on fills dated ON/AFTER the prescriber's
                                      first exclusion; needs ``exclusions`` with npi + excl_date)
       rx_deactivated_prescriber_share (same for NPPES deactivation_date)
+      rx_opioid_paid_share, rx_opioid_la_share (with ``opioid_flags``: opioid dollars
+                                     over all dollars; long-acting over opioid dollars)
+      rx_spread_proxy, rx_spread_coverage, rx_spread_top_share (pharmacy_spread_proxy)
     """
     import duckdb
     con = con or duckdb.connect()
     has_excl = _events_view(con, "_excl", exclusions, "excl_date")
     has_deact = _events_view(con, "_deact", deactivations, "deactivation_date")
+    has_opi = _opioid_view(con, opioid_flags)
+    opi_sql = (", sum(case when o.is_opioid = 1 then f.total_paid else 0 end) as opi_paid, "
+               "sum(case when o.is_long_acting = 1 then f.total_paid else 0 end) as opi_la_paid"
+               if has_opi else ", NULL as opi_paid, NULL as opi_la_paid")
+    opi_join = "left join _opi o on o.ndc = f.ndc " if has_opi else ""
     excl_sql = ("sum(case when x.month is not null and f.service_month >= x.month then f.total_paid else 0 end)"
                 if has_excl else "0.0")
     deact_sql = ("sum(case when y.month is not null and f.service_month >= y.month then f.total_paid else 0 end)"
                  if has_deact else "0.0")
     joins = (("left join _excl x on x.npi = f.prescribing_npi " if has_excl else "")
-             + ("left join _deact y on y.npi = f.prescribing_npi " if has_deact else ""))
+             + ("left join _deact y on y.npi = f.prescribing_npi " if has_deact else "")
+             + opi_join)
     df = con.execute(f"""
         with f as (select * from read_parquet('{_pq(fact_parquet)}') where {CLEAN_ROW}),
         by_presc as (select billing_npi, prescribing_npi, sum(total_paid) as paid from f group by 1, 2),
@@ -307,6 +405,7 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
                    sum(f.total_patients) as rx_patient_months,
                    {excl_sql} as excl_paid,
                    {deact_sql} as deact_paid
+                   {opi_sql}
             from f {joins} group by f.billing_npi)
         select t.billing_npi as npi, t.rx_paid_total, t.rx_claims, t.rx_patient_months,
                t.rx_paid_total / nullif(t.rx_claims, 0) as rx_paid_per_claim,
@@ -316,16 +415,19 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
                x.rx_prescriber_hhi_ext, x.rx_top_prescriber_share_ext, x.rx_external_paid_share,
                n.rx_distinct_ndc, n.rx_ndc_hhi,
                t.excl_paid / nullif(t.rx_paid_total, 0) as rx_excluded_prescriber_share,
-               t.deact_paid / nullif(t.rx_paid_total, 0) as rx_deactivated_prescriber_share
+               t.deact_paid / nullif(t.rx_paid_total, 0) as rx_deactivated_prescriber_share,
+               t.opi_paid / nullif(t.rx_paid_total, 0) as rx_opioid_paid_share,
+               t.opi_la_paid / nullif(t.opi_paid, 0) as rx_opioid_la_share
         from tot t left join conc c using (billing_npi) left join conc_ext x using (billing_npi)
              left join nconc n using (billing_npi)
         """).df()
     df["npi"] = df["npi"].astype(str)
-    return df
+    spread = pharmacy_spread_proxy(fact_parquet, con=con)
+    return df.merge(spread, on="npi", how="left")
 
 
 def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None = None,
-                        con=None) -> pd.DataFrame:
+                        con=None, opioid_flags: pd.DataFrame | None = None) -> pd.DataFrame:
     """Per PRESCRIBING NPI:
 
       px_paid_total, px_claims, px_patient_months, px_paid_per_patient_month,
@@ -335,9 +437,19 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
       px_distinct_ndc
       px_brand_paid_share           (when ``nadac_reference`` carries ndc + classification:
                                      'B' brand vs 'G' generic; the pharma_kickback lever)
+      px_opioid_claims_share, px_opioid_paid_share, px_opioid_la_share
+                                    (with ``opioid_flags``: the Medicaid pill-mill inputs,
+                                     the counterpart of the Medicare opioid file's rates)
     """
     import duckdb
     con = con or duckdb.connect()
+    has_opi = _opioid_view(con, opioid_flags)
+    opi_sql = (", sum(case when o.is_opioid = 1 then f.total_claim_lines else 0 end) / nullif(sum(f.total_claim_lines), 0) as px_opioid_claims_share, "
+               "sum(case when o.is_opioid = 1 then f.total_paid else 0 end) / nullif(sum(f.total_paid), 0) as px_opioid_paid_share, "
+               "sum(case when o.is_long_acting = 1 then f.total_paid else 0 end) "
+               "/ nullif(sum(case when o.is_opioid = 1 then f.total_paid else 0 end), 0) as px_opioid_la_share"
+               if has_opi else ", NULL as px_opioid_claims_share, NULL as px_opioid_paid_share, NULL as px_opioid_la_share")
+    opi_join = "left join _opi o on o.ndc = f.ndc " if has_opi else ""
     brand = False
     if nadac_reference is not None and len(nadac_reference) and {"ndc", "classification"} <= set(nadac_reference.columns):
         ref = nadac_reference[["ndc", "classification"]].copy()
@@ -370,14 +482,16 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
             select f.prescribing_npi, sum(f.total_paid) as px_paid_total, sum(f.total_claim_lines) as px_claims,
                    sum(f.total_patients) as px_patient_months, count(distinct f.ndc) as px_distinct_ndc,
                    {brand_sql} as px_brand_paid_share
-            from f {brand_join} group by f.prescribing_npi)
+                   {opi_sql}
+            from f {brand_join}{opi_join} group by f.prescribing_npi)
         select t.prescribing_npi as npi, t.px_paid_total, t.px_claims, t.px_patient_months,
                t.px_paid_total / nullif(t.px_patient_months, 0) as px_paid_per_patient_month,
                t.px_claims / nullif(t.px_patient_months, 0) as px_claims_per_patient_month,
                t.px_paid_total / nullif(t.px_claims, 0) as px_paid_per_claim,
                c.px_distinct_pharmacies, c.px_pharmacy_hhi, c.px_top_pharmacy_share, c.px_self_billed_share,
                x.px_pharmacy_hhi_ext, x.px_top_pharmacy_share_ext,
-               t.px_distinct_ndc, t.px_brand_paid_share
+               t.px_distinct_ndc, t.px_brand_paid_share,
+               t.px_opioid_claims_share, t.px_opioid_paid_share, t.px_opioid_la_share
         from tot t left join conc c using (prescribing_npi) left join conc_ext x using (prescribing_npi)
         """).df()
     df["npi"] = df["npi"].astype(str)
@@ -385,12 +499,12 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
 
 
 def npi_features(fact_parquet: Path, exclusions=None, deactivations=None,
-                 nadac_reference=None, con=None) -> pd.DataFrame:
+                 nadac_reference=None, con=None, opioid_flags=None) -> pd.DataFrame:
     """One per-NPI frame carrying BOTH roles (an NPI can dispense and prescribe)."""
     import duckdb
     con = con or duckdb.connect()
-    a = pharmacy_features(fact_parquet, exclusions, deactivations, con=con)
-    b = prescriber_features(fact_parquet, nadac_reference, con=con)
+    a = pharmacy_features(fact_parquet, exclusions, deactivations, con=con, opioid_flags=opioid_flags)
+    b = prescriber_features(fact_parquet, nadac_reference, con=con, opioid_flags=opioid_flags)
     return a.merge(b, on="npi", how="outer")
 
 

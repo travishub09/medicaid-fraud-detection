@@ -731,6 +731,20 @@ first, then paste" above every move/done block.
   registry rows carry the three keys (`--check "seeds >= 5"`, `"groups =
   case_cluster"`, `"broadcast = weight"`). run_v9_night.bat reuses v8's as-of
   graph and grades weight vs mask refits into ab_broadcast_*/ subfolders.
+  DRUG SCHEMES FROM THE NDC FILE (2026-10-10, operator "yes do it"): (1) DRUG SPREAD
+  WITHOUT UNITS: `medicaid_ndc.pharmacy_spread_proxy` (per NDC the national median
+  paid per claim line over (pharmacy, NDC) pairs with >= 20 pairs, placeholders out;
+  per pharmacy `rx_spread_proxy` = dollar-weighted excess over that median, one-sided,
+  `rx_spread_coverage`, `rx_spread_top_share` = covered dollars at >= 2x the median)
+  feeds `drug_outlier`; (2) PILL MILL ON MEDICAID: `medicaid_ndc.opioid_ndc_flags`
+  derives is_opioid / is_long_acting per NDC from NADAC descriptions (agonist tokens
+  in OPIOID_AGONISTS, antagonist-only and buprenorphine MAT products out, long-acting
+  by ER / XR / CONTIN / PATCH / METHADONE tokens) -> `px_opioid_claims_share` /
+  `px_opioid_paid_share` / `px_opioid_la_share` (prescriber) and `rx_opioid_paid_share`
+  / `rx_opioid_la_share` (pharmacy), added to `pill_mill` beside the Medicare file's
+  rates; the export passes the as-of NADAC file into the NDC block for both. (3) PHARMA
+  KICKBACKS ON MEDICAID stays QUEUED on the FDA NDC Directory download (labeler ->
+  manufacturer; reminder `fda_ndc_directory`). Scheme weights changed: v9 semantics.
   LEARNING LOOP (`model_a/learning_loop.py`, 2026-10-10; night-runner step before
   the ledger): on ONE out-of-fold scoring (reads `provider_oof_scores.parquet`,
   which `build_priority_list` now persists, else computes it): (1) LABEL NOISE by

@@ -1641,14 +1641,31 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                         deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
                 except Exception:
                     deact = None
-                df = mndc.npi_features(fact_p, exclusions=exclusion_events, deactivations=deact)
+                # the NADAC reference feeds two things here: brand share (classification)
+                # and the opioid flag per NDC from the drug names (pill_mill's Medicaid inputs)
+                nref, opi = None, None
+                try:
+                    from src.ingest_cms import nadac as _nadac
+                    nref_p = _asof_pick(pc / "nadac", "nadac.csv", asof_cutoff=asof_cutoff)
+                    if nref_p:
+                        raw_nadac = _read_any(nref_p)
+                        nref = _nadac.compute_nadac_reference(raw_nadac)
+                        opi = mndc.opioid_ndc_flags(raw_nadac)
+                except Exception as e:                           # noqa: BLE001
+                    log(f"    [medicaid_ndc] NADAC reference unavailable ({e}); brand / opioid shares off")
+                df = mndc.npi_features(fact_p, exclusions=exclusion_events, deactivations=deact,
+                                       nadac_reference=nref, opioid_flags=opi)
                 if len(df):
                     frames["medicaid_ndc"] = df
+                    n_opi = int(opi["is_opioid"].sum()) if opi is not None and len(opi) else None
+                    opi_txt = f"{n_opi:,} NDCs" if n_opi is not None else "off (no NADAC)"
+                    n_spread = int(df["rx_spread_proxy"].notna().sum()) if "rx_spread_proxy" in df.columns else 0
                     log(f"    [medicaid_ndc] {len(df):,} NPIs from {fact_p.name} "
                         f"({int(df['rx_paid_total'].notna().sum()):,} pharmacies, "
                         f"{int(df['px_paid_total'].notna().sum()):,} prescribers; "
                         f"excluded-prescriber join: {'on' if exclusion_events is not None else 'off'}, "
-                        f"deactivated-prescriber join: {'on' if deact is not None else 'off'})")
+                        f"deactivated-prescriber join: {'on' if deact is not None else 'off'}; "
+                        f"opioid flag: {opi_txt}; spread proxy: {n_spread:,} pharmacies with a reference)")
                 else:
                     log(f"    [medicaid_ndc] skipped: {fact_p.name} produced no NPI rows")
             elif raw_dir.is_dir() and any(raw_dir.glob("*.csv")):

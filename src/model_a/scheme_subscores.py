@@ -121,6 +121,10 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "drug_outlier": {"controlled_substance_share": 0.4, "high_cost_drug_share": 0.4,
                      # NADAC markup/spread anomaly (B4); absent until NDC claims load
                      "drug_spread_anomaly": 0.3,
+                     # the spread signal WITHOUT units (medicaid_ndc.pharmacy_spread_proxy,
+                     # 2026-10-10): the pharmacy's paid per line over the national median
+                     # for the same NDC, dollar-weighted, one-sided
+                     "rx_spread_proxy": 0.3, "rx_spread_top_share": 0.2,
                      # the J-code peer-relative markup from the spending fact —
                      # the drug-spread essence with no NDC slice needed
                      "drug_markup_anomaly": 0.4},
@@ -159,7 +163,13 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "saturation_fraud": {"market_saturation_index": 1.0},
     # future (June-2026 sweep adapters: ingest_cms/opioid.py, hrsa_340b.py,
     # nppes_deactivation.py) — absent until those files are loaded
-    "pill_mill": {"opioid_claim_share": 0.6, "opioid_long_acting_share": 0.4},
+    # Medicare opioid file (opioid.py) + the MEDICAID counterparts from the NDC file
+    # (medicaid_ndc.py with the NADAC-derived opioid flag, 2026-10-10): the prescriber's
+    # opioid share of Medicaid dollars and the long-acting share of those, plus the
+    # dispensing side (a pharmacy whose dollars are mostly opioids)
+    "pill_mill": {"opioid_claim_share": 0.6, "opioid_long_acting_share": 0.4,
+                  "px_opioid_paid_share": 0.5, "px_opioid_la_share": 0.3,
+                  "rx_opioid_paid_share": 0.3},
     "contract_pharmacy": {"contract_pharmacy_concentration": 1.0},
     # billing under a deactivated OR (DOB-corroborated) deceased NPI
     "invalid_identity": {"billing_after_deactivation": 0.6, "billing_after_death": 0.6},

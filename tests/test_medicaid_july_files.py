@@ -95,6 +95,68 @@ def test_pharmacy_and_prescriber_features(tmp_path):
     assert abs(g.loc[DR1, "px_brand_paid_share"] - (16000 / 18000)) < 1e-9
 
 
+def test_opioid_flags_from_nadac_names():
+    nadac = pd.DataFrame({
+        "NDC": ["00071015523", "00093505601", "59011041010", "12496075701", "00406055201", "63481062370"],
+        "NDC Description": ["OXYCODONE HCL 5 MG TABLET", "LISINOPRIL 10 MG TABLET", "OXYCONTIN ER 10 MG TABLET",
+                            "BUPRENORPHINE-NALOXONE 8-2 MG SL TAB", "HYDROCODONE-ACETAMINOPHEN 5-325 MG", "FENTANYL 25 MCG/HR PATCH"],
+        "NADAC Per Unit": [0.1, 0.02, 3.0, 2.0, 0.15, 5.0],
+    })
+    f = mndc.opioid_ndc_flags(nadac).set_index("ndc")
+    assert f.loc["00071015523", "is_opioid"] == 1 and f.loc["00071015523", "is_long_acting"] == 0
+    assert f.loc["00093505601", "is_opioid"] == 0
+    assert f.loc["59011041010", "is_opioid"] == 1 and f.loc["59011041010", "is_long_acting"] == 1   # ER
+    assert f.loc["12496075701", "is_opioid"] == 0                                                   # MAT product, out
+    assert f.loc["00406055201", "is_opioid"] == 1 and f.loc["00406055201", "is_long_acting"] == 0
+    assert f.loc["63481062370", "is_opioid"] == 1 and f.loc["63481062370", "is_long_acting"] == 1   # patch
+
+
+def test_opioid_shares_and_spread_proxy(tmp_path):
+    """The two drug schemes lit from the NDC file (2026-10-10): the Medicaid opioid
+    shares per prescriber and pharmacy, and the spread proxy (paid per line against the
+    national median for the same NDC, no units needed)."""
+    PH3 = "1003000142"
+    rows = []
+    for m in ["2023-01", "2023-02"]:
+        # NDC A: PH1 and PH2 pay 50/line, PH3 pays 150/line (3x); 25+ pairs via filler pharmacies
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH1, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00071015523", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=1000.0))
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH2, PRESCRIBING_PROVIDER_NPI_NUM=DR2, NDC="00071015523", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=1000.0))
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH3, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00071015523", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=3000.0))
+        # NDC B (not an opioid): DR2 only, PH2, 50/line
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH2, PRESCRIBING_PROVIDER_NPI_NUM=DR2, NDC="00093505601", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=1000.0))
+        for i in range(25):                                   # filler pharmacies so NDC A has a reference
+            npi = f"19{i:08d}"
+            rows.append(dict(BILLING_PROVIDER_NPI_NUM=npi, PRESCRIBING_PROVIDER_NPI_NUM="", NDC="00071015523", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=2, TOTAL_CLAIM_LINES=4, TOTAL_PAID=200.0))
+    d = tmp_path / "medicaid_ndc"
+    d.mkdir()
+    pd.DataFrame(rows).to_csv(d / "medicaid_ndc.csv", index=False)
+    fact = tmp_path / "ndc_fact.parquet"
+    mndc.build_ndc_fact(d, fact)
+    flags = pd.DataFrame({"ndc": ["00071015523", "00093505601"], "is_opioid": [1, 0], "is_long_acting": [0, 0]})
+    f = mndc.npi_features(fact, opioid_flags=flags).set_index("npi")
+    # prescriber shares: DR1 writes only the opioid; DR2 half and half by dollars and lines
+    assert abs(f.loc[DR1, "px_opioid_paid_share"] - 1.0) < 1e-9 and abs(f.loc[DR2, "px_opioid_paid_share"] - 0.5) < 1e-9
+    assert abs(f.loc[DR2, "px_opioid_claims_share"] - 0.5) < 1e-9 and f.loc[DR1, "px_opioid_la_share"] == 0
+    # pharmacy shares: PH1 all opioid, PH2 half
+    assert abs(f.loc[PH1, "rx_opioid_paid_share"] - 1.0) < 1e-9 and abs(f.loc[PH2, "rx_opioid_paid_share"] - 0.5) < 1e-9
+    # spread proxy: the national median per line for NDC A is 50 (27 of 28 pairs at 50);
+    # PH3 pays 150 -> excess 2.0 and all its covered dollars are 'hot'; PH1 at the median -> 0
+    assert abs(f.loc[PH3, "rx_spread_proxy"] - 2.0) < 1e-9 and abs(f.loc[PH3, "rx_spread_top_share"] - 1.0) < 1e-9
+    assert f.loc[PH1, "rx_spread_proxy"] == 0 and f.loc[PH1, "rx_spread_top_share"] == 0
+    assert abs(f.loc[PH1, "rx_spread_coverage"] - 1.0) < 1e-9
+    # NDC B has one pair -> no reference: PH2's coverage is its NDC-A half
+    assert abs(f.loc[PH2, "rx_spread_coverage"] - 0.5) < 1e-9
+    # without flags the opioid columns are null, never zero
+    g = mndc.npi_features(fact).set_index("npi")
+    assert pd.isna(g.loc[DR1, "px_opioid_paid_share"]) and pd.isna(g.loc[PH1, "rx_opioid_paid_share"])
+    # the scheme registry carries the new inputs so the export peer-percentiles them
+    from src.model_a.provider_features_export import ADAPTER_FEATURE_COLS
+    from src.model_a.scheme_subscores import DEFAULT_SCHEME_WEIGHTS
+    assert {"px_opioid_paid_share", "rx_opioid_paid_share"} <= set(DEFAULT_SCHEME_WEIGHTS["pill_mill"])
+    assert "rx_spread_proxy" in DEFAULT_SCHEME_WEIGHTS["drug_outlier"]
+    assert {"px_opioid_paid_share", "rx_spread_proxy"} <= set(ADAPTER_FEATURE_COLS)
+
+
 def _enroll_csv(tmp_path: Path) -> Path:
     rows = [
         # DR1: GA since 2015, still open; FL segment ended for fraud 2022-06-30, re-enrolled 2023-03-01

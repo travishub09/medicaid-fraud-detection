@@ -487,6 +487,27 @@
    "proof": [
     "preclean/state_terminations/*"
    ]
+  },
+  {
+   "key": "fda_ndc_directory",
+   "what": "FDA NDC Directory (labeler code -> manufacturer / labeler name): the one download that lets the pharma_kickback scheme run on the Medicaid NDC file (prescribing by month against Open Payments by manufacturer). Builds nothing until Claude wires it; download first.",
+   "where": "preclean/fda_ndc/",
+   "url": "https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory",
+   "every_months": 6,
+   "last_done": null,
+   "steps": [
+    "Open https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory",
+    "Under 'NDC Database File', download the Text (zip) version (it contains product.txt and package.txt)",
+    "Save the zip as \"...preclean\\fda_ndc\\ndc_<yyyymm>.zip\" (do not unzip; the loader reads product.txt inside)"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\ndctext*.zip\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\\ndc_202610.zip\"",
+    "python -m src.reminders --done fda_ndc_directory"
+   ],
+   "proof": [
+    "preclean/fda_ndc/*.zip"
+   ]
   }
  ],
  "tasks": [
@@ -683,7 +704,7 @@
   },
   {
    "key": "v8_prereg_accuracy_sprint",
-   "what": "POWER LOSS 2026-10-09 night: run_v8_night.bat finished steps 1-3 (as-of graph 19:32, matrix 23:31, both forward labels 23:46; no resume cache left) and died in step 4. RESUME: merge bundle 264 first (the run is stopped, so merging is safe), copy run_v8_resume.bat from Downloads into the repo folder, run it: it does steps 4-9 only (network A/B, triage, priority list + pursuit + large books, diagnostics, digest + dossier, registration) and then the learning loop and the issue ledger against v7. Hours, not a night. When it prints DONE say 'v8 finished'. The registry row will carry the post-merge commit, while the matrix was built on the pre-merge one: the export code did not change between them, note it in the sign-off. PRE-REGISTERED 2026-10-09 22:40 UTC (goal locked; 8 enforced checks). LABEL AUDIT read the same night (LABEL_AUDIT_2026-10.md): nothing blocks the run. Findings carried as build tasks: 2,929 case pairs are the same settlement harvested twice ($594B double-counted in the dollar-recall denominators), 65 providers with a known exclusion sit in the v7 matrix unflagged (re-check on the v8 matrix), top 5 DOJ cases supply 64% of the 4,044 DOJ positives (org-billing broadcast; folds are grouped by org), only 1% of usable DOJ cases resolve to a scored NPI ($1.9T of settlements carry no label: the recall lever). RUN: run_v8_night.bat (delivered 2026-10-09; copy it from Downloads into the repo folder once) chains the nine steps with stop-on-error: as-of graph with --asof-nppes, the matrix with analytics, both forward labels, network A/B, scheme triage, pursuit list + book, diagnostics on the pursuit book, digest + dossier (no Manus), registration. When it prints DONE say 'v8 finished'; Claude then queues the post-run checklist (packet, dossier dispatch + poll, registry verdict). NEVER merge a bundle while it runs.",
+   "what": "POWER LOSS 2026-10-09 night: run_v8_night.bat finished steps 1-3 (as-of graph 19:32, matrix 23:31, both forward labels 23:46; no resume cache left) and died in step 4. RESUME: merge bundle 265 first (the run is stopped, so merging is safe), copy run_v8_resume.bat from Downloads into the repo folder, run it: it does steps 4-9 only (network A/B, triage, priority list + pursuit + large books, diagnostics, digest + dossier, registration) and then the learning loop and the issue ledger against v7. Hours, not a night. When it prints DONE say 'v8 finished'. The registry row will carry the post-merge commit, while the matrix was built on the pre-merge one: the export code did not change between them, note it in the sign-off. PRE-REGISTERED 2026-10-09 22:40 UTC (goal locked; 8 enforced checks). LABEL AUDIT read the same night (LABEL_AUDIT_2026-10.md): nothing blocks the run. Findings carried as build tasks: 2,929 case pairs are the same settlement harvested twice ($594B double-counted in the dollar-recall denominators), 65 providers with a known exclusion sit in the v7 matrix unflagged (re-check on the v8 matrix), top 5 DOJ cases supply 64% of the 4,044 DOJ positives (org-billing broadcast; folds are grouped by org), only 1% of usable DOJ cases resolve to a scored NPI ($1.9T of settlements carry no label: the recall lever). RUN: run_v8_night.bat (delivered 2026-10-09; copy it from Downloads into the repo folder once) chains the nine steps with stop-on-error: as-of graph with --asof-nppes, the matrix with analytics, both forward labels, network A/B, scheme triage, pursuit list + book, diagnostics on the pursuit book, digest + dossier (no Manus), registration. When it prints DONE say 'v8 finished'; Claude then queues the post-run checklist (packet, dossier dispatch + poll, registry verdict). NEVER merge a bundle while it runs.",
    "added": "2026-10-08",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -695,20 +716,20 @@
    ]
   },
   {
-   "key": "merge_bundle264_now",
-   "what": "BUNDLE 264 (cut 2026-10-10; supersedes 257 through 263, none merged, bundles are cumulative): the four post-audit levers, the enrollment-file wiring, the v9 training policy, the readable dashboard, the issue ledger, the learning loop, and the v8 resume runner. v8 is STOPPED (power loss), so merge NOW, before run_v8_resume.bat. Click the bundle264 file card first, then paste; press Enter once after the merge line finishes.",
+   "key": "merge_bundle265_now",
+   "what": "BUNDLE 265 (cut 2026-10-10; supersedes 257 through 264, none merged, bundles are cumulative; adds the two drug schemes lit from the NDC file: spread proxy + Medicaid opioid shares): the four post-audit levers, the enrollment-file wiring, the v9 training policy, the readable dashboard, the issue ledger, the learning loop, and the v8 resume runner. v8 is STOPPED (power loss), so merge NOW, before run_v8_resume.bat. Click the bundle265 file card first, then paste; press Enter once after the merge line finishes.",
    "added": "2026-10-10",
    "commands": [
-    "for %f in (\"%USERPROFILE%\\Downloads\\bundle264*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle264.bundle\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\bundle265*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle265.bundle\"",
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle264.bundle\"",
-    "python -m src.reminders --done-task merge_bundle264_after_v8"
+    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle265.bundle\"",
+    "python -m src.reminders --done-task merge_bundle265_after_v8"
    ]
   },
   {
    "key": "grade_large_book_v7",
-   "what": "LEVER 4 (large-biller book), first grade on v7, after bundle 264 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes.",
+   "what": "LEVER 4 (large-biller book), first grade on v7, after bundle 265 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -719,7 +740,7 @@
   },
   {
    "key": "fuzzy_tier_verification",
-   "what": "LEVER 2 (label recall), after bundle 264 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\\fca_label_fuzzy; the PurpleLab folder processed\\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat.",
+   "what": "LEVER 2 (label recall), after bundle 265 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\\fca_label_fuzzy; the PurpleLab folder processed\\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -735,7 +756,7 @@
   },
   {
    "key": "v9_prereg_and_run",
-   "what": "v9 (built 2026-10-10, bundle 264): case-cluster folds (orgs sharing a DOJ case never straddle train and test), seed bagging (5 fits per fold), the per-case label budget (label_weight), and a weight-vs-mask broadcast A/B on the same matrix. ORDER: (1) wait for v8 to print DONE and read its verdict; (2) merge bundle 264; (3) copy run_v9_night.bat from Downloads into the repo folder; (4) pre-register v9 with the command below BEFORE the run (if v8's hits@50 on the pursuit book read above 2, raise 'hits50 >= 2' to that number first; the goal is locked once registered); (5) start the runner; say 'v9 finished' when it prints DONE. v9 reuses v8's as-of graph (graph_asof_2021-12) so it is shorter than v8. Never merge a bundle while it runs. The runner now ends with the learning loop and the issue ledger (RUN_ISSUES.md: every FAIL / WARN the run raised, ranked, tracked against v8); copy the refreshed run_v9_night.bat from Downloads again before starting.",
+   "what": "v9 (built 2026-10-10, bundle 265): case-cluster folds (orgs sharing a DOJ case never straddle train and test), seed bagging (5 fits per fold), the per-case label budget (label_weight), and a weight-vs-mask broadcast A/B on the same matrix. ORDER: (1) wait for v8 to print DONE and read its verdict; (2) merge bundle 265; (3) copy run_v9_night.bat from Downloads into the repo folder; (4) pre-register v9 with the command below BEFORE the run (if v8's hits@50 on the pursuit book read above 2, raise 'hits50 >= 2' to that number first; the goal is locked once registered); (5) start the runner; say 'v9 finished' when it prints DONE. v9 reuses v8's as-of graph (graph_asof_2021-12) so it is shorter than v8. Never merge a bundle while it runs. The runner now ends with the learning loop and the issue ledger (RUN_ISSUES.md: every FAIL / WARN the run raised, ranked, tracked against v8); copy the refreshed run_v9_night.bat from Downloads again before starting.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -748,7 +769,7 @@
   },
   {
    "key": "run_issues_v7_v8",
-   "what": "(run_v8_resume.bat now does this for v8 at its end; keep this task only if the resume runner fails before its extra steps.) ISSUE LEDGER (built 2026-10-10): after bundle 264 is merged and v8 has printed DONE, run the ledger on v8 against v7 (seconds, read-only on the run folders; writes RUN_ISSUES.md into each and model_a\\issues_ledger.jsonl). Read RUN_ISSUES.md top to bottom: FAILs first. On the v7 packet it already ranks the 2023-dated facility, PBJ and POS editions inside the 2021-12 freeze as FAILs (post-cutoff facts leak into a frozen matrix; the fix is the archived 2021 editions or excluding those sources from frozen builds). Paste the summary line of each run in chat.",
+   "what": "(run_v8_resume.bat now does this for v8 at its end; keep this task only if the resume runner fails before its extra steps.) ISSUE LEDGER (built 2026-10-10): after bundle 265 is merged and v8 has printed DONE, run the ledger on v8 against v7 (seconds, read-only on the run folders; writes RUN_ISSUES.md into each and model_a\\issues_ledger.jsonl). Read RUN_ISSUES.md top to bottom: FAILs first. On the v7 packet it already ranks the 2023-dated facility, PBJ and POS editions inside the 2021-12 freeze as FAILs (post-cutoff facts leak into a frozen matrix; the fix is the archived 2021 editions or excluding those sources from frozen builds). Paste the summary line of each run in chat.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -759,7 +780,7 @@
   },
   {
    "key": "learning_loop_v8",
-   "what": "(run_v8_resume.bat now does this for v8 at its end; keep this task only if the resume runner fails before its extra steps.) LEARNING LOOP (built 2026-10-10): after bundle 264 is merged and v8 has printed DONE, run it on v8 against v7 (it scores the matrix once out of fold if the priority-list build did not persist provider_oof_scores.parquet; v8's build predates that, so expect the scorer to run: minutes to an hour). Read LEARNING_LOOP.md: the suspect positives (labels that look wrong), the drift table (features that moved without a code change), the near-miss feature requests, and the calibration line. The review queue (label_review_prompts.jsonl) can be sent through the dossier's dispatcher with --dispatch-file, ONE dispatcher at a time and only when no other Manus batch is open; say so in chat before sending. Paste the summary line.",
+   "what": "(run_v8_resume.bat now does this for v8 at its end; keep this task only if the resume runner fails before its extra steps.) LEARNING LOOP (built 2026-10-10): after bundle 265 is merged and v8 has printed DONE, run it on v8 against v7 (it scores the matrix once out of fold if the priority-list build did not persist provider_oof_scores.parquet; v8's build predates that, so expect the scorer to run: minutes to an hour). Read LEARNING_LOOP.md: the suspect positives (labels that look wrong), the drift table (features that moved without a code change), the near-miss feature requests, and the calibration line. The review queue (label_review_prompts.jsonl) can be sent through the dossier's dispatcher with --dispatch-file, ONE dispatcher at a time and only when no other Manus batch is open; say so in chat before sending. Paste the summary line.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -768,6 +789,11 @@
     "REM optional, one dispatcher at a time: python -u -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\" --dispatch-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\\label_review_prompts.jsonl\"",
     "python -m src.reminders --done-task learning_loop_v8"
    ]
+  },
+  {
+   "key": "pharma_kickback_medicaid_build",
+   "what": "CLAUDE BUILD, gated on the fda_ndc_directory download: item 3 of the drug-file decision (2026-10-10). Map the NDC labeler code to the manufacturer via the FDA NDC Directory, join Open Payments payments by manufacturer and month to each prescriber's Medicaid prescribing of that manufacturer's NDCs (ndc_fact), and emit px_payment_prescribing_corr for pharma_kickback on the Medicaid side. Tell Claude when the zip is on disk.",
+   "added": "2026-10-10"
   }
  ]
 }
