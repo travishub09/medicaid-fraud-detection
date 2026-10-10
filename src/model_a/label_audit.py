@@ -350,6 +350,12 @@ def audit_case_db(case_db: pd.DataFrame, matrix: pd.DataFrame | None = None) -> 
     if case_db is None or not len(case_db):
         return out
     c = case_db.copy()
+    # one settlement announced twice counts once here (the near-duplicate finding
+    # below then reports only the pairs the case DB has NOT already marked)
+    if "duplicate_of" in c.columns:
+        dup = c["duplicate_of"].fillna("").astype(str) != ""
+        out["marked_duplicates"] = int(dup.sum())
+        c = c[~dup]
     n = len(c)
     usable = (pd.to_numeric(c["usable"], errors="coerce").fillna(1) == 1
               if "usable" in c.columns else pd.Series(True, index=c.index))
@@ -406,7 +412,10 @@ def audit_case_db(case_db: pd.DataFrame, matrix: pd.DataFrame | None = None) -> 
         if len(g) < 2:
             continue
         rows_g = list(g.itertuples())
-        toks = [set(_TOKEN.findall(str(r.key).lower())) for r in rows_g]
+        # the same distinctive-token rule the case DB marks with (generic words
+        # such as HEALTH / SERVICES never pair two different settlements)
+        from src.enforcement.case_db import _name_tokens
+        toks = [_name_tokens(str(r.key)) for r in rows_g]
         for i in range(len(rows_g)):
             for j in range(i + 1, len(rows_g)):
                 if toks[i] & toks[j]:

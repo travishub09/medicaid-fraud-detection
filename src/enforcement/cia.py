@@ -133,4 +133,7 @@ def cia_case_rows(normalized_cia: pd.DataFrame) -> pd.DataFrame:
                     + c["cia_status"].astype(str) + ")"),
         "case_type": "civil_fca",
     }, index=c.index)
+    for col in CASE_COLUMNS:                       # columns added to the schema later (duplicate_of)
+        if col not in rows.columns:
+            rows[col] = ""
     return rows.drop_duplicates("case_id").reset_index(drop=True)[CASE_COLUMNS]

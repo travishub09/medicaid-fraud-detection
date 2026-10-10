@@ -30,6 +30,8 @@ def derive_sector_priors(case_db: pd.DataFrame,
     df = case_db[case_db["sector"].fillna("") != ""].copy()
     if not len(df):
         return {"default": 1.0}
+    from .case_db import drop_duplicate_settlements
+    df = drop_duplicate_settlements(df)            # one settlement, one vote in the priors
     df["amount_usd"] = pd.to_numeric(df["amount_usd"], errors="coerce").fillna(0.0)
 
     counts = df["sector"].value_counts(normalize=True)

@@ -1183,6 +1183,14 @@ def main() -> None:
         if not a.graph_dir:
             ap.error("--case-db needs --graph-dir")
         case_db = pd.read_csv(a.case_db, dtype=str) if str(a.case_db).endswith(".csv") else pd.read_parquet(a.case_db)
+        # the same settlement announced twice (DOJ national + the local USAO) is one
+        # settlement in the dollar-recall tables and the unresolved-dollar total
+        from src.enforcement.case_db import drop_duplicate_settlements
+        n_all = len(case_db)
+        case_db = drop_duplicate_settlements(case_db)
+        if len(case_db) < n_all:
+            print(f"[accuracy_diagnostics] case DB: {n_all - len(case_db):,} duplicate announcements of the same "
+                  f"settlement set aside for the dollar tables ({len(case_db):,} primary rows)")
         g = Path(a.graph_dir)
         org_nodes = pd.read_parquet(g / "nodes" / "org_nodes.parquet")
         npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")

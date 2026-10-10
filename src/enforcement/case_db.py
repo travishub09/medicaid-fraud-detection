@@ -36,7 +36,82 @@ CASE_COLUMNS = [
     "source_url",
     "summary",
     "case_type",          # civil_fca / criminal_hcf / docket_fca / docket_qui_tam / "" (unclassified)
+    "duplicate_of",       # case_id of the EARLIER announcement of the same settlement ("" = primary)
 ]
+
+# One settlement, two releases: DOJ national + the local USAO, or a sentencing
+# re-announcement. Same dollar amount, same announcement year, and a defendant
+# token that is NOT one of these generic healthcare / corporate words. The
+# LABEL_AUDIT of 2026-10-09 counted 2,929 such pairs, $593,532M double-counted
+# in every dollar total. The later row is MARKED (duplicate_of = the earlier
+# case_id), never dropped: resolver rows keyed to either id keep working, and
+# the dollar aggregations skip the marked rows via drop_duplicate_settlements.
+GENERIC_NAME_TOKENS = {
+    "the", "and", "of", "for", "inc", "llc", "llp", "ltd", "corp", "corporation", "company", "co",
+    "health", "healthcare", "care", "medical", "medicine", "clinic", "clinics", "center", "centers",
+    "hospital", "hospitals", "home", "homes", "services", "service", "group", "associates", "partners",
+    "systems", "system", "management", "america", "american", "national", "regional", "community",
+    "family", "physicians", "physician", "doctor", "dr", "md", "pharmacy", "pharmacies", "laboratory",
+    "laboratories", "labs", "lab", "hospice", "nursing", "rehabilitation", "rehab", "therapy",
+    "behavioral", "mental", "dental", "vision", "ambulance", "transport", "supply", "supplies",
+    "equipment", "solutions", "network", "foundation", "institute", "university", "county", "city",
+    "state", "united", "states", "general", "international", "global", "enterprises", "holdings",
+    "operating", "opco", "dba", "et", "al", "jr", "sr", "iii", "mr", "mrs", "ms",
+}
+_NAME_TOKEN = re.compile(r"[a-z]{3,}")
+
+
+def _name_tokens(key: str) -> set:
+    return {t for t in _NAME_TOKEN.findall(str(key or "").lower()) if t not in GENERIC_NAME_TOKENS}
+
+
+def mark_duplicate_settlements(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Set duplicate_of on the later of two rows that share amount, year and a
+    distinctive defendant token. Chains collapse to the earliest announcement.
+    Returns (df, stats) with pairs / dollars marked."""
+    df = df.copy()
+    if "duplicate_of" not in df.columns:
+        df["duplicate_of"] = ""
+    df["duplicate_of"] = df["duplicate_of"].fillna("").astype(str)
+    amt = pd.to_numeric(df["amount_usd"], errors="coerce")
+    ad = pd.to_datetime(df["announced_date"], errors="coerce")
+    key = df["defendant_name_key"].fillna("").astype(str)
+    key = key.where(key != "", df["defendant_name"].fillna("").astype(str).map(norm_org_name))
+    cand = pd.DataFrame({"amt": amt.round(0), "yr": ad.dt.year, "ad": ad, "key": key}, index=df.index)
+    cand = cand[(cand["amt"] > 0) & cand["yr"].notna()]
+    marked, dollars = 0, 0.0
+    for (_, _), g in cand.groupby(["amt", "yr"]):
+        if len(g) < 2:
+            continue
+        idx = list(g.sort_values("ad", kind="mergesort").index)     # earliest first
+        toks = {i: _name_tokens(g.at[i, "key"]) for i in idx}
+        primary_of: dict = {}
+        for a_i in range(len(idx)):
+            i = idx[a_i]
+            if i in primary_of:
+                continue
+            for j in idx[a_i + 1:]:
+                if j in primary_of:
+                    continue
+                if toks[i] & toks[j]:
+                    primary_of[j] = primary_of.get(i, i)
+        for j, i in primary_of.items():
+            if df.at[j, "duplicate_of"] == "":
+                df.at[j, "duplicate_of"] = str(df.at[i, "case_id"])
+                marked += 1
+                dollars += float(cand.at[j, "amt"])
+    return df, {"pairs_marked": marked, "dollars_marked": dollars,
+                "total_marked": int((df["duplicate_of"] != "").sum())}
+
+
+def drop_duplicate_settlements(df: pd.DataFrame) -> pd.DataFrame:
+    """The primary announcements only (for every DOLLAR aggregation: dollar
+    recall, unresolved-settlement totals, sector priors). Label building keeps
+    all rows: a duplicate resolves to the same providers and adds no positive."""
+    if "duplicate_of" not in df.columns:
+        df, _ = mark_duplicate_settlements(df)
+    d = df["duplicate_of"].fillna("").astype(str)
+    return df[d == ""].reset_index(drop=True)
 
 _CIVIL_RE = re.compile(r"false\s+claims\s+act|qui\s+tam|civil\s+settlement|agree[sd]?\s+to\s+pay", re.I)
 _CRIMINAL_RE = re.compile(r"sentenced|pleaded\s+guilty|pled\s+guilty|indict|convicted|jury\s+found|"
@@ -265,7 +340,10 @@ def merge_case_files(primary: pd.DataFrame, secondary: pd.DataFrame, refresh: bo
             if new_sum.strip() and not _NAV_GARBAGE.search(new_sum) and (_NAV_GARBAGE.search(old_sum) or len(old_sum.strip()) < 40):
                 p.at[i, "summary"] = new_sum
                 _last_refresh["summaries"] += 1
-    return build_case_db(pd.concat([p, s[keep]], ignore_index=True))
+    merged = build_case_db(pd.concat([p, s[keep]], ignore_index=True))
+    merged, stats = mark_duplicate_settlements(merged)
+    _last_refresh["duplicates"] = stats
+    return merged
 
 
 def reclassify(df: pd.DataFrame) -> pd.DataFrame:
@@ -305,6 +383,12 @@ def main() -> None:
         primary = merge_case_files(primary, sec)
         print(f"  + {path}: {len(sec):,} rows -> {len(primary) - n0:,} new so far; refreshed existing rows: "
               f"{_last_refresh['filled']:,} blank fields filled, {_last_refresh['summaries']:,} page-chrome summaries replaced")
+    if not a.add:                          # a bare --into pass still marks the duplicate settlements
+        primary, stats = mark_duplicate_settlements(build_case_db(primary))
+        _last_refresh["duplicates"] = stats
+    d = _last_refresh.get("duplicates") or {}
+    print(f"  duplicate settlements marked (same amount + year + a distinctive defendant token): "
+          f"{d.get('total_marked', 0):,} rows carry duplicate_of; dollar totals skip them")
     if a.reclassify:                       # AFTER the adds, so appended rows get the current rules too
         before = primary["case_type"].fillna("").value_counts().to_dict() if "case_type" in primary.columns else {}
         primary = reclassify(primary)
