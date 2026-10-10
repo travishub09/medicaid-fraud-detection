@@ -731,6 +731,23 @@ first, then paste" above every move/done block.
   registry rows carry the three keys (`--check "seeds >= 5"`, `"groups =
   case_cluster"`, `"broadcast = weight"`). run_v9_night.bat reuses v8's as-of
   graph and grades weight vs mask refits into ab_broadcast_*/ subfolders.
+  LEARNING LOOP (`model_a/learning_loop.py`, 2026-10-10; night-runner step before
+  the ledger): on ONE out-of-fold scoring (reads `provider_oof_scores.parquet`,
+  which `build_priority_list` now persists, else computes it): (1) LABEL NOISE by
+  confident learning (t1 / t0 = mean calibrated p of positives / negatives;
+  suspect positives p < t0 with provenance, candidate positives p >= t1) ->
+  label_noise_*.csv; (2) the ACTIVE-LEARNING QUEUE label_review_queue.csv +
+  label_review_prompts.jsonl in the dossier's dispatch schema (`pursuit_dossier
+  --dispatch-file`, one dispatcher at a time; verdicts are evidence, never the
+  label); (3) FEATURE DRIFT vs `--prev-run-dir` (PSI on a DuckDB reservoir
+  sample, FAIL >= 0.25 / WARN >= 0.10, null-rate delta) -> feature_drift.csv;
+  (4) NEAR MISSES on the forward ruler (positives outside the top fraction, the
+  five features where each sits furthest below the top set's robust profile, the
+  recurring ones = feature requests) -> near_misses.csv; (5) CALIBRATION monitor
+  (calibration_metrics ECE / Brier + `conformal_p` per provider via
+  conformal_pvalues, written back to the OOF file: the first callers of those two
+  modules). LEARNING_LOOP.md + learning_loop.json; run_issues folds drift / noise /
+  misses / ECE into the ledger. Nothing changes a label or a model.
   RUN ISSUE LEDGER (`model_a/run_issues.py`, 2026-10-10; last step of every
   night-runner, after registration): reads the run's own artifacts (manifest
   expectations / sources_audit / feature_partition, EXPECTATIONS_REPORT rows,

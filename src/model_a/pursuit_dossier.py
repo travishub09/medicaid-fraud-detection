@@ -618,6 +618,10 @@ def build_priority_list(run_dir: str | Path,
     scores = oof_scores(matrix, manifest)
     from .company_list import calibrate_oof
     probs = calibrate_oof(matrix, scores)
+    # the SAME numbers the lists below are built from, persisted so the learning loop
+    # and the diagnostics analyse what shipped instead of a refit (2026-10-10)
+    pd.DataFrame({"npi": matrix["npi"].astype(str), "score": scores, "prob": probs}).to_parquet(
+        d / "provider_oof_scores.parquet", index=False)
     orgs = rollup(matrix, scores, drop_excluded=True, probs=probs)
     orgs = orgs.merge(org_case_size(matrix), on="org_id", how="left")
     orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"],

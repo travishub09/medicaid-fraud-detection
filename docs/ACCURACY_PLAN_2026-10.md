@@ -159,6 +159,16 @@ The hits bar is the v7 operator book's 2; raise it to v8's number if v8 reads hi
 
 When to revisit the learner: once the FCA ruler holds a few thousand positives across hundreds of cases, or once case-cluster folds show the tree model has plateaued. Then a graph neural network over the entity graph is the candidate, because the fraud is relational. Before that it would be a more expensive way to learn five chains.
 
+## 4e. The learning loop and the issue ledger (2026-10-10)
+
+Two post-run modules now close the loop on every run without changing a label or a model by themselves.
+
+The issue ledger reads every report a run writes and produces one ranked list, worst first, with a named fix per row, tracked across runs so a recurring defect escalates and a fixed one is recorded. It also suggests the checks the next pre-registration should carry. On the v7 packet it ranks the 2023-dated facility, PBJ and POS editions inside the 2021-12 freeze as the top FAILs.
+
+The learning loop runs five analyses on the same out-of-fold scoring the shipped list used. Label noise by confident learning: a labelled positive scoring below the mean negative is a suspect label (identity collision, administrative ban, or a scheme the features cannot see), and a labelled negative scoring above the mean positive is a candidate. The active-learning queue sends the rows where one public-records verdict moves the most through the existing Manus plumbing; verdicts feed the label store as evidence. Feature drift against the previous run by population stability index flags a feature that moved without a code change. Near misses on the forward ruler name the five features each missed case sits furthest below the top set on, and the recurring ones are the feature requests. The calibration monitor reports ECE and Brier and writes a conformal p-value per provider. All five feed the ledger.
+
+What this is not: an automatic retrain. Model behaviour changes only through a new pre-registered run graded on hits at 50.
+
 ## 5. How to read v8 against v7
 
 Do not compare lifts. Compare, on the FCA ruler with the same horizon: organization hits at 50 against the random baseline from the same pool; the lead-time share beyond the gap; the institutional and already-known shares of the top 50; the Jaccard of the top 50 under re-shuffled folds; dollar recall at 50. A run that raises hits at 50 while the institutional share and the tie count fall is an improvement. A run that raises decile lift while hits at 50 stay flat is not.

@@ -223,6 +223,40 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
                                  str(f.get("finding") or f.get("detail") or "")[:240],
                                  str(f.get("fix") or f.get("action") or "see LABEL_AUDIT.md"), "label_audit.json"))
 
+    # --- the learning loop, when it ran -------------------------------------------------------------
+    ll = _json(d / "learning_loop.json")
+    if ll:
+        dr = ll.get("drift") or {}
+        for w in (dr.get("worst") or []):
+            if w.get("flag") in ("FAIL", "WARN"):
+                issues.append(_issue("drift", str(w.get("feature")), "feature_drift", str(w.get("flag")),
+                                     f"PSI {w.get('psi')} vs {Path(str(dr.get('prev_run') or '')).name or 'previous run'}; "
+                                     f"null rate {w.get('null_rate_prev')} -> {w.get('null_rate_cur')}",
+                                     "a feature moved without a code change: check the file edition and the join "
+                                     "(feature_drift.csv)", "LEARNING_LOOP.md"))
+        ln = ll.get("label_noise") or {}
+        if ln.get("n_suspect"):
+            issues.append(_issue("label", "training_label", "suspect_positives", "INFO",
+                                 f"{ln['n_suspect']:,} labelled positives score below the mean negative "
+                                 f"({ln.get('suspect_share_of_positives', 0):.0%} of positives)",
+                                 "review label_review_queue.csv; an identity collision or administrative ban "
+                                 "in the label is noise the model is trained on", "LEARNING_LOOP.md"))
+        nm = ll.get("near_misses") or {}
+        if nm.get("n_missed") and nm.get("feature_requests"):
+            top = ", ".join(str(f.get("feature")) for f in nm["feature_requests"][:5])
+            issues.append(_issue("evaluation", "near_misses", "feature_requests", "INFO",
+                                 f"{nm['n_missed']} of {nm.get('n_forward_positives')} forward positives outside the "
+                                 f"top {nm.get('top_k')}; they most often fall short on: {top}",
+                                 "the features the model would have needed; candidates for the next scheme design",
+                                 "LEARNING_LOOP.md"))
+        cm = ll.get("calibration") or {}
+        ece = cm.get("ece") if isinstance(cm, dict) else None
+        if ece is not None and float(ece) > 0.05:
+            issues.append(_issue("evaluation", "calibration", "ece_high", "WARN",
+                                 f"expected calibration error {ece}",
+                                 "the quoted probabilities are off by more than five points; recalibrate per "
+                                 "subgroup before Model C reads them", "LEARNING_LOOP.md"))
+
     # --- what got worse since the previous run ---------------------------------------------------
     if prev_run_dir and Path(prev_run_dir).exists():
         prev = parse_run_dir(Path(prev_run_dir))
