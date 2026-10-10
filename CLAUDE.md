@@ -731,6 +731,19 @@ first, then paste" above every move/done block.
   registry rows carry the three keys (`--check "seeds >= 5"`, `"groups =
   case_cluster"`, `"broadcast = weight"`). run_v9_night.bat reuses v8's as-of
   graph and grades weight vs mask refits into ab_broadcast_*/ subfolders.
+  RUN ISSUE LEDGER (`model_a/run_issues.py`, 2026-10-10; last step of every
+  night-runner, after registration): reads the run's own artifacts (manifest
+  expectations / sources_audit / feature_partition, EXPECTATIONS_REPORT rows,
+  scheme_health, the SCHEME_TRIAGE vintage audit, the network verdict, the
+  accuracy KPIs, label_audit.json, the locked pre-registration checks via
+  `check_prereg`, and the previous run for what got worse) into ONE ranked list
+  (FAIL first, recurring before new) with a named fix per row -> RUN_ISSUES.md +
+  run_issues.json, folds it into `<data_root>/model_a/issues_ledger.jsonl`
+  (first_seen / runs / open -> resolved when an earlier issue is absent now),
+  and suggests the `--check` lines the next pre-registration should carry.
+  Nothing is auto-fixed: model behaviour changes only through a new
+  pre-registered run. On the v7 packet it ranks the 2023-dated facility / PBJ /
+  POS editions inside the 2021-12 freeze as FAILs.
   ENROLLMENT FILE, THREE USES WIRED (2026-10-10 check): (1) STATE: `fill_state`
   was defined but never called; the export now fills a blank `practice_state` from
   `mcd_primary_state` after the adapter merge (manifest `state_fill_from_enrollment`),
