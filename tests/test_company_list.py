@@ -78,6 +78,63 @@ def test_label_weight_column_becomes_the_scorer_sample_weight(monkeypatch):
     assert cl.training_weights(m.drop(columns=["label_weight"])) is None
 
 
+def test_v9_training_policy_seed_bagging_and_broadcast_mask(monkeypatch):
+    """v9 (2026-10-10): the manifest's training_policy drives seed bagging (fits per
+    fold = n_seeds) and the broadcast-row policy ('mask' holds broadcast-only case
+    positives out of every training fold); a CLI override wins over the manifest."""
+    import src.model_a.company_list as cl
+    calls = []
+
+    def fake_fit(Xtr, ytr, Xte, seed=0, sample_weight=None, **_):
+        calls.append(len(Xtr))
+        return np.linspace(0, 1, len(Xte))
+
+    monkeypatch.setattr(cl, "_fit_predict", fake_fit)
+    cl.set_training_policy(None, None)
+    m = _matrix(n=200, seed=4)
+    man = _manifest()
+    oof_scores(m, man, n_splits=2)
+    assert len(calls) == 2                                        # 1 seed x 2 folds (v8 semantics)
+    base_total = sum(calls)
+    calls.clear()
+    man["training_policy"] = {"n_seeds": 3, "broadcast_rows": "weight", "group_policy": "case_cluster"}
+    oof_scores(m, man, n_splits=2)
+    assert len(calls) == 6                                        # 3 seeds x 2 folds
+    assert sum(calls) == 3 * base_total
+    # mask: positives whose only evidence is a broadcast tier leave every training fold
+    calls.clear()
+    pos = m.index[m["provider_on_exclusion"] == 1][:10]
+    m["label_basis"] = ""
+    m["exclusion_label_sources"] = "leie"
+    m.loc[pos, "label_basis"] = "org_billing"
+    m.loc[pos, "exclusion_label_sources"] = "doj_case"
+    m.loc[pos[:2], "exclusion_label_sources"] = "doj_case;leie"   # corroborated: stays in
+    assert int(cl.broadcast_only_mask(m).sum()) == 8
+    man["training_policy"] = {"n_seeds": 1, "broadcast_rows": "mask"}
+    oof_scores(m, man, n_splits=2)
+    assert sum(calls) == base_total - 8 * (2 - 1)                 # each row trains in n_splits-1 folds
+    # the CLI override beats the manifest
+    calls.clear()
+    cl.set_training_policy(n_seeds=2, broadcast="weight")
+    try:
+        oof_scores(m, man, n_splits=2)
+        assert len(calls) == 4 and sum(calls) == 2 * base_total
+    finally:
+        cl.set_training_policy(None, None)
+
+
+def test_case_cluster_groups_merge_orgs_that_share_a_case():
+    from src.model_a.company_list import case_cluster_groups
+    org = pd.Series(["org:A", "org:A", "org:B", "org:C", "org:D", ""])
+    cases = pd.Series(["c1", "", "c1;c9", "c2", "", "c1"])
+    g, n = case_cluster_groups(org, cases)
+    assert n == 1
+    assert g.tolist() == ["case_cluster:org:A", "case_cluster:org:A", "case_cluster:org:A",
+                          "org:C", "org:D", ""]                   # C's case is its own; D has none
+    g2, n2 = case_cluster_groups(org, None)
+    assert n2 == 0 and g2.tolist() == org.tolist()
+
+
 def test_oof_scores_are_out_of_fold_and_discriminative():
     m = _matrix(n=400, seed=1)
     s = oof_scores(m, _manifest(), n_splits=4)

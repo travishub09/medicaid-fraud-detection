@@ -60,6 +60,91 @@ def label_policy() -> dict:
     return dict(_LABEL_POLICY)
 
 
+# --- training policy for the PRODUCTION scorer (v9, 2026-10-10) ---------------
+# The matrix's manifest is the contract (training_policy.n_seeds /
+# broadcast_rows / group_policy, written by the export); a CLI may override the
+# first two for an A/B on the SAME matrix (set_training_policy). None = manifest.
+#   n_seeds         LightGBM fits averaged per fold (seed bagging: unties the head,
+#                   raises top-50 stability)
+#   broadcast_rows  "weight": org_billing / affiliated rows train at label_weight
+#                   (the per-case budget); "mask": rows whose ONLY positive
+#                   evidence is a broadcast case tier are held out of training
+#                   folds and scored out-of-fold (the bag-label reading: the
+#                   case says "someone at this org", not "this member")
+BROADCAST_BASES = ("org_billing", "affiliated_individual")
+_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None}
+
+
+def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None) -> None:
+    if broadcast is not None and broadcast not in ("weight", "mask"):
+        raise ValueError(f"unknown broadcast policy {broadcast!r} (weight | mask)")
+    if n_seeds is not None and int(n_seeds) < 1:
+        raise ValueError("n_seeds must be >= 1")
+    _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
+                            broadcast=broadcast)
+
+
+def training_policy(manifest: dict | None) -> dict:
+    """The effective policy: CLI override, else the manifest, else v8 defaults."""
+    tp = (manifest or {}).get("training_policy") or {}
+    n_seeds = _TRAINING_POLICY["n_seeds"] or int(tp.get("n_seeds") or 1)
+    broadcast = _TRAINING_POLICY["broadcast"] or str(tp.get("broadcast_rows") or "weight")
+    return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
+            "group_policy": str(tp.get("group_policy") or "org")}
+
+
+def broadcast_only_mask(matrix: pd.DataFrame) -> np.ndarray:
+    """Rows whose only positive evidence is a broadcast case tier (label_basis
+    org_billing / affiliated_individual and no label source beyond doj_case)."""
+    if "label_basis" not in matrix.columns:
+        return np.zeros(len(matrix), dtype=bool)
+    bc = matrix["label_basis"].fillna("").astype(str).isin(BROADCAST_BASES)
+    src = (matrix["exclusion_label_sources"] if "exclusion_label_sources" in matrix.columns
+           else pd.Series("", index=matrix.index)).fillna("").astype(str)
+    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case"})
+    return (bc & only_doj).to_numpy(dtype=bool)
+
+
+def case_cluster_groups(org_ids: pd.Series, case_ids: pd.Series | None) -> tuple[pd.Series, int]:
+    """The fold key (v9): org_node_id, except that every organization sharing a
+    DOJ case with another organization is merged into one cluster
+    ('case_cluster:<smallest org id>'). A chain settling under twenty enrolled
+    names used to have fifteen in training and five in the test fold, so the
+    scorer 'found' organizations it had already seen. Returns (group_id,
+    n_clusters)."""
+    org = org_ids.fillna("").astype(str)
+    if case_ids is None:
+        return org, 0
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for o, cs in zip(org, case_ids.fillna("").astype(str)):
+        if not o or not cs.strip():
+            continue
+        for c in cs.split(";"):
+            c = c.strip()
+            if c:
+                union(o, "case:" + c)
+    orgs_by_root: dict[str, set] = {}
+    for o in set(org[org != ""]):
+        if o in parent:
+            orgs_by_root.setdefault(find(o), set()).add(o)
+    label = {r: "case_cluster:" + min(s) for r, s in orgs_by_root.items() if len(s) > 1}
+    out = [label.get(find(o), o) if (o and o in parent) else o for o in org]
+    return pd.Series(out, index=org_ids.index), len(label)
+
+
 def default_exclusion_nodes(run_dir: str | Path, data_root: str | Path | None = None) -> Path:
     """Where this run's exclusion nodes live: the as-of graph for a frozen run
     (manifest graph_substrate.asof), the current graph otherwise."""
@@ -267,11 +352,23 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     # the model what fraud looks like. 1.0 everywhere else; absent column = no
     # weighting (v8 and earlier matrices train exactly as before).
     w = training_weights(matrix)
+    pol = training_policy(manifest)
+    if pol["broadcast"] == "mask":
+        bmask = broadcast_only_mask(matrix) & (np.asarray(y) == 1)
+        if bmask.any():
+            print(f"[company_list] broadcast policy 'mask': {int(bmask.sum()):,} broadcast-only "
+                  f"case positives held out of training folds (scored out-of-fold)")
+        ambiguous = ambiguous | bmask
+    print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
+          f"groups={pol['group_policy']}")
     scores = np.zeros(len(matrix))
     for k, (tr, te) in enumerate(fold_assignments(y, groups, n_splits)):
         tr = tr[~ambiguous[tr]]
-        scores[te] = _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k,
-                                  sample_weight=(w[tr] if w is not None else None))
+        acc = np.zeros(len(te))
+        for s in range(pol["n_seeds"]):                # seed bagging (v9)
+            acc += _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k + 1000 * s,
+                                sample_weight=(w[tr] if w is not None else None))
+        scores[te] = acc / pol["n_seeds"]
     # collapse guard (hard-fail, rule #2): a real probability ranking over a
     # large universe has thousands of distinct values; exact-0/1 saturation
     # or a giant single tie means a leaky feature or empty X reached the

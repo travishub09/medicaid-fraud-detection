@@ -218,3 +218,30 @@ def test_label_weight_rides_the_matrix_as_metadata_not_feature(tmp_path):
     untouched = matrix[~matrix["npi"].isin(set(labels["npi"]))]
     assert (untouched["label_weight"] == 1.0).all()
     assert manifest["training_policy"]["sample_weight"].startswith("label_weight")
+    # v9: the manifest carries the training policy the scorer reads
+    tp = manifest["training_policy"]
+    assert tp["group_policy"] == "case_cluster" and tp["n_seeds"] == 1 and tp["broadcast_rows"] == "weight"
+    assert "group_id" in matrix.columns and matrix["group_id"].notna().all()
+
+
+def test_export_group_policy_case_cluster_merges_orgs_sharing_a_case():
+    """v9: two organizations named in one case become one fold group."""
+    from src.model_a.case_labels import build_case_labels
+    case_db, org_nodes, npi_to_org = _fanout_case(n_orgs=2, members_per_org=2)
+    labels = build_case_labels(case_db, org_nodes, npi_to_org, fuzzy_threshold=None)
+    inputs = build_synthetic_inputs()
+    leads = build_provider_leads(inputs["provider_dim"])
+    # graft the two-org case members onto the fixture's leads
+    extra = leads.head(4).copy()
+    extra["npi"] = npi_to_org["npi"].tolist()
+    leads2 = pd.concat([leads, extra], ignore_index=True)
+    xw = pd.concat([pd.DataFrame({"npi": leads["npi"].astype(str), "org_node_id": "org:" + leads["npi"].astype(str)}),
+                    npi_to_org], ignore_index=True)
+    matrix, manifest = build_provider_matrix(leads2, xw, case_labels=labels, min_peer=2)
+    m = matrix.set_index(matrix["npi"].astype(str))
+    members = npi_to_org["npi"].tolist()
+    groups = set(m.loc[members, "group_id"])
+    assert len(groups) == 1 and next(iter(groups)).startswith("case_cluster:")
+    assert manifest["training_policy"]["n_case_clusters"] == 1
+    matrix_org, _ = build_provider_matrix(leads2, xw, case_labels=labels, min_peer=2, group_policy="org")
+    assert matrix_org.set_index(matrix_org["npi"].astype(str)).loc[members, "group_id"].nunique() == 2

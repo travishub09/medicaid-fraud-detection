@@ -131,6 +131,34 @@ None of these change v8. They land in the code for v9 and for the current-day la
 
 4. **The large-biller book.** The v7 segment table found the model's precision highest among organizations billed over $10 million in the matrix window (top 1 percent hit at 4.6 percent, sixteen times the base rate), and the main list buried them. The priority-list builder now writes `provider_priority_list_large.csv`: the operator book restricted to that band, in the same order as the pursuit book. It is a filter, never a sort key, and it grades on its own through the diagnostics' `--list-name`, with its own suffixed report. The first grade is on v7, where the pursuit book reads 2 hits at 50; the large book has to beat that per row read to earn a place in v9's checks.
 
+## 4d. The v9 design (2026-10-10): structural fixes, not a bigger model
+
+The operator asked whether the per-case weight was a bandage and whether a larger model would help. The weight is a mitigation; the label grain and the fold leak are the structural problems, and with 254 FCA positives a larger learner would memorize five chains with more confidence. v9 therefore keeps LightGBM and changes three things, all written into the matrix manifest under `training_policy` so every scorer call reads the same contract:
+
+1. **Case-cluster folds** (`group_policy = case_cluster`). Every organization that shares a DOJ case is merged into one fold group. A chain settling under twenty enrolled names used to sit fifteen in training and five in test, and the scorer found the five. The manifest counts the clusters.
+2. **Seed bagging** (`n_seeds = 5`). Five fits per fold are averaged. It unties the head of the ranking and raises the top-50 stability check; the cost is minutes.
+3. **The broadcast-row policy** (`broadcast_rows`). `weight` trains the org-billing and affiliated rows at their per-case weight, the v9 ship. `mask` is the bag-label reading: a row whose only evidence is a broadcast tier leaves every training fold and is scored out of fold. The night runner grades both on the same matrix (`ab_broadcast_weight/` and `ab_broadcast_mask/`), so the v10 question is answered by hits at 50, not by argument.
+
+The registry reads the three keys (`--check "seeds >= 5"`, `"groups = case_cluster"`, `"broadcast = weight"`), and a CLI override on the dossier or the diagnostics is an A/B on the same matrix, never the shipped scorer. The pre-registration for v9, locked before the run starts:
+
+```
+hits50 >= 2
+prec50_lo > base50
+lead_ge_gap >= 0.5
+inst_share50 <= 0.4
+top50_jaccard >= 0.7
+eval_policy = fca
+horizon = 36
+frozen = True
+seeds >= 5
+groups = case_cluster
+broadcast = weight
+```
+
+The hits bar is the v7 operator book's 2; raise it to v8's number if v8 reads higher. v9 reuses v8's point-in-time graph (same freeze, same inputs) and rebuilds only the matrix, so the run is shorter than v8.
+
+When to revisit the learner: once the FCA ruler holds a few thousand positives across hundreds of cases, or once case-cluster folds show the tree model has plateaued. Then a graph neural network over the entity graph is the candidate, because the fraud is relational. Before that it would be a more expensive way to learn five chains.
+
 ## 5. How to read v8 against v7
 
 Do not compare lifts. Compare, on the FCA ruler with the same horizon: organization hits at 50 against the random baseline from the same pool; the lead-time share beyond the gap; the institutional and already-known shares of the top 50; the Jaccard of the top 50 under re-shuffled folds; dollar recall at 50. A run that raises hits at 50 while the institutional share and the tie count fall is an improvement. A run that raises decile lift while hits at 50 stay flat is not.

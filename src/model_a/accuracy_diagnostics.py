@@ -256,8 +256,16 @@ def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_trai
     repeat as salt before GroupKFold, which is otherwise deterministic)."""
     from sklearn.model_selection import GroupKFold, KFold
     from .network_ab import _fit_predict
+    from .company_list import broadcast_only_mask, training_policy, training_weights
     X = matrix[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
     groups = matrix["group_id"].astype(str).to_numpy() if "group_id" in matrix.columns else None
+    # the same training policy as the shipped scorer (v9): label_weight as the
+    # sample weight, seed bagging, and the broadcast-row policy from the manifest
+    # or the CLI override
+    w = training_weights(matrix)
+    pol = training_policy(manifest)
+    if pol["broadcast"] == "mask":
+        ambiguous = ambiguous | (broadcast_only_mask(matrix) & (np.asarray(y_train) == 1))
     scores = np.zeros(len(matrix))
     fold = np.full(len(matrix), -1)
     if groups is not None and pd.Series(groups).nunique() > n_splits:
@@ -273,7 +281,11 @@ def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_trai
         it = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE + repeat).split(X)
     for k, (tr, te) in enumerate(it):
         tr = tr[~ambiguous[tr]]
-        scores[te] = _fit_predict(X[tr], y_train[tr], X[te], seed=RANDOM_STATE + k + 100 * repeat)
+        acc = np.zeros(len(te))
+        for s in range(pol["n_seeds"]):
+            acc += _fit_predict(X[tr], y_train[tr], X[te], seed=RANDOM_STATE + k + 100 * repeat + 1000 * s,
+                                sample_weight=(w[tr] if w is not None else None))
+        scores[te] = acc / pol["n_seeds"]
         fold[te] = k
     return scores, fold
 
@@ -1151,6 +1163,12 @@ def main() -> None:
     ap.add_argument("--active-within", type=int, default=12)
     ap.add_argument("--min-damages", type=float, default=10_000_000.0)
     ap.add_argument("--repeats", type=int, default=0, help="extra re-shuffled fold assignments for stability")
+    ap.add_argument("--seeds", type=int, default=None,
+                    help="refit only: LightGBM fits averaged per fold (default: the manifest's "
+                         "training_policy.n_seeds, else 1)")
+    ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
+                    help="refit only: the broadcast-row policy (default: the manifest's; 'mask' holds "
+                         "broadcast-only case positives out of training for the v9 A/B)")
     ap.add_argument("--list-name", default="provider_priority_list.csv",
                     help="which shipped list to grade: provider_priority_list.csv (default), "
                          "provider_priority_list_pursuit.csv (the operator book) or "
@@ -1170,6 +1188,10 @@ def main() -> None:
     if a.label_tier != "all":
         from .company_list import set_label_policy
         set_label_policy(a.label_tier, a.exclusion_nodes, cutoff=cutoff)
+    if a.seeds is not None or a.broadcast_rows is not None:
+        from .company_list import set_training_policy
+        set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows)
+        print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, broadcast={a.broadcast_rows}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:

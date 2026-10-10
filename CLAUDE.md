@@ -718,6 +718,19 @@ first, then paste" above every move/done block.
   segment table found precision highest, same order, graded on its own with
   `accuracy_diagnostics --list-name provider_priority_list_large.csv`
   (outputs suffixed `__large`; the registry still reads the pursuit grade).
+  V9 TRAINING POLICY (2026-10-10, docs/ACCURACY_PLAN 4d): the manifest's
+  `training_policy` carries `n_seeds` / `broadcast_rows` / `group_policy` /
+  `n_case_clusters` (export flags `--seeds`, `--broadcast-rows weight|mask`,
+  `--group-policy org|case_cluster`, default case_cluster); `company_list.
+  training_policy(manifest)` + `set_training_policy()` (CLI override on
+  pursuit_dossier / accuracy_diagnostics = an A/B on the same matrix, never
+  the ship); `case_cluster_groups` merges orgs sharing a DOJ case into one fold
+  group; `broadcast_only_mask` = positives whose only evidence is a broadcast
+  tier (policy mask holds them out of training); seed bagging averages
+  n_seeds fits per fold in both oof_scores and the diagnostics' refit; the
+  registry rows carry the three keys (`--check "seeds >= 5"`, `"groups =
+  case_cluster"`, `"broadcast = weight"`). run_v9_night.bat reuses v8's as-of
+  graph and grades weight vs mask refits into ab_broadcast_*/ subfolders.
   ENROLLMENT FILE, THREE USES WIRED (2026-10-10 check): (1) STATE: `fill_state`
   was defined but never called; the export now fills a blank `practice_state` from
   `mcd_primary_state` after the adapter merge (manifest `state_fill_from_enrollment`),

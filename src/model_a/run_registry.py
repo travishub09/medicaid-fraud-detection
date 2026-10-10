@@ -117,6 +117,12 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             row["asof_cutoff"] = mj.get("asof_cutoff") or subs.get("asof")
             row["label"] = mj.get("label")
             row["substrate_frozen"] = bool(subs.get("address_layer_frozen"))
+            # v9 training policy (the scorer reads the same keys): checkable as
+            # --check "seeds >= 5" / "broadcast = weight" / "groups = case_cluster"
+            tp = mj.get("training_policy") or {}
+            row["n_seeds"] = tp.get("n_seeds")
+            row["broadcast_rows"] = tp.get("broadcast_rows")
+            row["group_policy"] = tp.get("group_policy")
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
             # referral edges entered the graph, which is CORE, so the
@@ -353,6 +359,7 @@ CHECK_ALIASES = {
     "sources_evaluated": "schemes_evaluated",
     "columns": "n_columns", "providers": "n_providers",
     "frozen": "substrate_frozen", "policy": "label_policy",
+    "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
     # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)
     "hits50": "acc_org_hits50", "hits16": "acc_org_hits16",

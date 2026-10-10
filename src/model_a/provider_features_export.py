@@ -301,6 +301,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           case_labels: pd.DataFrame | None = None,
                           min_peer: int = 30,
                           graph_substrate: dict | None = None,
+                          group_policy: str = "case_cluster",
+                          n_seeds: int = 1,
+                          broadcast_rows: str = "weight",
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
 
@@ -611,6 +614,17 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     #    into a percentile they didn't earn (precision + defamation-safety).
     out["group_id"] = (out["org_node_id"].astype(str) if "org_node_id" in out.columns
                        else pd.Series("", index=out.index))
+    #  * v9 (2026-10-10): group_policy 'case_cluster' merges every organization that
+    #    shares a DOJ case into one fold group, so a chain settling under many
+    #    enrolled names never straddles train and test (the scorer used to 'find'
+    #    organizations of a chain it had already trained on).
+    n_case_clusters = 0
+    if group_policy == "case_cluster" and "case_ids" in out.columns and "org_node_id" in out.columns:
+        from .company_list import case_cluster_groups
+        out["group_id"], n_case_clusters = case_cluster_groups(out["org_node_id"], out["case_ids"])
+        if n_case_clusters:
+            print(f"    [group_id] case_cluster policy: {n_case_clusters:,} clusters merge organizations "
+                  f"that share a DOJ case ({int(out['group_id'].str.startswith('case_cluster:').sum()):,} NPIs)")
 
     def _num(col: str) -> pd.Series:
         s = out[col] if col in out.columns else pd.Series(0.0, index=out.index)
@@ -824,6 +838,12 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             "sample_weight": ("label_weight column (per-case fan-out budget on broadcast "
                               "DOJ positives; 1.0 everywhere else)" if "label_weight" in out.columns
                               else "none (no label_weight column in this matrix)"),
+            # v9 (2026-10-10): the scorer reads these three from here (company_list.
+            # training_policy); a CLI override is an A/B on the same matrix, never the ship
+            "n_seeds": int(n_seeds),
+            "broadcast_rows": broadcast_rows,
+            "group_policy": group_policy,
+            "n_case_clusters": int(n_case_clusters),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2178,6 +2198,18 @@ def main() -> None:
                          "extra prior-year read per multi-year source)")
     ap.add_argument("--fixture", action="store_true",
                     help="build from the synthetic fixture (no real data)")
+    # v9 training policy (written into the manifest; the scorer reads it there)
+    ap.add_argument("--seeds", type=int, default=1,
+                    help="training policy: LightGBM fits averaged per fold by the production "
+                         "scorer (seed bagging; v9 runs 5; default 1 = v8 semantics)")
+    ap.add_argument("--broadcast-rows", default="weight", choices=["weight", "mask"],
+                    help="training policy for org_billing / affiliated case positives: 'weight' "
+                         "trains them at label_weight (the per-case budget); 'mask' holds "
+                         "broadcast-only positives out of training folds (bag-label reading)")
+    ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
+                    help="fold group key: 'case_cluster' (default) merges organizations that "
+                         "share a DOJ case so a chain never straddles train and test; 'org' is "
+                         "the v8 behaviour")
     ap.add_argument("--skip-sources", default=None,
                     help="comma-separated source names to skip (e.g. "
                          "'kickback,billing_lm') — a safety valve for a memory-heavy "
@@ -2715,7 +2747,8 @@ def main() -> None:
         leads, npi_to_org, org_graph_features=gf,
         adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
         nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls,
-        graph_substrate=graph_substrate, min_peer=(2 if args.fixture else 30))
+        graph_substrate=graph_substrate, min_peer=(2 if args.fixture else 30),
+        group_policy=args.group_policy, n_seeds=args.seeds, broadcast_rows=args.broadcast_rows)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

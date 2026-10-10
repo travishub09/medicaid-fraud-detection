@@ -823,6 +823,11 @@ def main() -> None:
                     help="priority list only: replace solo individuals' "
                          "enrollment names with NPI + city (default ships "
                          "names as enrolled)")
+    ap.add_argument("--seeds", type=int, default=None,
+                    help="LightGBM fits averaged per fold for the production scorer (default: the "
+                         "manifest's training_policy.n_seeds, else 1)")
+    ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
+                    help="broadcast-row training policy override (default: the manifest's)")
     ap.add_argument("--large-min-billed", type=float, default=10_000_000.0,
                     help="priority list only: the billed-in-window floor of the "
                          "large-biller companion book (provider_priority_list_large.csv; "
@@ -830,6 +835,10 @@ def main() -> None:
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
+    if args.seeds is not None or args.broadcast_rows is not None:
+        from .company_list import set_training_policy
+        set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows)
+        print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, broadcast={args.broadcast_rows}")
     if args.label_tier != "all":
         from .company_list import default_exclusion_nodes, set_label_policy
         ex = Path(args.exclusion_nodes) if args.exclusion_nodes else \
