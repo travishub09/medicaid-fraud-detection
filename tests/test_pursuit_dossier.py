@@ -349,3 +349,28 @@ def test_pursuit_book_is_operator_only_dollar_weighted_sorted(tmp_path):
     dw = main["score_dollar_weighted"].to_numpy()
     assert (dw[:-1] >= dw[1:] - 1e-12).all()
     assert set(pur["org_id"]) <= set(main["org_id"])
+
+
+def test_large_biller_book_is_the_pursuit_book_over_the_band(tmp_path):
+    """2026-10-10 (fourth post-audit lever): the companion large-biller file is
+    the operator book filtered to orgs billed >= large_min_billed, in the pursuit
+    order, so the within-band ranking grades on its own via --list-name."""
+    m, man = _matrix()
+    m["expected_net_paid"] = m["net_paid"] * 0.4
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+    from src.model_a.pursuit_dossier import LARGE_LIST_NAME, build_priority_list
+    floor = 2_400_000.0                      # orgs of 4 bill 0.8M-3.6M each in the fixture
+    build_priority_list(tmp_path, min_damages=1.0, large_min_billed=floor)
+    pur = pd.read_csv(tmp_path / "provider_priority_list_pursuit.csv")
+    large = pd.read_csv(tmp_path / LARGE_LIST_NAME)
+    assert 0 < len(large) < len(pur)
+    assert (large["total_billed"] >= floor).all()
+    assert (large["entity_segment"] == "operator").all()
+    assert large["large_rank"].tolist() == list(range(1, len(large) + 1))
+    # same order as the pursuit book, just the band
+    expect = pur[pur["total_billed"] >= floor]["org_id"].tolist()
+    assert large["org_id"].tolist() == expect
+    assert "pursuit_rank" in large.columns and large["pursuit_rank"].is_monotonic_increasing
+    md = (tmp_path / "PRIORITY_LIST.md").read_text(encoding="utf-8")
+    assert LARGE_LIST_NAME in md

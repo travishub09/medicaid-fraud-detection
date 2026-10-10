@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-09. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-10. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -49,6 +49,8 @@ python -m src.reminders --done state_capacity_rosters
 - hrsa_340b — due 2026-11-02: 340B OPAIS Covered Entity Daily Report (contract_pharmacy)
 - nppes_deactivation — due 2026-11-07: CMS Deactivated NPI Report (invalid_identity scheme)
 - owner_snapshot — due 2026-11-07: make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
+- sam_exclusions — due 2026-11-09: SAM.gov exclusions extract (widens the PU label)
+- warn_notices — due 2026-11-09: WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.
 
 ## STANDING TASK QUEUE
 
@@ -192,7 +194,40 @@ powershell -Command "Compress-Archive -Force -Path 'C:\Users\treyr\OneDrive\Desk
 python -m src.reminders --done-task v8_prereg_accuracy_sprint
 ```
 
-- [ ] **case_db_duplicate_settlements** — CLAUDE BUILD (from LABEL_AUDIT 2026-10-09): 2,929 case pairs share the same amount, year and a defendant-name token (DOJ national + the local USAO release, or a sentencing re-announcement): $593,532M double-counted in the dollar-recall denominators and the 'unresolved settlement dollars' figure. Dedupe in case_db.merge_case_files (keep the earlier announcement, carry the other URL as a cross-reference); the labels themselves are unaffected (same NPI). Also: 65 providers with a known exclusion sat in the v7 matrix unflagged; re-run label_audit on the v8 matrix and, if they persist, trace the join. No operator action. (added 2026-10-09)
+- [ ] **merge_bundle257_after_v8** — BUNDLE 257 (cut 2026-10-10) carries the four post-audit levers built while v8 ran: duplicate settlements marked in the case DB (duplicate_of; dollar figures skip the copies), the resolver's fuzzy business tier (label recall; held out of training until verified), the per-case budget label_weight (the broadcast label: 5 cases = 64% of v7's DOJ positives; v9 semantics, v8 untouched), and the large-biller companion book provider_priority_list_large.csv. MERGE ONLY AFTER run_v8_night.bat PRINTS DONE (or FAILED): never merge during a run. Click the bundle257 file card first, then paste; press Enter once after the merge line finishes. (added 2026-10-10)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle257*.bundle") do copy /y "%f" "C:\Users\treyr\bundle257.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle257.bundle"
+python -m src.reminders --done-task merge_bundle257_after_v8
+```
+
+- [ ] **grade_large_book_v7** — LEVER 4 (large-biller book), first grade on v7, after bundle 257 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes. (added 2026-10-10)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --priority-list
+python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --graph-dir "C:\Users\treyr\OneDrive\Desktop\data\graph" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --horizon-months 36 --list-name provider_priority_list_large.csv
+python -m src.reminders --done-task grade_large_book_v7
+```
+
+- [ ] **fuzzy_tier_verification** — LEVER 2 (label recall), after bundle 257 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\fca_label_fuzzy; the PurpleLab folder processed\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat. (added 2026-10-10)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes"
+python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
+python -u -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_sample_fuzzy.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify"
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify" --dispatch
+REM later (next day is fine):
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify" --poll
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv"
+python -m src.reminders --done-task fuzzy_tier_verification
+```
+
+- [ ] **v9_prereg_per_case_budget** — LEVER 3 (the broadcast label) is a v9 question, not a v8 one: the next export writes label_weight (per-case budget 100 on org_billing / affiliated rows) and the production scorer trains on it as a sample weight, which changes the model. When v8's verdict is in, Claude drafts the v9 pre-registration (same checks as v8, plus 'policy = hard' and the label_weight line in training_policy) before any v9 build starts. The 65 unflagged known exclusions from the 2026-10-09 audit get re-checked on the v8 matrix with label_audit in the post-run checklist. No operator action yet. (added 2026-10-10)
 
 ## After ANY download session (standing rule)
 

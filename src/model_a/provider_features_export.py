@@ -366,9 +366,20 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         cl["npi"] = cl["npi"].astype(str)
         meta = [c for c in ["npi", "fraud_scheme", "conduct_start", "conduct_end",
                             "case_ids", "label_basis", "case_sector", "amount_usd",
-                            "fca_strict_tier", "intervened", "qui_tam"] if c in cl.columns]
+                            "fca_strict_tier", "intervened", "qui_tam",
+                            "label_weight", "case_fanout"] if c in cl.columns]
         m = m.merge(cl[meta].drop_duplicates("npi"), on="npi", how="left")
         assert len(m) == n0, "case-label join fanned out"
+        # the per-case budget weight (case_labels): 1.0 for every row the case
+        # label did not touch, the diluted broadcast weight otherwise. Label
+        # METADATA (never a feature); the scorer reads it as a sample weight.
+        if "label_weight" in m.columns:
+            m["label_weight"] = pd.to_numeric(m["label_weight"], errors="coerce").fillna(1.0)
+            m["case_fanout"] = pd.to_numeric(m["case_fanout"], errors="coerce").fillna(0).astype(int)
+            n_dil = int((m["label_weight"] < 1.0).sum())
+            if n_dil:
+                print(f"    [doj_case] per-case budget: {n_dil:,} broadcast case positives carry "
+                      f"label_weight < 1 (min {float(m['label_weight'].min()):.3f})")
         # affiliation-broadcast rows ("worked at a settling org") carry scheme
         # METADATA for stratified evaluation but never flip the hard PU label —
         # only named-NPI and org-billing bases are prosecution-grade evidence.
@@ -402,7 +413,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         m.loc[hit, "exclusion_label_sources"] = (
             m.loc[hit, "exclusion_label_sources"].fillna("").astype(str)
              .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["doj_case"])))))
-        sources_used["doj_case"] = ["fraud_scheme", "conduct_start", "conduct_end"]
+        sources_used["doj_case"] = ["fraud_scheme", "conduct_start", "conduct_end"] \
+            + [c for c in ("label_weight", "case_fanout") if c in m.columns]
 
     if org_graph_features is not None and len(org_graph_features):
         gf = _broadcast_org_to_npi(npi_to_org, org_graph_features, GRAPH_FEATURES)
@@ -602,7 +614,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                     | {"peer_group_key", "nucc_grouping", "nucc_classification",
                        "fraud_scheme", "conduct_start", "conduct_end", "case_ids",
                        "label_basis", "case_sector", "amount_usd", "fca_strict_tier",
-                       "intervened", "qui_tam", "provider_on_exclusion",
+                       "intervened", "qui_tam", "label_weight", "case_fanout",
+                       "provider_on_exclusion",
                        "exclusion_label_sources", "excluded_owner_role"})
     adapter_numeric = sorted({
         c for cols in sources_used.values() for c in cols
@@ -658,6 +671,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                   "conduct_start", "conduct_end", "case_ids",
                                   "label_basis", "case_sector", "amount_usd",
                                   "fca_strict_tier", "intervened", "qui_tam",
+                                  "label_weight", "case_fanout",
                                   "provider_on_leie", "confirmed_clean", "clean_basis",
                                   "weak_label_score", "weak_label", "weak_label_votes",
                                   "billing_implied_taxonomy"]
@@ -789,6 +803,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             "ambiguous_rows": "masked from training folds, scored out-of-fold "
                               "(listed-but-not-kept under the tier policy)",
             "feature_gate": "feature_partition.unmapped == [] (enforced below)",
+            "sample_weight": ("label_weight column (per-case fan-out budget on broadcast "
+                              "DOJ positives; 1.0 everywhere else)" if "label_weight" in out.columns
+                              else "none (no label_weight column in this matrix)"),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2549,6 +2566,13 @@ def main() -> None:
                                           defendant_npis=defendant_npis)
             n_aff = int((case_lbls["label_basis"] == "affiliated_individual"
                          ).sum()) if len(case_lbls) else 0
+            from .case_labels import case_concentration
+            conc = case_concentration(case_lbls, top=5)
+            if len(conc):
+                audit(f"    [doj_case] concentration: top 5 cases = {conc['share'].sum():.0%} of "
+                      f"case-labelled NPIs, {conc['weighted_share'].sum():.0%} of training mass "
+                      f"after the per-case budget (label_weight); largest case "
+                      f"{conc['case_id'].iat[0]} reaches {int(conc['n_npis'].iat[0]):,} NPIs")
             audit(f"    [doj_case] {len(case_lbls):,} NPIs labeled from "
                   f"{Path(args.case_db).name} (scheme-typed + conduct windows"
                   + (f", boxed to <= {str(args.asof_cutoff)[:4]}" if args.asof_cutoff

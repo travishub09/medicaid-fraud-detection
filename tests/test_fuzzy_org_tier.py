@@ -54,6 +54,17 @@ def test_fuzzy_tier_resolves_near_names_within_state_and_stays_out_of_training()
     assert evidence_strength("resolved_defendant", "fuzzy_name_state_verified") == "moderate"
 
 
+def test_fuzzy_rows_is_the_unverified_fuzzy_batch():
+    from src.model_a.fca_label_export import fuzzy_rows
+    labels = pd.DataFrame({
+        "npi": ["1", "2", "3", "4"],
+        "match_level": ["fuzzy_name_state", "fuzzy_name_city_state_verified", "name_state", "fuzzy_name_city_state"],
+    })
+    assert fuzzy_rows(labels)["npi"].tolist() == ["1", "4"]
+    assert fuzzy_rows(labels.iloc[0:0]).empty
+    assert fuzzy_rows(labels.drop(columns=["match_level"])).empty
+
+
 def test_verification_verdicts_promote_or_reject_fuzzy_rows():
     out = resolve_defendants(_mentions(), _pdim())
     results = pd.DataFrame([

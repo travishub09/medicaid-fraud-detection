@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import re
 
+import numpy as np
 import pandas as pd
 
 from src.entity_graph.resolve_entities import norm_org_name
@@ -103,11 +104,26 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       asof_cutoff: str | None = None,
                       affiliations: pd.DataFrame | None = None,
                       max_org_members: int = 150,
-                      defendant_npis: pd.DataFrame | None = None) -> pd.DataFrame:
+                      defendant_npis: pd.DataFrame | None = None,
+                      max_case_npis: int | None = 100) -> pd.DataFrame:
     """Per-NPI DOJ-case labels: npi, fraud_label, fraud_scheme, conduct_start,
-    conduct_end, case_ids, amount_usd, label_source, label_basis. One row per NPI
-    (a provider in multiple cases takes the union of schemes, the widest window,
-    summed dollars).
+    conduct_end, case_ids, amount_usd, label_source, label_basis, label_weight,
+    case_fanout. One row per NPI (a provider in multiple cases takes the union of
+    schemes, the widest window, summed dollars, the LARGEST weight).
+
+    PER-CASE BUDGET (``max_case_npis``, 2026-10-10, label audit finding: the top 5
+    DOJ cases supplied 64% of the 4,044 DOJ positives in v7). The per-org guard
+    above caps each settled ORG, but one case names many orgs (a chain settling
+    under twenty enrolled names) and fans out across all of them. Every broadcast
+    row (org_billing / affiliated_individual) now carries
+    ``label_weight = min(1, max_case_npis / case_fanout)`` where ``case_fanout`` is
+    the number of distinct NPIs the case reaches through the broadcast tiers, so
+    a case contributes at most ``max_case_npis`` positives' worth of training
+    mass however many NPIs it touches. Direct tiers (named_npi /
+    resolved_defendant) always weigh 1.0. Rows are never dropped (the metadata
+    stays for stratified evaluation); the scorer reads the column as a
+    sample weight (company_list.oof_scores). None / 0 disables (every weight 1.0).
+    A matrix built with weights trains a different model: new pre-registration.
 
     FOUR broadcast tiers, strongest first, recorded in ``label_basis``:
       named_npi              the case file names this NPI directly
@@ -142,7 +158,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     only cases whose text mentions Medicaid (the §F filter for the Medicaid label)."""
     cols = ["npi", "fraud_label", "fraud_scheme", "case_sector", "conduct_start",
             "conduct_end", "case_ids", "amount_usd", "label_source",
-            "label_basis", "fca_strict_tier", "intervened", "qui_tam"]
+            "label_basis", "fca_strict_tier", "intervened", "qui_tam",
+            "label_weight", "case_fanout"]
     if case_db is None or not len(case_db) or org_nodes is None or not len(org_nodes):
         return pd.DataFrame(columns=cols)
     # v3+ case files carry QC provenance: superseded duplicates and
@@ -358,6 +375,17 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             tags.update(t.strip() for t in str(v or "").split(";") if t.strip())
         return ";".join(sorted(tags))
 
+    # the per-case budget: how many distinct NPIs each case reaches through the
+    # broadcast tiers, and the weight that caps its training mass at the budget
+    bc = df["label_basis"].isin(BROADCAST_BASES)
+    fan = (df.loc[bc].drop_duplicates(["case_ids", "npi"]).groupby("case_ids")["npi"].size()
+           if bc.any() else pd.Series(dtype=int))
+    df["case_fanout"] = df["case_ids"].map(fan).fillna(0).astype(int)
+    df["label_weight"] = 1.0
+    if max_case_npis and max_case_npis > 0 and bc.any():
+        df.loc[bc, "label_weight"] = np.minimum(
+            1.0, float(max_case_npis) / df.loc[bc, "case_fanout"].clip(lower=1).astype(float))
+
     _BASIS_RANK = {"named_npi": 0, "resolved_defendant": 1, "org_billing": 2,
                    "affiliated_individual": 3}
     out_rows = []
@@ -383,12 +411,56 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "intervened": (1 if (pd.to_numeric(g.get("intervened"), errors="coerce") == 1).any()
                            else (0 if (pd.to_numeric(g.get("intervened"), errors="coerce") == 0).any() else None)),
             "qui_tam": 1 if (pd.to_numeric(g.get("qui_tam"), errors="coerce") == 1).any() else None,
+            # a direct basis anywhere gives the NPI full weight; otherwise the
+            # least-diluted broadcast it sits in
+            "label_weight": float(g["label_weight"].max()),
+            "case_fanout": int(g["case_fanout"].max()),
         })
     if stats["no_outcome"] or stats["weak_strength"]:
         print(f"    [case_labels] outcome rule: {stats['no_outcome']:,} case rows without a resolved "
               f"outcome (charged / complaint only) and {stats['weak_strength']:,} weak-evidence "
               f"defendant rows kept OUT of the label")
-    return pd.DataFrame(out_rows, columns=cols)
+    out = pd.DataFrame(out_rows, columns=cols)
+    conc = case_concentration(out, top=5)
+    if len(conc) and conc["n_cases"].iat[0] > 5:
+        print(f"    [case_labels] broadcast concentration: the top 5 of {int(conc['n_cases'].iat[0]):,} "
+              f"cases supply {conc['share'].sum():.0%} of {len(out):,} case-labelled NPIs"
+              + (f"; {conc['weighted_share'].sum():.0%} of the training mass after the per-case "
+                 f"budget of {max_case_npis} (label_weight)" if max_case_npis else
+                 "; per-case budget OFF (every label_weight 1.0)"))
+    return out
+
+
+BROADCAST_BASES = frozenset({"org_billing", "affiliated_individual"})
+
+
+def case_concentration(labels: pd.DataFrame, top: int = 5) -> pd.DataFrame:
+    """How concentrated the case label is: one row per case (the ``top`` largest
+    first) with the NPIs it labels, its share of all case-labelled NPIs, and the
+    same share after ``label_weight`` (the per-case budget). An NPI in several
+    cases counts once per case, so shares can sum past 1.0 on a heavily
+    cross-labelled book; the column ``n_cases`` carries the total for the log
+    line. Empty frame when there are no labels."""
+    cols = ["case_id", "n_npis", "share", "weighted_mass", "weighted_share", "n_cases"]
+    if labels is None or not len(labels) or "case_ids" not in labels.columns:
+        return pd.DataFrame(columns=cols)
+    w = (pd.to_numeric(labels.get("label_weight", pd.Series(1.0, index=labels.index)),
+                       errors="coerce").fillna(1.0))
+    ex = (pd.DataFrame({"npi": labels["npi"].astype(str),
+                        "case_id": labels["case_ids"].astype(str).str.split(";"),
+                        "w": w.to_numpy(dtype=float)})
+          .explode("case_id"))
+    ex = ex[ex["case_id"].astype(str).str.strip() != ""]
+    if not len(ex):
+        return pd.DataFrame(columns=cols)
+    per = ex.groupby("case_id").agg(n_npis=("npi", "size"), weighted_mass=("w", "sum"))
+    total_npis = float(len(labels))
+    total_mass = float(w.sum()) if float(w.sum()) > 0 else 1.0
+    per["share"] = per["n_npis"] / total_npis
+    per["weighted_share"] = per["weighted_mass"] / total_mass
+    per["n_cases"] = int(len(per))
+    per = per.sort_values(["n_npis", "weighted_mass"], ascending=False).head(top).reset_index()
+    return per[cols]
 
 
 def main() -> None:

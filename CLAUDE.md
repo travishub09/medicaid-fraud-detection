@@ -699,6 +699,25 @@ first, then paste" above every move/done block.
   score_dollar_weighted then score_max, and score_p_any / score_p_max are
   columns only — never re-introduce a probability sort or a basis-first block
   without a sweep that beats 1/2/3/4. v8 grades the pursuit file.
+  POST-AUDIT LEVERS (2026-10-10, built while v8 ran; none touch v8): (1)
+  `case_db.mark_duplicate_settlements` tags the same settlement harvested twice
+  (`duplicate_of`; rows kept, dollar aggregations skip them); (2) the resolver's
+  FUZZY BUSINESS TIER (`fuzzy_resolve_orgs`: distinctive-token containment within
+  the mention's state, status `resolved_fuzzy`) is held OUT of training and the
+  strict export until `--verification` promotes a row (`fca_label_export
+  --include-fuzzy` for the review file); (3) the PER-CASE BUDGET: `case_labels`
+  emits `label_weight = min(1, max_case_npis / case_fanout)` on broadcast rows
+  (org_billing / affiliated_individual; direct tiers 1.0; rows never dropped;
+  `case_concentration` logs the top-5 share raw vs weighted), the export carries
+  it as label METADATA (`training_policy.sample_weight`), and
+  `company_list.training_weights` feeds it to LightGBM as sample_weight (a
+  matrix without the column trains exactly as before: v9 semantics, new
+  pre-registration); (4) the LARGE-BILLER BOOK `provider_priority_list_large.csv`
+  (`pursuit_dossier.LARGE_LIST_NAME`, `--large-min-billed`, default $10M billed
+  in the matrix window): the pursuit book filtered to the band where the v7
+  segment table found precision highest, same order, graded on its own with
+  `accuracy_diagnostics --list-name provider_priority_list_large.csv`
+  (outputs suffixed `__large`; the registry still reads the pursuit grade).
   Full suite: `pytest tests/` (997 tests + 4 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

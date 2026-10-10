@@ -124,11 +124,15 @@ def roc_auc(y_true, scores) -> float:
     return float(roc_auc_score(y, scores))
 
 
-def _fit_predict(Xtr, ytr, Xte, n_estimators=200, seed=RANDOM_STATE):
+def _fit_predict(Xtr, ytr, Xte, n_estimators=200, seed=RANDOM_STATE,
+                 sample_weight=None):
     from lightgbm import LGBMClassifier
     clf = LGBMClassifier(n_estimators=n_estimators, num_leaves=15,
                          random_state=seed, verbose=-1)
-    clf.fit(Xtr, ytr)
+    if sample_weight is not None:
+        clf.fit(Xtr, ytr, sample_weight=np.asarray(sample_weight, dtype=float))
+    else:
+        clf.fit(Xtr, ytr)
     return clf.predict_proba(Xte)[:, 1]
 
 

@@ -151,3 +151,70 @@ def test_affiliation_guard_suppresses_mega_org():
     bases = set(out["label_basis"])
     assert bases == {"org_billing"}
     assert len(out) == 1
+
+
+def _fanout_case(n_orgs=4, members_per_org=5):
+    """One settlement that resolves to n_orgs enrolled names (a chain), each with
+    members_per_org billing NPIs: the per-ORG guard never fires, the CASE fans out
+    to n_orgs * members_per_org NPIs."""
+    import pandas as pd
+    case_db = pd.DataFrame([
+        {"case_id": "c3", "defendant": "Chain Care LLC",
+         "defendant_name_key": "CHAIN CARE",
+         "amount_usd": "25000000", "scheme": "upcoding",
+         "announced_date": "2024-01-01",
+         "summary": "Conduct 2019 through 2022.",
+         "npi_in_source": "1234567893"}])
+    org_nodes = pd.DataFrame([{"org_node_id": f"org:{i}", "org_name": "Chain Care LLC"}
+                              for i in range(n_orgs)])
+    npi_to_org = pd.DataFrame([{"npi": f"{1500000000 + i * 100 + j}", "org_node_id": f"org:{i}"}
+                               for i in range(n_orgs) for j in range(members_per_org)])
+    return case_db, org_nodes, npi_to_org
+
+
+def test_per_case_budget_weights_broadcast_rows_never_drops_them():
+    """2026-10-10 (label audit: the top 5 DOJ cases supplied 64% of v7's DOJ
+    positives). A case that fans out past max_case_npis keeps every row but its
+    broadcast rows carry label_weight = budget / fan-out; direct tiers stay 1.0."""
+    from src.model_a.case_labels import build_case_labels, case_concentration
+    case_db, org_nodes, npi_to_org = _fanout_case(n_orgs=4, members_per_org=5)
+    out = build_case_labels(case_db, org_nodes, npi_to_org, fuzzy_threshold=None,
+                            max_case_npis=10)
+    by = out.set_index("npi")
+    assert len(out) == 21                                        # 20 org_billing + the named NPI
+    assert by.loc["1234567893", "label_basis"] == "named_npi"
+    assert by.loc["1234567893", "label_weight"] == 1.0
+    bc = by[by["label_basis"] == "org_billing"]
+    assert (bc["case_fanout"] == 20).all()
+    assert (bc["label_weight"] == 0.5).all()                     # 10 / 20
+    # the case's training mass is capped at the budget (plus the direct row)
+    conc = case_concentration(out, top=5)
+    assert conc["case_id"].iat[0] == "c3" and int(conc["n_npis"].iat[0]) == 21
+    assert abs(float(conc["weighted_mass"].iat[0]) - 11.0) < 1e-9
+    # budget off -> every weight 1.0, nothing else changes
+    off = build_case_labels(case_db, org_nodes, npi_to_org, fuzzy_threshold=None,
+                            max_case_npis=None)
+    assert len(off) == 21 and (off["label_weight"] == 1.0).all()
+    # a fan-out under the budget is never diluted
+    small = build_case_labels(case_db, org_nodes, npi_to_org, fuzzy_threshold=None,
+                              max_case_npis=100)
+    assert (small["label_weight"] == 1.0).all()
+
+
+def test_label_weight_rides_the_matrix_as_metadata_not_feature(tmp_path):
+    _, _, org_nodes, npi_to_org, case_db = _graph_and_case(tmp_path)
+    inputs = build_synthetic_inputs()
+    labels = build_case_labels(case_db, org_nodes, npi_to_org, max_case_npis=1)
+    assert "label_weight" in labels.columns
+    leads = build_provider_leads(inputs["provider_dim"])
+    matrix, manifest = build_provider_matrix(leads, npi_to_org, case_labels=labels, min_peer=2)
+    assert "label_weight" in matrix.columns
+    assert "label_weight" in manifest["label_metadata"]
+    assert "case_fanout" in manifest["label_metadata"]
+    for c in ("label_weight", "case_fanout"):
+        assert c not in manifest["raw_feature_cols"]
+    # rows the case label never touched weigh exactly 1.0; the budget of 1 dilutes
+    # every broadcast row of a case that reaches more than one NPI
+    untouched = matrix[~matrix["npi"].isin(set(labels["npi"]))]
+    assert (untouched["label_weight"] == 1.0).all()
+    assert manifest["training_policy"]["sample_weight"].startswith("label_weight")

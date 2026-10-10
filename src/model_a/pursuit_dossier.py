@@ -588,10 +588,14 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
     return out
 
 
+LARGE_LIST_NAME = "provider_priority_list_large.csv"
+
+
 def build_priority_list(run_dir: str | Path,
                         min_damages: float = 10_000_000.0,
                         include_government: bool = False,
-                        mask_individuals: bool = False) -> Path:
+                        mask_individuals: bool = False,
+                        large_min_billed: float = 10_000_000.0) -> Path:
     """The full funder-facing priority list: EVERY qualifying organization,
     ranked by FRAUD SIGNAL alone. Dollars and entity class are FILTERS,
     never sort keys:
@@ -718,6 +722,23 @@ def build_priority_list(run_dir: str | Path,
     pursuit_cols = ["pursuit_rank"] + [c for c in cols if c != "priority_rank"] + ["priority_rank"]
     pursuit[[c for c in pursuit_cols if c in pursuit.columns]].to_csv(d / "provider_priority_list_pursuit.csv", index=False)
 
+    # THE LARGE-BILLER BOOK (2026-10-10, the fourth post-audit lever): the v7
+    # segment table found the model's precision highest among the largest
+    # billers (over $10M billed in the matrix window: top 1% hit at 4.6%, lift
+    # 16) while the main list buried them under hospitals and small agencies.
+    # This companion holds the operator book restricted to that band (the same
+    # ``net_paid`` sum the diagnostics' size_band uses), in the SAME order as the
+    # pursuit book, so the within-band ranking can be graded on its own with
+    # --list-name provider_priority_list_large.csv. A filter, never a sort key.
+    large = pursuit[pd.to_numeric(pursuit["total_billed"], errors="coerce").fillna(0.0)
+                    >= float(large_min_billed)].copy()
+    large = large.reset_index(drop=True)
+    large.insert(0, "large_rank", large.index + 1)
+    large_cols = ["large_rank"] + [c for c in pursuit_cols if c in large.columns]
+    large[large_cols].to_csv(d / LARGE_LIST_NAME, index=False)
+    print(f"[priority_list] large-biller book: {len(large):,} operator orgs billed >= "
+          f"${large_min_billed:,.0f} -> {d / LARGE_LIST_NAME}")
+
     md = d / "PRIORITY_LIST.md"
     md.write_text("\n".join([
         f"# PROVIDER PRIORITY LIST — run {d.name}", "", DISCLAIMER, "",
@@ -739,6 +760,10 @@ def build_priority_list(run_dir: str | Path,
         f"institutional, {int((out['entity_segment'] == 'operator').sum()):,} operator, "
         f"{int((out['entity_segment'] == 'individual').sum()):,} individual "
         "(`entity_segment` — a triage lens, never a scoring input).",
+        f"- Companion books, same order: `provider_priority_list_pursuit.csv` "
+        f"({len(pursuit):,} operator orgs) and `{LARGE_LIST_NAME}` "
+        f"({len(large):,} of them billed >= ${large_min_billed:,.0f} in the matrix window, "
+        "the band where the v7 diagnostics found precision highest). Filters, never sorts.",
         "", "Columns: priority_rank; org_name; entity_segment "
         "(institutional / operator / individual); member_npis (full roster); "
         "states; cities; n_providers; "
@@ -798,6 +823,10 @@ def main() -> None:
                     help="priority list only: replace solo individuals' "
                          "enrollment names with NPI + city (default ships "
                          "names as enrolled)")
+    ap.add_argument("--large-min-billed", type=float, default=10_000_000.0,
+                    help="priority list only: the billed-in-window floor of the "
+                         "large-biller companion book (provider_priority_list_large.csv; "
+                         "default 10000000, the band the v7 diagnostics found hottest)")
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
@@ -826,7 +855,8 @@ def main() -> None:
             min_damages=(args.min_damages if args.min_damages is not None
                          else 10_000_000.0),
             include_government=args.include_government,
-            mask_individuals=args.mask_individuals)
+            mask_individuals=args.mask_individuals,
+            large_min_billed=args.large_min_billed)
         return
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,

@@ -52,6 +52,32 @@ def test_rollup_one_row_per_org_with_drivers_and_percentiles():
     assert out["score_pct"].is_monotonic_decreasing
 
 
+def test_label_weight_column_becomes_the_scorer_sample_weight(monkeypatch):
+    """2026-10-10: the export's label_weight (per-case fan-out budget) reaches
+    LightGBM as sample_weight; a matrix without the column trains unweighted."""
+    import src.model_a.company_list as cl
+    seen = []
+
+    def fake_fit(Xtr, ytr, Xte, seed=0, sample_weight=None, **_):
+        seen.append(None if sample_weight is None else np.asarray(sample_weight, dtype=float))
+        return np.linspace(0, 1, len(Xte))
+
+    monkeypatch.setattr(cl, "_fit_predict", fake_fit)
+    m = _matrix(n=200, seed=3)
+    oof_scores(m, _manifest(), n_splits=2)
+    assert all(w is None for w in seen)                     # no column -> unweighted
+    seen.clear()
+    m["label_weight"] = 1.0
+    m.loc[m["provider_on_exclusion"] == 1, "label_weight"] = 0.25
+    m.loc[m.index[:3], "label_weight"] = np.nan              # NaN reads as 1.0
+    oof_scores(m, _manifest(), n_splits=2)
+    assert seen and all(w is not None for w in seen)
+    allw = np.concatenate(seen)
+    assert set(np.unique(allw)) <= {0.25, 1.0}
+    assert (allw == 0.25).any() and (allw == 1.0).any()
+    assert cl.training_weights(m.drop(columns=["label_weight"])) is None
+
+
 def test_oof_scores_are_out_of_fold_and_discriminative():
     m = _matrix(n=400, seed=1)
     s = oof_scores(m, _manifest(), n_splits=4)

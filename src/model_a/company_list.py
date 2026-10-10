@@ -136,6 +136,21 @@ def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
     return y
 
 
+def training_weights(matrix: pd.DataFrame) -> np.ndarray | None:
+    """The scorer's sample weights: the matrix's ``label_weight`` column (the
+    per-case fan-out budget from case_labels), NaN read as 1.0 and clipped to
+    [0, 1]; None when the column is absent so older matrices train unweighted."""
+    if "label_weight" not in matrix.columns:
+        return None
+    w = (pd.to_numeric(matrix["label_weight"], errors="coerce").fillna(1.0)
+         .clip(0.0, 1.0).to_numpy(dtype=float))
+    n_dil = int((w < 1.0).sum())
+    if n_dil:
+        print(f"[company_list] sample weights: {n_dil:,} broadcast case positives "
+              f"down-weighted by the per-case budget (min weight {w.min():.3f})")
+    return w
+
+
 def fold_assignments(y, groups, n_splits: int = 5):
     """The scorer's folds: StratifiedGroupKFold (2026-10-09; balanced on positives so
     one fold's model does not run hot: the v6 / v7 diagnostics found fold 1 supplying
@@ -246,10 +261,17 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
               f"from training (scored, never negatives)")
     groups = (matrix["group_id"].to_numpy()
               if "group_id" in matrix.columns else None)
+    # PER-CASE BUDGET (2026-10-10): the export's label_weight dilutes the
+    # broadcast DOJ positives of a case that fans out past the budget (the top 5
+    # cases supplied 64% of v7's DOJ positives), so no single settlement teaches
+    # the model what fraud looks like. 1.0 everywhere else; absent column = no
+    # weighting (v8 and earlier matrices train exactly as before).
+    w = training_weights(matrix)
     scores = np.zeros(len(matrix))
     for k, (tr, te) in enumerate(fold_assignments(y, groups, n_splits)):
         tr = tr[~ambiguous[tr]]
-        scores[te] = _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k)
+        scores[te] = _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k,
+                                  sample_weight=(w[tr] if w is not None else None))
     # collapse guard (hard-fail, rule #2): a real probability ranking over a
     # large universe has thousands of distinct values; exact-0/1 saturation
     # or a giant single tie means a leaky feature or empty X reached the

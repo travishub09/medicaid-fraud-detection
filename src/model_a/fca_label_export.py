@@ -165,6 +165,15 @@ def stratified_sample(labels: pd.DataFrame, per_stratum: int = 12, seed: int = 1
     return out.reset_index(drop=True)
 
 
+def fuzzy_rows(labels: pd.DataFrame) -> pd.DataFrame:
+    """The rows the resolver's fuzzy business tier supplied (match_level
+    fuzzy_*, not yet verified): the verification batch for that tier, in full."""
+    if not len(labels) or "match_level" not in labels.columns:
+        return labels.iloc[0:0]
+    lv = labels["match_level"].astype(str)
+    return labels[lv.str.startswith("fuzzy_") & ~lv.str.endswith("_verified")].reset_index(drop=True)
+
+
 def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, provider_dim: pd.DataFrame,
                         policy: str = "strict_plus_criminal",
                         exclusion_nodes: pd.DataFrame | None = None,
@@ -421,6 +430,12 @@ def main() -> None:
         if a.strata_sample:
             rungs = [x.strip() for x in a.strata_rungs.split(",") if x.strip()] if a.strata_rungs else None
             stratified_sample(labels, a.strata_sample, a.strata_seed, rungs).to_csv(out / "verification_sample_strata.csv", index=False)
+        if a.include_fuzzy:
+            # the fuzzy tier's own batch: every fuzzy row (they are few and every
+            # one needs a verdict before it can train), not a sample of the weak cell
+            fz = fuzzy_rows(labels)
+            fz.to_csv(out / "verification_sample_fuzzy.csv", index=False)
+            print(f"  fuzzy business tier: {len(fz):,} rows to verify -> {out / 'verification_sample_fuzzy.csv'}")
     rep = out / "FCA_LABEL_EXPORT.md"
     rep.write_text(report(labels, quar, a.policy), encoding="utf-8")
     print(f"strict FCA label ({a.policy}): {len(labels):,} rows, {labels['npi'].nunique():,} NPIs, "

@@ -1152,8 +1152,10 @@ def main() -> None:
     ap.add_argument("--min-damages", type=float, default=10_000_000.0)
     ap.add_argument("--repeats", type=int, default=0, help="extra re-shuffled fold assignments for stability")
     ap.add_argument("--list-name", default="provider_priority_list.csv",
-                    help="which shipped list to grade: provider_priority_list.csv (default) or "
-                         "provider_priority_list_pursuit.csv (the operator book)")
+                    help="which shipped list to grade: provider_priority_list.csv (default), "
+                         "provider_priority_list_pursuit.csv (the operator book) or "
+                         "provider_priority_list_large.csv (the operator book over the "
+                         "--large-min-billed band)")
     ap.add_argument("--out", default=None, help="default <run-dir>/ACCURACY_DIAGNOSTICS.md")
     a = ap.parse_args()
 
