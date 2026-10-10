@@ -62,6 +62,28 @@ PROVENANCE_COLS = ["provider_name", "org_legal_name", "practice_state", "addr_ci
                    "label_weight", "assessable", "primary_taxonomy"]
 
 
+def _num(v) -> float:
+    """A plain float from any scalar the matrix can hold (pandas NA, None, strings)."""
+    try:
+        if v is None or v is pd.NA or (isinstance(v, float) and v != v):
+            return 0.0
+        f = float(v)
+        return f if f == f else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _text(v) -> str:
+    if v is None or v is pd.NA:
+        return ""
+    try:
+        if isinstance(v, float) and v != v:
+            return ""
+    except TypeError:
+        pass
+    return str(v)
+
+
 # --------------------------------------------------------------------------- #
 # scores
 # --------------------------------------------------------------------------- #
@@ -110,6 +132,12 @@ def label_noise(matrix: pd.DataFrame, oof: pd.DataFrame, y: np.ndarray) -> tuple
     t0 = float(p[y == 0].mean())
     prov = [c for c in PROVENANCE_COLS if c in m.columns]
     base = m[prov].copy() if prov else pd.DataFrame(index=m.index)
+    # nullable dtypes -> plain object / float so sorting and the queue never meet pd.NA
+    for c in prov:
+        if pd.api.types.is_numeric_dtype(base[c]) or pd.api.types.is_bool_dtype(base[c]):
+            base[c] = pd.to_numeric(base[c], errors="coerce").astype("float64")
+        else:
+            base[c] = base[c].astype(object).where(base[c].notna(), "")
     base.insert(0, "npi", m.index)
     base["score"] = s
     base["prob"] = p
@@ -132,8 +160,8 @@ def label_noise(matrix: pd.DataFrame, oof: pd.DataFrame, y: np.ndarray) -> tuple
 # --------------------------------------------------------------------------- #
 
 def _label_review_prompt(r: pd.Series, kind: str) -> str:
-    who = str(r.get("provider_name") or r.get("org_legal_name") or f"NPI {r['npi']}")
-    where = ", ".join(x for x in (str(r.get("addr_city") or ""), str(r.get("practice_state") or "")) if x) or "unknown location"
+    who = _text(r.get("provider_name")) or _text(r.get("org_legal_name")) or f"NPI {r['npi']}"
+    where = ", ".join(x for x in (_text(r.get("addr_city")), _text(r.get("practice_state"))) if x) or "unknown location"
     ask = ("Our records show a program exclusion or termination for this provider number, while its "
            "billing pattern looks ordinary. Establish from public records whether the exclusion record "
            "belongs to THIS provider (same person or organization, same location and specialty) and "
@@ -253,24 +281,28 @@ def near_misses(matrix: pd.DataFrame, oof: pd.DataFrame, ruler: pd.DataFrame, co
     k = max(1, int(round(len(m) * top_frac)))
     top = m.index[rank <= k]
     cols = [c for c in cols if c in m.columns and pd.api.types.is_numeric_dtype(m[c])]
-    X_top = m.loc[top, cols].apply(pd.to_numeric, errors="coerce")
+    # plain float64 throughout: the matrix carries pandas nullable dtypes (Int64 /
+    # Float64 / boolean) whose NA has no truth value (the 2026-10-10 v8 crash in
+    # `mad.get(c, 0) and ...`)
+    X_top = m.loc[top, cols].apply(pd.to_numeric, errors="coerce").astype("float64")
     med = X_top.median()
-    mad = (X_top - med).abs().median() * 1.4826
-    ok = [c for c in cols if mad.get(c, 0) and mad[c] > 0]
+    mad = ((X_top - med).abs().median() * 1.4826).astype("float64")
+    ok = [c for c in cols if c in mad.index and np.isfinite(mad[c]) and mad[c] > 0]
     miss_idx = [n for n in m.index if n in pos and rank[n] > k]
     rows, counts = [], {}
     if miss_idx and ok:
-        Xm = m.loc[miss_idx, ok].apply(pd.to_numeric, errors="coerce")
+        Xm = m.loc[miss_idx, ok].apply(pd.to_numeric, errors="coerce").astype("float64")
         Z = (Xm - med[ok]) / mad[ok]
         for n in miss_idx:
             z = Z.loc[n].dropna().sort_values()
             gaps = z.head(n_gap)
             for c in gaps.index:
                 counts[c] = counts.get(c, 0) + 1
+            row = m.loc[n]
             rows.append({"npi": n, "rank": int(rank[n]), "score": float(s[n]),
-                         "name": str(m.loc[n].get("provider_name") or m.loc[n].get("org_legal_name") or ""),
-                         "state": str(m.loc[n].get("practice_state") or ""),
-                         "net_paid": float(pd.to_numeric(m.loc[n].get("net_paid"), errors="coerce") or 0.0),
+                         "name": _text(row.get("provider_name")) or _text(row.get("org_legal_name")),
+                         "state": _text(row.get("practice_state")),
+                         "net_paid": _num(row.get("net_paid")),
                          "gap_features": "; ".join(f"{c} (z {v:+.1f})" for c, v in gaps.items())})
     misses = pd.DataFrame(rows).sort_values("rank").reset_index(drop=True) if rows else pd.DataFrame(
         columns=["npi", "rank", "score", "name", "state", "net_paid", "gap_features"])
@@ -342,9 +374,9 @@ def to_markdown(tag: str, res: dict, drift: pd.DataFrame, misses: pd.DataFrame, 
     if len(sus):
         L += ["Top suspect positives by dollars:", "", "| NPI | name | st | $ paid | prob | label sources | basis |", "|---|---|---|--:|--:|---|---|"]
         for r in sus.sort_values("net_paid", ascending=False).head(15).itertuples() if "net_paid" in sus.columns else sus.head(15).itertuples():
-            L.append(f"| {r.npi} | {str(getattr(r, 'provider_name', '') or getattr(r, 'org_legal_name', ''))[:36]} | "
-                     f"{getattr(r, 'practice_state', '')} | ${float(getattr(r, 'net_paid', 0) or 0)/1e6:,.1f}M | "
-                     f"{r.prob:.4f} | {getattr(r, 'exclusion_label_sources', '')} | {getattr(r, 'label_basis', '')} |")
+            L.append(f"| {r.npi} | {(_text(getattr(r, 'provider_name', '')) or _text(getattr(r, 'org_legal_name', '')))[:36]} | "
+                     f"{_text(getattr(r, 'practice_state', ''))} | ${_num(getattr(r, 'net_paid', 0))/1e6:,.1f}M | "
+                     f"{r.prob:.4f} | {_text(getattr(r, 'exclusion_label_sources', ''))} | {_text(getattr(r, 'label_basis', ''))} |")
         L.append("")
     L += ["## 3. Feature drift vs the previous run", ""]
     if len(drift):

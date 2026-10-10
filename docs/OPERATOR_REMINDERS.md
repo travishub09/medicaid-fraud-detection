@@ -35,21 +35,6 @@ for %f in ("%USERPROFILE%\Downloads\Acute-Care_Facilities*.csv") do copy /y "%f"
 python -m src.reminders --done state_capacity_rosters
 ```
 
-- **fda_ndc_directory** — FDA NDC Directory (product.txt: labeler code -> manufacturer, DEA schedule): the bridge that runs pharma_kickback on the Medicaid NDC file (built 2026-10-10). The operator downloaded and extracted it on 2026-10-10 into Downloads\ndctext (product.txt + package.txt); the loader reads the two .txt files or the zip. Refresh every 6 months.
-  - save to: preclean/fda_ndc/  |  https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory
-  - due: freshness unknown
-  - step 1: Open https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory
-  - step 2: Under 'NDC Database File', download the Text (zip) version and extract it (product.txt + package.txt)
-  - step 3: Copy the two .txt files into "...preclean\fda_ndc\" with the commands below (or save the zip there unextracted; either works)
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/fda_ndc/product.txt or preclean/fda_ndc/*.zip
-
-```bat
-mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\fda_ndc"
-copy /y "%USERPROFILE%\Downloads\ndctext\product.txt" "C:\Users\treyr\OneDrive\Desktop\data\preclean\fda_ndc\product.txt"
-copy /y "%USERPROFILE%\Downloads\ndctext\package.txt" "C:\Users\treyr\OneDrive\Desktop\data\preclean\fda_ndc\package.txt"
-python -m src.reminders --done fda_ndc_directory
-```
-
 
 ## COMING UP (30 days)
 
@@ -68,6 +53,17 @@ python -m src.reminders --done fda_ndc_directory
 - warn_notices — due 2026-11-09: WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.
 
 ## STANDING TASK QUEUE
+
+- [ ] **merge_bundle267** — BUNDLE 267 (cut 2026-10-10 after the container reset; the branch now lives on GitHub too, pushed by the operator at 5660742): the learning-loop nullable-dtype fix + the reminder state. v8 is finished, so merge now. Click the bundle267 file card first, then paste; press Enter once after the merge line finishes. Then push the branch to GitHub (the operator push works; Claude's does not): that copy is the off-machine backup after the 2026-10-10 container reset. (added 2026-10-10)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle267*.bundle") do copy /y "%f" "C:\Users\treyr\bundle267.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle267.bundle"
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle267
+```
 
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
 - [ ] **dossier_poll__frozen_2023-12_v5** — ~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md (added 2026-08-04)
@@ -199,27 +195,6 @@ python -m src.reminders --done-task build_nursing_home_dollar_basis
 python -m src.reminders --done-task wesleyan_balance_sheet_readout
 ```
 
-- [ ] **v8_prereg_accuracy_sprint** — POWER LOSS 2026-10-09 night: run_v8_night.bat finished steps 1-3 (as-of graph 19:32, matrix 23:31, both forward labels 23:46; no resume cache left) and died in step 4. RESUME: merge bundle 266 first (the run is stopped, so merging is safe), copy run_v8_resume.bat from Downloads into the repo folder, run it: it does steps 4-9 only (network A/B, triage, priority list + pursuit + large books, diagnostics, digest + dossier, registration) and then the learning loop and the issue ledger against v7. Hours, not a night. When it prints DONE say 'v8 finished'. The registry row will carry the post-merge commit, while the matrix was built on the pre-merge one: the export code did not change between them, note it in the sign-off. PRE-REGISTERED 2026-10-09 22:40 UTC (goal locked; 8 enforced checks). LABEL AUDIT read the same night (LABEL_AUDIT_2026-10.md): nothing blocks the run. Findings carried as build tasks: 2,929 case pairs are the same settlement harvested twice ($594B double-counted in the dollar-recall denominators), 65 providers with a known exclusion sit in the v7 matrix unflagged (re-check on the v8 matrix), top 5 DOJ cases supply 64% of the 4,044 DOJ positives (org-billing broadcast; folds are grouped by org), only 1% of usable DOJ cases resolve to a scored NPI ($1.9T of settlements carry no label: the recall lever). RUN: run_v8_night.bat (delivered 2026-10-09; copy it from Downloads into the repo folder once) chains the nine steps with stop-on-error: as-of graph with --asof-nppes, the matrix with analytics, both forward labels, network A/B, scheme triage, pursuit list + book, diagnostics on the pursuit book, digest + dossier (no Manus), registration. When it prints DONE say 'v8 finished'; Claude then queues the post-run checklist (packet, dossier dispatch + poll, registry verdict). NEVER merge a bundle while it runs. (added 2026-10-08)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-copy /y "%USERPROFILE%\Downloads\run_v8_resume.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v8_resume.bat"
-"C:\Users\treyr\medicaid-fraud-detection\run_v8_resume.bat"
-REM when it prints [v8-resume] DONE: say 'v8 finished' in chat
-powershell -Command "Compress-Archive -Force -Path 'C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8\*.md','C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet_v8.zip'"
-python -m src.reminders --done-task v8_prereg_accuracy_sprint
-```
-
-- [ ] **merge_bundle266_now** — BUNDLE 266 (cut 2026-10-10; supersedes 257 through 265, none merged, bundles are cumulative; adds all three drug schemes lit from the NDC file: spread proxy, Medicaid opioid shares, and pharma kickbacks on Medicaid through the FDA labeler map): the four post-audit levers, the enrollment-file wiring, the v9 training policy, the readable dashboard, the issue ledger, the learning loop, and the v8 resume runner. v8 is STOPPED (power loss), so merge NOW, before run_v8_resume.bat. Click the bundle266 file card first, then paste; press Enter once after the merge line finishes. (added 2026-10-10)
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\bundle266*.bundle") do copy /y "%f" "C:\Users\treyr\bundle266.bundle"
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle266.bundle"
-python -m src.reminders --done-task merge_bundle266_after_v8
-```
-
 - [ ] **grade_large_book_v7** — LEVER 4 (large-biller book), first grade on v7, after bundle 266 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes. (added 2026-10-10)
 
 ```bat
@@ -254,16 +229,7 @@ REM when it prints [v9] DONE: say 'v9 finished' in chat
 python -m src.reminders --done-task v9_prereg_and_run
 ```
 
-- [ ] **run_issues_v7_v8** — (run_v8_resume.bat now does this for v8 at its end; keep this task only if the resume runner fails before its extra steps.) ISSUE LEDGER (built 2026-10-10): after bundle 266 is merged and v8 has printed DONE, run the ledger on v8 against v7 (seconds, read-only on the run folders; writes RUN_ISSUES.md into each and model_a\issues_ledger.jsonl). Read RUN_ISSUES.md top to bottom: FAILs first. On the v7 packet it already ranks the 2023-dated facility, PBJ and POS editions inside the 2021-12 freeze as FAILs (post-cutoff facts leak into a frozen matrix; the fix is the archived 2021 editions or excluding those sources from frozen builds). Paste the summary line of each run in chat. (added 2026-10-10)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.run_issues --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7" --data-root "C:\Users\treyr\OneDrive\Desktop\data"
-python -u -m src.model_a.run_issues --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --data-root "C:\Users\treyr\OneDrive\Desktop\data" --prev-run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7"
-python -m src.reminders --done-task run_issues_v7_v8
-```
-
-- [ ] **learning_loop_v8** — (run_v8_resume.bat now does this for v8 at its end; keep this task only if the resume runner fails before its extra steps.) LEARNING LOOP (built 2026-10-10): after bundle 266 is merged and v8 has printed DONE, run it on v8 against v7 (it scores the matrix once out of fold if the priority-list build did not persist provider_oof_scores.parquet; v8's build predates that, so expect the scorer to run: minutes to an hour). Read LEARNING_LOOP.md: the suspect positives (labels that look wrong), the drift table (features that moved without a code change), the near-miss feature requests, and the calibration line. The review queue (label_review_prompts.jsonl) can be sent through the dossier's dispatcher with --dispatch-file, ONE dispatcher at a time and only when no other Manus batch is open; say so in chat before sending. Paste the summary line. (added 2026-10-10)
+- [ ] **learning_loop_v8** — v8 RESUME RUN 2026-10-10: steps 4-9 completed and the run registered (HOLD: operator book 0 hits at 50 on the FCA ruler, v7 read 2); the learning loop then crashed on pandas nullable columns (fixed in bundle 267). After merging 267, run the loop and the ledger on v8 against v7 (the priority-list build persisted provider_oof_scores.parquet, so this is minutes). Paste the two summary lines. The review queue (label_review_prompts.jsonl) can be sent through the dossier's dispatcher with --dispatch-file, ONE dispatcher at a time and only when no other Manus batch is open; say so in chat before sending. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -273,6 +239,32 @@ REM optional, one dispatcher at a time: python -u -m src.model_a.pursuit_dossier
 python -m src.reminders --done-task learning_loop_v8
 ```
 
+- [ ] **run_packet__frozen_2021-12_v8** — Send the run packet for frozen_2021-12_v8 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-10-10)
+
+```bat
+set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8
+powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
+REM then upload run_packet.zip to the chat
+python -m src.reminders --done-task run_packet__frozen_2021-12_v8
+```
+
+- [ ] **pursuit_dossier__frozen_2021-12_v8** — Build + dispatch the pursuit dossier for frozen_2021-12_v8 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) (added 2026-10-10)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --dispatch
+python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v8
+```
+
+- [ ] **dossier_poll__frozen_2021-12_v8** — ~30 min after dispatch: collect Manus research into the frozen_2021-12_v8 dossier and send PURSUIT_DOSSIER.md (added 2026-10-10)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --poll
+python -m src.reminders --done-task dossier_poll__frozen_2021-12_v8
+```
+
+- [ ] **registry_verdict__frozen_2021-12_v8** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v8 — close only when you have them (added 2026-10-10)
 
 ## After ANY download session (standing rule)
 

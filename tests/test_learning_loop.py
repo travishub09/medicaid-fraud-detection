@@ -99,6 +99,31 @@ def test_label_noise_queue_drift_near_misses_and_calibration(tmp_path: Path):
     assert "evaluation:near_misses:feature_requests" in ids
 
 
+def test_nullable_dtypes_and_missing_values_do_not_crash(tmp_path: Path):
+    """The 2026-10-10 v8 crash: the real matrix carries pandas nullable dtypes whose
+    NA has no truth value (`mad.get(c, 0) and ...` raised). Int64 / Float64 /
+    boolean columns with NA, a feature with zero spread, and a missing name all pass."""
+    m, man = _matrix(n=300, seed=7)
+    m["net_paid"] = pd.array(m["net_paid"].round().astype("int64"), dtype="Int64")
+    m.loc[m.index[:20], "net_paid"] = pd.NA
+    m["shell_score"] = pd.array(m["shell_score"], dtype="Float64")
+    m.loc[m.index[5:15], "shell_score"] = pd.NA
+    m["flat_feature"] = pd.array([1] * 300, dtype="Int64")                  # zero MAD -> skipped
+    m["assessable"] = pd.array([True] * 300, dtype="boolean")
+    m.loc[m.index[0], "provider_name"] = None
+    man["raw_feature_cols"] = man["raw_feature_cols"] + ["flat_feature"]
+    cur = tmp_path / "v8"
+    cur.mkdir()
+    m.to_parquet(cur / "provider_features_for_model.parquet", index=False)
+    (cur / "feature_manifest.json").write_text(json.dumps(man))
+    cold = m[(m["provider_on_exclusion"] == 0)]["npi"].iloc[:3].tolist()
+    pd.DataFrame({"npi": cold, "is_prospective_positive": [1, 1, 1], "was_excluded_pre_cutoff": [0, 0, 0],
+                  "event_date": ["2023-01-01"] * 3}).to_csv(cur / "future_bans_after_2021-12__fca36.csv", index=False)
+    res = ll.run(cur, None, None, top_frac=0.05, queue_size=10, sample_n=200)
+    assert res["near_misses"]["n_forward_positives"] == 3
+    assert (cur / "LEARNING_LOOP.md").exists() and (cur / "label_review_queue.csv").exists()
+
+
 def test_psi_is_zero_for_identical_and_large_for_shifted():
     rng = np.random.default_rng(1)
     a = rng.normal(0, 1, 5000)
