@@ -980,9 +980,57 @@ def _rec_html(rec: dict, warns: list[str]) -> str:
             f'{"".join(full)}</div></div>')
 
 
+def _fmt_h(v, spec: str = "") -> str:
+    """HTML cell formatting: 'n/a' for a missing value (never a dash)."""
+    s = _fmt(v, spec)
+    return "n/a" if s == "—" else s
+
+
+def _scoreboard_html(rows: list[dict], pr_by_tag: dict) -> str:
+    """The one table a reader needs first (2026-10-10, 'very hard to read'):
+    one row per registered run, newest first, the business-outcome grade
+    (FCA hits at 50 on the graded book against random), lead time, the
+    institutional share, the lift delta, and the decision. Large type, no
+    jargon in the headers."""
+    if not rows:
+        return ""
+    head = ("<tr><th>run</th><th>freeze</th><th>graded list</th>"
+            "<th>hits in top 50</th><th>random would give</th>"
+            "<th>lead time (months)</th><th>hospitals in top 50</th>"
+            "<th>extra data gain</th><th>decision</th></tr>")
+    body = []
+    for r in sorted(rows, key=lambda x: str(x.get("registered_at", "")), reverse=True):
+        dec = r.get("decision", "n/a")
+        pill = f'<span class="badge {"ok" if dec == "PROMOTE" else "warn"}">{_esc(dec)}</span>'
+        lst = str(r.get("acc_list") or "")
+        lst = ("operator book" if "pursuit" in lst else "large billers" if "large" in lst
+               else "main list" if lst else "not graded")
+        inst = r.get("acc_inst_share50")
+        body.append(
+            f"<tr><td><b>{_tag_span(r.get('tag', '?'))}</b></td>"
+            f"<td>{_esc(r.get('asof_cutoff') or 'in-time')}</td>"
+            f"<td>{lst}</td>"
+            f"<td><b>{_fmt_h(r.get('acc_org_hits50'))}</b></td>"
+            f"<td>{_fmt_h(r.get('acc_base50'), '.1f')}</td>"
+            f"<td>{_fmt_h(r.get('acc_lead_median_mo'), '.0f')}</td>"
+            f"<td>{(format(float(inst) * 100, '.0f') + '%') if inst is not None else 'n/a'}</td>"
+            f"<td>{_fmt_h(r.get('ablation_lift_delta'), '+.2f')}</td>"
+            f"<td>{pill}</td></tr>")
+    note = ("Hits in top 50: organizations in the first 50 rows of the graded list that a later "
+            "public FCA case or health-care-fraud conviction touched (the headline ruler). "
+            "Random would give: the expected hits if 50 rows were drawn at random from the same pool. "
+            "Lead time: months between the freeze and the first public record, median over the hits. "
+            "Extra data gain: the full model's top-decile lift minus the core model's. "
+            "A hit is a later public record touching a listed organization, not a finding about it.")
+    return ('<div class="card"><h2>Scoreboard</h2>'
+            f'<table class="score">{head}{"".join(body)}</table>'
+            f'<p class="note">{note}</p></div>')
+
+
 def _trend_svg(rows: list[dict], history: list[dict]) -> str:
     """Lift-delta whiskers: grey/dashed = reconstructed history, blue =
-    registered runs. Auto-scaled to the data."""
+    registered runs. Auto-scaled to the data. Text uses currentColor so the
+    labels stay readable in dark mode (they rendered black on black)."""
     pts = []
     for e in history or []:
         res = e.get("results") or {}
@@ -1006,12 +1054,15 @@ def _trend_svg(rows: list[dict], history: list[dict]) -> str:
     pad = max((vmax - vmin) * 0.15, 0.05)
     vmin, vmax = vmin - pad, vmax + pad
 
-    def y(v):
-        return 190 - (v - vmin) / (vmax - vmin) * 160
+    top, bottom = 30, 250
 
+    def y(v):
+        return bottom - (v - vmin) / (vmax - vmin) * (bottom - top)
+
+    step = 150
     parts = []
     for i, p in enumerate(pts):
-        x = 90 + i * 120
+        x = 110 + i * step
         col = "#8a8a86" if p["hist"] else "#2a78d6"
         dash = ' stroke-dasharray="4 3"' if p["hist"] else ""
         lo = p["lo"] if p["lo"] is not None else p["d"]
@@ -1024,24 +1075,30 @@ def _trend_svg(rows: list[dict], history: list[dict]) -> str:
         parts.append(
             f'<g><title>{_esc(hover)}</title>'
             f'<line x1="{x}" y1="{y(hi):.1f}" x2="{x}" y2="{y(lo):.1f}" '
-            f'stroke="{col}" stroke-width="2"{dash}/>'
-            f'<circle cx="{x}" cy="{y(p["d"]):.1f}" r="5" fill="{col}"/>'
-            f'<text x="{x}" y="212" text-anchor="middle" font-size="10">'
-            f'{_esc(p["tag"])[:16]}</text>'
-            f'<text x="{x + 9}" y="{y(p["d"]) - 6:.1f}" font-size="10" '
-            f'font-weight="bold">{p["d"]:+.3f}</text></g>')
-    w = max(460, 90 + len(pts) * 120)
+            f'stroke="{col}" stroke-width="3"{dash}/>'
+            f'<circle cx="{x}" cy="{y(p["d"]):.1f}" r="7" fill="{col}"/>'
+            f'<text x="{x}" y="{bottom + 28}" text-anchor="middle" font-size="14" '
+            f'fill="currentColor">{_esc(p["tag"])[:18]}</text>'
+            f'<text x="{x + 12}" y="{y(p["d"]) + 5:.1f}" font-size="14" '
+            f'font-weight="bold" fill="currentColor">{p["d"]:+.2f}</text></g>')
+    w = max(560, 110 + len(pts) * step)
+    # a few y ticks so the scale is readable without hovering
+    ticks = sorted({round(vmin, 1), 0.0, round(vmax, 1)} | {round((vmin + vmax) / 2, 1)})
+    grid = "".join(
+        f'<line x1="60" y1="{y(t):.1f}" x2="{w - 10}" y2="{y(t):.1f}" stroke="#888" '
+        f'stroke-width="{1.5 if t == 0 else 0.5}" stroke-dasharray="{"" if t == 0 else "2 4"}"/>'
+        f'<text x="54" y="{y(t) + 5:.1f}" text-anchor="end" font-size="13" fill="currentColor">'
+        f'{t:+.1f}</text>' for t in ticks if vmin <= t <= vmax)
     note = ("Grey dashed points are reconstructed from the working record "
             "before this system existed. Blue points are registered runs. "
             "Each whisker is the 95% CI; a point above the zero line means "
             "the full model beat the core model, so the extra data helped. "
             "Hover any point for its numbers.")
-    return (f'<svg viewBox="0 0 {w} 230" style="max-width:100%;'
-            f'font-family:monospace">'
-            f'<line x1="40" y1="{y(0):.1f}" x2="{w - 10}" y2="{y(0):.1f}" '
-            f'stroke="#888" stroke-width="1.5"/>'
-            f'<text x="34" y="{y(0) + 4:.1f}" text-anchor="end" '
-            f'font-size="10">0</text>' + "".join(parts) + "</svg>"
+    return (f'<svg viewBox="0 0 {w} {bottom + 50}" style="max-width:100%;'
+            f'font-family:system-ui,sans-serif;color:inherit">'
+            f'<text x="60" y="18" font-size="13" fill="currentColor">extra-data gain '
+            f'(top-decile lift, full model minus core model)</text>'
+            + grid + "".join(parts) + "</svg>"
             "<p class='note'>" + _gloss(_esc(note)) + "</p>")
 
 
@@ -1158,14 +1215,23 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
 
     champ = rec.get("champion") or "none yet"
     dec = rec.get("decision", "NONE")
-    banner = (f'<div class="card champ"><b>Current '
+    # the decision's reasons as a list, one per line, the measured-vs-declared
+    # detail as a quieter second line (one run-on sentence was unreadable)
+    reason_items = []
+    for x in rec.get("reasons", []):
+        main, _, detail = str(x).partition(" — ")
+        reason_items.append(
+            f"<li>{_gloss(_esc(main))}"
+            + (f'<br><span class="note">{_gloss(_esc(detail))}</span>' if detail else "")
+            + "</li>")
+    banner = (f'<div class="card champ"><p><b>Current '
               f'{_dfn("champion")}:</b> '
               f'<code>{_tag_span(champ)}</code>'
-              + (f' — <code>{_esc(rec.get("champion_dir"))}</code>'
+              + (f' (<code>{_esc(rec.get("champion_dir"))}</code>)'
                  if rec.get("champion_dir") else "")
-              + f'<br><b>Latest run decision:</b> {_dfn(dec, dec)}'
-              + (": " + _gloss(_esc("; ".join(rec.get("reasons", []))))
-                 if rec.get("reasons") else "")
+              + f'</p><p><b>Latest run decision:</b> {_dfn(dec, dec)}</p>'
+              + (f'<ul class="reasons">{"".join(reason_items)}</ul>'
+                 if reason_items else "")
               + ('<p class="note">⚠ This run\'s declared acceptance bar is '
                  'prose with no machine checks behind it, so the decision '
                  'above enforced only the four standing gates. Check the rest '
@@ -1187,28 +1253,36 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
         extra += ('<div class="card"><h2>Lead outcomes</h2><pre>'
                   + _esc(dispositions_md) + "</pre></div>")
 
-    return (
+    html = (
+        "<!doctype html><html><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<title>Model runs</title>"
         "<style>"
-        "body{font:14px/1.55 system-ui;max-width:960px;margin:24px auto;"
-        "padding:0 16px;color:#141410}"
+        "body{font:16px/1.6 system-ui,sans-serif;max-width:1100px;margin:24px auto;"
+        "padding:0 16px;color:#141410;background:#fff}"
+        "h1{font-size:26px;margin-bottom:4px}h2{font-size:21px;margin:6px 0 10px}"
+        "h3{font-size:17px}"
         ".card{background:#f7f7f4;border:1px solid #e2e2dc;border-radius:"
-        "10px;padding:14px 16px;margin:14px 0}"
-        ".card.champ{border-left:5px solid #2a78d6}"
-        ".card.hist{border-left:5px solid #c9a227;background:#faf8f0}"
-        ".badge{font-size:11px;padding:2px 8px;border-radius:10px;"
-        "background:#ddd;vertical-align:middle}"
+        "10px;padding:16px 18px;margin:16px 0}"
+        ".card.champ{border-left:6px solid #2a78d6;font-size:17px}"
+        ".card.hist{border-left:6px solid #c9a227;background:#faf8f0}"
+        ".badge{font-size:13px;padding:3px 10px;border-radius:10px;"
+        "background:#ddd;vertical-align:middle;font-weight:600}"
         ".badge.ok{background:#cde8cd}.badge.warn{background:#f3d9b0}"
-        "table{border-collapse:collapse;width:100%;font-size:12.5px;"
+        "table{border-collapse:collapse;width:100%;font-size:14px;"
         "overflow-x:auto;display:block}"
-        "th,td{border:1px solid #ddd;padding:4px 8px;text-align:left}"
+        "table.score{display:table;font-size:16px}"
+        "table.score th,table.score td{padding:9px 12px;white-space:nowrap}"
+        "table.score th{background:#ebebe6}"
+        "th,td{border:1px solid #ddd;padding:6px 10px;text-align:left}"
+        "ul.reasons{margin:4px 0 0 0;padding-left:22px}ul.reasons li{margin:6px 0}"
         "pre{white-space:pre-wrap;background:#f4f4f1;border:1px solid "
-        "#e2e2dc;border-radius:8px;padding:12px;font-size:12px;"
+        "#e2e2dc;border-radius:8px;padding:12px;font-size:13px;"
         "overflow-x:auto}"
-        ".note{font-size:12px;color:#666}"
+        ".note{font-size:14px;color:#555}"
         ".dfn{border-bottom:1px dotted #888;cursor:help}"
-        "dl dd{margin:0 0 8px 0;font-size:13px}dl dt{margin-top:6px}"
-        "button{font:12px system-ui;padding:3px 10px;border-radius:8px;"
+        "dl dd{margin:0 0 8px 0;font-size:15px}dl dt{margin-top:6px}"
+        "button{font:14px system-ui;padding:4px 12px;border-radius:8px;"
         "border:1px solid #bbb;background:#fff;cursor:pointer}"
         "button.on{background:#2a78d6;color:#fff;border-color:#2a78d6}"
         ".mini{float:right}"
@@ -1217,16 +1291,18 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
         "color:#f2f1ea}.card{background:#232322;border-color:#38382f}"
         ".card.hist{background:#26241d}pre{background:#202020;"
         "border-color:#38382f}th,td{border-color:#3a3a35}"
+        "table.score th{background:#2e2e2c}"
         "button{background:#2c2c2b;color:#eee;border-color:#555}"
         ".badge{background:#444}.badge.ok{background:#2c5230}"
-        ".badge.warn{background:#6b5423}.note{color:#aaa}}"
-        "</style>"
+        ".badge.warn{background:#6b5423}.note{color:#bbb}}"
+        "</style></head>"
         "<body class='plain'>"
-        "<h1 style='font-size:21px;margin-bottom:4px'>Model runs</h1>"
+        "<h1>Model runs</h1>"
         "<p class='note' style='margin-top:0'>Auto-generated from the "
         "registry files. "
         "<button onclick=\"view(0)\" id=\"vb0\" class=\"on\">plain</button> "
         "<button onclick=\"view(1)\" id=\"vb1\">technical</button></p>"
+        + _scoreboard_html(rows, pr_by_tag)
         + banner
         + _rec_html(rec, warns)
         + "<div class='card'><h2>Is the extra data winning?</h2>"
@@ -1248,7 +1324,9 @@ def to_html(rows: list[dict], rec: dict, prereg: list[dict],
         "el.style.display=t?'':'none';"
         "document.getElementById('rb0').className=t?'':'on';"
         "document.getElementById('rb1').className=t?'on':'';}"
-        "</script></body>")
+        "</script></body></html>")
+    # the page is operator-facing: no em or en dashes anywhere in it
+    return html.replace(" — ", ": ").replace("—", "-").replace("–", "-")
 
 
 def main() -> None:
