@@ -72,6 +72,25 @@ def test_events_take_first_exclusion_and_drop_blank_npis():
     assert "" not in set(ev["npi"])
 
 
+def test_enrollment_end_for_cause_is_its_own_tier_a_event():
+    """2026-10-10: a Medicaid enrollment segment ended for cause (exclusion node
+    mcd_enroll:<ST>:<reason>) is reported as billing_after_enrollment_end, Tier A,
+    with the next segment start closing the window and its own innocent list."""
+    from src.model_a.contradictions import INNOCENT, TIER
+    excl = pd.DataFrame({"npi": [A, C],
+                         "excl_date": ["2022-01-15", "2020-01-01"],
+                         "excl_type": ["mcd_enroll:FL:TERMINATED | CREDIBLE ALLEGATION OF FRAUD [PHYSICIAN]", "1128a1"],
+                         "reinstate_date": ["2022-09-01", None],
+                         "entity_name": ["", "ROE, JANE"]})
+    ev = _events(excl, None).set_index("npi")
+    assert ev.loc[A, "event"] == "billing_after_enrollment_end"
+    assert ev.loc[C, "event"] == "billing_after_exclusion"
+    assert str(ev.loc[A, "end_date"])[:10] == "2022-09-01" and "re-enrolled 2022-09-01" in ev.loc[A, "detail"]
+    assert "tier hard" in ev.loc[A, "detail"]
+    assert TIER["billing_after_enrollment_end"] == "A"
+    assert "managed-care" in INNOCENT["billing_after_enrollment_end"]
+
+
 def test_post_event_billing_sums_months_on_or_after_event(tmp_path: Path):
     sp = _spending(tmp_path)
     post = post_event_billing(sp, _events(_excl(), _deact())).set_index("npi")

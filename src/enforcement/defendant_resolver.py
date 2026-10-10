@@ -1148,6 +1148,13 @@ def main() -> None:
         print(f"mfcu sweep prompts: {len(mfcu_sweep_prompts())} -> {a.mfcu_prompts}")
     cdb = pd.read_csv(a.case_db, dtype=str) if a.case_db.endswith(".csv") else pd.read_parquet(a.case_db)
     pdim = pd.read_parquet(a.provider_dim)
+    # a provider with no address state can never match a "<name>, of <city>, <state>"
+    # mention; the Medicaid enrollment file's primary state fills the blank (2026-10-10)
+    feats_p = Path(a.provider_dim).with_name("medicaid_enrollment_features.parquet")
+    if feats_p.exists() and "addr_state" in pdim.columns:
+        from src.ingest_cms.medicaid_enrollment import fill_state
+        pdim, n_fill = fill_state(pdim, pd.read_parquet(feats_p, columns=["npi", "mcd_primary_state"]))
+        print(f"  provider state filled from {feats_p.name} for {n_fill:,} NPIs with no address state")
     mentions = mentions_from_case_db(cdb)
     middle = None
     if a.nppes_file:

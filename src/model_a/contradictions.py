@@ -56,6 +56,10 @@ INNOCENT = {
                                "claims for services rendered before the exclusion but paid after",
     "billing_after_deactivation": "NPI reactivated later; claims with late service-month "
                                   "corrections; successor entity billing under the old NPI in error",
+    "billing_after_enrollment_end": "managed-care claims paid under a plan contract after the "
+                                    "fee-for-service enrollment ended; a re-enrollment the segment "
+                                    "file does not carry; run-out claims for earlier dates of "
+                                    "service; the same NPI enrolled in another state",
     "billing_after_death": "death-record mismatch (common name, DOB collision); estate or "
                            "practice wind-down claims for services rendered before death",
     "impossible_day": "minutes map assigns a time value to a code billed per unit rather than "
@@ -105,14 +109,26 @@ def _events(exclusion_nodes: pd.DataFrame | None,
             # dollar query unions the windows per NPI (no double counting)
             for r in e.itertuples():
                 end = r.end
-                rows.append({"npi": r.npi, "event": "billing_after_exclusion",
+                et = str(r.excl_type)
+                # a Medicaid enrollment that ended for cause (ingest_cms.medicaid_enrollment,
+                # excl_type mcd_enroll:<ST>:<reason>) is its own per-se fact with its own
+                # innocent explanations (managed care, run-out claims, a re-enrollment the
+                # file does not carry); its window ends at the next segment start
+                enroll = et.lower().startswith("mcd_enroll")
+                if pd.isna(end):
+                    tail = ""
+                elif enroll:
+                    tail = f"; re-enrolled {end.date()}"
+                elif et.lower().startswith("medicare_revocation"):
+                    # a Medicare revocation's end date is the re-enrollment-bar expiry
+                    # (a future date), not a reinstatement; label it honestly
+                    tail = f"; re-enrollment bar until {end.date()}"
+                else:
+                    tail = f"; reinstated {end.date()}"
+                rows.append({"npi": r.npi,
+                             "event": "billing_after_enrollment_end" if enroll else "billing_after_exclusion",
                              "event_date": r.date, "end_date": end,
-                             # a Medicare revocation's end date is the re-enrollment-bar expiry
-                             # (a future date), not a reinstatement; label it honestly
-                             "detail": f"{r.excl_type} (tier {r.tier})"
-                                       + ((f"; re-enrollment bar until {end.date()}"
-                                           if str(r.excl_type).lower().startswith("medicare_revocation")
-                                           else f"; reinstated {end.date()}") if pd.notna(end) else ""),
+                             "detail": f"{et} (tier {r.tier})" + tail,
                              "name": str(getattr(r, "entity_name", "") or "")})
     if deactivations is not None and len(deactivations) and "npi" in deactivations.columns:
         d = deactivations.copy()
@@ -259,7 +275,7 @@ def _names(m: pd.DataFrame) -> pd.Series:
 
 
 TIER = {"billing_after_exclusion": "A", "billing_after_deactivation": "A", "billing_after_death": "A",
-        "impossible_day": "A", "facility_code_on_individual": "B", "long_day": "B",
+        "billing_after_enrollment_end": "A", "impossible_day": "A", "facility_code_on_individual": "B", "long_day": "B",
         "group_billing_under_personal_npi": "B"}
 
 
@@ -370,7 +386,8 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
     L = ["# TIER A CONTRADICTIONS — per-se facts, ranked by dollars at issue", "",
          "_Every row is a lead for counsel review, never an accusation. These are the facts "
          "no model score can supply: dollars paid for service months after the provider's "
-         "own exclusion, NPI deactivation, or recorded death; individual NPIs whose timed "
+         "own exclusion, Medicaid enrollment end for cause, NPI deactivation, or recorded "
+         "death; individual NPIs whose timed "
          "codes exceed a working day; individual NPIs billing organization-only codes. Each "
          "has innocent explanations listed at the end; rule those out first._", "",
          f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v)}._", ""]
@@ -473,6 +490,11 @@ def main() -> None:
         pdim = pd.read_parquet(pdim_p, columns=want)
         print(f"[contradictions] provider_dim: {len(pdim):,} NPIs "
               f"({int(pd.to_datetime(pdim['reactivation_date'], errors='coerce').notna().sum()) if 'reactivation_date' in pdim.columns else 0:,} with a reactivation date)")
+        feats_p = pdim_p.with_name("medicaid_enrollment_features.parquet")
+        if feats_p.exists() and "addr_state" in pdim.columns:
+            from src.ingest_cms.medicaid_enrollment import fill_state
+            pdim, n_fill = fill_state(pdim, pd.read_parquet(feats_p, columns=["npi", "mcd_primary_state"]))
+            print(f"[contradictions] state filled from {feats_p.name} for {n_fill:,} NPIs with no address state")
     events = _events(excl, deact, pdim)
     print(f"[contradictions] events: {events['event'].value_counts().to_dict() if len(events) else 0}; "
           f"windows capped by reinstatement/reactivation: {int(events['end_date'].notna().sum()) if len(events) else 0:,}")

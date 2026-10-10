@@ -96,6 +96,26 @@ def test_fca_shaped_adds_state_tiers():
     assert shaped[shaped.label_tier == "state_fraud"]["source"].iloc[0] == "state_ms"
 
 
+def test_fca_shaped_admits_medicaid_enrollment_ends_for_a_fraud_cause():
+    """2026-10-10: the CMS enrollment file's ended-for-cause segments (mcd_enroll rows in
+    the exclusion nodes) enter the fca_shaped label like state terminations: a
+    fraud-shaped reason is state_fraud with its own source and case type; a benign or
+    administrative end never does."""
+    cases, dn, pdim, ex = _fixture()
+    ex = pd.concat([ex, pd.DataFrame([
+        {"npi": "1003000126", "excl_type": "mcd_enroll:GA:TERMINATED | FRAUD CONVICTION [Physician]", "excl_date": "2022-06-30"},
+        {"npi": "1306849450", "excl_type": "mcd_enroll:TN:INACTIVE | VOLUNTARY WITHDRAWAL", "excl_date": "2022-06-30"}])],
+        ignore_index=True)
+    shaped, _ = build_strict_labels(cases, dn, pdim, "fca_shaped", ex)
+    row = shaped[(shaped["label_tier"] == "state_fraud") & (shaped["npi"] == "1003000126")]
+    assert len(row) == 1
+    assert row["source"].iloc[0] == "mcd_enroll_ga" and row["case_type"].iloc[0] == "medicaid_enrollment_end"
+    assert row["case_id"].iloc[0] == "mcd_enroll:GA:1003000126" and row["evidence_strength"].iloc[0] == "exact_id"
+    assert "1306849450" not in set(shaped.loc[shaped["label_tier"] == "state_fraud", "npi"])
+    strict, _ = build_strict_labels(cases, dn, pdim, "strict_plus_criminal", ex)
+    assert "state_fraud" not in set(strict["label_tier"])
+
+
 def test_oig_cmp_and_not_fraud_classification_and_reclassify():
     from src.enforcement.case_db import classify_case_type, reclassify
     cmp_ = "Acme agreed to pay $100,000 for allegedly violating the civil monetary penalties law by submitting claims for services not provided as claimed."

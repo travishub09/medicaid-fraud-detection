@@ -280,8 +280,11 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
             if not (len(npi) == 10 and is_valid_npi(npi)):
                 continue
             et_raw = str(getattr(r, "excl_type", "") or "")
-            if policy == "fca_shaped" and et_raw.lower().startswith("state_term"):
-                # a state Medicaid termination for a FRAUD-SHAPED cause (the state's own words)
+            if policy == "fca_shaped" and et_raw.lower().startswith(("state_term", "mcd_enroll")):
+                # a state Medicaid termination (state list) or a Medicaid enrollment segment
+                # ended for cause (CMS enrollment file) for a FRAUD-SHAPED cause, in the
+                # state's own words
+                enroll = et_raw.lower().startswith("mcd_enroll")
                 body = re.sub(r"\|name_match$", "", et_raw.split(":", 2)[2] if et_raw.count(":") >= 2 else "")
                 if not _STATE_FRAUD.search(body) or npi not in pd_.index:
                     continue
@@ -289,7 +292,9 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                 st = et_raw.split(":")[1].upper() if et_raw.count(":") >= 2 else ""
                 rows.append({
                     "npi": npi, "label_tier": "state_fraud", "policy": policy,
-                    "case_id": f"state_term:{st}:{npi}", "source": f"state_{st.lower()}", "case_type": "state_termination",
+                    "case_id": f"{'mcd_enroll' if enroll else 'state_term'}:{st}:{npi}",
+                    "source": f"{'mcd_enroll_' if enroll else 'state_'}{st.lower()}",
+                    "case_type": "medicaid_enrollment_end" if enroll else "state_termination",
                     "outcome_words": body[:80], "amount_usd": None,
                     "announced_date": d.strftime("%Y-%m-%d") if pd.notna(d) else "",
                     "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,

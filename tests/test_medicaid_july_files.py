@@ -169,6 +169,30 @@ def test_paid_after_enrollment_end_and_state_fill(tmp_path):
     assert n == 2 and filled.set_index("npi").loc[DR1, "addr_state"] == "GA" and filled.set_index("npi").loc[PH2, "addr_state"] == "NY"
 
 
+def test_export_fills_blank_practice_state_from_enrollment():
+    """2026-10-10: the spending file carries no state; a provider whose enrollment
+    address has none takes the Medicaid enrollment file's primary state in the
+    matrix (a stated state is never overwritten), and the manifest counts it."""
+    from src.model_a.provider_features_export import build_provider_matrix
+    from tests.fixtures.synthetic import build_provider_leads, build_synthetic_inputs
+    inputs = build_synthetic_inputs()
+    leads = build_provider_leads(inputs["provider_dim"])
+    assert "practice_state" in leads.columns
+    blank_npi, kept_npi = str(leads["npi"].iloc[0]), str(leads["npi"].iloc[1])
+    kept_state = str(leads.loc[leads["npi"].astype(str) == kept_npi, "practice_state"].iloc[0])
+    leads.loc[leads["npi"].astype(str) == blank_npi, "practice_state"] = ""
+    xw = pd.DataFrame({"npi": leads["npi"].astype(str), "org_node_id": "org:" + leads["npi"].astype(str)})
+    enroll = pd.DataFrame({"npi": [blank_npi, kept_npi], "mcd_primary_state": ["GA", "ZZ"],
+                           "mcd_tenure_months": [12.0, 24.0]})
+    matrix, manifest = build_provider_matrix(leads, xw, adapter_npi_frames={"medicaid_enrollment": enroll},
+                                             min_peer=2)
+    m = matrix.set_index(matrix["npi"].astype(str))
+    assert m.loc[blank_npi, "practice_state"] == "GA"
+    assert m.loc[kept_npi, "practice_state"] == kept_state                # never overwritten
+    assert manifest["state_fill_from_enrollment"] == 1
+    assert "mcd_primary_state" not in manifest["raw_feature_cols"]          # a string, never a feature
+
+
 def test_export_runner_picks_up_both_processed_files(tmp_path):
     pre = tmp_path / "preclean"
     pre.mkdir()

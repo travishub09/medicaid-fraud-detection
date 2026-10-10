@@ -451,6 +451,23 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         assert len(m) == n0, f"adapter '{name}' join fanned out"
         sources_used[name] = new_cols
 
+    # STATE FILL (2026-10-10): the spending file is national and carries no state, so
+    # practice_state came from the enrollment address alone and ~300 labelled
+    # providers had none. The Medicaid enrollment file's mcd_primary_state (the
+    # state with the most enrolled months) fills a blank; a stated state is never
+    # overwritten. The count ships in the manifest (state_fill_from_enrollment).
+    n_state_filled = 0
+    if "mcd_primary_state" in m.columns and "practice_state" in m.columns:
+        ps = m["practice_state"]
+        blank = ps.isna() | ps.astype(str).str.strip().str.lower().isin(["", "nan", "none"])
+        fill = m.loc[blank, "mcd_primary_state"]
+        fill = fill.where(fill.notna() & (fill.astype(str).str.strip() != ""))
+        n_state_filled = int(fill.notna().sum())
+        if n_state_filled:
+            m.loc[blank, "practice_state"] = fill
+            print(f"    [medicaid_enrollment] practice_state filled from mcd_primary_state for "
+                  f"{n_state_filled:,} NPIs that had no state")
+
     for name, fr in (org_grain_frames or {}).items():
         if fr is None or not len(fr) or "org_node_id" not in fr.columns:
             continue
@@ -774,6 +791,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "label": label,
         "label_provenance": "exclusion_label_sources" if "exclusion_label_sources" in out.columns else None,
         "label_metadata": label_metadata,
+        "state_fill_from_enrollment": n_state_filled,
         "group_cols": [c for c in ["group_id"] if c in out.columns],
         "assessability": [c for c in ["assessable"] if c in out.columns],
         "weak_supervision": ws_audit,

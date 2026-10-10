@@ -718,6 +718,20 @@ first, then paste" above every move/done block.
   segment table found precision highest, same order, graded on its own with
   `accuracy_diagnostics --list-name provider_priority_list_large.csv`
   (outputs suffixed `__large`; the registry still reads the pursuit grade).
+  ENROLLMENT FILE, THREE USES WIRED (2026-10-10 check): (1) STATE: `fill_state`
+  was defined but never called; the export now fills a blank `practice_state` from
+  `mcd_primary_state` after the adapter merge (manifest `state_fill_from_enrollment`),
+  and the defendant resolver + contradictions fill provider_dim's `addr_state` from
+  processed/medicaid_enrollment_features.parquet when it exists; (2) LABEL: ended-
+  for-cause segments -> exclusions_medicaid_enrollment.parquet -> graph exclusion
+  nodes (glob) -> `fca_relevance` tiers `mcd_enroll` by the state-termination ruler
+  -> PU label + forward ruler; the strict export's `fca_shaped` policy now admits
+  fraud-shaped `mcd_enroll` rows as `state_fraud` (source `mcd_enroll_<st>`, case
+  type `medicaid_enrollment_end`); (3) PER SE: `paid_after_enrollment_end` ships
+  `mcd_paid_after_end` on the matrix, and `contradictions._events` reports the
+  enrollment ends as their own Tier A type `billing_after_enrollment_end` (window
+  closed by the next segment start; managed-care / run-out / other-state innocent
+  list) instead of folding them into billing_after_exclusion.
   Full suite: `pytest tests/` (997 tests + 4 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
