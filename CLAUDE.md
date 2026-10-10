@@ -820,7 +820,24 @@ first, then paste" above every move/done block.
   says the matrix has no case labels. RULE: every training runner's export line
   carries `--case-db` + `--defendant-npis`; a run whose ledger shows the doj_case
   FAIL is not a model result and is never read as one.
-  Full suite: `pytest tests/` (1,042 tests + 2 skipped).
+  FUZZY TIER VERIFIED AND TIGHTENED (2026-10-10): the first fuzzy batch (108 rows, 11
+  Manus tasks) confirmed 28 (26%): 45 wrong_npi, 33 wrong_person. Three failure classes,
+  each now a rule in `fuzzy_resolve_orgs`: (1) HEADLINE DESCRIPTORS ("Telehealth
+  Company", "Tampa Bay Autism Service Provider", "Fresno-Based Community Health System")
+  never enter the tier (`is_headline_descriptor`: every token a place / sector /
+  filler word or legal tail, "<City>-Based" / "-Area" read as a place); (2) ONE-WORD
+  mentions ("ILYAYEV", "Diversicare") never enter; (3) containment is near-equality:
+  the candidate may carry NO distinctive token the mention lacks when the mention has
+  one distinctive token, at most ONE extra when it has two or more, and that extra only
+  when the mention's city agrees with the candidate's (or no city is given); legal
+  tails are stripped on both sides so "Mori, Bean and Brooks, P.A." still lands on
+  MORI BEAN AND BROOKS INC. The verification prompt now says a legal-tail / spelling
+  variant is the SAME entity (confirmed, not wrong_npi) and that the convicted owner's
+  billing vehicle is a party (confirmed, not wrong_person): part of the 26% was the
+  agent grading P.A. vs Inc as a different business. The tightened tier re-runs after
+  v9 with `--verification` (the 28 confirmed promote), then a fresh sample goes out.
+  `_nppes_person_key` survives an org-only provider table.
+  Full suite: `pytest tests/` (1,043 tests + 2 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

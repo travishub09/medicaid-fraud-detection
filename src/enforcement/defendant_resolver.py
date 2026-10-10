@@ -324,6 +324,8 @@ def person_key(name: str) -> str:
 
 def _nppes_person_key(provider_name: pd.Series) -> pd.Series:
     """provider_dim individuals are 'LAST, FIRST [MIDDLE]' → 'FIRST LAST'."""
+    if not len(provider_name):                      # no individuals in the table (an org-only fixture)
+        return pd.Series("", index=provider_name.index, dtype=object)
     parts = provider_name.fillna("").astype(str).str.split(",", n=1, expand=True)
     last = parts[0].fillna("").str.strip().str.upper()
     first_full = parts[1].fillna("").str.strip().str.upper() if parts.shape[1] > 1 else pd.Series("", index=parts.index)
@@ -828,6 +830,74 @@ def _distinctive_tokens(key: str) -> frozenset:
     return frozenset(t for t in str(key or "").lower().split() if len(t) >= 3 and t not in FUZZY_STOP_TOKENS)
 
 
+# TIGHTENED 2026-10-10 after the first fuzzy verification batch (108 rows, 26% confirmed:
+# 45 wrong_npi, 33 wrong_person). Three failure classes, each now a rule:
+#   1. HEADLINE DESCRIPTORS reached the tier ("Telehealth Company", "Medical Director",
+#      "Tampa Bay Autism Service Provider", "Fresno-Based Community Health System"): a
+#      mention whose every token is a place word, a sector word or a legal tail names
+#      nobody and is never fuzzy-matched (`is_headline_descriptor`).
+#   2. SURNAME FRAGMENTS ("ILYAYEV", "RIBEIRO", "Shtindler") matched the physician's
+#      practice ("ALEKSANDR ILYAYEV MEDICAL PC"): a one-word mention never enters the tier.
+#   3. ONE-TOKEN CONTAINMENT ("Target Corporation" -> TARGET PHARMACY, "Humana Inc" ->
+#      HUMANA HEALTH PLAN, "Baxter International" -> BAXTER SUPPLY SERVICES): the
+#      candidate may carry NO distinctive token the mention lacks when the mention has
+#      one distinctive token, and at most ONE extra when it has two or more, and that
+#      extra is allowed only if the mention's city agrees with the candidate's (or the
+#      mention names no city). A legal-tail difference (Inc vs P.A. vs PLLC) still
+#      matches: the tails are stripped on both sides.
+_PLACE_WORDS = frozenset({"bay", "area", "based", "metro", "metropolitan", "greater", "region",
+                          "regional", "county", "north", "south", "east", "west", "central",
+                          "downtown", "valley", "coast", "coastal"})
+_DESCRIPTOR_VOCAB = re.compile(
+    r"^(?:telehealth|telemedicine|manufacturing|distribution|director|assistant|consultant|consulting|"
+    r"office|offices|chronic|disease|diseases|autism|independent|testing|disability|disabilities|"
+    r"radiation|surgeon|surgeons|women|womens|men|mens|children|childrens|family|community|county|"
+    r"metro|metropolitan|area|based|primary|specialty|specialist|specialists|diagnostic|facility|"
+    r"facilities|agency|agencies|provider|providers|company|companies|corporation|group|holdings|"
+    r"operator|operators|owner|owners|employee|employees|chain|plan|plans|insurer|insurance|vision|"
+    r"physical|mental|behavioral|occupational|speech|senior|seniors|living|assisted|residential|"
+    r"ambulatory|outpatient|inpatient|acute|post|long|term|skilled|supplier|suppliers|device|devices|"
+    r"product|products|pharmaceutical|pharmaceuticals|biotech|technology|technologies|science|sciences|"
+    r"resource|resources|institute|foundation|university|college|school|district|city|state|federal|"
+    r"public|private|nonprofit|executive|executives|staffing|billing|marketing|marketer|recruiter|"
+    r"ambulance|transportation|lab|labs|laboratory|laboratories|sleep|eye|skin|foot|ankle|"
+    r"therapy|therapist|therapists|treatment|wellness|hospice|rehabilitation|rehab|chiropractic|"
+    r"dentist|dentists|physician|physicians|doctor|doctors|nurse|nurses|pharmacist|pharmacists|"
+    r"pharmacy|pharmacies|clinic|clinics|hospital|hospitals|practice|practices|services|service|"
+    r"system|systems|network|networks|partners|associates|management|solutions|enterprises|"
+    r"health|healthcare|medical|medicine|care|home|center|centers|centre)$", re.I)
+
+
+def _place_words(city: str, state: str) -> set:
+    place = set(str(city or "").lower().split()) | {str(state or "").lower()}
+    st = str(state or "").upper()
+    for n, ab in _NAME_TO_ABBR.items():
+        if ab == st:
+            place |= set(n.lower().split())
+    return place | _PLACE_WORDS
+
+
+def is_headline_descriptor(name: str, city: str = "", state: str = "") -> bool:
+    """True when the mention names nobody: every token is a place word, a sector /
+    descriptor word, a filler token or a legal tail ("Florida Pediatric Practice and
+    Physicians", "Chronic Disease Health Care Provider", "Distribution Services, Inc.").
+    A single distinctive token ("Lakeside Pediatric Therapy") keeps the mention."""
+    toks = [t for t in norm_org_name(name).lower().split() if t]
+    if not toks:
+        return True
+    place = _place_words(city, state)
+    # "Fresno-Based", "Dallas-Area", "Tampa Bay-Based": the words before the hyphen are
+    # a place by construction, whether or not the mention carries a city
+    for m in re.finditer(r"([A-Za-z.']+(?:\s[A-Za-z.']+)?)-(?:based|area)\b", str(name or ""), re.I):
+        place |= set(m.group(1).lower().replace(".", "").split())
+    for t in toks:
+        if (len(t) <= 2 or t in place or t in FUZZY_STOP_TOKENS or _DESCRIPTOR_VOCAB.match(t)
+                or _BUSINESS_WORDS.fullmatch(t) or _DESCRIPTOR_NOUN.match(t)):
+            continue
+        return False
+    return True
+
+
 def _fuzzy_org_index(provider_dim: pd.DataFrame, states: set, universe: set) -> dict:
     """{state: [(org_key, tokens, npi, city), ...]} for organizations in `states`
     whose name shares at least one token with `universe` (the unmatched mentions'
@@ -870,13 +940,17 @@ def fuzzy_resolve_orgs(out: pd.DataFrame, provider_dim: pd.DataFrame) -> tuple[p
     def _mention_tokens(r) -> frozenset:
         # a release writes "Sunrise Home Health of Miami": the city is where the
         # business is, not part of its registered name; drop the mention's own
-        # city / state words before the containment test
-        t = set(_distinctive_tokens(norm_org_name(str(r["defendant"]))))
-        place = set(str(r.get("city") or "").lower().split()) | {str(r.get("state") or "").lower()}
-        place |= {n.lower() for n, ab in _NAME_TO_ABBR.items() if ab == str(r.get("state") or "").upper()}
-        return frozenset(t - place)
+        # city / state words (and "Bay" / "Area" / "Based") before the containment test
+        name = str(r["defendant"])
+        key = norm_org_name(name)
+        if len(key.split()) < 2:                                   # rule 2: a one-word mention
+            return frozenset()
+        if is_headline_descriptor(name, r.get("city") or "", r.get("state") or ""):
+            return frozenset()                                     # rule 1: names nobody
+        t = set(_distinctive_tokens(key))
+        return frozenset(t - _place_words(r.get("city") or "", r.get("state") or ""))
     dtoks = {i: _mention_tokens(r) for i, r in cand_rows.iterrows()}
-    dtoks = {i: t for i, t in dtoks.items() if t and (len(t) >= 2 or len(next(iter(t))) >= 6)}
+    dtoks = {i: t for i, t in dtoks.items() if t}
     if not dtoks:
         return out, stats
     states = {str(out.at[i, "state"] or "").upper() for i in dtoks} - {""}
@@ -886,13 +960,22 @@ def fuzzy_resolve_orgs(out: pd.DataFrame, provider_dim: pd.DataFrame) -> tuple[p
         st = str(out.at[i, "state"] or "").upper()
         rows = index.get(st) or []
         stats["tried"] += 1
-        hits = [(k, t, n, c) for (k, t, n, c) in rows
-                if d <= t and len(d) / max(len(d), len(t)) >= FUZZY_MIN_JACCARD]
+        city = str(out.at[i, "city"] or "").upper()
+        place = _place_words(out.at[i, "city"] or "", st)
+        hits = []
+        for (k, t, n, c) in rows:
+            tt = t - place
+            if not d <= tt:
+                continue
+            extras = tt - d
+            if not extras:
+                hits.append((k, t, n, c))
+            elif len(d) >= 2 and len(extras) == 1 and (not city or c == city):
+                hits.append((k, t, n, c))                          # rule 3: one extra, city agrees
         if not hits:
             continue
         keys = {h[0] for h in hits}
         level = "fuzzy_name_state"
-        city = str(out.at[i, "city"] or "").upper()
         if len(keys) > 1 and city:
             narrowed = [h for h in hits if h[3] == city]
             if narrowed:

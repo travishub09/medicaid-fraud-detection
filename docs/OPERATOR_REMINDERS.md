@@ -193,27 +193,33 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **fuzzy_tier_verification** — DISPATCHED 2026-10-10 (11 Manus tasks, 108 fuzzy-tier rows; resolver in its own folder: 185 resolved_fuzzy, 485 ambiguous, 264 prior verdicts carried). NEXT: (1) 30+ min later, --poll and paste the LABEL_VERIFICATION.md tally (confirmed by strength); (2) ONLY AFTER v9 prints DONE, rerun the resolver with --verification so confirmed rows promote (fuzzy_*_verified, strength moderate) and wrong rows are rejected, then copy the verified table over processed\case_defendant_npis.parquet. The Manus slot is TAKEN until the poll returns: no other dispatch. (added 2026-10-10)
+- [ ] **merge_bundle269** — Merge bundle 269 (cumulative; supersedes 239-268; bundle 268 need not be merged first): the tightened fuzzy business tier + the verification prompt rules + the own-folder fuzzy workflow in the reminders. ONLY AFTER v9 prints DONE (never merge during a run). Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-10)
 
 ```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify" --poll
-REM ONLY AFTER v9 prints DONE:
-python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv"
-copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
-python -m src.reminders --done-task fuzzy_tier_verification
-```
-
-- [ ] **merge_bundle268** — Merge bundle 268 (cumulative; supersedes 239-267): the v8 fixes (sv_* shares on positive dollars + clipped; export --no-servicing-rows; export records doj_case as skipped when no --case-db; issue ledger FAILs a manifest with no doj_case source), docs/ACCURACY_READOUT_v8_2026-10-10.md, reminders. NOT while a run is going. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the .bat swallows the first two keystrokes of the next pasted line). (added 2026-10-10)
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\bundle268*.bundle") do copy /y "%f" "C:\Users\treyr\bundle268.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle269*.bundle") do copy /y "%f" "C:\Users\treyr\bundle269.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle268.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle269.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle268
+python -m src.reminders --done-task merge_bundle269
+```
+
+- [ ] **fuzzy_tier_verification** — VERDICT 2026-10-10: TIGHTEN. First fuzzy batch verified 28/108 (26%): 45 wrong_npi (one-token containment: Target Corporation -> TARGET PHARMACY), 33 wrong_person (headline descriptors like 'Telehealth Company' and surname fragments like 'ILYAYEV' reached the tier). Bundle 269 carries the tightened matcher (descriptors and one-word mentions never enter; a candidate may carry no extra distinctive token when the mention has one, at most one when it has two or more and only if the city agrees) plus a verification prompt that treats legal-tail variants and the convicted owner's billing vehicle as confirmed. ONLY AFTER v9 prints DONE and bundle 269 is merged: rerun the resolver in its own folder WITH --verification (the 28 confirmed promote, the wrong rows are rejected, the rest is re-matched under the tight rule), re-export the review file, dispatch the NEW fuzzy sample, poll, then rerun with the combined verification_results.csv and copy the table over processed\case_defendant_npis.parquet. The Manus slot is free until that dispatch. (added 2026-10-10)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv"
+python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
+python -u -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_sample_fuzzy.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2"
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2" --dispatch
+REM 30+ min later:
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2" --poll
+REM then (paste the LABEL_VERIFICATION.md tally in chat first; if it reads 90%+ confirmed):
+copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_results_batch1.csv"
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv"
+copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
+python -m src.reminders --done-task fuzzy_tier_verification
 ```
 
 - [ ] **v9_prereg_and_run** — v9 (bundle 268 runner): the SAME 2021-12 freeze as v8 with the v8 pipeline errors fixed and the levers on. The export line now carries --case-db + --defendant-npis (v8's runner dropped them: zero DOJ case labels), --no-servicing-rows (v8 doubled the universe), --seeds 5 --broadcast-rows weight --group-policy case_cluster; the runner stops itself if the matrix comes out with no case labels, and ends with the learning loop + the issue ledger against v8. ORDER: (1) merge bundle 268; (2) copy the REFRESHED run_v9_night.bat from Downloads into the repo folder (the old copy is wrong); (3) pre-register v9 with the command below BEFORE the run (hits50 >= 2 stays: v8 read 0); (4) start the runner (reuses graph_asof_2021-12 from v8, so shorter than v8); (5) say 'v9 finished' when it prints DONE, then zip the packet with the line the runner prints. Never merge a bundle while it runs. (added 2026-10-10)
