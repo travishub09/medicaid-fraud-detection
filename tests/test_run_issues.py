@@ -92,3 +92,20 @@ def test_ledger_tracks_recurrence_and_resolution(tmp_path):
     i9, _ = collect_issues(d9, prev_run_dir=d8)
     ids = {i["id"] for i in i9}
     assert "regression:dmepos:newly_skipped" in ids and "regression:expectations:more_fails_than_previous" in ids
+
+
+def test_missing_doj_case_source_is_a_fail(tmp_path):
+    """The v8 lesson: a manifest whose sources_used has no doj_case trained on exclusion
+    positives only. FAIL, with the --case-db fix named; a manifest that carries it raises nothing."""
+    d = _run_dir(tmp_path, "frozen_2021-12_v8", fails=0)
+    man = json.loads((d / "feature_manifest.json").read_text())
+    man["sources_used"] = {"partb": ["x"], "servicing": ["sv_rows"]}
+    man["n_positives"] = 920
+    (d / "feature_manifest.json").write_text(json.dumps(man))
+    issues, _ = collect_issues(d)
+    hit = next(i for i in issues if i["id"] == "label:doj_case:missing_case_labels")
+    assert hit["severity"] == "FAIL" and "--case-db" in hit["action"] and "920" in hit["finding"]
+    man["sources_used"]["doj_case"] = ["fraud_scheme"]
+    (d / "feature_manifest.json").write_text(json.dumps(man))
+    issues, _ = collect_issues(d)
+    assert not any(i["id"] == "label:doj_case:missing_case_labels" for i in issues)

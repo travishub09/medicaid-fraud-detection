@@ -803,7 +803,24 @@ first, then paste" above every move/done block.
   enrollment ends as their own Tier A type `billing_after_enrollment_end` (window
   closed by the next segment start; managed-care / run-out / other-state innocent
   list) instead of folding them into billing_after_exclusion.
-  Full suite: `pytest tests/` (997 tests + 4 skipped).
+  V8 READ-OUT (2026-10-10, `docs/ACCURACY_READOUT_v8_2026-10-10.md`): HOLD, cause =
+  PIPELINE ERROR not model performance. The night-runner's export line dropped
+  `--case-db` / `--defendant-npis`, so the matrix trained on 920 exclusion positives
+  and ZERO DOJ case labels while the FCA ruler graded it; the servicing grain added
+  843,551 rendering-only rows (universe 1,460,613, 58% without a billing row) and
+  diluted every percentile; refund rows pushed two sv_* shares outside [0,1]; five
+  features were dead. hits@50 = 0 (random 0.3), top-1% FCA lift 0.76, Jaccard 0.00;
+  the v8 dossier was NOT dispatched. Fixed in code: `servicing_grain` shares on
+  positive dollars + clipped; export `--no-servicing-rows` (sv_* features kept, no
+  rendering-only rows: the v9 universe is the billing-NPI universe); the export
+  records `doj_case` as SKIPPED with the reason when no `--case-db` is given, and
+  `run_issues` raises `label:doj_case:missing_case_labels` as a FAIL on any manifest
+  whose sources carry no `doj_case`; run_v9_night.bat carries `--case-db`,
+  `--defendant-npis`, `--no-servicing-rows` and stops itself when the SOURCES_REPORT
+  says the matrix has no case labels. RULE: every training runner's export line
+  carries `--case-db` + `--defendant-npis`; a run whose ledger shows the doj_case
+  FAIL is not a model result and is never read as one.
+  Full suite: `pytest tests/` (1,042 tests + 2 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

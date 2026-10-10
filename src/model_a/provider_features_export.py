@@ -2235,6 +2235,11 @@ def main() -> None:
     ap.add_argument("--no-servicing-grain", action="store_true",
                     help="skip the rendering-clinician grain (servicing_grain.py): no sv_* "
                          "features and no matrix rows for rendering NPIs without a billing row")
+    ap.add_argument("--no-servicing-rows", action="store_true",
+                    help="keep the sv_* features for every rendering NPI but add NO matrix rows "
+                         "for rendering NPIs without a billing row (v8 added 843,551 such rows, "
+                         "doubling the universe and diluting the ranking; v9 trains on the "
+                         "billing-NPI universe only)")
     ap.add_argument("--no-trends", action="store_true",
                     help="skip the year-over-year PUF trend features (saves one "
                          "extra prior-year read per multi-year source)")
@@ -2637,6 +2642,15 @@ def main() -> None:
         if rescache:
             rescache.save_frames(adapter_frames)
         case_lbls = None
+        if not args.case_db:
+            # v8 (2026-10-10) trained on 920 exclusion positives and ZERO DOJ case labels
+            # because the night-runner's export line dropped --case-db; the forward
+            # FCA ruler then graded a model that had never seen an FCA case. Say so
+            # where the SOURCES_REPORT and the issue ledger will see it.
+            audit("    [doj_case] skipped: no --case-db given, the matrix carries NO DOJ case "
+                  "labels (source doj_case absent). A training run graded on the FCA ruler "
+                  "needs --case-db <enforcement/doj_cases*.csv> --defendant-npis "
+                  "<processed/case_defendant_npis.parquet>; the issue ledger flags this as a FAIL.")
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
             cdb = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
@@ -2765,17 +2779,23 @@ def main() -> None:
                 adapter_frames["servicing"] = sv
                 pos = set(widened["npi"].astype(str)) if (widened is not None and len(widened)
                                                            and "npi" in widened.columns) else set()
-                extra = servicing_only_rows(sv, leads["npi"].astype(str), pd.read_parquet(pdim_sv), pos)
                 if "row_grain" not in leads.columns:
                     leads["row_grain"] = "billing"
-                if len(extra):
-                    leads = pd.concat([leads, extra], ignore_index=True)
-                    leads["npi"] = leads["npi"].astype(str)
-                    assert leads["npi"].is_unique, "servicing-only rows collided with billing rows"
-                audit(f"    [servicing] {len(sv):,} rendering NPIs from {Path(sv_spend).name}; "
-                      f"{len(extra):,} servicing-only rows added to the universe "
-                      f"(now {len(leads):,}); {int(extra['provider_on_leie'].sum()) if len(extra) else 0:,} "
-                      f"of them carry an exclusion")
+                if args.no_servicing_rows:
+                    n_would = int((~sv["npi"].isin(set(leads["npi"].astype(str)))).sum())
+                    audit(f"    [servicing] {len(sv):,} rendering NPIs from {Path(sv_spend).name}; "
+                          f"sv_* features kept, NO servicing-only rows added (--no-servicing-rows; "
+                          f"{n_would:,} rendering NPIs without a billing row stay out of the universe)")
+                else:
+                    extra = servicing_only_rows(sv, leads["npi"].astype(str), pd.read_parquet(pdim_sv), pos)
+                    if len(extra):
+                        leads = pd.concat([leads, extra], ignore_index=True)
+                        leads["npi"] = leads["npi"].astype(str)
+                        assert leads["npi"].is_unique, "servicing-only rows collided with billing rows"
+                    audit(f"    [servicing] {len(sv):,} rendering NPIs from {Path(sv_spend).name}; "
+                          f"{len(extra):,} servicing-only rows added to the universe "
+                          f"(now {len(leads):,}); {int(extra['provider_on_leie'].sum()) if len(extra) else 0:,} "
+                          f"of them carry an exclusion")
             else:
                 audit("    [servicing] skipped: needs processed/spending_fact.parquet + provider_dim.parquet")
         except Exception as e:

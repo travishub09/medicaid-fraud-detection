@@ -210,6 +210,8 @@ python -m src.model_a.provider_features_export \
     --preclean    $MEDICAID_DATA_ROOT/preclean \
     --processed   $MEDICAID_DATA_ROOT/processed \
     --case-db     $MEDICAID_DATA_ROOT/preclean/enforcement/doj_cases.csv \
+    --defendant-npis $MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet \
+    --no-servicing-rows \
     --with-analytics \
     --case-control \
     --geocode \
@@ -218,6 +220,8 @@ python -m src.model_a.provider_features_export \
 ```
 
 What the optional flags do:
+- `--case-db` + `--defendant-npis` — NOT optional on a training run. v8 (2026-10-10) ran without them, trained on exclusion positives only, and was graded on the FCA ruler it had never seen; the SOURCES_REPORT now records `doj_case` as skipped and the issue ledger raises a FAIL when they are missing.
+- `--no-servicing-rows` — keeps the rendering-clinician features (sv_*) but adds no matrix rows for rendering NPIs without a billing row. Without it the universe doubles (v8: 843,551 extra rows) and every peer percentile is diluted. Use it on every training run until the servicing universe has its own peer groups.
 - `--with-analytics` — adds growth, clinical plausibility, and the billing-LM features (DuckDB-streamed; use a filtered/by-state spending file if RAM-bound).
 - `--case-control` — also writes `provider_features_matched.parquet` (matched positives + clean controls).
 - `--geocode` — live Census geocoding of billing addresses (network).

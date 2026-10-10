@@ -72,12 +72,19 @@ def servicing_stats(spending_path: str | Path, cutoff: str | None = None,
             FROM read_parquet('{_pq(spending_path)}')
             WHERE servicing_npi IS NOT NULL AND length(CAST(servicing_npi AS VARCHAR)) = 10
                   AND COALESCE(total_paid, 0) <= 500000000 {where}),
-        by_bn AS (SELECT sv, bn, SUM(paid) paid FROM s GROUP BY 1, 2),
-        tot AS (SELECT sv, SUM(paid) tp FROM by_bn GROUP BY 1),
+        -- shares are built on POSITIVE dollars only: refund / recoupment rows carry
+        -- negative total_paid and pushed sv_top_billing_share and
+        -- sv_share_under_others outside [0, 1] on v8 (EXPECTATIONS FAILs), so the
+        -- gross paid per billing org is the denominator and the result is clipped
+        by_bn AS (SELECT sv, bn, SUM(paid) paid, SUM(GREATEST(paid, 0)) gross FROM s GROUP BY 1, 2),
+        tot AS (SELECT sv, SUM(gross) tg FROM by_bn GROUP BY 1),
         conc AS (
             SELECT b.sv, COUNT(DISTINCT b.bn) AS sv_n_billing_orgs,
-                   MAX(b.paid) / NULLIF(MAX(t.tp), 0) AS sv_top_billing_share,
-                   SUM(CASE WHEN b.bn IS DISTINCT FROM b.sv THEN b.paid ELSE 0 END) AS sv_paid_under_others
+                   LEAST(1.0, GREATEST(0.0, MAX(b.gross) / NULLIF(MAX(t.tg), 0))) AS sv_top_billing_share,
+                   SUM(CASE WHEN b.bn IS DISTINCT FROM b.sv THEN b.paid ELSE 0 END) AS sv_paid_under_others,
+                   LEAST(1.0, GREATEST(0.0,
+                       SUM(CASE WHEN b.bn IS DISTINCT FROM b.sv THEN b.gross ELSE 0 END)
+                       / NULLIF(MAX(t.tg), 0))) AS sv_share_under_others
             FROM by_bn b JOIN tot t USING (sv) GROUP BY b.sv),
         by_month AS (SELECT sv, ym, COUNT(DISTINCT bn) n_orgs, SUM(lines) lines FROM s GROUP BY 1, 2),
         peaks AS (SELECT sv, MAX(n_orgs) AS sv_max_orgs_same_month, MAX(lines) AS sv_peak_lines_month
@@ -90,7 +97,7 @@ def servicing_stats(spending_path: str | Path, cutoff: str | None = None,
         SELECT b.sv AS npi, b.sv_paid_total, b.sv_rows, b.sv_lines, b.sv_patient_months,
                b.sv_distinct_hcpcs, b.sv_active_months, b.sv_first_month, b.sv_last_month,
                c.sv_n_billing_orgs, c.sv_top_billing_share, c.sv_paid_under_others,
-               c.sv_paid_under_others / NULLIF(b.sv_paid_total, 0) AS sv_share_under_others,
+               c.sv_share_under_others,
                p.sv_max_orgs_same_month, p.sv_peak_lines_month,
                b.sv_lines / NULLIF(b.sv_active_months, 0) AS sv_lines_per_active_month,
                b.sv_paid_total / NULLIF(b.sv_patient_months, 0) AS sv_paid_per_patient_month

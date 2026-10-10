@@ -112,6 +112,17 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
             issues.append(_issue("data", str(s.get("source")), "source_skipped", "WARN", detail,
                                  "procure or build the file the detail names (docs/platform/12), "
                                  "or record the skip as intended", "SOURCES_REPORT.md"))
+    # the v8 lesson (2026-10-10): the runner's export line dropped --case-db, the matrix
+    # trained on exclusion positives only, and the FCA ruler graded a model that had
+    # never seen an FCA case. A manifest with sources but no doj_case source is a FAIL.
+    srcs = man.get("sources_used") or {}
+    if srcs and "doj_case" not in srcs:
+        issues.append(_issue("label", "doj_case", "missing_case_labels", "FAIL",
+                             f"sources_used lists {len(srcs)} sources and no doj_case: the matrix carries "
+                             f"NO DOJ case labels (n_positives {man.get('n_positives', '?')} are exclusions only)",
+                             "add --case-db <enforcement/doj_cases*.csv> --defendant-npis "
+                             "<processed/case_defendant_npis.parquet> to the export line of the night-runner "
+                             "and re-register the run", "SOURCES_REPORT.md"))
     unmapped = ((man.get("feature_partition") or {}).get("unmapped") or [])
     if unmapped:
         issues.append(_issue("feature", "feature_partition", "unmapped_trainable", "FAIL",

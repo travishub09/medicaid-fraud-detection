@@ -717,7 +717,7 @@
   },
   {
    "key": "fuzzy_tier_verification",
-   "what": "LEVER 2 (label recall), after bundle 266 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\\fca_label_fuzzy; the PurpleLab folder processed\\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat.",
+   "what": "MANUS SLOT IS FREE (2026-10-10: the v8 dossier was not dispatched), so this may go now. LEVER 2 (label recall), after bundle 266 is merged and NOT while another Manus dispatcher is open: (1) rerun the defendant resolver (it now adds the fuzzy business tier, status resolved_fuzzy, and carries every prior research verdict forward); (2) write the review file with --include-fuzzy into its own folder (processed\\fca_label_fuzzy; the PurpleLab folder processed\\fca_label_strong is untouched) and read the count on the 'fuzzy business tier' line; (3) send verification_sample_fuzzy.csv through label_verification (--dispatch, then --poll later); (4) rerun the resolver with --verification pointing at the verification_results.csv so confirmed rows promote to resolved (match level fuzzy_*_verified, strength moderate) and wrong rows are rejected. Only then do fuzzy rows enter training and the strict file. Paste each command's last lines in chat.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -732,12 +732,28 @@
    ]
   },
   {
+   "key": "merge_bundle268",
+   "what": "Merge bundle 268 (cumulative; supersedes 239-267): the v8 fixes (sv_* shares on positive dollars + clipped; export --no-servicing-rows; export records doj_case as skipped when no --case-db; issue ledger FAILs a manifest with no doj_case source), docs/ACCURACY_READOUT_v8_2026-10-10.md, reminders. NOT while a run is going. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the .bat swallows the first two keystrokes of the next pasted line).",
+   "added": "2026-10-10",
+   "commands": [
+    "for %f in (\"%USERPROFILE%\\Downloads\\bundle268*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle268.bundle\"",
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
+    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle268.bundle\"",
+    "REM press Enter once, then paste the next line on its own:",
+    "git push origin claude/happy-mccarthy-3skrn3",
+    "python -m src.reminders --done-task merge_bundle268"
+   ]
+  },
+  {
    "key": "v9_prereg_and_run",
-   "what": "v9 (built 2026-10-10, bundle 266): case-cluster folds (orgs sharing a DOJ case never straddle train and test), seed bagging (5 fits per fold), the per-case label budget (label_weight), and a weight-vs-mask broadcast A/B on the same matrix. ORDER: (1) wait for v8 to print DONE and read its verdict; (2) merge bundle 266; (3) copy run_v9_night.bat from Downloads into the repo folder; (4) pre-register v9 with the command below BEFORE the run (if v8's hits@50 on the pursuit book read above 2, raise 'hits50 >= 2' to that number first; the goal is locked once registered); (5) start the runner; say 'v9 finished' when it prints DONE. v9 reuses v8's as-of graph (graph_asof_2021-12) so it is shorter than v8. Never merge a bundle while it runs. The runner now ends with the learning loop and the issue ledger (RUN_ISSUES.md: every FAIL / WARN the run raised, ranked, tracked against v8); copy the refreshed run_v9_night.bat from Downloads again before starting.",
+   "what": "v9 (bundle 268 runner): the SAME 2021-12 freeze as v8 with the v8 pipeline errors fixed and the levers on. The export line now carries --case-db + --defendant-npis (v8's runner dropped them: zero DOJ case labels), --no-servicing-rows (v8 doubled the universe), --seeds 5 --broadcast-rows weight --group-policy case_cluster; the runner stops itself if the matrix comes out with no case labels, and ends with the learning loop + the issue ledger against v8. ORDER: (1) merge bundle 268; (2) copy the REFRESHED run_v9_night.bat from Downloads into the repo folder (the old copy is wrong); (3) pre-register v9 with the command below BEFORE the run (hits50 >= 2 stays: v8 read 0); (4) start the runner (reuses graph_asof_2021-12 from v8, so shorter than v8); (5) say 'v9 finished' when it prints DONE, then zip the packet with the line the runner prints. Never merge a bundle while it runs.",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "copy /y \"%USERPROFILE%\\Downloads\\run_v9_night.bat\" \"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v9_night.bat\"",
+    "findstr /C:\"--no-servicing-rows\" \"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v9_night.bat\"",
+    "REM the findstr line must print the export line; if it prints nothing the old runner was copied",
     "python -u -m src.model_a.run_registry --data-root \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\" --preregister --tag frozen_2021-12_v9 --goal \"Case-cluster folds, 5-seed bagging and the per-case label budget raise the operator book's FCA hits at 50 on the 2021-12 freeze without raising the institutional share; the weight-vs-mask A/B decides the v10 broadcast policy\" --expected \"hits@50 on provider_priority_list_pursuit.csv at or above v8's, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats\" --check \"hits50 >= 2\" \"prec50_lo > base50\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.7\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 5\" \"groups = case_cluster\" \"broadcast = weight\"",
     "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v9_night.bat\"",
     "REM when it prints [v9] DONE: say 'v9 finished' in chat",
@@ -745,40 +761,12 @@
    ]
   },
   {
-   "key": "run_packet__frozen_2021-12_v8",
-   "what": "Send the run packet for frozen_2021-12_v8 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-   "added": "2026-10-10",
-   "commands": [
-    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8",
-    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-    "REM then upload run_packet.zip to the chat",
-    "python -m src.reminders --done-task run_packet__frozen_2021-12_v8"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__frozen_2021-12_v8",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v8 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-   "added": "2026-10-10",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v8"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v8",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v8 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-10-10",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v8\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v8"
-   ]
-  },
-  {
    "key": "registry_verdict__frozen_2021-12_v8",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v8 \u2014 close only when you have them",
-   "added": "2026-10-10"
+   "what": "VERDICT DELIVERED 2026-10-10: HOLD on frozen_2021-12_v8, cause = pipeline error, not model performance (the runner's export line dropped --case-db / --defendant-npis so the matrix trained on 920 exclusion positives and ZERO DOJ case labels; 843,551 servicing-only rows doubled the universe; two sv_* shares out of bounds; five dead features). hits@50 = 0 (random 0.3), top-1% FCA lift 0.76, Jaccard 0.00. The v8 dossier was NOT dispatched to Manus (skipped: a chance-level list). Read docs/ACCURACY_READOUT_v8_2026-10-10.md (in bundle 268), then close this with the line below.",
+   "added": "2026-10-10",
+   "commands": [
+    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v8"
+   ]
   }
  ]
 }

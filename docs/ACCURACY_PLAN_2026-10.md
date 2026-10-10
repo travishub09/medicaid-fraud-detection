@@ -186,6 +186,10 @@ horizon = 36
 frozen = True
 ```
 
+### 5a. What v8 actually read (2026-10-10)
+
+v8 read 0 hits at 50 on the pursuit book (random 0.3), top 1 percent FCA lift 0.76, Jaccard 0.00, and HOLD on four of the eight locked checks. It is not a model result: the runner's export line dropped the case labels (zero DOJ positives in the matrix, graded on the FCA ruler) and the servicing grain added 843,551 rendering-only rows that doubled the universe. The full read-out, the fixes and the v9 runner are in `docs/ACCURACY_READOUT_v8_2026-10-10.md`. v9 is the first run that exercises the section 4c and 4d levers; its hits bar stays at 2.
+
 ## 6. Operator steps
 
 The reminder queue carries these with the exact commands. In order: run the diagnostics on the v7 packet (priority-list mode, no training, minutes); download the two July files and build them; run v8 as a new pre-registration with the checks above; run the diagnostics on v8 with the case database and the full graph; read the FCA-ruler verdict box first.
