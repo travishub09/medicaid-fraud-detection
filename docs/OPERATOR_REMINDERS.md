@@ -54,14 +54,6 @@ python -m src.reminders --done state_capacity_rosters
 
 ## STANDING TASK QUEUE
 
-- [ ] **push_branch_after_267** — The push after the bundle-267 merge was swallowed by the paste quirk ('t push ...' lost its first two keystrokes), so GitHub is still at 5660742 while the laptop is at 95e9c35. Run the push on its own line (press Enter once after the previous command finishes, then paste). This is the off-machine backup after the 2026-10-10 container reset; do it after every merge. (added 2026-10-10)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task push_branch_after_267
-```
-
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
 - [ ] **dossier_poll__frozen_2023-12_v5** — ~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md (added 2026-08-04)
 
