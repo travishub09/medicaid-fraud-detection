@@ -498,6 +498,96 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
     return df
 
 
+def medicaid_kickback(fact_parquet: Path, op_raw: pd.DataFrame, labelers: pd.DataFrame,
+                      asof_cutoff: str | None = None, window_months: int = 6,
+                      con=None) -> pd.DataFrame:
+    """The pharma_kickback scheme on MEDICAID prescribing (2026-10-10, item 3 of the
+    drug-file decision). Open Payments names the manufacturer that paid a prescriber;
+    the NDC's labeler code (first five digits) names the manufacturer of what the
+    prescriber's patients filled; fda_ndc.labeler_map bridges the two on a shared
+    manufacturer key. Per prescribing NPI:
+
+      px_paid_mfr_share      dollars on NDCs of manufacturers that paid this prescriber
+                             (any payment on/before the cutoff) / all prescriber dollars
+      px_paid_mfr_count      distinct paying manufacturers whose drugs the prescriber wrote
+      px_post_payment_lift   "prescribing that moves after industry payments": over every
+                             (prescriber, manufacturer) pair with a payment, dollars on that
+                             manufacturer's drugs in the ``window_months`` after the FIRST
+                             payment month vs the same window before, pooled across pairs:
+                             max(0, (post - pre) / (post + pre)); NULL when neither side
+                             has dollars. A fresh prescriber of a drug after its maker's
+                             first payment reads high; steady prescribing reads 0.
+      px_op_payment_total    the prescriber's Open Payments dollars from those manufacturers
+    Prescribers with no payments carry NULL (no exposure observed), never 0.
+    """
+    import duckdb
+    from .fda_ndc import manufacturer_key
+    from src.attempt_2.clean_data import _resolve_columns, canonicalize_series
+    con = con or duckdb.connect()
+    cols = ["npi", "px_paid_mfr_share", "px_paid_mfr_count", "px_post_payment_lift", "px_op_payment_total"]
+    if op_raw is None or not len(op_raw) or labelers is None or not len(labelers):
+        return pd.DataFrame(columns=cols)
+    res = _resolve_columns(list(op_raw.columns), {k: v for k, v in
+                           __import__("src.ingest_cms.openpayments", fromlist=["OP_COLS"]).OP_COLS.items()})
+    if "npi" not in res or "manufacturer" not in res:
+        return pd.DataFrame(columns=cols)
+    op = op_raw.rename(columns={v: k for k, v in res.items()})
+    op = op.assign(npi=canonicalize_series(op["npi"]))
+    op = op[op["npi"].notna()].copy()
+    op["mfr_key"] = op["manufacturer"].map(manufacturer_key)
+    op["amount"] = pd.to_numeric(op.get("amount", 0), errors="coerce").fillna(0.0)
+    if "payment_date" in op.columns:
+        d = pd.to_datetime(op["payment_date"], errors="coerce")
+        op["pay_month"] = d.dt.strftime("%Y-%m")
+    else:
+        op["pay_month"] = None
+    if asof_cutoff:
+        cut = str(asof_cutoff)[:7]
+        op = op[op["pay_month"].isna() | (op["pay_month"] <= cut)]
+    op = op[op["mfr_key"] != ""]
+    pays = (op.groupby(["npi", "mfr_key"], as_index=False)
+              .agg(first_pay=("pay_month", "min"), op_amount=("amount", "sum")))
+    if not len(pays):
+        return pd.DataFrame(columns=cols)
+    lab = labelers[["labeler5", "mfr_key"]].drop_duplicates("labeler5")
+    con.register("_pays", pays)
+    con.register("_lab", lab)
+    w = int(window_months)
+    df = con.execute(f"""
+        with f as (select prescribing_npi as npi, substr(ndc, 1, 5) as labeler5, service_month, total_paid
+                   from read_parquet('{_pq(fact_parquet)}')
+                   where length(prescribing_npi) = 10 and {CLEAN_ROW}),
+        fm as (select f.npi, l.mfr_key, f.service_month, f.total_paid
+               from f left join _lab l using (labeler5)),
+        tot as (select npi, sum(total_paid) as all_paid from fm group by 1),
+        paid_pairs as (
+            select fm.npi, fm.mfr_key, p.first_pay, p.op_amount,
+                   sum(fm.total_paid) as mfr_paid,
+                   sum(case when p.first_pay is not null
+                                 and fm.service_month > p.first_pay
+                                 and fm.service_month <= strftime(date_trunc('month', strptime(p.first_pay, '%Y-%m')) + interval {w} month, '%Y-%m')
+                            then fm.total_paid else 0 end) as post_paid,
+                   sum(case when p.first_pay is not null
+                                 and fm.service_month < p.first_pay
+                                 and fm.service_month >= strftime(date_trunc('month', strptime(p.first_pay, '%Y-%m')) - interval {w} month, '%Y-%m')
+                            then fm.total_paid else 0 end) as pre_paid
+            from fm join _pays p on p.npi = fm.npi and p.mfr_key = fm.mfr_key
+            where fm.mfr_key is not null
+            group by 1, 2, 3, 4),
+        per as (select npi, sum(mfr_paid) as paid_mfr_dollars, count(*) as n_mfr,
+                       sum(post_paid) as post, sum(pre_paid) as pre, sum(op_amount) as op_total
+                from paid_pairs group by 1)
+        select p.npi,
+               p.paid_mfr_dollars / nullif(t.all_paid, 0) as px_paid_mfr_share,
+               p.n_mfr as px_paid_mfr_count,
+               case when p.post + p.pre > 0 then greatest((p.post - p.pre) / (p.post + p.pre), 0) end as px_post_payment_lift,
+               p.op_total as px_op_payment_total
+        from per p join tot t using (npi)
+        """).df()
+    df["npi"] = df["npi"].astype(str)
+    return df[cols]
+
+
 def npi_features(fact_parquet: Path, exclusions=None, deactivations=None,
                  nadac_reference=None, con=None, opioid_flags=None) -> pd.DataFrame:
     """One per-NPI frame carrying BOTH roles (an NPI can dispense and prescribe)."""

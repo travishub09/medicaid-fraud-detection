@@ -35,6 +35,10 @@ OP_COLS = {
                      "APPLICABLE_MANUFACTURER_OR_APPLICABLE_GPO_MAKING_PAYMENT_NAME"],
     "amount": ["Total_Amount_of_Payment_USDollars",
                "TOTAL_AMOUNT_OF_PAYMENT_USDOLLARS"],
+    # the payment date feeds the Medicaid-side timing test (medicaid_ndc.
+    # medicaid_kickback: prescribing of the payer's drugs after vs before the
+    # first payment); resolved here so the export's usecols read keeps it
+    "payment_date": ["Date_of_Payment", "DATE_OF_PAYMENT", "Payment_Date"],
     "product": ["Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
                 "Name_of_Associated_Covered_Drug_or_Biological1",
                 "Product_Category_or_Therapeutic_Area_1"],

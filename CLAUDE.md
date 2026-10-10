@@ -743,8 +743,22 @@ first, then paste" above every move/done block.
   `px_opioid_paid_share` / `px_opioid_la_share` (prescriber) and `rx_opioid_paid_share`
   / `rx_opioid_la_share` (pharmacy), added to `pill_mill` beside the Medicare file's
   rates; the export passes the as-of NADAC file into the NDC block for both. (3) PHARMA
-  KICKBACKS ON MEDICAID stays QUEUED on the FDA NDC Directory download (labeler ->
-  manufacturer; reminder `fda_ndc_directory`). Scheme weights changed: v9 semantics.
+  KICKBACKS ON MEDICAID (built the same day once the operator downloaded the FDA NDC
+  Directory): `ingest_cms/fda_ndc.py` (`load_fda_product` reads product.txt / the
+  folder / the zip, Latin-1 tolerant; `labeler_map` = labeler5 (4- or 5-digit labeler
+  zero-padded) -> modal LABELERNAME -> `mfr_key` via `manufacturer_key`, the shared
+  first-distinctive-token normalizer applied to Open Payments payer names too;
+  `product_schedule` = ndc9 -> DEA schedule / is_controlled) +
+  `medicaid_ndc.medicaid_kickback` (Open Payments payments by (npi, mfr_key, first
+  pay month, amount; `OP_COLS.payment_date` added; payments after the cutoff dropped)
+  x the NDC fact's labeler5 -> `px_paid_mfr_share`, `px_paid_mfr_count`,
+  `px_post_payment_lift` = max(0, (post - pre) / (post + pre)) over the window after
+  vs before the first payment, pooled across pairs, `px_op_payment_total`; no payment
+  = NULL never 0), added to `pharma_kickback`. The export's NDC block loads
+  preclean/fda_ndc/ and reuses the Open Payments raw; the kickback block's
+  `return frames` on --skip-sources kickback (which silently skipped every adapter
+  after it, the July files included) is fixed. Preflight registry entry `fda_ndc`.
+  Scheme weights changed: v9 semantics.
   LEARNING LOOP (`model_a/learning_loop.py`, 2026-10-10; night-runner step before
   the ledger): on ONE out-of-fold scoring (reads `provider_oof_scores.parquet`,
   which `build_priority_list` now persists, else computes it): (1) LABEL NOISE by

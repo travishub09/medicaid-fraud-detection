@@ -81,6 +81,10 @@ UNLOCKS = [
         "paid-after-enrollment-end per-se check, and the mcd_enroll:<ST>:<reason> label "
         "source (run python -m src.ingest_cms.medicaid_enrollment after download)",
         "ingest_cms.medicaid_enrollment"),
+    Src("fda_ndc", "FDA NDC Directory (product.txt: labeler code -> manufacturer, DEA schedule)",
+        "fda_ndc", ["product.txt", "ndc.zip"], [".txt", ".zip"],
+        "pharma_kickback on Medicaid prescribing (px_paid_mfr_share, px_post_payment_lift; "
+        "with Open Payments + the Medicaid NDC fact)", "ingest_cms.fda_ndc"),
     Src("saturation", "Market Saturation & Utilization", "saturation", ["saturation.csv"],
         [".csv"], "saturation_fraud (market_saturation_index)", "ingest_cms.saturation"),
     Src("hrsa_340b", "340B OPAIS Covered Entity Daily Report", "hrsa_340b",

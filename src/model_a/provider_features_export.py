@@ -1571,20 +1571,23 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 log(f"    [{name}_trend] skipped: {e}")
 
     # Part D × Open Payments kickback co-occurrence (per-NPI) needs BOTH raws.
+    # (2026-10-10: this block used to `return frames` on --skip-sources kickback,
+    # which silently skipped every adapter below it, the July files included.)
+    pd_raw = None
+    op_raw = None
     if "kickback" in skip:
         log("    [kickback] skipped: --skip-sources")
-        return frames
-    pd_raw = None
-    try:
-        op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS, max_year)
-        pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS, max_year)
-        if op_raw is not None and pd_raw is not None:
-            kb = openpayments.kickback_co_occurrence(op_raw, pd_raw)
-            if kb is not None and len(kb) and "npi" in kb.columns:
-                frames["kickback"] = kb
-                log(f"    [kickback] {len(kb):,} prescribers (op_payment_utilization_corr)")
-    except Exception as e:
-        log(f"    [kickback] skipped: {e}")
+    else:
+        try:
+            op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS, max_year)
+            pd_raw = _read_latest(pc / "partd", partd.PARTD_COLS, max_year)
+            if op_raw is not None and pd_raw is not None:
+                kb = openpayments.kickback_co_occurrence(op_raw, pd_raw)
+                if kb is not None and len(kb) and "npi" in kb.columns:
+                    frames["kickback"] = kb
+                    log(f"    [kickback] {len(kb):,} prescribers (op_payment_utilization_corr)")
+        except Exception as e:
+            log(f"    [kickback] skipped: {e}")
 
     # NADAC name-grain brand-premium (per-NPI): needs the NADAC reference +
     # the Part D raw already loaded above. The NDC-claims path stays in the
@@ -1655,6 +1658,27 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                     log(f"    [medicaid_ndc] NADAC reference unavailable ({e}); brand / opioid shares off")
                 df = mndc.npi_features(fact_p, exclusions=exclusion_events, deactivations=deact,
                                        nadac_reference=nref, opioid_flags=opi)
+                # the Medicaid side of pharma_kickback: Open Payments (read above, or
+                # here when the Part D block had nothing) x the FDA labeler map
+                kb_txt = "off"
+                try:
+                    fda_dir = pc / "fda_ndc"
+                    if fda_dir.is_dir() and (any(fda_dir.glob("*.txt")) or any(fda_dir.glob("*.zip"))):
+                        from src.ingest_cms import fda_ndc
+                        labs = fda_ndc.labeler_map(fda_ndc.load_fda_product(fda_dir))
+                        if op_raw is None and "kickback" not in skip:
+                            op_raw = _read_latest(pc / "open_payments", openpayments.OP_COLS, max_year)
+                        if op_raw is not None and len(labs):
+                            kb = mndc.medicaid_kickback(fact_p, op_raw, labs, asof_cutoff=asof_cutoff)
+                            if len(kb):
+                                df = df.merge(kb, on="npi", how="outer")
+                                kb_txt = f"{int(kb['px_paid_mfr_share'].notna().sum()):,} paid prescribers, {len(labs):,} labelers"
+                        else:
+                            kb_txt = "off (no Open Payments file)"
+                    else:
+                        kb_txt = "off (no preclean/fda_ndc/product.txt)"
+                except Exception as e:                           # noqa: BLE001
+                    kb_txt = f"off ({e})"
                 if len(df):
                     frames["medicaid_ndc"] = df
                     n_opi = int(opi["is_opioid"].sum()) if opi is not None and len(opi) else None
@@ -1665,7 +1689,8 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                         f"{int(df['px_paid_total'].notna().sum()):,} prescribers; "
                         f"excluded-prescriber join: {'on' if exclusion_events is not None else 'off'}, "
                         f"deactivated-prescriber join: {'on' if deact is not None else 'off'}; "
-                        f"opioid flag: {opi_txt}; spread proxy: {n_spread:,} pharmacies with a reference)")
+                        f"opioid flag: {opi_txt}; spread proxy: {n_spread:,} pharmacies with a reference; "
+                        f"Medicaid kickback: {kb_txt})")
                 else:
                     log(f"    [medicaid_ndc] skipped: {fact_p.name} produced no NPI rows")
             elif raw_dir.is_dir() and any(raw_dir.glob("*.csv")):

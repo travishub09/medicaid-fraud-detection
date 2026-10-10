@@ -113,7 +113,12 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
                        # that finally wakes this scheme without per-day data
                        "mue_violation_share": 0.8},
     # future (Part D / Open Payments / DMEPOS)
-    "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3},
+    # Medicare side (Open Payments x Part D) + the MEDICAID side (Open Payments x the
+    # NDC file through the FDA labeler map, medicaid_ndc.medicaid_kickback, 2026-10-10):
+    # the share of Medicaid drug dollars on paying manufacturers' drugs and the
+    # prescribing move after the first payment
+    "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3,
+                        "px_paid_mfr_share": 0.5, "px_post_payment_lift": 0.5},
     # Medicaid-fact sector schemes (Run 2 I4/I5): transport + behavioral health,
     # computed straight from the spending fact (ingest_cms/sector_schemes.py)
     "nemt_fraud": {"nemt_paid_share": 0.5, "nemt_lines_per_patient": 0.5},
