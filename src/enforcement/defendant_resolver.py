@@ -648,6 +648,9 @@ def load_nppes_middle_names(nppes_path, npis: set) -> dict:
     return {str(a): str(b or "").strip().upper() for a, b in rows if b and str(b).strip()}
 
 
+_last_fuzzy: dict = {}
+
+
 def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame,
                        middle_lookup: dict | None = None) -> pd.DataFrame:
     """mentions: case_id, defendant, kind, city, state (+ any other columns carried).
@@ -753,6 +756,11 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame,
             out.at[i, "status"] = "chain_org"        # the org_billing tier covers enrolled chains
         else:
             out.at[i, "status"] = "ambiguous"
+    # the fuzzy business tier on what the exact tier left unmatched (status
+    # resolved_fuzzy: held out of training until verified)
+    out["matched_org_key"] = ""
+    out, fz = fuzzy_resolve_orgs(out, provider_dim)
+    _last_fuzzy.update(fz)
     # SIBLING VETO: a case usually mentions the same person twice (the headline defendant
     # without a middle name or role, and the located mention "Matthew David Carter, 45, of
     # Ely, a rehabilitation technician"). A rejection on either mention (middle_conflict,
@@ -789,6 +797,124 @@ def resolve_defendants(mentions: pd.DataFrame, provider_dim: pd.DataFrame,
     out = out.drop(columns=["_pk", "_ok"])
     out["basis"] = "resolved_defendant"
     return out
+
+
+# ---------------------------------------------------------------------------
+# FUZZY BUSINESS TIER (label recall, 2026-10-10). The exact tier lands only on an
+# enrolled organization's exact normalized name; LABEL_AUDIT found 99% of usable
+# DOJ cases resolve to no scored NPI. A release writes "Sunrise Home Health of
+# Miami" where NPPES says "SUNRISE HOME HEALTH SERVICES LLC". This tier matches
+# on the DISTINCTIVE name tokens (generic / institutional vocabulary dropped)
+# within the mention's state: every distinctive token of the defendant must
+# appear in the candidate's name, the overlap must be at least half of the
+# longer side, and exactly one organization key may remain after the city
+# narrows the field. The result is status "resolved_fuzzy" with match_level
+# fuzzy_name_state / fuzzy_name_city_state: it is NOT "resolved", so case_labels
+# (training) and the strict export ignore it until the research agent verifies
+# a sample (label_verification), when it can be promoted. Prosecuted providers
+# are labels, never leads.
+FUZZY_MIN_JACCARD = 0.5
+
+
+# The fuzzy tier's stoplist is NARROWER than the graph's merge-key vocabulary
+# (clean_data.GENERIC_NAME_TOKENS drops SUNRISE / PEDIATRIC / MERCY so two local
+# clinics never fuse into one canonical org). Here the question is the opposite,
+# "which enrolled business IS this defendant", and those words identify it;
+# in-state uniqueness is the guard. Only pure filler and legal suffixes drop.
+from src.enforcement.case_db import NAME_STOP_TOKENS as FUZZY_STOP_TOKENS
+
+
+def _distinctive_tokens(key: str) -> frozenset:
+    return frozenset(t for t in str(key or "").lower().split() if len(t) >= 3 and t not in FUZZY_STOP_TOKENS)
+
+
+def _fuzzy_org_index(provider_dim: pd.DataFrame, states: set, universe: set) -> dict:
+    """{state: [(org_key, tokens, npi, city), ...]} for organizations in `states`
+    whose name shares at least one token with `universe` (the unmatched mentions'
+    distinctive tokens), so the index stays small on the full 8M-row NPPES table."""
+    cols = [c for c in ("npi", "provider_name", "name_key", "entity_type", "addr_state", "addr_city")
+            if c in provider_dim.columns]
+    p = provider_dim[cols]
+    st = p["addr_state"].fillna("").astype(str).str.upper().str.strip() if "addr_state" in p else pd.Series("", index=p.index)
+    p = p[st.isin(states)]
+    if not len(p):
+        return {}
+    st = st.loc[p.index]
+    et = p["entity_type"].fillna("").astype(str).str.strip() if "entity_type" in p else pd.Series("", index=p.index)
+    name = p["provider_name"].fillna("").astype(str) if "provider_name" in p else pd.Series("", index=p.index)
+    is_org = ~((et == "1") | ((et == "") & name.str.contains(",")))
+    key = (p["name_key"].fillna("").astype(str) if "name_key" in p.columns else name.map(norm_org_name))[is_org]
+    toks = key.str.lower().str.split()
+    expl = toks.explode()
+    expl = expl[expl.isin(universe)]
+    hit_idx = expl.index.unique()
+    out: dict = {}
+    city = p["addr_city"].fillna("").astype(str).str.upper().str.strip() if "addr_city" in p else pd.Series("", index=p.index)
+    npi = p["npi"].astype(str)
+    for idx in hit_idx:
+        k = key[idx]
+        t = _distinctive_tokens(k)
+        if not t:
+            continue
+        out.setdefault(st[idx], []).append((k, t, npi[idx], city[idx]))
+    return out
+
+
+def fuzzy_resolve_orgs(out: pd.DataFrame, provider_dim: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
+    """Second pass over business mentions the exact tier left `unmatched`."""
+    out = out.copy()
+    stats = {"tried": 0, "resolved_fuzzy": 0, "ambiguous_fuzzy": 0, "chain_org_fuzzy": 0}
+    cand_rows = out[(out["status"] == "unmatched") & (out["kind"] == "org")]
+    if not len(cand_rows):
+        return out, stats
+    def _mention_tokens(r) -> frozenset:
+        # a release writes "Sunrise Home Health of Miami": the city is where the
+        # business is, not part of its registered name; drop the mention's own
+        # city / state words before the containment test
+        t = set(_distinctive_tokens(norm_org_name(str(r["defendant"]))))
+        place = set(str(r.get("city") or "").lower().split()) | {str(r.get("state") or "").lower()}
+        place |= {n.lower() for n, ab in _NAME_TO_ABBR.items() if ab == str(r.get("state") or "").upper()}
+        return frozenset(t - place)
+    dtoks = {i: _mention_tokens(r) for i, r in cand_rows.iterrows()}
+    dtoks = {i: t for i, t in dtoks.items() if t and (len(t) >= 2 or len(next(iter(t))) >= 6)}
+    if not dtoks:
+        return out, stats
+    states = {str(out.at[i, "state"] or "").upper() for i in dtoks} - {""}
+    universe = set().union(*dtoks.values())
+    index = _fuzzy_org_index(provider_dim, states, universe)
+    for i, d in dtoks.items():
+        st = str(out.at[i, "state"] or "").upper()
+        rows = index.get(st) or []
+        stats["tried"] += 1
+        hits = [(k, t, n, c) for (k, t, n, c) in rows
+                if d <= t and len(d) / max(len(d), len(t)) >= FUZZY_MIN_JACCARD]
+        if not hits:
+            continue
+        keys = {h[0] for h in hits}
+        level = "fuzzy_name_state"
+        city = str(out.at[i, "city"] or "").upper()
+        if len(keys) > 1 and city:
+            narrowed = [h for h in hits if h[3] == city]
+            if narrowed:
+                hits, keys, level = narrowed, {h[0] for h in narrowed}, "fuzzy_name_city_state"
+        out.at[i, "n_candidates"] = len({h[2] for h in hits})
+        if len(keys) > 1:
+            out.at[i, "status"] = "ambiguous_fuzzy"
+            out.at[i, "npi_candidate"] = ";".join(sorted(keys)[:4])
+            stats["ambiguous_fuzzy"] += 1
+            continue
+        npis = sorted({h[2] for h in hits})
+        if len(npis) >= CHAIN_MIN_CANDIDATES:
+            out.at[i, "status"] = "chain_org_fuzzy"
+            stats["chain_org_fuzzy"] += 1
+            continue
+        out.at[i, "status"] = "resolved_fuzzy"
+        out.at[i, "match_level"] = level
+        out.at[i, "npi"] = npis[0] if len(npis) == 1 else ""
+        out.at[i, "npi_candidate"] = ";".join(npis) if len(npis) > 1 else ""
+        out.at[i, "matched_org_key"] = next(iter(keys))
+        stats["resolved_fuzzy"] += 1
+    return out, stats
 
 
 RESEARCH_STATUSES = ("research_low", "research_no_npi")
@@ -831,6 +957,38 @@ def carry_research(new: pd.DataFrame, prior: pd.DataFrame | None) -> tuple[pd.Da
             out.at[i, "status"] = st
             n += 1
     return out, n
+
+
+def apply_verification(out: pd.DataFrame, results: pd.DataFrame | None) -> tuple[pd.DataFrame, dict]:
+    """Promote / reject fuzzy rows from label_verification verdicts (verification_results.csv:
+    case_id, defendant or npi, verdict). A 'confirmed' verdict on a resolved_fuzzy row makes it
+    'resolved' (match_level <level>_verified: it enters training and the strict export); a
+    wrong_person / wrong_npi / not_a_provider verdict makes it 'fuzzy_rejected'. Exact-tier
+    rows are untouched here (their verdicts are read by the operator)."""
+    stats = {"promoted": 0, "rejected": 0}
+    if results is None or not len(results) or "verdict" not in results.columns:
+        return out, stats
+    out = out.copy()
+    r = results.copy()
+    r["verdict"] = r["verdict"].fillna("").astype(str).str.lower()
+    by_def = {(str(a), str(b)): v for a, b, v in zip(r.get("case_id", ""), r.get("defendant", ""), r["verdict"])
+              if str(b)}
+    by_npi = {(str(a), str(b)): v for a, b, v in zip(r.get("case_id", ""), r.get("npi", ""), r["verdict"])
+              if str(b)}
+    for i, row in out[out["status"] == "resolved_fuzzy"].iterrows():
+        v = by_def.get((str(row["case_id"]), str(row["defendant"]))) or by_npi.get((str(row["case_id"]), str(row["npi"])))
+        if not v or v == "pending":
+            continue
+        if v == "confirmed":
+            out.at[i, "status"] = "resolved"
+            out.at[i, "match_level"] = str(row["match_level"]) + "_verified"
+            stats["promoted"] += 1
+        elif v in ("wrong_person", "wrong_npi", "not_a_provider"):
+            out.at[i, "status"] = "fuzzy_rejected"
+            out.at[i, "npi_candidate"] = str(row["npi"])
+            out.at[i, "npi"] = ""
+            stats["rejected"] += 1
+    return out, stats
 
 
 def mentions_from_case_db(case_db: pd.DataFrame) -> pd.DataFrame:
@@ -943,6 +1101,21 @@ def report(resolved: pd.DataFrame, res: pd.DataFrame) -> str:
                   f"4-9 {int(((hits >= 4) & (hits <= 9)).sum()):,}, 10+ {int((hits >= 10).sum()):,}"]
             for st_, n in resolved[resolved["status"].isin(["nonclinical_role", "role_mismatch"])].groupby("status").head(6).iterrows():
                 L.append(f"  - {n['status']}: {n['defendant']} ({n['state']}) role '{n['role']}' [{n['role_family'] or '-'}] vs NPI {n['npi_taxonomy_family'] or '-'}; case {n['case_id']}")
+    fz = resolved[resolved["status"] == "resolved_fuzzy"] if len(resolved) else resolved
+    if len(resolved):
+        amt = pd.to_numeric(resolved.get("amount_usd", pd.Series(index=resolved.index)), errors="coerce").fillna(0)
+        fz_cases = fz["case_id"].nunique()
+        exact_cases = set(resolved[resolved["status"] == "resolved"]["case_id"])
+        new_cases = set(fz["case_id"]) - exact_cases
+        new_dollars = float(amt[resolved["case_id"].isin(new_cases)].groupby(resolved["case_id"]).max().sum()) if new_cases else 0.0
+        L += ["", "## Fuzzy business tier (recall candidates, NOT in training until verified)", "",
+              f"- mentions resolved by distinctive-token match within the state: **{len(fz):,}** "
+              f"({fz_cases:,} cases, {len(new_cases):,} of them with NO exact-tier NPI; "
+              f"${new_dollars:,.0f} of settlement dollars newly reachable)",
+              f"- ambiguous (several organizations fit): {int((resolved['status'] == 'ambiguous_fuzzy').sum()):,}; "
+              f"chains (5+ NPIs under the matched name): {int((resolved['status'] == 'chain_org_fuzzy').sum()):,}",
+              "- promotion path: label_verification samples these rows (strength weak) first; a confirmed row is "
+              "re-stamped 'resolved' by the next resolver run (carry_research) and enters the label."]
     L += ["", f"## Residual list for research: {len(res):,} mentions (ambiguous first, then unmatched by case dollars)", ""]
     for r in res.head(25).itertuples(index=False):
         L.append(f"- {r.status}: {r.defendant} ({r.kind}) {r.city or ''} {r.state} — case {r.case_id}, ${r.amount_num:,.0f}, candidates {r.n_candidates}".replace(" — ", "; "))
@@ -962,6 +1135,9 @@ def main() -> None:
     ap.add_argument("--nppes-file", default=None,
                     help="raw NPPES data file (npidata_pfile_*.csv) or its folder: supplies the middle names "
                          "provider_dim lacks, so a release middle name that contradicts NPPES is caught")
+    ap.add_argument("--verification", default=None,
+                    help="label_verification's verification_results.csv: confirmed verdicts promote "
+                         "resolved_fuzzy rows to resolved; wrong_* verdicts reject them")
     ap.add_argument("--mfcu-prompts", default=None,
                     help="also write state-MFCU sweep research prompts (jsonl) for the Southeast, 2020-2025")
     a = ap.parse_args()
@@ -985,6 +1161,14 @@ def main() -> None:
         resolved, n_carried = carry_research(resolved, pd.read_parquet(out))
         if n_carried:
             print(f"  carried {n_carried:,} research verdicts forward from the prior table")
+    fz = _last_fuzzy
+    print(f"  fuzzy business tier: {fz.get('tried', 0):,} unmatched org mentions tried -> "
+          f"{fz.get('resolved_fuzzy', 0):,} resolved_fuzzy (held out of training until verified), "
+          f"{fz.get('ambiguous_fuzzy', 0):,} ambiguous, {fz.get('chain_org_fuzzy', 0):,} chains")
+    if a.verification:
+        resolved, vs = apply_verification(resolved, pd.read_csv(a.verification, dtype=str))
+        print(f"  verification verdicts applied to fuzzy rows: {vs['promoted']:,} promoted to resolved, "
+              f"{vs['rejected']:,} rejected")
     resolved.to_parquet(out, index=False)
     res = residuals(resolved, a.min_amount,
                     [x.strip() for x in a.research_states.split(",")] if a.research_states else None)

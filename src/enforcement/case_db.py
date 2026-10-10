@@ -46,18 +46,22 @@ CASE_COLUMNS = [
 # in every dollar total. The later row is MARKED (duplicate_of = the earlier
 # case_id), never dropped: resolver rows keyed to either id keep working, and
 # the dollar aggregations skip the marked rows via drop_duplicate_settlements.
-GENERIC_NAME_TOKENS = {
-    "the", "and", "of", "for", "inc", "llc", "llp", "ltd", "corp", "corporation", "company", "co",
-    "health", "healthcare", "care", "medical", "medicine", "clinic", "clinics", "center", "centers",
-    "hospital", "hospitals", "home", "homes", "services", "service", "group", "associates", "partners",
-    "systems", "system", "management", "america", "american", "national", "regional", "community",
-    "family", "physicians", "physician", "doctor", "dr", "md", "pharmacy", "pharmacies", "laboratory",
-    "laboratories", "labs", "lab", "hospice", "nursing", "rehabilitation", "rehab", "therapy",
-    "behavioral", "mental", "dental", "vision", "ambulance", "transport", "supply", "supplies",
-    "equipment", "solutions", "network", "foundation", "institute", "university", "county", "city",
-    "state", "united", "states", "general", "international", "global", "enterprises", "holdings",
-    "operating", "opco", "dba", "et", "al", "jr", "sr", "iii", "mr", "mrs", "ms",
-}
+# IDENTITY stoplist (narrower than clean_data.GENERIC_NAME_TOKENS, which also drops
+# SUNRISE / PEDIATRIC / MERCY so two local clinics never fuse into one canonical
+# org). Here and in the resolver's fuzzy tier the question is "is this the same
+# named party", and those words identify it; only pure filler and legal suffixes
+# drop. Shared with defendant_resolver.FUZZY_STOP_TOKENS.
+NAME_STOP_TOKENS = frozenset({
+    "home", "care", "homecare", "health", "healthcare", "medical", "medicine", "services", "service",
+    "clinic", "clinics", "center", "centers", "centre", "hospital", "hospitals", "group", "associates",
+    "partners", "management", "holdings", "holding", "enterprise", "enterprises", "solutions",
+    "professional", "professionals", "provider", "providers", "systems", "system", "network", "practice",
+    "practices", "association", "the", "and", "for", "inc", "llc", "llp", "ltd", "corp", "corporation",
+    "company", "companies", "co", "dba", "opco", "pllc", "plc", "america", "american", "national",
+    "regional", "usa", "international", "global", "united", "states", "general", "et", "al",
+    "jr", "sr", "iii", "mr", "mrs", "ms", "dr", "md",
+})
+GENERIC_NAME_TOKENS = NAME_STOP_TOKENS          # back-compat name
 _NAME_TOKEN = re.compile(r"[a-z]{3,}")
 
 

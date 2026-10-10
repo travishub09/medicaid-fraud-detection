@@ -61,7 +61,11 @@ _CRIMINAL_OUTCOME = re.compile(r"sentenced|pleaded\s+guilty|pled\s+guilty|plead\
 _CHARGED_ONLY = re.compile(r"\b(?:charged|indicted|indictment|arrested|complaint\s+filed|accused)\b", re.I)
 STRICT_STATUTES = {"1128a1", "1128a3", "1128b1", "1128b6", "1128b7", "brchcia", "brchsa", "1128b16"}
 OK_MATCH_LEVELS = {"name_state", "name_city_state", "name_state_middle", "name_city_state_middle",
-                   "research_high", "research_medium"}
+                   "research_high", "research_medium",
+                   # the fuzzy business tier (resolver, 2026-10-10): accepted only with
+                   # include_fuzzy, always at strength weak until a verdict promotes the row
+                   "fuzzy_name_state", "fuzzy_name_city_state",
+                   "fuzzy_name_state_verified", "fuzzy_name_city_state_verified"}
 
 
 def _s(v) -> str:
@@ -125,6 +129,9 @@ def evidence_strength(basis: str, match_level: str, role_agree: str = "", nation
     ml = str(match_level or "")
     if basis in ("npi_on_list", "named_npi"):
         return "exact_id"
+    if ml.startswith("fuzzy_"):
+        # a verified fuzzy row verified exactly as a moderate name match would
+        return "moderate" if ml.endswith("_verified") else "weak"
     if basis == "name_match":
         return "moderate"
     if ml == "research_high" or ml.startswith("name_city_state") or ml.endswith("_middle"):
@@ -160,9 +167,17 @@ def stratified_sample(labels: pd.DataFrame, per_stratum: int = 12, seed: int = 1
 
 def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, provider_dim: pd.DataFrame,
                         policy: str = "strict_plus_criminal",
-                        exclusion_nodes: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Returns (labels, quarantine). Both carry a ``reason``-style column set."""
+                        exclusion_nodes: pd.DataFrame | None = None,
+                        include_fuzzy: bool = False) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Returns (labels, quarantine). Both carry a ``reason``-style column set.
+    include_fuzzy admits the resolver's resolved_fuzzy rows at strength weak (so the
+    verification strata can sample them); the PurpleLab file (--min-strength
+    moderate) never carries an unverified fuzzy row either way."""
     assert policy in POLICIES, policy
+    if include_fuzzy and "status" in defendant_npis.columns:
+        defendant_npis = defendant_npis.copy()
+        fz = defendant_npis["status"].astype(str) == "resolved_fuzzy"
+        defendant_npis.loc[fz, "status"] = "resolved"
     cases = case_db.drop_duplicates("case_id").set_index("case_id")
     pd_ = provider_dim[["npi"] + [c for c in ("entity_type", "deactivation_date", "addr_state") if c in provider_dim.columns]].copy()
     pd_["npi"] = pd_["npi"].astype(str)
@@ -379,6 +394,9 @@ def main() -> None:
     ap.add_argument("--strata-seed", type=int, default=11, help="change it to draw a fresh strata sample")
     ap.add_argument("--strata-sample", type=int, default=12,
                     help="rows per (evidence_strength x tier) cell in verification_sample_strata.csv (0 = skip)")
+    ap.add_argument("--include-fuzzy", action="store_true",
+                    help="admit the resolver's resolved_fuzzy rows at strength weak (verification strata only; "
+                         "never the moderate+ PurpleLab file)")
     ap.add_argument("--min-strength", default="weak", choices=["weak", "moderate", "strong", "exact_id"],
                     help="rows below this evidence strength go to the quarantine instead of the label")
     a = ap.parse_args()
@@ -386,7 +404,7 @@ def main() -> None:
     dn = pd.read_parquet(a.defendant_npis)
     pdim = pd.read_parquet(a.provider_dim)
     ex = pd.concat([pd.read_parquet(x) for x in a.exclusion_nodes], ignore_index=True) if a.exclusion_nodes else None
-    labels, quar = build_strict_labels(cdb, dn, pdim, a.policy, ex)
+    labels, quar = build_strict_labels(cdb, dn, pdim, a.policy, ex, include_fuzzy=a.include_fuzzy)
     rank = {"weak": 0, "moderate": 1, "strong": 2, "exact_id": 3}
     if a.min_strength != "weak" and len(labels):
         low = labels["evidence_strength"].map(rank).fillna(0) < rank[a.min_strength]
