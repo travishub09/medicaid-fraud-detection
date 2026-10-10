@@ -54,15 +54,12 @@ python -m src.reminders --done state_capacity_rosters
 
 ## STANDING TASK QUEUE
 
-- [ ] **merge_bundle267** — BUNDLE 267 (cut 2026-10-10 after the container reset; the branch now lives on GitHub too, pushed by the operator at 5660742): the learning-loop nullable-dtype fix + the reminder state. v8 is finished, so merge now. Click the bundle267 file card first, then paste; press Enter once after the merge line finishes. Then push the branch to GitHub (the operator push works; Claude's does not): that copy is the off-machine backup after the 2026-10-10 container reset. (added 2026-10-10)
+- [ ] **push_branch_after_267** — The push after the bundle-267 merge was swallowed by the paste quirk ('t push ...' lost its first two keystrokes), so GitHub is still at 5660742 while the laptop is at 95e9c35. Run the push on its own line (press Enter once after the previous command finishes, then paste). This is the off-machine backup after the 2026-10-10 container reset; do it after every merge. (added 2026-10-10)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle267*.bundle") do copy /y "%f" "C:\Users\treyr\bundle267.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
-git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle267.bundle"
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle267
+python -m src.reminders --done-task push_branch_after_267
 ```
 
 - [ ] **brad_ri_package** — Send Brad the RI dossier v4.1 + honest-grade email (ready; your call) (added 2026-08-02)
@@ -227,16 +224,6 @@ python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Deskt
 "C:\Users\treyr\medicaid-fraud-detection\run_v9_night.bat"
 REM when it prints [v9] DONE: say 'v9 finished' in chat
 python -m src.reminders --done-task v9_prereg_and_run
-```
-
-- [ ] **learning_loop_v8** — v8 RESUME RUN 2026-10-10: steps 4-9 completed and the run registered (HOLD: operator book 0 hits at 50 on the FCA ruler, v7 read 2); the learning loop then crashed on pandas nullable columns (fixed in bundle 267). After merging 267, run the loop and the ledger on v8 against v7 (the priority-list build persisted provider_oof_scores.parquet, so this is minutes). Paste the two summary lines. The review queue (label_review_prompts.jsonl) can be sent through the dossier's dispatcher with --dispatch-file, ONE dispatcher at a time and only when no other Manus batch is open; say so in chat before sending. (added 2026-10-10)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.learning_loop --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --data-root "C:\Users\treyr\OneDrive\Desktop\data" --prev-run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7"
-python -u -m src.model_a.run_issues --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --data-root "C:\Users\treyr\OneDrive\Desktop\data" --prev-run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v7"
-REM optional, one dispatcher at a time: python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8" --dispatch-file "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v8\label_review_prompts.jsonl"
-python -m src.reminders --done-task learning_loop_v8
 ```
 
 - [ ] **run_packet__frozen_2021-12_v8** — Send the run packet for frozen_2021-12_v8 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-10-10)
