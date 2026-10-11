@@ -849,7 +849,21 @@ first, then paste" above every move/done block.
   the SOURCES_REPORT says the matrix carries no case labels. v9's one new skip:
   `billing_lm` Out of Memory in DuckDB on the 1.46M-row universe (the ledger
   carries it; the billing-NPI universe halves the load for v10).
-  Full suite: `pytest tests/` (1,043 tests + 2 skipped).
+  FUZZY BATCH 2 (2026-10-11, 39 rows under the tightened tier): 10 confirmed (26%),
+  23 wrong_npi, 4 wrong_person. The descriptor / surname classes are gone; the
+  survivor is ONE BRAND WORD on a random local business ("Kindred Healthcare" ->
+  KINDRED HOSPITALS EAST, "Vibra Healthcare" -> VIBRA CLINICS, "Medco Health
+  Solutions" -> MEDCO LLC, "United Therapeutics" -> D E THERAPEUTICS): the stop list
+  stripped health / care / system / network / holdings from both sides before the
+  equality test. RULE 4 (`_name_words`): every non-tail word of the mention must
+  appear in the candidate, stop words included ("healthcare" reads as "health
+  care"; tails = inc/llc/corp/company/pllc/... and connectors). LAST-CHANCE RULE:
+  batch 3 under rule 4 reads 90%+ or the fuzzy tier is retired; civil-FCA
+  defendants are parent corporations whose NPIs are differently named
+  subsidiaries, which is an OWNERSHIP question (PECOS owner -> orgs broadcast) and
+  a research question, not a name-matching one. Verified rows promote regardless
+  (a verdict is per-row evidence); unverified fuzzy rows never ship.
+  Full suite: `pytest tests/` (1,044 tests + 2 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

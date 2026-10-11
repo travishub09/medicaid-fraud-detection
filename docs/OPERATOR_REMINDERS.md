@@ -193,16 +193,32 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **fuzzy_tier_verification** — STEP A DONE 2026-10-11 (tightened tier: 2,951 tried -> 154 resolved_fuzzy / 180 ambiguous / 27 chains; batch-1 verdicts applied: 25 promoted, 25 rejected; processed\case_defendant_npis.parquet now carries the promoted rows, 1,571 resolved NPIs; batch 2 = 39 rows in 4 Manus tasks DISPATCHED). STEP C, 30+ minutes later (v10 may be running; the poll only writes under verify2): poll and paste the LABEL_VERIFICATION.md tally. STEP D, ONLY AFTER v10 prints DONE and only if batch 2 reads 90%+ confirmed: rerun the resolver with BOTH verdict files and copy over again. The Manus slot is taken until the batch-2 poll returns. (added 2026-10-10)
+- [ ] **merge_bundle271** — Merge bundle 271 (cumulative; supersedes 239-270): fuzzy rule 4 (every mention word must appear in the candidate) + the batch-2 read-out. ONLY AFTER v10 prints DONE (never merge during a run). Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-11)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle271*.bundle") do copy /y "%f" "C:\Users\treyr\bundle271.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle271.bundle"
+REM press Enter once, then paste the next line on its own:
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle271
+```
+
+- [ ] **fuzzy_tier_verification** — BATCH 2 VERDICT 2026-10-11: TIGHTEN again (10/39 confirmed, 26%; 23 wrong_npi = one brand word landing on a random local business: Kindred Healthcare -> KINDRED HOSPITALS EAST, Vibra Healthcare -> VIBRA CLINICS; the descriptor / surname classes are gone, 4 wrong_person). Bundle 271 carries rule 4: every non-tail word of the mention must appear in the candidate ('healthcare' = 'health care'). LAST CHANCE RULE: batch 3 under rule 4 must read 90%+ or the fuzzy tier is retired and parent-company defendants go through ownership broadcast and the research residue instead. STEP D, ONLY AFTER v10 prints DONE and bundle 271 is merged: rerun the resolver with BOTH verdict files (the 10 confirmed promote, the 27 wrong reject, the rest re-matched under rule 4), copy the table over, re-export, dispatch batch 3 (expect a short sample), poll 30+ min later, paste the tally. The Manus slot is free until the batch-3 dispatch. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-REM STEP C, 30+ min after the dispatch:
-python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2" --poll
-REM STEP D, ONLY AFTER v10 prints DONE and only if batch 2 reads 90%+ confirmed:
+REM STEP D, ONLY AFTER v10 prints DONE and bundle 271 is merged:
 python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv"
 copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
-python -m src.reminders --done-task fuzzy_tier_verification
+python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
+python -u -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_sample_fuzzy.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3"
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --dispatch
+REM 30+ min later:
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --poll
+type "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\LABEL_VERIFICATION.md"
+REM paste the tally in chat; the close line waits for Claude's read
 ```
 
 - [ ] **v10_prereg_and_run** — v10 = the run v9 was meant to be: the 2021-12 freeze with DOJ case labels ON (--case-db + --defendant-npis), the billing-NPI universe (--no-servicing-rows), case-cluster folds, 5-seed bagging, the per-case label budget, the weight-vs-mask broadcast A/B, the learning loop and the issue ledger against v9. The runner has a NEW filename (run_v10_night.bat) so the copy cannot pick a stale download, and it stops itself after the export if the SOURCES_REPORT says the matrix has no case labels. ORDER: (1) merge bundle 270; (2) fuzzy STEP A (so v10 trains with the 28 promoted rows); (3) copy run_v10_night.bat from Downloads; (4) the findstr line MUST print the export line (if it prints nothing, stop and say so); (5) pre-register v10 (hits50 >= 2 stays); (6) start the runner; (7) say 'v10 finished' when it prints DONE, then zip the packet with the line the runner prints. Never merge a bundle while it runs. (added 2026-10-11)

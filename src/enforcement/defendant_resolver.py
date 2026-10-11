@@ -853,6 +853,7 @@ _DESCRIPTOR_VOCAB = re.compile(
     r"office|offices|chronic|disease|diseases|autism|independent|testing|disability|disabilities|"
     r"radiation|surgeon|surgeons|women|womens|men|mens|children|childrens|family|community|county|"
     r"metro|metropolitan|area|based|primary|specialty|specialist|specialists|diagnostic|facility|"
+    r"northern|southern|eastern|western|investors|investor|owners|ambulances|radiology|"
     r"facilities|agency|agencies|provider|providers|company|companies|corporation|group|holdings|"
     r"operator|operators|owner|owners|employee|employees|chain|plan|plans|insurer|insurance|vision|"
     r"physical|mental|behavioral|occupational|speech|senior|seniors|living|assisted|residential|"
@@ -866,6 +867,23 @@ _DESCRIPTOR_VOCAB = re.compile(
     r"pharmacy|pharmacies|clinic|clinics|hospital|hospitals|practice|practices|services|service|"
     r"system|systems|network|networks|partners|associates|management|solutions|enterprises|"
     r"health|healthcare|medical|medicine|care|home|center|centers|centre)$", re.I)
+
+
+_FUZZY_TAILS = frozenset({"inc", "incorporated", "llc", "llp", "ltd", "lp", "corp", "corporation", "co",
+                          "company", "companies", "pllc", "plc", "opco", "dba", "et", "al", "the", "and",
+                          "for", "of", "de", "la", "del", "los", "las", "les"})
+_SPLIT_WORDS = {"healthcare": ("health", "care"), "homecare": ("home", "care"), "medcare": ("med", "care")}
+
+
+def _name_words(key: str) -> frozenset:
+    """Every word of a normalized organization name except legal tails and connectors;
+    'healthcare' reads as 'health care' so the spelling never decides a match."""
+    out: set = set()
+    for w in str(key or "").lower().split():
+        if len(w) < 3 or w in _FUZZY_TAILS:
+            continue
+        out.update(_SPLIT_WORDS.get(w, (w,)))
+    return frozenset(out)
 
 
 def _place_words(city: str, state: str) -> set:
@@ -962,10 +980,19 @@ def fuzzy_resolve_orgs(out: pd.DataFrame, provider_dim: pd.DataFrame) -> tuple[p
         stats["tried"] += 1
         city = str(out.at[i, "city"] or "").upper()
         place = _place_words(out.at[i, "city"] or "", st)
+        words_m = _name_words(norm_org_name(str(out.at[i, "defendant"]))) - place
         hits = []
         for (k, t, n, c) in rows:
             tt = t - place
             if not d <= tt:
+                continue
+            # rule 4 (batch 2, 2026-10-11): EVERY word of the mention that is not a legal
+            # tail must appear in the candidate, stop words included. "Kindred
+            # Healthcare" is not KINDRED HOSPITALS EAST, "Vibra Healthcare" is not VIBRA
+            # CLINICS, "Medco Health Solutions" is not MEDCO LLC: the stop list had
+            # collapsed each mention to one brand word and the in-state index found a
+            # random local business carrying it (23 of 39 wrong_npi).
+            if not words_m <= (_name_words(k) - place):
                 continue
             extras = tt - d
             if not extras:

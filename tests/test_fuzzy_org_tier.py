@@ -129,10 +129,40 @@ def test_tightened_fuzzy_tier_rejects_the_verified_failure_classes():
         dict(case_id="t10", defendant="Telehealth Company", kind="org", city="", state="NH", amount_usd="1"),
     ])
     out = resolve_defendants(m, _pdim2()).set_index("case_id")
-    rejected = {"t1", "t2", "t3", "t4", "t5", "t9", "t10"}
+    rejected = {"t1", "t2", "t3", "t4", "t5", "t8", "t9", "t10"}     # t8: batch 2 showed "Care" vs "Center" is a different business
     for c in rejected:
         assert out.loc[c, "status"] != "resolved_fuzzy", (c, out.loc[c, "status"], out.loc[c, "npi"])
     # same business under another legal tail or spelling: still matched
     assert out.loc["t6", "status"] == "resolved_fuzzy" and out.loc["t6", "npi"] == "1000000053"
     assert out.loc["t7", "status"] in ("resolved", "resolved_fuzzy") and out.loc["t7", "npi"] == "1000000061"
-    assert out.loc["t8", "status"] == "resolved_fuzzy" and out.loc["t8", "npi"] == "1000000079"
+
+
+def test_every_mention_word_must_appear_in_the_candidate():
+    """Batch 2 (2026-10-11, 10/39 confirmed): the stop list collapsed "Kindred Healthcare"
+    to "kindred" and the state index found KINDRED HOSPITALS EAST. Every non-tail word of
+    the mention must now appear in the candidate; a legal tail or 'healthcare' spelling
+    still does not matter."""
+    pdim = pd.DataFrame({
+        "npi": ["1000000004", "1000000012", "1000000020", "1000000038", "1000000046", "1000000053", "1000000061"],
+        "provider_name": ["KINDRED HOSPITALS EAST, LLC", "VIBRA CLINICS LLC", "MEDCO, LLC", "COUNTY OF ARMSTRONG",
+                          "D. E. THERAPEUTICS, LLC", "JACKSONVILLE RADIOLOGY ASSOCIATES PA", "SUNRISE HOME HEALTHCARE SERVICES INC"],
+        "name_key": ["KINDRED HOSPITALS EAST", "VIBRA CLINICS", "MEDCO", "COUNTY OF ARMSTRONG",
+                     "D E THERAPEUTICS", "JACKSONVILLE RADIOLOGY ASSOCIATES", "SUNRISE HOME HEALTHCARE SERVICES"],
+        "entity_type": ["2"] * 7,
+        "addr_state": ["MA", "TX", "MO", "PA", "MD", "FL", "FL"],
+        "addr_city": ["BOSTON", "AMARILLO", "CAPE GIRARDEAU", "KITTANNING", "BALTIMORE", "JACKSONVILLE", "MIAMI"],
+        "taxonomy_code": [""] * 7,
+    })
+    m = pd.DataFrame([
+        dict(case_id="k1", defendant="Kindred Healthcare Inc.", kind="org", city="", state="MA", amount_usd="1"),
+        dict(case_id="k2", defendant="Vibra Healthcare LLC", kind="org", city="", state="TX", amount_usd="1"),
+        dict(case_id="k3", defendant="Medco Health Solutions, Inc.", kind="org", city="", state="MO", amount_usd="1"),
+        dict(case_id="k4", defendant="Armstrong Group", kind="org", city="", state="PA", amount_usd="1"),
+        dict(case_id="k5", defendant="United Therapeutics Corporation", kind="org", city="", state="MD", amount_usd="1"),
+        dict(case_id="k6", defendant="Jacksonville Radiology Practice", kind="org", city="", state="FL", amount_usd="1"),
+        dict(case_id="k7", defendant="Sunrise Home Health Care of Miami", kind="org", city="MIAMI", state="FL", amount_usd="1"),
+    ])
+    out = resolve_defendants(m, pdim).set_index("case_id")
+    for c in ["k1", "k2", "k3", "k4", "k5", "k6"]:
+        assert out.loc[c, "status"] != "resolved_fuzzy", (c, out.loc[c, "status"], out.loc[c, "npi"])
+    assert out.loc["k7", "status"] == "resolved_fuzzy" and out.loc["k7", "npi"] == "1000000061"   # healthcare == health care
