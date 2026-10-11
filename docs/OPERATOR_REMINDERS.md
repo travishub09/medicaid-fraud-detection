@@ -193,16 +193,16 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **merge_bundle277** — Merge bundle 277 (cumulative; supersedes 239-276; none of them need merging first): the fuzzy tier retired (verified promotions kept), the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh) + the reminders. Merge BEFORE the fuzzy last step and v11. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
+- [ ] **merge_bundle278** — Merge bundle 278 (cumulative; supersedes 239-277; none of them need merging first): the fuzzy tier retired (verified promotions kept), the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh) + v11 moved to the VM (reminders, runbook). Merge BEFORE the fuzzy last step and v11. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle277*.bundle") do copy /y "%f" "C:\Users\treyr\bundle277.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle278*.bundle") do copy /y "%f" "C:\Users\treyr\bundle278.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle277.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle278.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle277
+python -m src.reminders --done-task merge_bundle278
 ```
 
 - [ ] **fuzzy_tier_verification** — BATCH 3 READ 9/23 (39%) on 2026-10-11: under the last-chance rule the FUZZY TIER IS RETIRED (bundle 277: the resolver demotes every unverified fuzzy row to fuzzy_retired; the 47 rows the three batches confirmed stay promoted on every rerun). LAST STEP, after bundle 277 is merged: rerun the resolver with all THREE verdict files, copy the table over, paste the 'verification verdicts applied' and 'fuzzy tier RETIRED' lines, then close. Parent-company defendants go to ownership broadcast and the research residue from here. (added 2026-10-10)
@@ -234,20 +234,23 @@ python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Deskt
 python -m src.reminders --done-task registry_verdict__frozen_2021-12_v10
 ```
 
-- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze. ORDER: (1) merge bundle 273; (2) the fuzzy task through its batch-3 poll (so v11 trains with every promoted row); (3) copy run_v11_night.bat (NEW filename) from Downloads; (4) the findstr line MUST print the gate line; (5) pre-register v11 (v10's checks, parser fixed, Jaccard 0.7 is the bar the plateau fix must clear); (6) close the browser and any other Python, then start the runner: it refuses to start under 10 GB free and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (7) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs. (added 2026-10-11)
+- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back, the regularized scorer (the plateau fix) and FULL graph embeddings, same 2021-12 freeze, RUN ON THE VM (decided 2026-10-11: the laptop runner was only the fallback written before the VM decision; the VM has the memory, so v11 is the first VM run and no laptop run is needed). ORDER: (1) merge bundle 278 AND push it (the VM clones the pushed branch); (2) the fuzzy last step on the laptop, then wait for OneDrive to finish syncing processed\case_defendant_npis.parquet (the cloud icon on the file turns to a check); (3) the VM exists and the data pull has finished (task compute_box_decision); (4) on the VM: pull the code, pre-register v11 (v10's checks, parser fixed, Jaccard 0.7 is the bar the plateau fix must clear), start the runner inside tmux: it refuses to start under 24 GB free, rebuilds the as-of graph with every node embedded, and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped; (5) say 'v11 finished' when it prints DONE, zip the packet with the line it prints, run the sync up line, download the zip, stop the VM. Never merge a bundle while it runs. If the VM purchase falls through, say so and the laptop runner (run_v11_night.bat, findstr gate) is the fallback. (added 2026-10-11)
 
 ```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-copy /y "%USERPROFILE%\Downloads\run_v11_night.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
-findstr /C:"free-memory gate" "C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
-REM the findstr line must print the gate line; if it prints nothing STOP and say so in chat
-python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --preregister --tag frozen_2021-12_v11 --goal "The regularized scorer removes the 0.2000 plateau so the operator book's top 50 is stable across fold draws while keeping v10's FCA hits at 50, with every source present" --expected "hits@50 on provider_priority_list_pursuit.csv at or above v10's 2, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, no source skipped for memory" --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
-"C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
-REM when it prints [v11] DONE: say 'v11 finished' in chat
+# on the VM (ssh in; every line is bash):
+cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && pip install -r requirements.txt -q && source ~/.medicaid_env
+python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v11 --goal "The regularized scorer removes the 0.2000 plateau so the operator book's top 50 is stable across fold draws while keeping v10's FCA hits at 50, with every source present and every graph node embedded" --expected "hits@50 on provider_priority_list_pursuit.csv at or above v10's 2, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, no source skipped for memory" --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
+tmux new -s night
+bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v11 2021-12
+# detach with Ctrl-b then d; come back with: tmux attach -t night
+# when it prints [v11] DONE: say 'v11 finished' in chat, then:
+(cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v11 && zip -r ~/run_packet_v11.zip *.md *.json ab_broadcast_weight ab_broadcast_mask)
+bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v11
+# download ~/run_packet_v11.zip (scp, or from OneDrive model_a/frozen_2021-12_v11 after the sync), attach it in chat, STOP the VM; then on the laptop:
 python -m src.reminders --done-task v11_prereg_and_run
 ```
 
-- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). v11 runs on the laptop tonight; v12 is the first VM run. Close this when the VM exists and the data pull has finished. (added 2026-10-11)
+- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). v11 is the FIRST VM run (decided 2026-10-11 after the operator asked why not; the laptop runner is only the fallback). The data pull must start AFTER the fuzzy last step has synced to OneDrive. Close this when the VM exists and the data pull has finished. (added 2026-10-11)
 
 ```bat
 REM on the VM, after it boots (Ubuntu 22.04 / 24.04, 1 TB gp3 disk, SSH key only):

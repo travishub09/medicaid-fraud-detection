@@ -42,14 +42,14 @@ Every run is pre-registered first, from the laptop or the VM (the registry files
 
 ```bash
 cd ~/medicaid-fraud-detection && source ~/.medicaid_env
-python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v12 --goal "..." --expected "..." --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
+python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v11 --goal "..." --expected "..." --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
 ```
 
 Then the runner, inside `tmux` or `nohup` so an SSH drop does not kill it:
 
 ```bash
 tmux new -s night
-bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v12 2021-12
+bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v11 2021-12
 ```
 
 The runner refuses to start under 24 GB free, rebuilds the as-of graph with full embeddings into `graph_asof_2021-12_full` the first time (later runs reuse it; pass `--rebuild-graph` as the third argument to force it), and stops after the export if servicing, MUE, sector schemes, enrollment, the billing LM or the graph embeddings were skipped. It writes everything to `night_run.log` in the run folder. Detach with Ctrl-b then d; `tmux attach -t night` to come back.
@@ -65,11 +65,11 @@ cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy
 The packet for Claude, and the reports plus the registry files back to OneDrive so the laptop's dashboard and reminders see them:
 
 ```bash
-cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v12 && zip -r ~/run_packet_v12.zip *.md *.json ab_broadcast_weight ab_broadcast_mask
-bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
+cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v11 && zip -r ~/run_packet_v11.zip *.md *.json ab_broadcast_weight ab_broadcast_mask
+bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v11
 ```
 
-Download `~/run_packet_v12.zip` with scp (or from OneDrive after the upload) and attach it to the chat. Then stop the VM.
+Download `~/run_packet_v11.zip` with scp (or from OneDrive after the upload) and attach it to the chat. Then stop the VM.
 
 ## 5. Storage: where the 291 GB lives
 
@@ -93,5 +93,7 @@ Rebuilding a VM disk from S3 takes minutes; from OneDrive, hours. Re-run the syn
 ## 6. What the VM changes and what it does not
 
 It changes completeness: every source present, the embeddings uncapped, the motif columns real, repeats and seeds affordable. It does not change the label, the ruler or the checks, so a VM run is graded exactly like a laptop run and is a new pre-registration like any other. The laptop remains the operator's seat: merges, pushes, Manus, reading.
+
+v11 is the first VM run (decided 2026-10-11). The laptop runner run_v11_night.bat was written before the VM decision and is only the fallback if the purchase falls through: on the laptop the embeddings stay capped and the five memory casualties are a coin flip, on the VM both are settled. Start the data pull only after the fuzzy last step has synced to OneDrive, so the VM reads the resolver table that carries the 47 promoted rows.
 
 _Leads for counsel review, never accusations._
