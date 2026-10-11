@@ -25,9 +25,11 @@ if [ "${1:-down}" = "up" ]; then
 fi
 
 echo "[sync] $REMOTE:$SRC_PATH -> $DATA_ROOT (first pull copies everything; later pulls only what changed)"
-# --exclude: the laptop's run folders are not needed on the VM except the registry files
+# --exclude: the laptop's run folders (6.5 GB) and the attempt_2 stage outputs under
+# features/ (15 GB; the frozen runs read detection/, never features/) stay behind.
+# Measured 2026-10-11: preclean 178 GB, interim 23 GB, processed 15 GB, the rest small.
 rclone sync "$REMOTE:$SRC_PATH" "$DATA_ROOT" \
-    --exclude "model_a/frozen_*/**" --exclude "model_a/*/_resume_cache/**" \
+    --exclude "model_a/frozen_*/**" --exclude "model_a/*/_resume_cache/**" --exclude "features/**" \
     --transfers 8 --checkers 16 -P
 # the registry / pre-registration / ledger files are the one thing both sides write
 rclone copy "$REMOTE:$SRC_PATH/model_a" "$DATA_ROOT/model_a" \

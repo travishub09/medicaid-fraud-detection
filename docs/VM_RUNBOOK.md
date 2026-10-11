@@ -73,9 +73,9 @@ Download `~/run_packet_v12.zip` with scp (or from OneDrive after the upload) and
 
 ## 5. Storage: where the 291 GB lives
 
-The data root is 291 GB in 25,310 files (measured 2026-10-11). Three copies, each with a job:
+The data root is 291 GB in 25,310 files (measured 2026-10-11: preclean 178 GB, interim 23 GB, features 15 GB, processed 15 GB, model_a 6.5 GB, the rest under 3 GB each). The VM pulls about 230 GB: everything except the run folders and `features` (stage outputs the frozen runs never read). Three copies, each with a job:
 
-1. **OneDrive** (Desktop/data) is the laptop's master and already a cloud copy; it needs the 1 TB plan. The laptop keeps `processed`, `enforcement`, `model_a`, `graph` and `detection` on disk for its own tools and may mark `preclean`, `interim` and the as-of graph folders "Free up space" by hand once the VM is the runner (never through Storage Sense, and never run the export on the laptop after that).
+1. **OneDrive** (Desktop/data) is the laptop's master and already a cloud copy; it needs the 1 TB plan. The laptop keeps `processed`, `enforcement`, `model_a`, `graph` and `detection` on disk for its own tools and may mark `preclean` (178 GB) and `interim` (23 GB) "Free up space" by hand once the VM is the runner (never through Storage Sense, and never run the export on the laptop after that).
 2. **The VM disk** (1 TB gp3, about $80 a month while stopped) holds the working copy the runs read and write.
 3. **S3** is the durable copy, mirrored FROM THE VM after the first pull (free, fast, same region). About $7 a month at Standard, half that at Standard-IA. Private bucket, versioning on, public access blocked:
 
