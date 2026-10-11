@@ -919,8 +919,8 @@ first, then paste" above every move/done block.
   free-RAM gate, and a stop when any of servicing / mue / sector_schemes /
   medicaid_enrollment / billing_lm / graph_embeddings is skipped. The VM pulls the
   code with `git pull` from the pushed branch (no bundles); the laptop stays the
-  operator's seat (merges, pushes, Manus, reading). v11 = the FIRST VM run (the
-  operator asked why not; the laptop run_v11_night.bat is only the fallback).
+  operator's seat (merges, pushes, Manus, reading). v12 = the FIRST VM run (the
+  AWS vCPU quota was pending on 2026-10-11, so v11 ran on the laptop fallback).
   FUZZY TIER RETIRED (2026-10-11): batch 3 under rule 4 read 9/23 (39%); the three
   batches read 26 / 26 / 39 and the survivors were always the same two shapes, a parent
   corporation on a differently named local business (Prime Healthcare Services ->

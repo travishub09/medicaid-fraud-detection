@@ -61,6 +61,6 @@ cat <<EOF
 [setup] DONE. Next:
   1. rclone config          (one interactive login to OneDrive; remote name: onedrive)
   2. bash ops/vm/sync_data.sh   (pulls Desktop/data from OneDrive into $DATA_ROOT)
-  3. bash ops/vm/run_frozen_night.sh v11 2021-12   (the first full-feature run)
+  3. bash ops/vm/run_frozen_night.sh v12 2021-12   (the first full-feature run)
 Read docs/VM_RUNBOOK.md for the whole flow and the costs.
 EOF

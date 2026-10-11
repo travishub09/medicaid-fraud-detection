@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ops/vm/run_frozen_night.sh  --  the Linux twin of run_v11_night.bat for the VM.
 #
-#   bash ops/vm/run_frozen_night.sh v11 2021-12            # tag v11 on the 2021-12 freeze
-#   bash ops/vm/run_frozen_night.sh v11 2021-12 --rebuild-graph   # force the as-of graph rebuild
+#   bash ops/vm/run_frozen_night.sh v12 2021-12            # tag v12 on the 2021-12 freeze
+#   bash ops/vm/run_frozen_night.sh v12 2021-12 --rebuild-graph   # force the as-of graph rebuild
 #
 # What differs from the laptop runner (2026-10-11):
 #   * FULL graph embeddings: --max-embed-nodes 0 (no cap; the laptop embeds 1.5M of the
@@ -14,7 +14,7 @@
 # PRE-REGISTER FIRST (the registry refuses a run whose tag has no locked goal): the
 # command is in the operator reminders (python -m src.reminders) and docs/VM_RUNBOOK.md.
 set -uo pipefail
-TAG="${1:?tag, e.g. v11}"
+TAG="${1:?tag, e.g. v12}"
 CUT="${2:?freeze month, e.g. 2021-12}"
 REBUILD="${3:-}"
 DATA="${MEDICAID_DATA_ROOT:-/data/medicaid}"
