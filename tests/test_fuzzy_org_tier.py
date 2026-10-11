@@ -74,7 +74,7 @@ def test_verification_verdicts_promote_or_reject_fuzzy_rows():
     ])
     out2, st = apply_verification(out, results)
     o = out2.set_index("case_id")
-    assert st == {"promoted": 1, "rejected": 1}
+    assert st == {"promoted": 1, "rejected": 1, "carried": 0}
     assert o.loc["c2", "status"] == "resolved" and o.loc["c2", "match_level"] == "fuzzy_name_state_verified"
     assert o.loc["c1", "status"] == "fuzzy_rejected" and o.loc["c1", "npi"] == ""
     assert o.loc["c4", "status"] == "resolved"
@@ -181,3 +181,27 @@ def test_retired_tier_keeps_verified_promotions_and_demotes_the_rest():
     assert o.loc["c2", "status"] == "resolved" and o.loc["c2", "match_level"].endswith("_verified")
     assert n >= 1 and o.loc["c1", "status"] == "fuzzy_retired" and o.loc["c1", "npi"] == ""
     assert "resolved_fuzzy" not in set(out3["status"])
+
+
+def test_confirmed_verdict_promotes_a_mention_the_retired_tier_no_longer_matches():
+    """2026-10-11: the operator's rerun promoted 30 of the 47 confirmed rows because the
+    tightened tier no longer produced a candidate for the other 17. A confirmed verdict is
+    per-row evidence: it promotes the (case, defendant) on its own NPI, even when the
+    mention is unmatched today, at match_level fuzzy_verified (moderate on the ladder)."""
+    from src.enforcement.defendant_resolver import retire_unverified_fuzzy
+    out = resolve_defendants(_mentions(), _pdim())
+    assert out.set_index("case_id").loc["c5", "status"] == "unmatched"
+    results = pd.DataFrame([
+        dict(case_id="c5", defendant="Piedmont Hospice", npi="1000000038", verdict="confirmed"),
+        dict(case_id="c3", defendant="Community Home Health Services", npi="123", verdict="confirmed"),   # bad NPI: ignored
+        dict(case_id="c4", defendant="Bayou Rx Pharmacy LLC", npi="1000000046", verdict="confirmed"),      # exact tier: untouched
+    ])
+    out2, st = apply_verification(out, results)
+    assert st["carried"] == 1 and st["promoted"] == 0
+    out3, _ = retire_unverified_fuzzy(out2)
+    o = out3.set_index("case_id")
+    assert o.loc["c5", "status"] == "resolved" and o.loc["c5", "npi"] == "1000000038"
+    assert o.loc["c5", "match_level"] == "fuzzy_verified" and o.loc["c5", "npi_candidate"] == ""
+    assert o.loc["c3", "status"] != "resolved"
+    assert o.loc["c4", "match_level"] == "name_state"
+    assert evidence_strength("resolved_defendant", "fuzzy_verified") == "moderate"

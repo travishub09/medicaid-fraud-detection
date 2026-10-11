@@ -935,6 +935,11 @@ first, then paste" above every move/done block.
   `npi_candidate`); `--fuzzy` keeps them for a review file only. Nothing unverified
   reaches training or the strict export. Total label gain from the tier: 47 rows for
   about 170 Manus research rows; the next recall lever is the research residue.
+  The operator's first rerun promoted only 30 of the 47: `apply_verification` promoted a
+  confirmed verdict only onto a row the CURRENT tier produced, and the tightened rules no
+  longer match 17 of the confirmed mentions. Fixed: a confirmed (case, defendant, Luhn NPI)
+  verdict promotes the mention on its own (`carried`, match_level `fuzzy_verified`,
+  strength moderate in fca_label_export.OK_MATCH_LEVELS). A verdict outlives the rule.
   Full suite: `pytest tests/` (1,050 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ

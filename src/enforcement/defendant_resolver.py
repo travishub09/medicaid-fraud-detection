@@ -1075,15 +1075,16 @@ def apply_verification(out: pd.DataFrame, results: pd.DataFrame | None) -> tuple
     'resolved' (match_level <level>_verified: it enters training and the strict export); a
     wrong_person / wrong_npi / not_a_provider verdict makes it 'fuzzy_rejected'. Exact-tier
     rows are untouched here (their verdicts are read by the operator)."""
-    stats = {"promoted": 0, "rejected": 0}
+    stats = {"promoted": 0, "rejected": 0, "carried": 0}
     if results is None or not len(results) or "verdict" not in results.columns:
         return out, stats
     out = out.copy()
     r = results.copy()
     r["verdict"] = r["verdict"].fillna("").astype(str).str.lower()
+    r["npi"] = r["npi"].fillna("").astype(str).str.strip() if "npi" in r.columns else ""
     by_def = {(str(a), str(b)): v for a, b, v in zip(r.get("case_id", ""), r.get("defendant", ""), r["verdict"])
               if str(b)}
-    by_npi = {(str(a), str(b)): v for a, b, v in zip(r.get("case_id", ""), r.get("npi", ""), r["verdict"])
+    by_npi = {(str(a), str(b)): v for a, b, v in zip(r.get("case_id", ""), r["npi"], r["verdict"])
               if str(b)}
     for i, row in out[out["status"] == "resolved_fuzzy"].iterrows():
         v = by_def.get((str(row["case_id"]), str(row["defendant"]))) or by_npi.get((str(row["case_id"]), str(row["npi"])))
@@ -1098,6 +1099,26 @@ def apply_verification(out: pd.DataFrame, results: pd.DataFrame | None) -> tuple
             out.at[i, "npi_candidate"] = str(row["npi"])
             out.at[i, "npi"] = ""
             stats["rejected"] += 1
+    # A confirmed verdict is per-row EVIDENCE and outlives the matching rule that produced
+    # the candidate (2026-10-11: the tightened tier no longer matches 17 of the 47 mentions
+    # the first batch confirmed, so they stopped promoting). A confirmed (case, defendant,
+    # NPI) whose mention is still unresolved is promoted on the verdict itself, at
+    # match_level fuzzy_verified (strength moderate on the strict export's ladder).
+    from src.attempt_2.clean_data import is_valid_npi
+    conf = r[(r["verdict"] == "confirmed") & r["npi"].map(lambda n: bool(n) and is_valid_npi(n))]
+    conf_npi = {(str(a), str(b)): n for a, b, n in zip(conf.get("case_id", ""), conf.get("defendant", ""), conf["npi"])
+                if str(b)}
+    if conf_npi and "npi_candidate" not in out.columns:
+        out["npi_candidate"] = ""
+    for i, row in out[out["status"] != "resolved"].iterrows():
+        n = conf_npi.get((str(row["case_id"]), str(row["defendant"])))
+        if not n:
+            continue
+        out.at[i, "status"] = "resolved"
+        out.at[i, "npi"] = n
+        out.at[i, "npi_candidate"] = ""
+        out.at[i, "match_level"] = "fuzzy_verified"
+        stats["carried"] += 1
     return out, stats
 
 
@@ -1317,7 +1338,8 @@ def main() -> None:
         resolved, vs = apply_verification(resolved, pd.concat([pd.read_csv(p, dtype=str) for p in a.verification],
                                                               ignore_index=True))
         print(f"  verification verdicts applied to fuzzy rows: {vs['promoted']:,} promoted to resolved, "
-              f"{vs['rejected']:,} rejected")
+              f"{vs['rejected']:,} rejected, {vs['carried']:,} confirmed mentions promoted on the verdict alone "
+              f"(the tier no longer matches them)")
     if not a.fuzzy:
         resolved, n_ret = retire_unverified_fuzzy(resolved)
         print(f"  fuzzy tier RETIRED (2026-10-11: 26% / 26% / 39% confirmed over three batches): "

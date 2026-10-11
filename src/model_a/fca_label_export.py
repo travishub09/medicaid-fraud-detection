@@ -65,7 +65,10 @@ OK_MATCH_LEVELS = {"name_state", "name_city_state", "name_state_middle", "name_c
                    # the fuzzy business tier (resolver, 2026-10-10): accepted only with
                    # include_fuzzy, always at strength weak until a verdict promotes the row
                    "fuzzy_name_state", "fuzzy_name_city_state",
-                   "fuzzy_name_state_verified", "fuzzy_name_city_state_verified"}
+                   "fuzzy_name_state_verified", "fuzzy_name_city_state_verified",
+                   # a confirmed verdict carried onto a mention the retired tier no longer
+                   # matches (resolver apply_verification, 2026-10-11): strength moderate
+                   "fuzzy_verified"}
 
 
 def _s(v) -> str:

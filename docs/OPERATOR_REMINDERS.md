@@ -229,6 +229,27 @@ REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in ch
 python -m src.reminders --done-task compute_box_decision
 ```
 
+- [ ] **merge_bundle279** — Merge bundle 279 (cumulative; supersedes 239-278): the carried-verdict fix (a confirmed verdict promotes its mention even when the retired tier no longer matches it: the first rerun promoted 30 of the 47) + the retired-tier line. Merge BEFORE the fuzzy rerun and the VM data pull. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-11)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle279*.bundle") do copy /y "%f" "C:\Users\treyr\bundle279.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle279.bundle"
+REM press Enter once, then paste the next line on its own:
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle279
+```
+
+- [ ] **fuzzy_rerun_after_279** — The 2026-10-11 fuzzy last step ran on the pre-278 code: it printed '30 promoted, 27 rejected' and no 'fuzzy tier RETIRED' line. Two things were missing: the retirement (113 unverified fuzzy rows were still resolved_fuzzy, harmless for training but not the final state) and 17 of the 47 confirmed rows (the tightened tier no longer matches those mentions, so the verdict had nothing to land on; bundle 279 promotes them on the verdict itself). After bundle 279 is merged, rerun the SAME resolver line once more, copy the table over, and paste the three lines: 'verification verdicts applied' (expect about 30 promoted + about 17 carried), 'fuzzy tier RETIRED', and the 'defendant resolver:' total. Then the VM data pull (the table must show the OneDrive check mark first). (added 2026-10-11)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\verification_results.csv"
+copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
+python -m src.reminders --done-task fuzzy_rerun_after_279
+```
+
 
 ## After ANY download session (standing rule)
 
