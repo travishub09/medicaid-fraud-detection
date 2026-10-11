@@ -716,17 +716,6 @@
    ]
   },
   {
-   "key": "fuzzy_tier_verification",
-   "what": "BATCH 3 READ 9/23 (39%) on 2026-10-11: under the last-chance rule the FUZZY TIER IS RETIRED (bundle 277: the resolver demotes every unverified fuzzy row to fuzzy_retired; the 47 rows the three batches confirmed stay promoted on every rerun). LAST STEP, after bundle 277 is merged: rerun the resolver with all THREE verdict files, copy the table over, paste the 'verification verdicts applied' and 'fuzzy tier RETIRED' lines, then close. Parent-company defendants go to ownership broadcast and the research residue from here.",
-   "added": "2026-10-10",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -u -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\" --verification \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify2\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\\verification_results.csv\"",
-    "copy /y \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
-    "python -m src.reminders --done-task fuzzy_tier_verification"
-   ]
-  },
-  {
    "key": "v11_prereg_and_run",
    "what": "v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze, ON THE LAPTOP (operator 2026-10-11: the AWS vCPU quota request is pending, so the laptop fallback runs now; the VM run is v12 with full embeddings). ORDER: (1) bundle 280 merged and pushed; (2) the resolver rerun (fuzzy_rerun_after_279) done, so v11 trains with all 47 promoted rows; (3) close Chrome and every other Python window (the resolver holds 4.8 GB); (4) copy run_v11_night.bat (the NEW filename) from Downloads and read the findstr line: it MUST print the gate line; (5) pre-register, start the runner: it refuses to start under 10 GB free and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (6) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs.",
    "added": "2026-10-11",
@@ -752,31 +741,6 @@
     "bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh",
     "REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in chat",
     "python -m src.reminders --done-task compute_box_decision"
-   ]
-  },
-  {
-   "key": "merge_bundle280",
-   "what": "Merge bundle 280 (cumulative; supersedes 239-279): the carried-verdict fix (a confirmed verdict promotes its mention even when the retired tier no longer matches it: the first rerun promoted 30 of the 47) + the retired-tier line + v11 back on the laptop (v12 = VM). Merge BEFORE the fuzzy rerun and the VM data pull. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own.",
-   "added": "2026-10-11",
-   "commands": [
-    "for %f in (\"%USERPROFILE%\\Downloads\\bundle280*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle280.bundle\"",
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle280.bundle\"",
-    "REM press Enter once, then paste the next line on its own:",
-    "git push origin claude/happy-mccarthy-3skrn3",
-    "python -m src.reminders --done-task merge_bundle280"
-   ]
-  },
-  {
-   "key": "fuzzy_rerun_after_279",
-   "what": "The 2026-10-11 fuzzy last step ran on the pre-278 code: it printed '30 promoted, 27 rejected' and no 'fuzzy tier RETIRED' line. Two things were missing: the retirement (113 unverified fuzzy rows were still resolved_fuzzy, harmless for training but not the final state) and 17 of the 47 confirmed rows (the tightened tier no longer matches those mentions, so the verdict had nothing to land on; bundle 279 promotes them on the verdict itself). After bundle 280 is merged, rerun the SAME resolver line once more, copy the table over, and paste the three lines: 'verification verdicts applied' (expect about 30 promoted + about 17 carried), 'fuzzy tier RETIRED', and the 'defendant resolver:' total. Then v11 on the laptop; the VM data pull (v12) waits for the OneDrive check mark on the table.",
-   "added": "2026-10-11",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -u -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\" --verification \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify2\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\\verification_results.csv\"",
-    "copy /y \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
-    "python -m src.reminders --done-task fuzzy_rerun_after_279"
    ]
   }
  ]
