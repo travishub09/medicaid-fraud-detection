@@ -205,13 +205,20 @@ git push origin claude/happy-mccarthy-3skrn3
 python -m src.reminders --done-task merge_bundle273
 ```
 
-- [ ] **fuzzy_tier_verification** — FREE PART FIRST, after bundle 273 is merged and BEFORE v11 starts (no Manus credits): rerun the resolver with BOTH verdict files so the 10 batch-2 confirmed rows promote and the 27 wrong rows are rejected under rule 4, then copy the table over processed\case_defendant_npis.parquet so v11 trains with them. The batch-3 DISPATCH (Manus credits) is HELD until the operator says go: batch 1 read 28/108 and batch 2 10/39, so the fuzzy tier only ships rows a verdict confirmed. Last-chance rule stands: batch 3 under rule 4 reads 90%+ or the tier is retired. (added 2026-10-10)
+- [ ] **fuzzy_tier_verification** — Operator 2026-10-11: Manus credits MAY go to the fuzzy tier. After bundle 273 is merged and BEFORE v11 starts: (1) rerun the resolver with batch 1 + batch 2 verdicts (the 10 confirmed promote under rule 4), copy the table over; (2) re-export the review file and dispatch batch 3 (verify3); (3) 30+ min later poll, paste the tally; (4) rerun the resolver with all THREE verdict files, copy over, then start v11. Last-chance rule stands: batch 3 under rule 4 reads 90%+ or the fuzzy tier is retired (confirmed rows promote either way). (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv"
 copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
-REM paste the 'verification verdicts applied' line in chat; the batch-3 dispatch waits for your go
+python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
+python -u -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_sample_fuzzy.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3"
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --dispatch
+REM 30+ min later:
+python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --poll
+type "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\LABEL_VERIFICATION.md"
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\verification_results.csv"
+copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
 python -m src.reminders --done-task fuzzy_tier_verification
 ```
 
@@ -235,7 +242,7 @@ python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Deskt
 python -m src.reminders --done-task registry_verdict__frozen_2021-12_v10
 ```
 
-- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze. ORDER: (1) merge bundle 273; (2) the fuzzy free part (so v11 trains with the promoted rows); (3) copy run_v11_night.bat (NEW filename) from Downloads; (4) the findstr line MUST print the gate line; (5) pre-register v11 (v10's checks, parser fixed, Jaccard 0.7 is the bar the plateau fix must clear); (6) close the browser and any other Python, then start the runner: it refuses to start under 10 GB free and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (7) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs. (added 2026-10-11)
+- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze. ORDER: (1) merge bundle 273; (2) the fuzzy task through its batch-3 poll (so v11 trains with every promoted row); (3) copy run_v11_night.bat (NEW filename) from Downloads; (4) the findstr line MUST print the gate line; (5) pre-register v11 (v10's checks, parser fixed, Jaccard 0.7 is the bar the plateau fix must clear); (6) close the browser and any other Python, then start the runner: it refuses to start under 10 GB free and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (7) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs. (added 2026-10-11)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -246,6 +253,14 @@ python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Deskt
 "C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
 REM when it prints [v11] DONE: say 'v11 finished' in chat
 python -m src.reminders --done-task v11_prereg_and_run
+```
+
+- [ ] **compute_box_decision** — DECISION (operator raised 2026-10-11): memory has cost features three times (v10 lost five sources; the graph embeddings are capped at 1.5M nodes with zero vectors for solo components because the 13.6M-node SVD threw a MemoryError; the billing LM OOMs). Bundle 273 makes DuckDB spill and moves the enrollment features into DuckDB, which should bring the five back on the current box. If v11's SOURCES_REPORT still shows a memory skip, or to uncap the embeddings, move the night runs to a 64 GB / 8-16 core box: a cloud VM (AWS r6i.2xlarge or Azure E8s v5 class, about half a dollar an hour on demand, a few dollars per run; the data root copies up once; the code is Linux-clean, only the .bat runners need a shell twin) or a 64 GB desktop. First: paste the current box's RAM so Claude can size it. (added 2026-10-11)
+
+```bat
+systeminfo | findstr /C:"Total Physical Memory" /C:"Available Physical Memory"
+REM paste the two lines in chat; close this task with the decision (VM / desktop / stay)
+python -m src.reminders --done-task compute_box_decision
 ```
 
 
