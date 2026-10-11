@@ -907,6 +907,19 @@ first, then paste" above every move/done block.
   dollars, clipped. run_v11_night.bat (new filename): MEDICAID_DUCKDB_MEM=6GB +
   _TMP under interim/, a 10 GB free-RAM gate, and a stop after the export if any of
   the five sources is skipped. The v10 dossier was NOT dispatched (closed as skipped).
+  VM KIT (2026-10-11, operator: "move to a VM depending on cost; run the graph
+  embeddings in full and every feature"): the laptop is 16 GB (840 MB free when
+  measured; the resolver alone holds 4.8 GB). `docs/VM_RUNBOOK.md` (costs: 16 vCPU /
+  128 GB about $1/hour, about $6 a run, a 500 GB disk about $40/month while
+  stopped; provisioning; rclone pulls the data root straight from OneDrive; tmux;
+  the packet back), `ops/vm/setup_ubuntu.sh`, `ops/vm/sync_data.sh` (down = data
+  root from OneDrive; `up <run>` = reports + registry files back),
+  `ops/vm/run_frozen_night.sh <tag> <cut>` = the Linux twin of the night runner
+  with `--max-embed-nodes 0` (no cap) rebuilding `graph_asof_<cut>_full`, a 24 GB
+  free-RAM gate, and a stop when any of servicing / mue / sector_schemes /
+  medicaid_enrollment / billing_lm / graph_embeddings is skipped. The VM pulls the
+  code with `git pull` from the pushed branch (no bundles); the laptop stays the
+  operator's seat (merges, pushes, Manus, reading). v11 = laptop; v12 = first VM run.
   Full suite: `pytest tests/` (1,049 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ

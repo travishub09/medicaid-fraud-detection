@@ -716,31 +716,25 @@
    ]
   },
   {
-   "key": "merge_bundle273",
-   "what": "Merge bundle 273 (cumulative; supersedes 239-272; none of them need merging first): the v11 build (every DuckDB consumer spills to disk under a memory ceiling; enrollment features computed inside DuckDB; the regularized scorer; constant / empty trainable columns dropped and recorded; NADAC drug-name fallback; the registry check-parser fix; the dossier --operator-book). No run is going, so this is safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own.",
+   "key": "merge_bundle274",
+   "what": "Merge bundle 274 (cumulative; supersedes 239-273; 273 need not be merged first): the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh) + the reminders. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from).",
    "added": "2026-10-11",
    "commands": [
-    "for %f in (\"%USERPROFILE%\\Downloads\\bundle273*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle273.bundle\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\bundle274*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle274.bundle\"",
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle273.bundle\"",
+    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle274.bundle\"",
     "REM press Enter once, then paste the next line on its own:",
     "git push origin claude/happy-mccarthy-3skrn3",
-    "python -m src.reminders --done-task merge_bundle273"
+    "python -m src.reminders --done-task merge_bundle274"
    ]
   },
   {
    "key": "fuzzy_tier_verification",
-   "what": "Operator 2026-10-11: Manus credits MAY go to the fuzzy tier. After bundle 273 is merged and BEFORE v11 starts: (1) rerun the resolver with batch 1 + batch 2 verdicts (the 10 confirmed promote under rule 4), copy the table over; (2) re-export the review file and dispatch batch 3 (verify3); (3) 30+ min later poll, paste the tally; (4) rerun the resolver with all THREE verdict files, copy over, then start v11. Last-chance rule stands: batch 3 under rule 4 reads 90%+ or the fuzzy tier is retired (confirmed rows promote either way).",
+   "what": "BATCH 3 DISPATCHED 2026-10-11 (23 rows in 3 Manus tasks under rule 4; batches 1 and 2 were 108 and 39). NEXT: 30+ min after the dispatch poll it, paste the LABEL_VERIFICATION.md tally, then rerun the resolver with all THREE verdict files and copy the table over so v11 trains with every promoted row. Last-chance rule: 90%+ confirmed or the fuzzy tier is retired (confirmed rows promote either way).",
    "added": "2026-10-10",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -u -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\" --verification \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify2\\verification_results.csv\"",
-    "copy /y \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
-    "python -u -m src.model_a.fca_label_export --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --exclusion-nodes \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\nodes\\exclusion_nodes.parquet\" --policy fca_shaped --include-fuzzy --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\"",
-    "python -u -m src.model_a.label_verification --sample \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verification_sample_fuzzy.csv\" --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\"",
-    "python -u -m src.model_a.label_verification --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\" --dispatch",
-    "REM 30+ min later:",
     "python -u -m src.model_a.label_verification --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\" --poll",
     "type \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\\LABEL_VERIFICATION.md\"",
     "python -u -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fuzzy_resolver\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\" --verification \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify2\\verification_results.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_fuzzy\\verify3\\verification_results.csv\"",
@@ -791,11 +785,14 @@
   },
   {
    "key": "compute_box_decision",
-   "what": "BOX MEASURED 2026-10-11: 15,964 MB total, 840 MB available at the time of the check (something held ~15 GB; v10's enrollment adapter died asking for 386 MB). 16 GB is below what the pipeline needs (230M-row fact, 9M-org graph, 617k x 284 matrix, 5-seed LightGBM): the v11 spill fixes stop DuckDB dying but pandas and LightGBM cannot spill. RECOMMENDATION: night runs on a 64 GB / 8+ core cloud VM (AWS r6i.2xlarge or Azure E8s v5 class, ~half a dollar an hour, a few dollars per run; data root copied up once; Linux shell twins of the runners, which Claude builds on the go-ahead) or a 64 GB desktop. v11 runs on the laptop with everything else closed (the gate needs 10 GB free). First find and close what holds the RAM now (the process table below), then decide VM / desktop / stay.",
+   "what": "DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 500 GB disk at about $40 a month while stopped; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). v11 runs on the laptop tonight; v12 is the first VM run. Close this when the VM exists and the data pull has finished.",
    "added": "2026-10-11",
    "commands": [
-    "powershell -NoProfile -Command \"Get-Process | Sort-Object WS -Descending | Select-Object -First 10 Name, @{n='MB';e={[int]($_.WS/1MB)}} | Format-Table -AutoSize\"",
-    "REM paste the table in chat; if a python.exe is listed and no run is going: taskkill /f /im python.exe",
+    "REM on the VM, after it boots (Ubuntu 22.04 / 24.04, 500 GB disk, SSH key only):",
+    "curl -fsSL https://raw.githubusercontent.com/travishub09/medicaid-fraud-detection/claude/happy-mccarthy-3skrn3/ops/vm/setup_ubuntu.sh | bash",
+    "rclone config",
+    "bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh",
+    "REM then say 'VM ready' in chat; Claude writes the v12 pre-registration",
     "python -m src.reminders --done-task compute_box_decision"
    ]
   }

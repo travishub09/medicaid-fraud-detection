@@ -1,0 +1,78 @@
+# VM runbook: night runs on a rented machine
+
+Written 2026-10-11 after the operator's laptop (16 GB, 840 MB free at the time of the check) lost five sources to memory on v10 and has been embedding 1.5 million of the 13.6 million connected graph nodes since September. The laptop keeps doing the merges, the Manus dispatches and the reading. The VM only runs.
+
+## 1. Cost
+
+| option | size | on-demand price | a 6 hour run | a month at 4 runs |
+|---|---|---|---|---|
+| AWS r6i.2xlarge | 8 vCPU, 64 GB | about $0.50 per hour | about $3 | about $12 compute plus the disk |
+| AWS r6i.4xlarge (recommended) | 16 vCPU, 128 GB | about $1.00 per hour | about $6 | about $24 compute plus the disk |
+| Azure E8s v5 | 8 vCPU, 64 GB | about $0.50 per hour | about $3 | same shape |
+| Azure E16s v5 | 16 vCPU, 128 GB | about $1.00 per hour | about $6 | same shape |
+
+The disk: a 500 GB volume at about $0.08 per GB per month, about $40, and it is the only charge while the VM is stopped. Prices are the published on-demand Linux rates for the US East regions as of this writing; check the console before choosing, and stop the VM when a run is not going. The 128 GB class is recommended because the full embedding of 13.6 million nodes is the one step whose peak memory has not been measured; a dollar an hour removes the question. Spot or preemptible pricing is a third of this but the machine can be taken back mid-run; the export's resume cache survives that, the diagnostics do not, so start with on-demand.
+
+## 2. Provision
+
+1. Ubuntu 22.04 or 24.04, the size above, a 500 GB disk, SSH key login only, no public ports except SSH. The data is public billing data plus public enforcement records, but the lead lists are confidential work product: keep the machine private and delete the disk when the project retires it.
+2. SSH in and run the setup script (installs Python, git, rclone, clones the dev branch, builds the venv, prepares the data root):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/travishub09/medicaid-fraud-detection/claude/happy-mccarthy-3skrn3/ops/vm/setup_ubuntu.sh | bash
+```
+
+3. Connect rclone to OneDrive once (interactive; it prints a link to open in the laptop's browser, then pastes a token back):
+
+```bash
+rclone config
+```
+
+Name the remote `onedrive`, type Microsoft OneDrive, default options. Then pull the data root. The first pull copies everything (expect an hour or two); later pulls move only what changed:
+
+```bash
+bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh
+```
+
+4. If the dossier dispatch will ever run from the VM, put the Manus key in `~/.medicaid_env` by hand. It is never committed.
+
+## 3. Run
+
+Every run is pre-registered first, from the laptop or the VM (the registry files sync both ways through `sync_data.sh`):
+
+```bash
+cd ~/medicaid-fraud-detection && source ~/.medicaid_env
+python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v12 --goal "..." --expected "..." --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
+```
+
+Then the runner, inside `tmux` or `nohup` so an SSH drop does not kill it:
+
+```bash
+tmux new -s night
+bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v12 2021-12
+```
+
+The runner refuses to start under 24 GB free, rebuilds the as-of graph with full embeddings into `graph_asof_2021-12_full` the first time (later runs reuse it; pass `--rebuild-graph` as the third argument to force it), and stops after the export if servicing, MUE, sector schemes, enrollment, the billing LM or the graph embeddings were skipped. It writes everything to `night_run.log` in the run folder. Detach with Ctrl-b then d; `tmux attach -t night` to come back.
+
+Pull the code forward before a run when a new bundle has been merged and pushed from the laptop:
+
+```bash
+cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && pip install -r requirements.txt -q
+```
+
+## 4. Bring the results back
+
+The packet for Claude, and the reports plus the registry files back to OneDrive so the laptop's dashboard and reminders see them:
+
+```bash
+cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v12 && zip -r ~/run_packet_v12.zip *.md *.json ab_broadcast_weight ab_broadcast_mask
+bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
+```
+
+Download `~/run_packet_v12.zip` with scp (or from OneDrive after the upload) and attach it to the chat. Then stop the VM.
+
+## 5. What the VM changes and what it does not
+
+It changes completeness: every source present, the embeddings uncapped, the motif columns real, repeats and seeds affordable. It does not change the label, the ruler or the checks, so a VM run is graded exactly like a laptop run and is a new pre-registration like any other. The laptop remains the operator's seat: merges, pushes, Manus, reading.
+
+_Leads for counsel review, never accusations._
