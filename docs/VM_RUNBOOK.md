@@ -11,11 +11,11 @@ Written 2026-10-11 after the operator's laptop (16 GB, 840 MB free at the time o
 | Azure E8s v5 | 8 vCPU, 64 GB | about $0.50 per hour | about $3 | same shape |
 | Azure E16s v5 | 16 vCPU, 128 GB | about $1.00 per hour | about $6 | same shape |
 
-The disk: a 500 GB volume at about $0.08 per GB per month, about $40, and it is the only charge while the VM is stopped. Prices are the published on-demand Linux rates for the US East regions as of this writing; check the console before choosing, and stop the VM when a run is not going. The 128 GB class is recommended because the full embedding of 13.6 million nodes is the one step whose peak memory has not been measured; a dollar an hour removes the question. Spot or preemptible pricing is a third of this but the machine can be taken back mid-run; the export's resume cache survives that, the diagnostics do not, so start with on-demand.
+The disk: a 1 TB volume at about $0.08 per GB per month, about $80, and it is the only charge while the VM is stopped. Prices are the published on-demand Linux rates for the US East regions as of this writing; check the console before choosing, and stop the VM when a run is not going. The 128 GB class is recommended because the full embedding of 13.6 million nodes is the one step whose peak memory has not been measured; a dollar an hour removes the question. Spot or preemptible pricing is a third of this but the machine can be taken back mid-run; the export's resume cache survives that, the diagnostics do not, so start with on-demand.
 
 ## 2. Provision
 
-1. Ubuntu 22.04 or 24.04, the size above, a 500 GB disk, SSH key login only, no public ports except SSH. The data is public billing data plus public enforcement records, but the lead lists are confidential work product: keep the machine private and delete the disk when the project retires it.
+1. Ubuntu 22.04 or 24.04, the size above, a 1 TB disk (the data root alone is 291 GB), SSH key login only, no public ports except SSH. The data is public billing data plus public enforcement records, but the lead lists are confidential work product: keep the machine private and delete the disk when the project retires it.
 2. SSH in and run the setup script (installs Python, git, rclone, clones the dev branch, builds the venv, prepares the data root):
 
 ```bash
@@ -71,7 +71,26 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 
 Download `~/run_packet_v12.zip` with scp (or from OneDrive after the upload) and attach it to the chat. Then stop the VM.
 
-## 5. What the VM changes and what it does not
+## 5. Storage: where the 291 GB lives
+
+The data root is 291 GB in 25,310 files (measured 2026-10-11). Three copies, each with a job:
+
+1. **OneDrive** (Desktop/data) is the laptop's master and already a cloud copy; it needs the 1 TB plan. The laptop keeps `processed`, `enforcement`, `model_a`, `graph` and `detection` on disk for its own tools and may mark `preclean`, `interim` and the as-of graph folders "Free up space" by hand once the VM is the runner (never through Storage Sense, and never run the export on the laptop after that).
+2. **The VM disk** (1 TB gp3, about $80 a month while stopped) holds the working copy the runs read and write.
+3. **S3** is the durable copy, mirrored FROM THE VM after the first pull (free, fast, same region). About $7 a month at Standard, half that at Standard-IA. Private bucket, versioning on, public access blocked:
+
+```bash
+sudo snap install aws-cli --classic
+aws configure                     # an IAM user with S3 access only; region us-east-2
+aws s3 mb s3://medicaid-fraud-data-<initials> --region us-east-2
+aws s3api put-bucket-versioning --bucket medicaid-fraud-data-<initials> --versioning-configuration Status=Enabled
+aws s3api put-public-access-block --bucket medicaid-fraud-data-<initials> --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+aws s3 sync /data/medicaid s3://medicaid-fraud-data-<initials>/data --storage-class STANDARD_IA
+```
+
+Rebuilding a VM disk from S3 takes minutes; from OneDrive, hours. Re-run the sync after each procurement session.
+
+## 6. What the VM changes and what it does not
 
 It changes completeness: every source present, the embeddings uncapped, the motif columns real, repeats and seeds affordable. It does not change the label, the ruler or the checks, so a VM run is graded exactly like a laptop run and is a new pre-registration like any other. The laptop remains the operator's seat: merges, pushes, Manus, reading.
 

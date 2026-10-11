@@ -249,14 +249,14 @@ REM when it prints [v11] DONE: say 'v11 finished' in chat
 python -m src.reminders --done-task v11_prereg_and_run
 ```
 
-- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 500 GB disk at about $40 a month while stopped; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). v11 runs on the laptop tonight; v12 is the first VM run. Close this when the VM exists and the data pull has finished. (added 2026-10-11)
+- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). v11 runs on the laptop tonight; v12 is the first VM run. Close this when the VM exists and the data pull has finished. (added 2026-10-11)
 
 ```bat
-REM on the VM, after it boots (Ubuntu 22.04 / 24.04, 500 GB disk, SSH key only):
+REM on the VM, after it boots (Ubuntu 22.04 / 24.04, 1 TB gp3 disk, SSH key only):
 curl -fsSL https://raw.githubusercontent.com/travishub09/medicaid-fraud-detection/claude/happy-mccarthy-3skrn3/ops/vm/setup_ubuntu.sh | bash
 rclone config
 bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh
-REM then say 'VM ready' in chat; Claude writes the v12 pre-registration
+REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in chat
 python -m src.reminders --done-task compute_box_decision
 ```
 
