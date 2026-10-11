@@ -791,11 +791,11 @@
   },
   {
    "key": "compute_box_decision",
-   "what": "DECISION (operator raised 2026-10-11): memory has cost features three times (v10 lost five sources; the graph embeddings are capped at 1.5M nodes with zero vectors for solo components because the 13.6M-node SVD threw a MemoryError; the billing LM OOMs). Bundle 273 makes DuckDB spill and moves the enrollment features into DuckDB, which should bring the five back on the current box. If v11's SOURCES_REPORT still shows a memory skip, or to uncap the embeddings, move the night runs to a 64 GB / 8-16 core box: a cloud VM (AWS r6i.2xlarge or Azure E8s v5 class, about half a dollar an hour on demand, a few dollars per run; the data root copies up once; the code is Linux-clean, only the .bat runners need a shell twin) or a 64 GB desktop. First: paste the current box's RAM so Claude can size it.",
+   "what": "BOX MEASURED 2026-10-11: 15,964 MB total, 840 MB available at the time of the check (something held ~15 GB; v10's enrollment adapter died asking for 386 MB). 16 GB is below what the pipeline needs (230M-row fact, 9M-org graph, 617k x 284 matrix, 5-seed LightGBM): the v11 spill fixes stop DuckDB dying but pandas and LightGBM cannot spill. RECOMMENDATION: night runs on a 64 GB / 8+ core cloud VM (AWS r6i.2xlarge or Azure E8s v5 class, ~half a dollar an hour, a few dollars per run; data root copied up once; Linux shell twins of the runners, which Claude builds on the go-ahead) or a 64 GB desktop. v11 runs on the laptop with everything else closed (the gate needs 10 GB free). First find and close what holds the RAM now (the process table below), then decide VM / desktop / stay.",
    "added": "2026-10-11",
    "commands": [
-    "systeminfo | findstr /C:\"Total Physical Memory\" /C:\"Available Physical Memory\"",
-    "REM paste the two lines in chat; close this task with the decision (VM / desktop / stay)",
+    "powershell -NoProfile -Command \"Get-Process | Sort-Object WS -Descending | Select-Object -First 10 Name, @{n='MB';e={[int]($_.WS/1MB)}} | Format-Table -AutoSize\"",
+    "REM paste the table in chat; if a python.exe is listed and no run is going: taskkill /f /im python.exe",
     "python -m src.reminders --done-task compute_box_decision"
    ]
   }
