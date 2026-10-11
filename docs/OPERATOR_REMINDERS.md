@@ -193,15 +193,15 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze, ON THE LAPTOP (PRE-REGISTERED 2026-10-11 17:19 UTC, goal locked; operator 2026-10-11: the AWS vCPU quota request is pending, so the laptop fallback runs now; the VM run is v12 with full embeddings). ORDER: (1) bundle 280 merged and pushed; (2) the resolver rerun (fuzzy_rerun_after_279) done, so v11 trains with all 47 promoted rows; (3) close Chrome and every other Python window (the resolver holds 4.8 GB); (4) copy run_v11b_night.bat (runner b, 2026-10-11c: the memory gate reads AVAILABLE memory via the Available MBytes counter; the first runner read Windows FreePhysicalMemory, which excludes the standby cache and said 5 GB on a fresh boot while 11 GB was usable) from Downloads and read the findstr line: it MUST print the gate line; (5) the pre-registration is already locked, never run that line twice; start the runner: it refuses to start under 10 GB available and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (6) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs. (added 2026-10-11)
+- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze, ON THE LAPTOP (PRE-REGISTERED 2026-10-11 17:19 UTC, goal locked; operator 2026-10-11: the AWS vCPU quota request is pending, so the laptop fallback runs now; the VM run is v12 with full embeddings). ORDER: (1) bundle 280 merged and pushed; (2) the resolver rerun (fuzzy_rerun_after_279) done, so v11 trains with all 47 promoted rows; (3) close Chrome and every other Python window (the resolver holds 4.8 GB); (4) copy run_v11c_night.bat (runner c, 2026-10-11d: the bar is 8 GB available, since the laptop tops out at 9 with Chrome closed and the DuckDB ceiling is 6 GB with spilling; runner b, 2026-10-11c: the memory gate reads AVAILABLE memory via the Available MBytes counter; the first runner read Windows FreePhysicalMemory, which excludes the standby cache and said 5 GB on a fresh boot while 11 GB was usable) from Downloads and read the findstr line: it MUST print the gate line; (5) the pre-registration is already locked, never run that line twice; start the runner: it refuses to start under 8 GB available and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (6) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs. (added 2026-10-11)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-copy /y "%USERPROFILE%\Downloads\run_v11b_night.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v11b_night.bat"
-findstr /C:"Available MBytes" "C:\Users\treyr\medicaid-fraud-detection\run_v11b_night.bat"
+copy /y "%USERPROFILE%\Downloads\run_v11c_night.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v11c_night.bat"
+findstr /C:"Available MBytes" "C:\Users\treyr\medicaid-fraud-detection\run_v11c_night.bat"
 REM the findstr line must print the gate line; if it prints nothing STOP and say so in chat
 REM (v11 is already pre-registered; do not run the --preregister line again)
-"C:\Users\treyr\medicaid-fraud-detection\run_v11b_night.bat"
+"C:\Users\treyr\medicaid-fraud-detection\run_v11c_night.bat"
 REM when it prints [v11] DONE: say 'v11 finished' in chat
 python -m src.reminders --done-task v11_prereg_and_run
 ```
