@@ -124,11 +124,32 @@ def roc_auc(y_true, scores) -> float:
     return float(roc_auc_score(y, scores))
 
 
-def _fit_predict(Xtr, ytr, Xte, n_estimators=200, seed=RANDOM_STATE,
+# THE SCORER (2026-10-11, v11): regularized so a tree cannot isolate a handful of
+# broadcast positives into a pure leaf and emit 0 / 1. v10's shipped scores sat on a
+# 0.2000 plateau = 1 saturated seed in 5 (1,644 positives in 617k rows, 200 trees at
+# learning rate 0.1, no leaf floor, no subsampling: the five seeds were the same
+# model, so the average was k/5) and the top-50 Jaccard across fold draws read 0.09.
+# min_child_samples floors every leaf at 100 rows, the learning rate halves with 50
+# percent more rounds, row and column subsampling give the seeds something to
+# average, and L2 shrinks the leaf values. Recorded in PRIORITY_LIST.md and the
+# registry row (scorer_params); a change here is a new pre-registration.
+SCORER_PARAMS = dict(n_estimators=300, learning_rate=0.05, num_leaves=15,
+                     min_child_samples=100, subsample=0.8, subsample_freq=1,
+                     colsample_bytree=0.7, reg_lambda=1.0)
+
+
+def _fit_predict(Xtr, ytr, Xte, n_estimators=None, seed=RANDOM_STATE,
                  sample_weight=None):
     from lightgbm import LGBMClassifier
-    clf = LGBMClassifier(n_estimators=n_estimators, num_leaves=15,
-                         random_state=seed, verbose=-1)
+    params = dict(SCORER_PARAMS)
+    if n_estimators is not None:
+        params["n_estimators"] = int(n_estimators)
+    # the leaf floor scales with the training set: 100 rows on the national matrix
+    # (617k rows -> 123, capped), 20 on a small frame (a fixture, a state slice), so
+    # the same scorer serves the A/B harnesses without starving their folds
+    params["min_child_samples"] = int(min(SCORER_PARAMS["min_child_samples"],
+                                          max(20, 0.0002 * len(ytr))))
+    clf = LGBMClassifier(random_state=seed, verbose=-1, **params)
     if sample_weight is not None:
         clf.fit(Xtr, ytr, sample_weight=np.asarray(sample_weight, dtype=float))
     else:

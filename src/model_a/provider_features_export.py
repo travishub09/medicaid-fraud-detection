@@ -714,6 +714,25 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     raw_feature_cols = [c for c in raw_feature_cols
                         if c not in leakage_hard and c not in label_metadata
                         and c not in evidence_cols]
+    # DEAD COLUMNS (2026-10-11, from v8 / v9 / v10): a trainable column with a single
+    # value (the graph motifs the embedding cap zeroed, mcd_ended_for_cause on an
+    # early freeze) or no value at all (the opioid shares with no NADAC) is dead
+    # weight no tree can split on and a FAIL on every EXPECTATIONS report. It is
+    # dropped here and RECORDED in the manifest (dropped_constant) so the issue
+    # ledger still names it; the source audit keeps the reason it came out empty.
+    # The column STAYS in the parquet (case_size reads billing_residual by name,
+    # the dossier reads sv_* and the consistency flags): only the trainable lists
+    # the scorer and the expectations report consume lose it.
+    dropped_constant = []
+    for c in list(raw_feature_cols) + list(peerpct_cols):
+        if c in out.columns and pd.to_numeric(out[c], errors="coerce").dropna().nunique() <= 1:
+            dropped_constant.append(c)
+    if dropped_constant:
+        raw_feature_cols = [c for c in raw_feature_cols if c not in dropped_constant]
+        peerpct_cols = [c for c in peerpct_cols if c not in dropped_constant]
+        print(f"    [features] {len(dropped_constant)} constant / empty column(s) left out of the "
+              f"trainable set: {', '.join(dropped_constant[:12])}{' ...' if len(dropped_constant) > 12 else ''} "
+              f"(kept in the parquet; recorded as dropped_constant in the manifest)")
 
     # --- temporal vintage of every trainable feature (the cutoff question) ---
     # point_in_time: dated rows inside the data — truly frozen under --asof-cutoff.
@@ -813,6 +832,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "leakage_adjacent": [c for c in LEAKAGE_ADJACENT if c in out.columns] + graph_adjacent,
         "identifier_cols": [c for c in IDENTIFIER_COLS if c in out.columns],
         "raw_feature_cols": raw_feature_cols,
+        "dropped_constant": dropped_constant,
         "peerpct_cols": peerpct_cols,
         "subscore_cols": subscore_cols,
         "embedding_cols": embedding_cols,
@@ -1175,7 +1195,7 @@ def _file_period(name: str) -> str | None:
 
 
 def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
-               pattern: str = "*.csv") -> Path | None:
+               pattern: str = "*.csv", fallback_newest: bool = False) -> Path | None:
     """Vintage-aware ``_first_existing`` for snapshot sources with several
     dated editions in one folder (NADAC, Order & Referring).
 
@@ -1195,7 +1215,16 @@ def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
         if elig:
             return max(elig, key=lambda t: t[1])[0]
         exact_p = base / exact
-        return exact_p if exact_p.exists() else None
+        if exact_p.exists():
+            return exact_p
+        # a REFERENCE table (NADAC drug names -> brand / generic / opioid class) is a
+        # lookup, not a billing input: with no edition on or before the cutoff the
+        # newest one is used so the Medicaid opioid and brand shares exist at all
+        # (v10 shipped seven all-NaN columns for want of a 2021 NADAC file). The
+        # caller logs the edition; prices are never read from it on a frozen run.
+        if fallback_newest and dated:
+            return max(dated, key=lambda t: t[1])[0]
+        return None
     if dated:
         return max(dated, key=lambda t: t[1])[0]
     return _first_existing(base, exact, pattern)
@@ -1649,8 +1678,12 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 nref, opi = None, None
                 try:
                     from src.ingest_cms import nadac as _nadac
-                    nref_p = _asof_pick(pc / "nadac", "nadac.csv", asof_cutoff=asof_cutoff)
+                    nref_p = _asof_pick(pc / "nadac", "nadac.csv", asof_cutoff=asof_cutoff,
+                                        fallback_newest=True)
                     if nref_p:
+                        if asof_cutoff and (_file_period(nref_p.name) or "") > str(asof_cutoff)[:7]:
+                            log(f"    [medicaid_ndc] NADAC reference edition {nref_p.name} is after the "
+                                f"cutoff: used as a drug-name lookup only (brand / opioid class)")
                         raw_nadac = _read_any(nref_p)
                         nref = _nadac.compute_nadac_reference(raw_nadac)
                         opi = mndc.opioid_ndc_flags(raw_nadac)
@@ -1717,8 +1750,9 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
             seg_p = proc / "medicaid_enrollment_segments.parquet"
             raw_dir = pc / "medicaid_enrollment"
             if seg_p.exists():
-                seg = pd.read_parquet(seg_p)
-                df = menr.enrollment_features(seg, asof_cutoff)
+                # computed inside DuckDB (2026-10-11): the pandas path loaded 50.6M segment
+                # rows and died on a 386 MB allocation in v10
+                df = menr.enrollment_features_from_parquet(seg_p, asof_cutoff)
                 sp = proc / "spending_fact.parquet"
                 if len(df) and sp.exists():
                     after = menr.paid_after_enrollment_end(sp, df)

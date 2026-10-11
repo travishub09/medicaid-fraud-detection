@@ -193,32 +193,26 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **merge_bundle272** — Merge bundle 272 (cumulative; supersedes 239-271; 271 need not be merged first): the registry check-parser fix (prec50_lo > base50 judged against the run's own baseline), the dossier's --operator-book, fuzzy rule 4, the v10 read-out. No run is going, so this is safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-11)
+- [ ] **merge_bundle273** — Merge bundle 273 (cumulative; supersedes 239-272; none of them need merging first): the v11 build (every DuckDB consumer spills to disk under a memory ceiling; enrollment features computed inside DuckDB; the regularized scorer; constant / empty trainable columns dropped and recorded; NADAC drug-name fallback; the registry check-parser fix; the dossier --operator-book). No run is going, so this is safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-11)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle272*.bundle") do copy /y "%f" "C:\Users\treyr\bundle272.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle273*.bundle") do copy /y "%f" "C:\Users\treyr\bundle273.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle272.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle273.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle272
+python -m src.reminders --done-task merge_bundle273
 ```
 
-- [ ] **fuzzy_tier_verification** — BATCH 2 VERDICT 2026-10-11: TIGHTEN again (10/39 confirmed, 26%; 23 wrong_npi = one brand word landing on a random local business: Kindred Healthcare -> KINDRED HOSPITALS EAST, Vibra Healthcare -> VIBRA CLINICS; the descriptor / surname classes are gone, 4 wrong_person). Bundle 271 carries rule 4: every non-tail word of the mention must appear in the candidate ('healthcare' = 'health care'). LAST CHANCE RULE: batch 3 under rule 4 must read 90%+ or the fuzzy tier is retired and parent-company defendants go through ownership broadcast and the research residue instead. STEP D, after bundle 272 is merged AND the v10 dossier poll is back (one Manus dispatcher at a time): rerun the resolver with BOTH verdict files (the 10 confirmed promote, the 27 wrong reject, the rest re-matched under rule 4), copy the table over, re-export, dispatch batch 3 (expect a short sample), poll 30+ min later, paste the tally. The Manus slot is free until the batch-3 dispatch. (added 2026-10-10)
+- [ ] **fuzzy_tier_verification** — FREE PART FIRST, after bundle 273 is merged and BEFORE v11 starts (no Manus credits): rerun the resolver with BOTH verdict files so the 10 batch-2 confirmed rows promote and the 27 wrong rows are rejected under rule 4, then copy the table over processed\case_defendant_npis.parquet so v11 trains with them. The batch-3 DISPATCH (Manus credits) is HELD until the operator says go: batch 1 read 28/108 and batch 2 10/39, so the fuzzy tier only ships rows a verdict confirmed. Last-chance rule stands: batch 3 under rule 4 reads 90%+ or the tier is retired. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-REM STEP D, after bundle 272 is merged AND the v10 dossier poll is back:
 python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv"
 copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
-python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
-python -u -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_sample_fuzzy.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3"
-python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --dispatch
-REM 30+ min later:
-python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --poll
-type "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\LABEL_VERIFICATION.md"
-REM paste the tally in chat; the close line waits for Claude's read
+REM paste the 'verification verdicts applied' line in chat; the batch-3 dispatch waits for your go
+python -m src.reminders --done-task fuzzy_tier_verification
 ```
 
 - [ ] **registry_verdict__frozen_2021-12_v8** — VERDICT DELIVERED 2026-10-10: HOLD on frozen_2021-12_v8, cause = pipeline error, not model performance (the runner's export line dropped --case-db / --defendant-npis so the matrix trained on 920 exclusion positives and ZERO DOJ case labels; 843,551 servicing-only rows doubled the universe; two sv_* shares out of bounds; five dead features). hits@50 = 0 (random 0.3), top-1% FCA lift 0.76, Jaccard 0.00. The v8 dossier was NOT dispatched to Manus (skipped: a chance-level list). Read docs/ACCURACY_READOUT_v8_2026-10-10.md (in bundle 268), then close this with the line below. (added 2026-10-10)
@@ -233,26 +227,7 @@ python -m src.reminders --done-task registry_verdict__frozen_2021-12_v8
 python -m src.reminders --done-task registry_verdict__frozen_2021-12_v9
 ```
 
-- [ ] **pursuit_dossier__frozen_2021-12_v10** — DISPATCH APPROVED 2026-10-11 (the first list in this series worth the research spend) BUT rebuild the dossier from the OPERATOR book first: the default top-10 drew five hospitals and a national DME chain from the main list. After bundle 272 is merged: rebuild with --operator-book, read the 10 names in PURSUIT_DOSSIER.md, then dispatch. One Manus dispatcher at a time: the fuzzy batch-3 dispatch waits until this dossier's poll is back. (added 2026-10-11)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v10" --operator-book
-type "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v10\PURSUIT_DOSSIER.md" | findstr /B /C:"## "
-python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v10" --operator-book --dispatch
-python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v10
-```
-
-- [ ] **dossier_poll__frozen_2021-12_v10** — ~30 min after dispatch: collect Manus research into the frozen_2021-12_v10 dossier and send PURSUIT_DOSSIER.md (added 2026-10-11)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v10" --operator-book --poll
-REM then upload PURSUIT_DOSSIER.md to the chat
-python -m src.reminders --done-task dossier_poll__frozen_2021-12_v10
-```
-
-- [ ] **registry_verdict__frozen_2021-12_v10** — VERDICT DELIVERED 2026-10-11: HOLD on frozen_2021-12_v10, on ONE real check: top-50 stability (Jaccard 0.09 vs 0.7; the dollar-weighted score below rank 1 is a 0.2000 plateau so the order inside it is noise, though every re-shuffle still finds 2 hits). The other recorded FAIL (prec50_lo > base50) actually PASSED (0.011 > 0.005): the registry parser compared the metric to the literal word 'base50'; bundle 272 fixes it. v10 is the first valid run of the series: 2 hits at 16 and 50 (random 0.1 / 0.3, p 0.002 / 0.024), 3 at 100, 4 at 250, median lead 26 months, institutional share 0. Five sources died of memory (servicing, mue, sector_schemes, medicaid_enrollment, billing_lm): v11 needs a quiet machine. Read docs/ACCURACY_READOUT_v10_2026-10-11.md (bundle 272), re-register v10 after the merge (clears the false FAIL), then close. (added 2026-10-11)
+- [ ] **registry_verdict__frozen_2021-12_v10** — VERDICT DELIVERED 2026-10-11: HOLD on frozen_2021-12_v10, on ONE real check: top-50 stability (Jaccard 0.09 vs 0.7; the dollar-weighted score below rank 1 is a 0.2000 plateau so the order inside it is noise, though every re-shuffle still finds 2 hits). The other recorded FAIL (prec50_lo > base50) actually PASSED (0.011 > 0.005): the registry parser compared the metric to the literal word 'base50'; bundle 272 fixes it. v10 is the first valid run of the series: 2 hits at 16 and 50 (random 0.1 / 0.3, p 0.002 / 0.024), 3 at 100, 4 at 250, median lead 26 months, institutional share 0. Five sources died of memory (servicing, mue, sector_schemes, medicaid_enrollment, billing_lm): v11 needs a quiet machine. Operator decision 2026-10-11: NO Manus dispatch on a HOLD run (the v10 dossier tasks are closed as skipped). Read docs/ACCURACY_READOUT_v10_2026-10-11.md, re-register v10 after bundle 273 is merged (clears the false FAIL), then close. (added 2026-10-11)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -260,10 +235,17 @@ python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Deskt
 python -m src.reminders --done-task registry_verdict__frozen_2021-12_v10
 ```
 
-- [ ] **v11_plan** — v11 = v10 with the five memory casualties back (servicing, mue, sector_schemes, medicaid_enrollment, billing_lm all read 'used' in SOURCES_REPORT or it is not v11) and the plateau tiebreak graded by the order sweep. CLAUDE builds the runner (run_v11_night.bat, a NEW filename) with a free-memory check before the export; the operator runs it on a QUIET machine (browser closed, no other Python). Pre-registration keeps v10's checks with the parser fixed; Jaccard 0.7 is the bar the plateau fix must clear. Not before the v10 dossier poll and fuzzy step D are done. (added 2026-10-11)
+- [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze. ORDER: (1) merge bundle 273; (2) the fuzzy free part (so v11 trains with the promoted rows); (3) copy run_v11_night.bat (NEW filename) from Downloads; (4) the findstr line MUST print the gate line; (5) pre-register v11 (v10's checks, parser fixed, Jaccard 0.7 is the bar the plateau fix must clear); (6) close the browser and any other Python, then start the runner: it refuses to start under 10 GB free and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (7) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs. (added 2026-10-11)
 
 ```bat
-REM waits for bundle 273 (the v11 runner); nothing to run yet
+cd /d C:\Users\treyr\medicaid-fraud-detection
+copy /y "%USERPROFILE%\Downloads\run_v11_night.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
+findstr /C:"free-memory gate" "C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
+REM the findstr line must print the gate line; if it prints nothing STOP and say so in chat
+python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --preregister --tag frozen_2021-12_v11 --goal "The regularized scorer removes the 0.2000 plateau so the operator book's top 50 is stable across fold draws while keeping v10's FCA hits at 50, with every source present" --expected "hits@50 on provider_priority_list_pursuit.csv at or above v10's 2, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, no source skipped for memory" --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
+"C:\Users\treyr\medicaid-fraud-detection\run_v11_night.bat"
+REM when it prints [v11] DONE: say 'v11 finished' in chat
+python -m src.reminders --done-task v11_prereg_and_run
 ```
 
 

@@ -37,6 +37,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.attempt_2.duck import connect as _duck_connect
+
 from src.attempt_2.clean_data import _resolve_columns
 
 # canonical field -> candidate headers in the CMS file (first present wins; matching is
@@ -127,8 +129,7 @@ def build_ndc_fact(paths, out_parquet: Path, asof_cutoff: str | None = None,
     correct for a frozen run). Asserts dollar conservation raw -> fact on the kept
     months (RAISES on failure, never warns). Returns a dict of counts for the report.
     """
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     paths = [Path(p) for p in (paths if isinstance(paths, (list, tuple)) else [paths])]
     files = []
     for p in paths:
@@ -208,8 +209,7 @@ def write_ndc_claims_slice(fact_parquet: Path, out_parquet: Path, con=None) -> i
     """processed/ndc_claims.parquet in the claim_slices shape (billing_npi, ndc, units,
     billed_cost) for nadac.drug_spread_anomaly. Only rows with units; returns rows written
     (0 when the file carries no units column — the NADAC scheme stays dormant, honestly)."""
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     n = con.execute(f"select count(*) from read_parquet('{_pq(fact_parquet)}') where units is not null").fetchone()[0]
     if not n:
         return 0
@@ -301,8 +301,7 @@ def pharmacy_spread_proxy(fact_parquet: Path, con=None, min_pairs: int = 20) -> 
       rx_spread_top_share  share of covered dollars on NDCs where this pharmacy paid
                            >= 2x the national median per line
     Placeholder NDCs (all one digit) are out of the reference."""
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     df = con.execute(f"""
         with f as (select * from read_parquet('{_pq(fact_parquet)}')
                    where {CLEAN_ROW} and ndc <> repeat(substr(ndc, 1, 1), length(ndc))
@@ -314,12 +313,12 @@ def pharmacy_spread_proxy(fact_parquet: Path, con=None, min_pairs: int = 20) -> 
         tot as (select billing_npi, sum(paid) as all_paid from pair group by 1),
         cov as (select p.billing_npi, sum(p.paid) as cov_paid,
                        sum(p.lines * r.med_ppl) as expected_paid,
-                       sum(case when p.paid / p.lines >= 2 * r.med_ppl then p.paid else 0 end) as hot_paid
+                       sum(case when p.paid / p.lines >= 2 * r.med_ppl then greatest(p.paid, 0) else 0 end) as hot_paid
                 from pair p join ref r using (ndc) group by 1)
         select t.billing_npi as npi,
                greatest(c.cov_paid / nullif(c.expected_paid, 0) - 1, 0) as rx_spread_proxy,
                c.cov_paid / nullif(t.all_paid, 0) as rx_spread_coverage,
-               c.hot_paid / nullif(c.cov_paid, 0) as rx_spread_top_share
+               least(1.0, greatest(0.0, c.hot_paid / nullif(c.cov_paid, 0))) as rx_spread_top_share
         from tot t left join cov c using (billing_npi)
         """).df()
     df["npi"] = df["npi"].astype(str)
@@ -344,8 +343,7 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
                                      over all dollars; long-acting over opioid dollars)
       rx_spread_proxy, rx_spread_coverage, rx_spread_top_share (pharmacy_spread_proxy)
     """
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     has_excl = _events_view(con, "_excl", exclusions, "excl_date")
     has_deact = _events_view(con, "_deact", deactivations, "deactivation_date")
     has_opi = _opioid_view(con, opioid_flags)
@@ -441,8 +439,7 @@ def prescriber_features(fact_parquet: Path, nadac_reference: pd.DataFrame | None
                                     (with ``opioid_flags``: the Medicaid pill-mill inputs,
                                      the counterpart of the Medicare opioid file's rates)
     """
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     has_opi = _opioid_view(con, opioid_flags)
     opi_sql = (", sum(case when o.is_opioid = 1 then f.total_claim_lines else 0 end) / nullif(sum(f.total_claim_lines), 0) as px_opioid_claims_share, "
                "sum(case when o.is_opioid = 1 then f.total_paid else 0 end) / nullif(sum(f.total_paid), 0) as px_opioid_paid_share, "
@@ -523,7 +520,7 @@ def medicaid_kickback(fact_parquet: Path, op_raw: pd.DataFrame, labelers: pd.Dat
     import duckdb
     from .fda_ndc import manufacturer_key
     from src.attempt_2.clean_data import _resolve_columns, canonicalize_series
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     cols = ["npi", "px_paid_mfr_share", "px_paid_mfr_count", "px_post_payment_lift", "px_op_payment_total"]
     if op_raw is None or not len(op_raw) or labelers is None or not len(labelers):
         return pd.DataFrame(columns=cols)
@@ -591,8 +588,7 @@ def medicaid_kickback(fact_parquet: Path, op_raw: pd.DataFrame, labelers: pd.Dat
 def npi_features(fact_parquet: Path, exclusions=None, deactivations=None,
                  nadac_reference=None, con=None, opioid_flags=None) -> pd.DataFrame:
     """One per-NPI frame carrying BOTH roles (an NPI can dispense and prescribe)."""
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     a = pharmacy_features(fact_parquet, exclusions, deactivations, con=con, opioid_flags=opioid_flags)
     b = prescriber_features(fact_parquet, nadac_reference, con=con, opioid_flags=opioid_flags)
     return a.merge(b, on="npi", how="outer")

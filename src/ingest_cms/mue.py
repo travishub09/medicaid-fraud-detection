@@ -105,12 +105,12 @@ _DAYS = {1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30,
 def compute_mue_violations(spending_path: str | Path,
                            mue: pd.DataFrame) -> pd.DataFrame:
     """Per-NPI conservative MUE-violation metrics from the monthly fact."""
-    import duckdb
+    from src.attempt_2.duck import connect as _duck
     if mue is None or not len(mue):
         return pd.DataFrame(columns=["npi", "mue_violation_share",
                                      "mue_violation_dollars",
                                      "n_mue_violation_cells", "worst_mue_ratio"])
-    con = duckdb.connect()
+    con = _duck()
     cols = con.execute(
         f"SELECT * FROM read_parquet('{spending_path}') LIMIT 0").df().columns
     low = {c.lower(): c for c in cols}

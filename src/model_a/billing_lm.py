@@ -97,8 +97,8 @@ def build_code_embeddings_duckdb(spending_path: str, dim: int = 16,
     import scipy.sparse as sp
     own = con is None
     if con is None:
-        con = duckdb.connect()
-        con.execute("PRAGMA memory_limit='4GB'")   # 16GB box: leave room for pandas
+        from src.attempt_2.duck import connect as _duck
+        con = _duck()                          # spilling on, ceiling from the box
     p = str(spending_path).replace("'", "''")
     cooc = con.execute(f"""
         WITH pres AS (
@@ -131,8 +131,8 @@ def provider_embeddings_duckdb(spending_path: str, codes: list, code_vecs: np.nd
     vecs.insert(0, "hcpcs", list(codes))
     own = con is None
     if con is None:
-        con = duckdb.connect()
-        con.execute("PRAGMA memory_limit='4GB'")   # 16GB box: leave room for pandas
+        from src.attempt_2.duck import connect as _duck
+        con = _duck()                          # spilling on, ceiling from the box
     con.register("vecs", vecs)
     p = str(spending_path).replace("'", "''")
     sums = ", ".join(f"SUM(w * e{i}) / SUM(w) AS {EMB_PREFIX}{i}" for i in range(dim))
@@ -162,8 +162,8 @@ def billing_surprisal_duckdb(spending_path: str, provider_dim: pd.DataFrame,
     pdim["taxonomy_code"] = pdim["taxonomy_code"].fillna("").astype(str)
     own = con is None
     if con is None:
-        con = duckdb.connect()
-        con.execute("PRAGMA memory_limit='4GB'")   # 16GB box: leave room for pandas
+        from src.attempt_2.duck import connect as _duck
+        con = _duck()                          # spilling on, ceiling from the box
     con.register("pdim", pdim)
     p = str(spending_path).replace("'", "''")
     out = con.execute(f"""

@@ -72,7 +72,8 @@ def test_export_classifies_graph_columns(tmp_path):
     assert len(manifest["embedding_cols"]) == 16
     # structural motifs are clean trainable features
     assert "graph_kcore" in manifest["raw_feature_cols"]
-    assert "graph_triangles" in manifest["raw_feature_cols"]
+    assert ("graph_triangles" in manifest["raw_feature_cols"]
+            or "graph_triangles" in manifest["dropped_constant"])      # constant on the fixture
     # the embeddings are now computed on the exclusion-free graph → CLEAN features
     assert f"{EMB_PREFIX}0" in manifest["raw_feature_cols"]
     assert f"{EMB_PREFIX}0" not in manifest["leakage_adjacent"]

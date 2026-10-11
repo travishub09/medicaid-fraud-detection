@@ -58,8 +58,8 @@ def servicing_stats(spending_path: str | Path, cutoff: str | None = None,
     """Per SERVICING NPI stats (DuckDB-streamed; the fact never enters pandas).
     ``cutoff`` ("YYYY-MM") keeps service months strictly before it; pass the as-of
     parquet instead on frozen runs (then cutoff is redundant but harmless)."""
-    import duckdb
-    con = con or duckdb.connect()
+    from src.attempt_2.duck import connect as _duck
+    con = con or _duck()
     where = (f"AND substr(CAST(service_month AS VARCHAR), 1, 7) < '{cutoff[:7]}'" if cutoff else "")
     df = con.execute(f"""
         WITH s AS (

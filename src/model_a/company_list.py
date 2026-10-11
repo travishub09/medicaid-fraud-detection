@@ -359,6 +359,8 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
             print(f"[company_list] broadcast policy 'mask': {int(bmask.sum()):,} broadcast-only "
                   f"case positives held out of training folds (scored out-of-fold)")
         ambiguous = ambiguous | bmask
+    from src.model_a.network_ab import SCORER_PARAMS
+    print(f"[company_list] scorer: LightGBM {', '.join(f'{k}={v}' for k, v in SCORER_PARAMS.items())}")
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
           f"groups={pol['group_policy']}")
     scores = np.zeros(len(matrix))

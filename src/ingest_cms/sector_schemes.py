@@ -47,8 +47,8 @@ def sector_metrics_from_parquet(spending_path: str | Path,
                                 minutes_csv: str | Path | None = None
                                 ) -> pd.DataFrame:
     """Per-NPI sector metrics straight from the spending parquet."""
-    import duckdb
-    con = duckdb.connect()
+    from src.attempt_2.duck import connect as _duck
+    con = _duck()
     p = str(spending_path).replace("'", "''")
     base = f"""
         SELECT CAST(billing_npi AS VARCHAR) AS npi,

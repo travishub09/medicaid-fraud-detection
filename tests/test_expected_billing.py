@@ -60,4 +60,5 @@ def test_export_carries_billing_residual(tmp_path):
     matrix, manifest = build_provider_matrix(
         leads, g["npi_to_org"], org_graph_features=g["org_graph_features"], min_peer=5)
     assert "billing_residual" in matrix.columns
-    assert "billing_residual" in manifest["raw_feature_cols"]   # clean, size-adjusted feature
+    assert ("billing_residual" in manifest["raw_feature_cols"]   # clean, size-adjusted feature
+            or "billing_residual" in manifest["dropped_constant"])  # (constant on the 14-row fixture)

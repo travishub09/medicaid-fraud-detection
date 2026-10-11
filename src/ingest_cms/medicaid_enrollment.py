@@ -43,6 +43,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.attempt_2.duck import connect as _duck_connect
+
 from src.attempt_2.clean_data import _resolve_columns
 
 ENROLL_COLS = {
@@ -88,8 +90,7 @@ def resolve_enrollment_columns(header: list[str]) -> dict[str, str]:
 def build_segments(paths, out_parquet: Path, con=None) -> dict:
     """Stream the raw CSV(s) into processed/medicaid_enrollment_segments.parquet (SEG_COLS,
     dates as DATE, NPI digits only). Row count is asserted raw -> parquet."""
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     paths = [Path(p) for p in (paths if isinstance(paths, (list, tuple)) else [paths])]
     files = []
     for p in paths:
@@ -242,8 +243,7 @@ def paid_after_enrollment_end(spending_path: str | Path, features: pd.DataFrame,
     provider_state is the claim's state, so a state-exact version follows when the fact
     carries it). Columns: npi, mcd_last_end_date, mcd_paid_after_end, mcd_months_after_end,
     mcd_paid_after_end_share (of that NPI's total paid)."""
-    import duckdb
-    con = con or duckdb.connect()
+    con = con or _duck_connect()
     f = features[features["mcd_last_end_date"].notna() & (features["mcd_open_segments"] == 0)][["npi", "mcd_last_end_date"]].copy()
     cols = ["npi", "mcd_last_end_date", "mcd_paid_after_end", "mcd_months_after_end", "mcd_paid_after_end_share"]
     if not len(f):
@@ -350,3 +350,69 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None,
+                                     con=None) -> pd.DataFrame:
+    """``enrollment_features`` computed INSIDE DuckDB from the segments parquet: the
+    same ten columns, the same rules, without the 50-million-row frame that killed
+    the v10 adapter in pandas (a 386 MB datetime allocation failed). The parity test
+    holds the two paths to identical numbers on the fixture."""
+    con = con or _duck_connect()
+    p = _pq(seg_parquet)
+    benign = BENIGN_END.pattern.replace("'", "''")
+    if asof_cutoff:
+        cut = pd.Timestamp(str(asof_cutoff)[:7] + "-01") + pd.offsets.MonthEnd(0)
+        asof_expr = f"date '{cut.date().isoformat()}'"
+        where_cut = f"and start_date <= date '{cut.date().isoformat()}'"
+    else:
+        asof_expr = "(select coalesce(max(end_date), current_date) from s0)"
+        where_cut = ""
+    df = con.execute(f"""
+        with s0 as (
+            select cast(npi as varchar) as npi, upper(cast(state as varchar)) as state,
+                   cast(start_date as date) as start_date, cast(end_date as date) as end_date,
+                   trim(coalesce(cast(status as varchar), '') || ' | ' || coalesce(cast(reason as varchar), ''), ' |') as txt
+            from read_parquet('{p}')
+            where regexp_matches(cast(npi as varchar), '^[0-9]{{10}}$') and start_date is not null),
+        s1 as (select *, {asof_expr} as asof_d from s0 where true {where_cut}),
+        s2 as (select npi, state, start_date, asof_d, txt,
+                      case when end_date > asof_d then null else end_date end as end_d
+               from s1),
+        s3 as (select *, greatest(date_diff('day', start_date, coalesce(end_d, asof_d)) / 30.44, 0) as months,
+                      case when end_d is not null
+                                and not (txt = '' or regexp_matches(txt, '{benign}', 'i')) then 1 else 0 end as cause
+               from s2),
+        by_state as (select npi, state, sum(months) as m from s3 group by 1, 2),
+        prim as (select npi, state as mcd_primary_state from (
+                     select npi, state, row_number() over (partition by npi order by m desc, state) as rn
+                     from by_state) where rn = 1),
+        agg as (select npi,
+                       count(distinct state) as mcd_states_enrolled,
+                       count(*) as mcd_segments,
+                       greatest(date_diff('day', min(start_date), any_value(asof_d)) / 30.44, 0) as mcd_tenure_months,
+                       sum(months) as mcd_enrolled_months,
+                       sum(case when end_d is null then 1 else 0 end) as mcd_open_segments,
+                       max(cause) as mcd_ended_for_cause,
+                       max(end_d) as mcd_last_end_date
+                from s3 group by npi)
+        select a.npi, a.mcd_states_enrolled, p.mcd_primary_state, a.mcd_segments, a.mcd_tenure_months,
+               a.mcd_enrolled_months, a.mcd_open_segments, a.mcd_ended_for_cause, a.mcd_last_end_date
+        from agg a left join prim p using (npi)
+    """).df()
+    if not len(df):
+        return pd.DataFrame(columns=["npi", "mcd_states_enrolled", "mcd_primary_state", "mcd_segments",
+                                     "mcd_tenure_months", "mcd_enrolled_months", "mcd_gap_share",
+                                     "mcd_open_segments", "mcd_ended_for_cause", "mcd_last_end_date"])
+    df["npi"] = df["npi"].astype(str)
+    for c in ("mcd_states_enrolled", "mcd_segments", "mcd_open_segments", "mcd_ended_for_cause"):
+        df[c] = pd.to_numeric(df[c], errors="coerce").astype("int64")
+    for c in ("mcd_tenure_months", "mcd_enrolled_months"):
+        df[c] = pd.to_numeric(df[c], errors="coerce").astype(float)
+    _ten = df["mcd_tenure_months"]
+    df["mcd_gap_share"] = (1 - df["mcd_enrolled_months"] / _ten.where(_ten != 0)).clip(0, 1)
+    df["mcd_last_end_date"] = pd.to_datetime(df["mcd_last_end_date"], errors="coerce")
+    df.loc[df["mcd_open_segments"] > 0, "mcd_last_end_date"] = pd.NaT
+    cols = ["npi", "mcd_states_enrolled", "mcd_primary_state", "mcd_segments", "mcd_tenure_months",
+            "mcd_enrolled_months", "mcd_gap_share", "mcd_open_segments", "mcd_ended_for_cause", "mcd_last_end_date"]
+    return df[cols].sort_values("npi").reset_index(drop=True)

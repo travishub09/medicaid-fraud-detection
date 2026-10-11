@@ -190,6 +190,20 @@ frozen = True
 
 v8 read 0 hits at 50 on the pursuit book (random 0.3), top 1 percent FCA lift 0.76, Jaccard 0.00, and HOLD on four of the eight locked checks. It is not a model result: the runner's export line dropped the case labels (zero DOJ positives in the matrix, graded on the FCA ruler) and the servicing grain added 843,551 rendering-only rows that doubled the universe. The full read-out, the fixes and the v9 runner are in `docs/ACCURACY_READOUT_v8_2026-10-10.md`. v9 was meant to be the first run that exercises the section 4c and 4d levers. It was not: the operator's copy picked the stale runner (Windows had saved the refreshed download under a numbered name), so v9 repeated v8 and read 0 at 50 on every book and on both broadcast arms. v10 is that run, under a runner with a new filename that stops itself if the matrix carries no case labels. Its hits bar stays at 2.
 
+### 5b. v10 and the v11 build (2026-10-11)
+
+v10 is the first valid run of the series: 2 hits at 16 and 50, 3 at 100, 4 at 250 on the operator book under the FCA ruler (random 0.1, 0.3, 0.5, 1.3), median lead 26 months, institutional share zero. It holds on one real check, top-50 stability (Jaccard 0.09), and the cause is visible in the list: below rank 1 the dollar-weighted score is a plateau at 0.2000, which is one saturated seed in five. The five seeds were the same model (no subsampling, no leaf floor, 200 rounds at a learning rate of 0.1 on 1,644 positives in 617,000 rows), so a provider a pure leaf caught in one seed scored exactly 0.2. The full read-out is `docs/ACCURACY_READOUT_v10_2026-10-11.md`.
+
+The operator's call for the next run: no research spend on a holding run, and everything that can be fixed, fixed. v11 therefore carries:
+
+1. **The scorer regularized.** A leaf floor of 100 rows (scaled down on small frames), learning rate 0.05 over 300 rounds, 80 percent row and 70 percent column subsampling with a bagging frequency of 1, L2 of 1.0. The seeds now have randomness to average, so the bagged score is continuous and the plateau cannot form. Graded by the order sweep and the stability section before it ships.
+2. **The memory casualties back.** Every heavy DuckDB consumer connects through one factory that spills to disk under a memory ceiling sized for a process that shares the box with pandas; the enrollment features are computed inside DuckDB instead of loading 50 million segment rows; the runner refuses to start under 10 GB free and stops after the export if servicing, MUE, sector schemes, enrollment or the billing LM is skipped.
+3. **Dead columns out, recorded.** A trainable column with one value or none is dropped before the manifest is written and listed under `dropped_constant`, which the issue ledger reads, so the graph motifs and the empty opioid shares stop being four-run FAILs without disappearing from the record.
+4. **NADAC as a reference.** With no edition on or before the freeze, the newest NADAC file serves as the drug-name lookup (brand, generic, opioid class), logged as such, so the Medicaid opioid and brand shares exist on a frozen run.
+5. **The registry parser fixed.** A check whose right-hand side is another metric is judged against that metric.
+
+v11 keeps v10's locked checks. Jaccard 0.7 is the bar the plateau fix has to clear; hits at 50 must stay at 2 or better.
+
 ## 6. Operator steps
 
 The reminder queue carries these with the exact commands. In order: run the diagnostics on the v7 packet (priority-list mode, no training, minutes); download the two July files and build them; run v8 as a new pre-registration with the checks above; run the diagnostics on v8 with the case database and the full graph; read the FCA-ruler verdict box first.

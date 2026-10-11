@@ -60,4 +60,7 @@ def test_export_carries_consistency_flags(tmp_path):
         leads, g["npi_to_org"], org_graph_features=g["org_graph_features"], min_peer=5)
     assert "consistency_flags" in matrix.columns
     assert "consistency_flags" in manifest["raw_feature_cols"]
-    assert "incons_solo_scale" in manifest["raw_feature_cols"]
+    # on the 14-row fixture the solo-scale flag never fires: a constant trainable
+    # column is dropped and recorded (2026-10-11), never shipped as a feature
+    assert ("incons_solo_scale" in manifest["raw_feature_cols"]
+            or "incons_solo_scale" in manifest["dropped_constant"])

@@ -885,7 +885,30 @@ first, then paste" above every move/done block.
   refits: weight 0, mask 1 at 50) is too noisy to set the v11 policy. v11 =
   memory casualties back + a continuous tiebreak inside the plateau, graded by
   the order sweep before it ships.
-  Full suite: `pytest tests/` (1,046 tests + 2 skipped).
+  V11 BUILD (2026-10-11, operator: "no Manus credits on a HOLD run; make the next run
+  the best yet"): (1) `src/attempt_2/duck.py` = ONE DuckDB connection factory
+  (`connect()`: temp_directory so a hash aggregate SPILLS instead of asking the OS
+  for RAM it does not have, memory_limit = MEDICAID_DUCKDB_MEM else 40% of physical
+  RAM, temp dir MEDICAID_DUCKDB_TMP); servicing_grain, mue, sector_schemes,
+  billing_lm, medicaid_ndc and medicaid_enrollment connect through it (the bare
+  `duckdb.connect()` had no temp directory = no spilling = "Allocation failure").
+  (2) `medicaid_enrollment.enrollment_features_from_parquet` computes the ten mcd_*
+  columns INSIDE DuckDB (the export uses it; the pandas path stays for small frames
+  and the parity test pins the two to the same numbers; `asof` is a DuckDB keyword,
+  the alias is `asof_d`). (3) THE SCORER: `network_ab.SCORER_PARAMS` (300 rounds at
+  lr 0.05, num_leaves 15, min_child_samples 100 scaled down to 20 on small frames,
+  subsample 0.8 / freq 1, colsample 0.7, reg_lambda 1.0) replaces the bare 200-tree
+  LightGBM; `_fit_predict` is shared by the production scorer, the A/B harnesses and
+  the ablations, so this is v11 semantics (new pre-registration). (4) `build_provider_
+  matrix` drops trainable columns with <= 1 distinct value and records them in the
+  manifest `dropped_constant`; run_issues emits a WARN per dropped column. (5)
+  `_asof_pick(fallback_newest=True)` for the NADAC reference in the NDC block (logged
+  as a drug-name lookup after the cutoff). (6) `rx_spread_top_share` on positive
+  dollars, clipped. run_v11_night.bat (new filename): MEDICAID_DUCKDB_MEM=6GB +
+  _TMP under interim/, a 10 GB free-RAM gate, and a stop after the export if any of
+  the five sources is skipped. The v10 dossier was NOT dispatched (closed as skipped).
+  Full suite: `pytest tests/` (1,049 tests + 2 skipped). Dead columns are left OUT OF THE
+  TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -123,6 +123,13 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
                              "add --case-db <enforcement/doj_cases*.csv> --defendant-npis "
                              "<processed/case_defendant_npis.parquet> to the export line of the night-runner "
                              "and re-register the run", "SOURCES_REPORT.md"))
+    for c in man.get("dropped_constant") or []:
+        issues.append(_issue("feature", str(c), "dropped_constant", "WARN",
+                             "single value or no value at all in this run: dropped from the trainable set before "
+                             "the manifest was written (manifest dropped_constant)",
+                             "read the source's SOURCES_REPORT line for why it came out empty (missing reference "
+                             "file, post-cutoff edition, early freeze); the column returns when the input does",
+                             "feature_manifest.json"))
     unmapped = ((man.get("feature_partition") or {}).get("unmapped") or [])
     if unmapped:
         issues.append(_issue("feature", "feature_partition", "unmapped_trainable", "FAIL",

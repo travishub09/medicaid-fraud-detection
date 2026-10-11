@@ -375,3 +375,24 @@ def test_prescriber_concentration_ignores_the_blank_prescriber_bucket(tmp_path):
     assert abs(feats.loc[PH1, "rx_top_prescriber_share"] - top / known_paid) < 1e-9      # not 100000 / total
     assert feats.loc[PH1, "rx_top_prescriber_share"] <= 1.0
     assert abs(feats.loc[PH1, "rx_missing_prescriber_share"] - 100000.0 / (known_paid + 100000.0)) < 1e-9
+
+
+def test_enrollment_features_duckdb_matches_pandas(tmp_path):
+    """The DuckDB path (v11: the export no longer loads 50M segment rows into pandas)
+    reproduces enrollment_features exactly, with and without a cutoff."""
+    raw = _enroll_csv(tmp_path)
+    seg_p = tmp_path / "seg.parquet"
+    menr.build_segments(raw, seg_p)
+    seg = pd.read_parquet(seg_p)
+    for cut in (None, "2022-12"):
+        a = menr.enrollment_features(seg, cut).sort_values("npi").reset_index(drop=True)
+        b = menr.enrollment_features_from_parquet(seg_p, cut)
+        assert list(a.columns) == list(b.columns) and list(a["npi"]) == list(b["npi"])
+        for c in ("mcd_states_enrolled", "mcd_primary_state", "mcd_segments", "mcd_open_segments", "mcd_ended_for_cause"):
+            assert a[c].tolist() == b[c].tolist(), (cut, c, a[c].tolist(), b[c].tolist())
+        for c in ("mcd_tenure_months", "mcd_enrolled_months", "mcd_gap_share"):
+            assert ((a[c].fillna(-1) - b[c].fillna(-1)).abs() < 0.05).all(), (cut, c)
+        assert a["mcd_last_end_date"].isna().tolist() == b["mcd_last_end_date"].isna().tolist()
+        same = a["mcd_last_end_date"].notna()
+        assert (pd.to_datetime(a.loc[same, "mcd_last_end_date"]).dt.date.tolist()
+                == pd.to_datetime(b.loc[same, "mcd_last_end_date"]).dt.date.tolist())

@@ -11,6 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from src.entity_graph.__main__ import run as run_graph
@@ -173,3 +174,22 @@ def test_export_no_servicing_rows_keeps_features_and_drops_rows(tmp_path):
     assert "sv_n_billing_orgs" in mx.columns and mx.loc[ORG_A, "sv_n_billing_orgs"] == 1
     man = json.loads((tmp_path / "out" / "feature_manifest.json").read_text())
     assert "servicing" in man["sources_used"]
+
+
+def test_constant_and_empty_trainable_columns_are_dropped_and_recorded(tmp_path):
+    """v8 / v9 / v10 shipped constant graph motifs and all-NaN opioid shares as trainable
+    columns (an EXPECTATIONS FAIL each run). The matrix drops them and the manifest
+    records them so the ledger still names the input that came out empty."""
+    inputs = build_synthetic_inputs()
+    out = run_graph(inputs, tmp_path / "graph")
+    leads = build_provider_leads(inputs["provider_dim"])
+    npis = leads["npi"].astype(str).tolist()
+    dead = pd.DataFrame({"npi": npis, "px_dead_share": [np.nan] * len(npis),
+                         "px_flat_count": [1.0] * len(npis), "px_live_share": np.linspace(0, 1, len(npis))})
+    matrix, manifest = build_provider_matrix(leads, out["npi_to_org"],
+                                             adapter_npi_frames={"medicaid_ndc": dead}, min_peer=2)
+    assert "px_dead_share" in matrix.columns and "px_flat_count" in matrix.columns   # kept for readers
+    assert "px_live_share" in matrix.columns and "px_live_share" in manifest["raw_feature_cols"]
+    assert "px_flat_count" not in manifest["raw_feature_cols"]                          # never trained on
+    assert set(manifest["dropped_constant"]) >= {"px_dead_share", "px_flat_count"}
+    assert "px_dead_share" not in manifest["raw_feature_cols"]

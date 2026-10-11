@@ -109,3 +109,15 @@ def test_missing_doj_case_source_is_a_fail(tmp_path):
     (d / "feature_manifest.json").write_text(json.dumps(man))
     issues, _ = collect_issues(d)
     assert not any(i["id"] == "label:doj_case:missing_case_labels" for i in issues)
+
+
+def test_dropped_constant_columns_stay_on_the_ledger(tmp_path):
+    d = _run_dir(tmp_path, "frozen_2021-12_v11", fails=0)
+    man = json.loads((d / "feature_manifest.json").read_text())
+    man["sources_used"] = {"doj_case": ["fraud_scheme"], "graph_embeddings": ["graph_degree"]}
+    man["dropped_constant"] = ["graph_degree", "px_opioid_paid_share"]
+    (d / "feature_manifest.json").write_text(json.dumps(man))
+    issues, _ = collect_issues(d)
+    ids = {i["id"] for i in issues}
+    assert "feature:graph_degree:dropped_constant" in ids and "feature:px_opioid_paid_share:dropped_constant" in ids
+    assert all(i["severity"] == "WARN" for i in issues if i["check"] == "dropped_constant")
