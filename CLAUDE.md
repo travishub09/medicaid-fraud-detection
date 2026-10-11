@@ -836,7 +836,19 @@ first, then paste" above every move/done block.
   billing vehicle is a party (confirmed, not wrong_person): part of the 26% was the
   agent grading P.A. vs Inc as a different business. The tightened tier re-runs after
   v9 with `--verification` (the 28 confirmed promote), then a fresh sample goes out.
-  `_nppes_person_key` survives an org-only provider table.
+  `_nppes_person_key` survives an org-only provider table. `--verification` takes
+  several results files (every batch's verdicts at once).
+  V9 INVALID (2026-10-11): v9 ran on the OLD v9 runner. Windows saved the refreshed
+  download as "run_v9_night (1).bat" and the copy line picked the stale file; the
+  console shows "step 1/10" (the new runner says /12), the findstr guard printed
+  nothing, "[doj_case] skipped: no --case-db", "843,551 servicing-only rows added".
+  v9 = v8 repeated (hits@50 0 on every book and both broadcast arms); registered
+  HOLD, no packet / dossier / poll. RULE: a refreshed runner ALWAYS gets a NEW
+  filename (run_v10_night.bat), and the operator must read the findstr guard line
+  before pre-registering. The v10 runner also stops itself after the export when
+  the SOURCES_REPORT says the matrix carries no case labels. v9's one new skip:
+  `billing_lm` Out of Memory in DuckDB on the 1.46M-row universe (the ledger
+  carries it; the billing-NPI universe halves the load for v10).
   Full suite: `pytest tests/` (1,043 tests + 2 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

@@ -1218,9 +1218,10 @@ def main() -> None:
     ap.add_argument("--nppes-file", default=None,
                     help="raw NPPES data file (npidata_pfile_*.csv) or its folder: supplies the middle names "
                          "provider_dim lacks, so a release middle name that contradicts NPPES is caught")
-    ap.add_argument("--verification", default=None,
-                    help="label_verification's verification_results.csv: confirmed verdicts promote "
-                         "resolved_fuzzy rows to resolved; wrong_* verdicts reject them")
+    ap.add_argument("--verification", default=None, nargs="+",
+                    help="label_verification's verification_results.csv (one or more files: every "
+                         "batch's verdicts): confirmed verdicts promote resolved_fuzzy rows to resolved; "
+                         "wrong_* verdicts reject them")
     ap.add_argument("--mfcu-prompts", default=None,
                     help="also write state-MFCU sweep research prompts (jsonl) for the Southeast, 2020-2025")
     a = ap.parse_args()
@@ -1256,7 +1257,10 @@ def main() -> None:
           f"{fz.get('resolved_fuzzy', 0):,} resolved_fuzzy (held out of training until verified), "
           f"{fz.get('ambiguous_fuzzy', 0):,} ambiguous, {fz.get('chain_org_fuzzy', 0):,} chains")
     if a.verification:
-        resolved, vs = apply_verification(resolved, pd.read_csv(a.verification, dtype=str))
+        # several batches' verdicts at once (batch 1 promoted the first 28 fuzzy rows, batch 2
+        # grades the tightened tier): every file is read and concatenated
+        resolved, vs = apply_verification(resolved, pd.concat([pd.read_csv(p, dtype=str) for p in a.verification],
+                                                              ignore_index=True))
         print(f"  verification verdicts applied to fuzzy rows: {vs['promoted']:,} promoted to resolved, "
               f"{vs['rejected']:,} rejected")
     resolved.to_parquet(out, index=False)

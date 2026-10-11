@@ -188,7 +188,7 @@ frozen = True
 
 ### 5a. What v8 actually read (2026-10-10)
 
-v8 read 0 hits at 50 on the pursuit book (random 0.3), top 1 percent FCA lift 0.76, Jaccard 0.00, and HOLD on four of the eight locked checks. It is not a model result: the runner's export line dropped the case labels (zero DOJ positives in the matrix, graded on the FCA ruler) and the servicing grain added 843,551 rendering-only rows that doubled the universe. The full read-out, the fixes and the v9 runner are in `docs/ACCURACY_READOUT_v8_2026-10-10.md`. v9 is the first run that exercises the section 4c and 4d levers; its hits bar stays at 2.
+v8 read 0 hits at 50 on the pursuit book (random 0.3), top 1 percent FCA lift 0.76, Jaccard 0.00, and HOLD on four of the eight locked checks. It is not a model result: the runner's export line dropped the case labels (zero DOJ positives in the matrix, graded on the FCA ruler) and the servicing grain added 843,551 rendering-only rows that doubled the universe. The full read-out, the fixes and the v9 runner are in `docs/ACCURACY_READOUT_v8_2026-10-10.md`. v9 was meant to be the first run that exercises the section 4c and 4d levers. It was not: the operator's copy picked the stale runner (Windows had saved the refreshed download under a numbered name), so v9 repeated v8 and read 0 at 50 on every book and on both broadcast arms. v10 is that run, under a runner with a new filename that stops itself if the matrix carries no case labels. Its hits bar stays at 2.
 
 ## 6. Operator steps
 

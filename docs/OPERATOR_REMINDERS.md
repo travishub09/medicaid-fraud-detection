@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-10. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-11. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -193,52 +193,58 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **merge_bundle269** — Merge bundle 269 (cumulative; supersedes 239-268; bundle 268 need not be merged first): the tightened fuzzy business tier + the verification prompt rules + the own-folder fuzzy workflow in the reminders. ONLY AFTER v9 prints DONE (never merge during a run). Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-10)
+- [ ] **merge_bundle270** — Merge bundle 270 (cumulative; supersedes 239-269; 269 need not be merged first): the tightened fuzzy tier, the resolver's --verification taking several files, the v9 post-mortem, run_v10_night.bat (new filename). v9 has printed DONE so this is safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-11)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle269*.bundle") do copy /y "%f" "C:\Users\treyr\bundle269.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle270*.bundle") do copy /y "%f" "C:\Users\treyr\bundle270.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle269.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle270.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle269
+python -m src.reminders --done-task merge_bundle270
 ```
 
-- [ ] **fuzzy_tier_verification** — VERDICT 2026-10-10: TIGHTEN. First fuzzy batch verified 28/108 (26%): 45 wrong_npi (one-token containment: Target Corporation -> TARGET PHARMACY), 33 wrong_person (headline descriptors like 'Telehealth Company' and surname fragments like 'ILYAYEV' reached the tier). Bundle 269 carries the tightened matcher (descriptors and one-word mentions never enter; a candidate may carry no extra distinctive token when the mention has one, at most one when it has two or more and only if the city agrees) plus a verification prompt that treats legal-tail variants and the convicted owner's billing vehicle as confirmed. ONLY AFTER v9 prints DONE and bundle 269 is merged: rerun the resolver in its own folder WITH --verification (the 28 confirmed promote, the wrong rows are rejected, the rest is re-matched under the tight rule), re-export the review file, dispatch the NEW fuzzy sample, poll, then rerun with the combined verification_results.csv and copy the table over processed\case_defendant_npis.parquet. The Manus slot is free until that dispatch. (added 2026-10-10)
+- [ ] **fuzzy_tier_verification** — STEP A, right after bundle 270 is merged and BEFORE v10 starts (minutes): rerun the resolver in its own folder with batch 1's verdicts (the 28 confirmed promote to resolved, the wrong rows are rejected, everything else is re-matched under the TIGHTENED rule), copy the table over processed\case_defendant_npis.parquet (no run is going, so v10 trains with the promoted rows), re-export the review file, and dispatch the NEW fuzzy sample (batch 2). Paste the 'fuzzy business tier' line and the dispatch count. STEP C, 30+ minutes later (v10 may be running; the poll only writes under verify2): poll and paste the LABEL_VERIFICATION.md tally. STEP D, ONLY AFTER v10 prints DONE and only if batch 2 reads 90%+ confirmed: rerun the resolver with BOTH verdict files and copy over again. The Manus slot is taken from the batch-2 dispatch until its poll returns. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv"
-python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
+copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
+python -u -m src.model_a.fca_label_export --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --defendant-npis "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --exclusion-nodes "C:\Users\treyr\OneDrive\Desktop\data\graph\nodes\exclusion_nodes.parquet" --policy fca_shaped --include-fuzzy --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy"
 python -u -m src.model_a.label_verification --sample "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_sample_fuzzy.csv" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2"
 python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2" --dispatch
-REM 30+ min later:
+REM STEP C, 30+ min later:
 python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2" --poll
-REM then (paste the LABEL_VERIFICATION.md tally in chat first; if it reads 90%+ confirmed):
-copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verification_results_batch1.csv"
-python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv"
+REM STEP D, ONLY AFTER v10 prints DONE and only if batch 2 reads 90%+ confirmed:
+python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv"
 copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
 python -m src.reminders --done-task fuzzy_tier_verification
 ```
 
-- [ ] **v9_prereg_and_run** — v9 (bundle 268 runner): the SAME 2021-12 freeze as v8 with the v8 pipeline errors fixed and the levers on. The export line now carries --case-db + --defendant-npis (v8's runner dropped them: zero DOJ case labels), --no-servicing-rows (v8 doubled the universe), --seeds 5 --broadcast-rows weight --group-policy case_cluster; the runner stops itself if the matrix comes out with no case labels, and ends with the learning loop + the issue ledger against v8. ORDER: (1) merge bundle 268; (2) copy the REFRESHED run_v9_night.bat from Downloads into the repo folder (the old copy is wrong); (3) pre-register v9 with the command below BEFORE the run (hits50 >= 2 stays: v8 read 0); (4) start the runner (reuses graph_asof_2021-12 from v8, so shorter than v8); (5) say 'v9 finished' when it prints DONE, then zip the packet with the line the runner prints. Never merge a bundle while it runs. (added 2026-10-10)
+- [ ] **v10_prereg_and_run** — v10 = the run v9 was meant to be: the 2021-12 freeze with DOJ case labels ON (--case-db + --defendant-npis), the billing-NPI universe (--no-servicing-rows), case-cluster folds, 5-seed bagging, the per-case label budget, the weight-vs-mask broadcast A/B, the learning loop and the issue ledger against v9. The runner has a NEW filename (run_v10_night.bat) so the copy cannot pick a stale download, and it stops itself after the export if the SOURCES_REPORT says the matrix has no case labels. ORDER: (1) merge bundle 270; (2) fuzzy STEP A (so v10 trains with the 28 promoted rows); (3) copy run_v10_night.bat from Downloads; (4) the findstr line MUST print the export line (if it prints nothing, stop and say so); (5) pre-register v10 (hits50 >= 2 stays); (6) start the runner; (7) say 'v10 finished' when it prints DONE, then zip the packet with the line the runner prints. Never merge a bundle while it runs. (added 2026-10-11)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-copy /y "%USERPROFILE%\Downloads\run_v9_night.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v9_night.bat"
-findstr /C:"--no-servicing-rows" "C:\Users\treyr\medicaid-fraud-detection\run_v9_night.bat"
-REM the findstr line must print the export line; if it prints nothing the old runner was copied
-python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --preregister --tag frozen_2021-12_v9 --goal "Case-cluster folds, 5-seed bagging and the per-case label budget raise the operator book's FCA hits at 50 on the 2021-12 freeze without raising the institutional share; the weight-vs-mask A/B decides the v10 broadcast policy" --expected "hits@50 on provider_priority_list_pursuit.csv at or above v8's, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats" --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
-"C:\Users\treyr\medicaid-fraud-detection\run_v9_night.bat"
-REM when it prints [v9] DONE: say 'v9 finished' in chat
-python -m src.reminders --done-task v9_prereg_and_run
+copy /y "%USERPROFILE%\Downloads\run_v10_night.bat" "C:\Users\treyr\medicaid-fraud-detection\run_v10_night.bat"
+findstr /C:"--no-servicing-rows" "C:\Users\treyr\medicaid-fraud-detection\run_v10_night.bat"
+REM the findstr line must print the export line; if it prints nothing STOP and say so in chat
+python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --preregister --tag frozen_2021-12_v10 --goal "Case-cluster folds, 5-seed bagging and the per-case label budget raise the operator book's FCA hits at 50 on the 2021-12 freeze without raising the institutional share; the weight-vs-mask A/B decides the v11 broadcast policy" --expected "hits@50 on provider_priority_list_pursuit.csv at or above v7's 1, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats" --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
+"C:\Users\treyr\medicaid-fraud-detection\run_v10_night.bat"
+REM when it prints [v10] DONE: say 'v10 finished' in chat
+python -m src.reminders --done-task v10_prereg_and_run
 ```
 
 - [ ] **registry_verdict__frozen_2021-12_v8** — VERDICT DELIVERED 2026-10-10: HOLD on frozen_2021-12_v8, cause = pipeline error, not model performance (the runner's export line dropped --case-db / --defendant-npis so the matrix trained on 920 exclusion positives and ZERO DOJ case labels; 843,551 servicing-only rows doubled the universe; two sv_* shares out of bounds; five dead features). hits@50 = 0 (random 0.3), top-1% FCA lift 0.76, Jaccard 0.00. The v8 dossier was NOT dispatched to Manus (skipped: a chance-level list). Read docs/ACCURACY_READOUT_v8_2026-10-10.md (in bundle 268), then close this with the line below. (added 2026-10-10)
 
 ```bat
 python -m src.reminders --done-task registry_verdict__frozen_2021-12_v8
+```
+
+- [ ] **registry_verdict__frozen_2021-12_v9** — VERDICT DELIVERED 2026-10-11: HOLD on frozen_2021-12_v9, INVALID BY CONSTRUCTION. The run used the OLD v9 runner (console: 'step 1/10' not '/12', the findstr guard printed nothing, '[doj_case] skipped: no --case-db', '843,551 servicing-only rows added'): Windows saved the refreshed download as 'run_v9_night (1).bat' and the copy line picked the stale file. v9 is v8 repeated (920 exclusion positives, zero DOJ case labels, doubled universe; hits@50 = 0 on every book and both broadcast A/B arms). No packet, no dossier dispatch, no poll. The rerun is v10 under a NEW runner filename. Close this once read. (added 2026-10-11)
+
+```bat
+python -m src.reminders --done-task registry_verdict__frozen_2021-12_v9
 ```
 
 
