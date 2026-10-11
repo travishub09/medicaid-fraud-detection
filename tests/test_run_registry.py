@@ -102,3 +102,17 @@ def test_resolve_champion_fails_loudly_when_none(tmp_path):
     (tmp_path / "model_a").mkdir(parents=True)
     with pytest.raises(SystemExit):
         resolve_run_dir("@champion", tmp_path)
+
+
+def test_check_right_hand_side_may_be_another_metric():
+    """'prec50_lo > base50' compares two metrics of the same run. v8 / v9 / v10 were
+    judged on the literal string 'base50' ("> needs numbers") and a passing check was
+    recorded as a FAIL."""
+    from src.model_a.run_registry import eval_check
+    row = {"acc_org_prec50_lo": 0.011, "acc_base50": 0.005, "acc_org_hits50": 2}
+    r = eval_check("prec50_lo > base50", row)
+    assert r["ok"] and r["value_from"] == "acc_base50" and r["value"] == 0.005
+    r2 = eval_check("prec50_lo > base50", {"acc_org_prec50_lo": 0.0, "acc_base50": 0.005})
+    assert not r2["ok"] and "0.005" in r2["why"]
+    assert eval_check("hits50 >= 2", row)["ok"]                        # literals still work
+    assert not eval_check("hits50 >= nonsense", row)["ok"]             # an unknown name is not silently true

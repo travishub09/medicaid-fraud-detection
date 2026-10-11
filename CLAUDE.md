@@ -863,7 +863,29 @@ first, then paste" above every move/done block.
   subsidiaries, which is an OWNERSHIP question (PECOS owner -> orgs broadcast) and
   a research question, not a name-matching one. Verified rows promote regardless
   (a verdict is per-row evidence); unverified fuzzy rows never ship.
-  Full suite: `pytest tests/` (1,044 tests + 2 skipped).
+  V10 READ-OUT (2026-10-11, `docs/ACCURACY_READOUT_v10_2026-10-11.md`): the FIRST
+  VALID RUN of the series (6,366 DOJ-case NPIs, 1,644 positives, 617,062-row
+  billing universe, 81 case clusters, 474 down-weighted broadcast rows). Pursuit
+  book under the FCA ruler: hits 2 / 2 / 3 / 4 at 16 / 50 / 100 / 250 (random
+  0.1 / 0.3 / 0.5 / 1.3; p 0.002 / 0.024 / 0.010 / 0.022), median lead 26 months,
+  institutional share 0, top-1% NPI lift 2.2. HOLD on ONE real check: top-50
+  Jaccard 0.09 (the dollar-weighted score below rank 1 is a 0.2000 PLATEAU, so
+  the order inside it is fold noise while every re-shuffle still finds 2 hits).
+  The other recorded FAIL, `prec50_lo > base50`, PASSED in fact (0.011 > 0.005):
+  `eval_check` compared the metric to the literal word "base50" (v8 / v9 / v10
+  all carried this false FAIL) and now resolves a right-hand side through the
+  same aliases (`value_from`). Five sources died of memory on the operator's
+  machine (servicing, mue, sector_schemes, medicaid_enrollment at a 386 MB
+  allocation, billing_lm): 18 schemes scored instead of 22; v11 needs a quiet
+  machine and a free-memory check in the runner. The dossier's default top-10
+  came from the MAIN list (five hospitals + a national DME chain):
+  `pursuit_dossier --operator-book` picks targets from the operator book
+  (the entity_segment rule: no institutional names / 25+ providers / government /
+  solo individuals); the v10 dispatch uses it. The broadcast A/B (single-seed
+  refits: weight 0, mask 1 at 50) is too noisy to set the v11 policy. v11 =
+  memory casualties back + a continuous tiebreak inside the plateau, graded by
+  the order sweep before it ships.
+  Full suite: `pytest tests/` (1,046 tests + 2 skipped).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

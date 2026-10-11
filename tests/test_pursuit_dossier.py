@@ -374,3 +374,22 @@ def test_large_biller_book_is_the_pursuit_book_over_the_band(tmp_path):
     assert "pursuit_rank" in large.columns and large["pursuit_rank"].is_monotonic_increasing
     md = (tmp_path / "PRIORITY_LIST.md").read_text(encoding="utf-8")
     assert LARGE_LIST_NAME in md
+
+
+def test_operator_book_dossier_sets_hospitals_aside(tmp_path):
+    """--operator-book (2026-10-11): the v10 default dossier drew five hospitals and a
+    national chain; the operator book keeps the class the strategy targets."""
+    m, man = _matrix()
+    m["entity_type"] = "2"
+    hosp = m["org_node_id"] == "org:002"
+    m.loc[hosp, ["org_legal_name", "provider_name"]] = "TESTVILLE GENERAL HOSPITAL"
+    m.loc[hosp, "subscore_upcoding"] = 1.0
+    m.loc[hosp, "net_paid"] = 9e7
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+    build(tmp_path, top=5, min_billed=1.0, operator_book=True)
+    t = pd.read_csv(tmp_path / "pursuit_targets.csv")
+    assert len(t) > 0 and not t["org_name"].str.contains("HOSPITAL").any()
+    build(tmp_path, top=50, min_billed=1.0)
+    t2 = pd.read_csv(tmp_path / "pursuit_targets.csv")
+    assert t2["org_name"].str.contains("HOSPITAL").any()                 # the default still lists it

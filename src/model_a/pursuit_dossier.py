@@ -524,7 +524,8 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
           min_billed: float = 250_000.0,
           min_damages: float | None = None,
           min_hot: float = 0.5,
-          include_government: bool = False) -> Path:
+          include_government: bool = False,
+          operator_book: bool = False) -> Path:
     d = Path(run_dir)
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
@@ -535,6 +536,26 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
     orgs = orgs.merge(sizes, on="org_id", how="left")
     orgs["case_size_yr"] = pd.to_numeric(
         orgs.get("case_size_yr"), errors="coerce").fillna(0.0)
+    if operator_book:
+        # THE OPERATOR BOOK (2026-10-11, from the v10 dossier): the default top-10
+        # drew five hospitals and a national DME chain from the main list, the
+        # do-not-send class the priority list's pursuit companion already filters
+        # out. Same rule as entity_segment: no hospital / system / academic names,
+        # no 25+ provider orgs, no government entities, no solo individuals.
+        names = orgs["org_name"].astype(str)
+        inst = (names.map(lambda s: bool(re.search(_INSTITUTIONAL_RE, s)))
+                | (pd.to_numeric(orgs["n_providers"], errors="coerce").fillna(1) >= 25))
+        gov = government_mask(names)
+        solo = pd.Series(False, index=orgs.index)
+        if "entity_type" in matrix.columns and "org_node_id" in matrix.columns:
+            mk = matrix["org_node_id"].astype(str)
+            solo_ids = set(matrix.loc[~mk.duplicated(keep=False)
+                                      & (matrix["entity_type"].astype(str) == "1"), "org_node_id"].astype(str))
+            solo = orgs["org_id"].astype(str).isin(solo_ids)
+        n_before = len(orgs)
+        orgs = orgs[~inst & ~gov & ~solo]
+        print(f"[pursuit_dossier] operator book: {len(orgs):,} of {n_before:,} orgs kept "
+              f"(institutional / government / solo-individual rows set aside)")
     if min_damages is not None:
         # recovery-space selection under the universal rule (operator
         # decision 2026-08-04): SIGNAL SORTS, EVERYTHING ELSE FILTERS.
@@ -799,6 +820,12 @@ def main() -> None:
     ap.add_argument("--include-government", action="store_true",
                     help="keep state/county/city umbrella entities on the "
                          "list (excluded by default)")
+    ap.add_argument("--operator-book", action="store_true",
+                    help="pick the dossier's targets from the OPERATOR book only (no "
+                         "hospital / system / academic names, no 25+ provider orgs, no "
+                         "government entities, no solo individuals): the class the "
+                         "whistleblower strategy targets and the pursuit companion list "
+                         "grades; the default top-10 is the main list")
     ap.add_argument("--dispatch", action="store_true",
                     help="send the Manus research tasks now (needs "
                          f"${MANUS_KEY_ENV})")
@@ -873,7 +900,8 @@ def main() -> None:
         return
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,
-          min_hot=args.min_hot, include_government=args.include_government)
+          min_hot=args.min_hot, include_government=args.include_government,
+          operator_book=args.operator_book)
 
 
 if __name__ == "__main__":

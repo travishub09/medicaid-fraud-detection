@@ -396,6 +396,15 @@ def eval_check(expr: str, row: dict) -> dict:
     actual = row.get(metric)
     out = {"expr": expr, "metric": metric, "op": op, "value": value,
            "actual": actual}
+    # the right-hand side may be ANOTHER metric ('prec50_lo > base50': the lower
+    # Wilson bound against the random baseline of the same run). v8 / v9 / v10
+    # were judged on the literal string 'base50' and read "> needs numbers": a
+    # check that PASSED (0.011 > 0.005 on v10) was recorded as a FAIL.
+    rhs_key = CHECK_ALIASES.get(value, value)
+    if rhs_key in row and row.get(rhs_key) is not None:
+        value = row.get(rhs_key)
+        out["value"] = value
+        out["value_from"] = rhs_key
     if actual is None:
         out.update(ok=False, why=f"{metric} was not measured in this run")
         return out
