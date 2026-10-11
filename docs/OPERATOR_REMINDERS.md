@@ -193,16 +193,16 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **merge_bundle274** — Merge bundle 274 (cumulative; supersedes 239-273; 273 need not be merged first): the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh) + the reminders. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
+- [ ] **merge_bundle276** — Merge bundle 276 (cumulative; supersedes 239-275; none of them need merging first): the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh with the storage plan and the sync exclusions) + the reminders. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle274*.bundle") do copy /y "%f" "C:\Users\treyr\bundle274.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle276*.bundle") do copy /y "%f" "C:\Users\treyr\bundle276.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle274.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle276.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle274
+python -m src.reminders --done-task merge_bundle276
 ```
 
 - [ ] **fuzzy_tier_verification** — BATCH 3 DISPATCHED 2026-10-11 (23 rows in 3 Manus tasks under rule 4; batches 1 and 2 were 108 and 39). NEXT: 30+ min after the dispatch poll it, paste the LABEL_VERIFICATION.md tally, then rerun the resolver with all THREE verdict files and copy the table over so v11 trains with every promoted row. Last-chance rule: 90%+ confirmed or the fuzzy tier is retired (confirmed rows promote either way). (added 2026-10-10)
