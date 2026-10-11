@@ -193,18 +193,6 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **merge_bundle278** — Merge bundle 278 (cumulative; supersedes 239-277; none of them need merging first): the fuzzy tier retired (verified promotions kept), the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh) + v11 moved to the VM (reminders, runbook). Merge BEFORE the fuzzy last step and v11. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\bundle278*.bundle") do copy /y "%f" "C:\Users\treyr\bundle278.bundle"
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle278.bundle"
-REM press Enter once, then paste the next line on its own:
-git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle278
-```
-
 - [ ] **fuzzy_tier_verification** — BATCH 3 READ 9/23 (39%) on 2026-10-11: under the last-chance rule the FUZZY TIER IS RETIRED (bundle 277: the resolver demotes every unverified fuzzy row to fuzzy_retired; the 47 rows the three batches confirmed stay promoted on every rerun). LAST STEP, after bundle 277 is merged: rerun the resolver with all THREE verdict files, copy the table over, paste the 'verification verdicts applied' and 'fuzzy tier RETIRED' lines, then close. Parent-company defendants go to ownership broadcast and the research residue from here. (added 2026-10-10)
 
 ```bat
@@ -212,26 +200,6 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\verification_results.csv"
 copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
 python -m src.reminders --done-task fuzzy_tier_verification
-```
-
-- [ ] **registry_verdict__frozen_2021-12_v8** — VERDICT DELIVERED 2026-10-10: HOLD on frozen_2021-12_v8, cause = pipeline error, not model performance (the runner's export line dropped --case-db / --defendant-npis so the matrix trained on 920 exclusion positives and ZERO DOJ case labels; 843,551 servicing-only rows doubled the universe; two sv_* shares out of bounds; five dead features). hits@50 = 0 (random 0.3), top-1% FCA lift 0.76, Jaccard 0.00. The v8 dossier was NOT dispatched to Manus (skipped: a chance-level list). Read docs/ACCURACY_READOUT_v8_2026-10-10.md (in bundle 268), then close this with the line below. (added 2026-10-10)
-
-```bat
-python -m src.reminders --done-task registry_verdict__frozen_2021-12_v8
-```
-
-- [ ] **registry_verdict__frozen_2021-12_v9** — VERDICT DELIVERED 2026-10-11: HOLD on frozen_2021-12_v9, INVALID BY CONSTRUCTION. The run used the OLD v9 runner (console: 'step 1/10' not '/12', the findstr guard printed nothing, '[doj_case] skipped: no --case-db', '843,551 servicing-only rows added'): Windows saved the refreshed download as 'run_v9_night (1).bat' and the copy line picked the stale file. v9 is v8 repeated (920 exclusion positives, zero DOJ case labels, doubled universe; hits@50 = 0 on every book and both broadcast A/B arms). No packet, no dossier dispatch, no poll. The rerun is v10 under a NEW runner filename. Close this once read. (added 2026-10-11)
-
-```bat
-python -m src.reminders --done-task registry_verdict__frozen_2021-12_v9
-```
-
-- [ ] **registry_verdict__frozen_2021-12_v10** — VERDICT DELIVERED 2026-10-11: HOLD on frozen_2021-12_v10, on ONE real check: top-50 stability (Jaccard 0.09 vs 0.7; the dollar-weighted score below rank 1 is a 0.2000 plateau so the order inside it is noise, though every re-shuffle still finds 2 hits). The other recorded FAIL (prec50_lo > base50) actually PASSED (0.011 > 0.005): the registry parser compared the metric to the literal word 'base50'; bundle 272 fixes it. v10 is the first valid run of the series: 2 hits at 16 and 50 (random 0.1 / 0.3, p 0.002 / 0.024), 3 at 100, 4 at 250, median lead 26 months, institutional share 0. Five sources died of memory (servicing, mue, sector_schemes, medicaid_enrollment, billing_lm): v11 needs a quiet machine. Operator decision 2026-10-11: NO Manus dispatch on a HOLD run (the v10 dossier tasks are closed as skipped). Read docs/ACCURACY_READOUT_v10_2026-10-11.md, re-register v10 after bundle 273 is merged (clears the false FAIL), then close. (added 2026-10-11)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.run_registry --data-root "C:\Users\treyr\OneDrive\Desktop\data" --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v10"
-python -m src.reminders --done-task registry_verdict__frozen_2021-12_v10
 ```
 
 - [ ] **v11_prereg_and_run** — v11 = v10 with the five memory casualties back, the regularized scorer (the plateau fix) and FULL graph embeddings, same 2021-12 freeze, RUN ON THE VM (decided 2026-10-11: the laptop runner was only the fallback written before the VM decision; the VM has the memory, so v11 is the first VM run and no laptop run is needed). ORDER: (1) merge bundle 278 AND push it (the VM clones the pushed branch); (2) the fuzzy last step on the laptop, then wait for OneDrive to finish syncing processed\case_defendant_npis.parquet (the cloud icon on the file turns to a check); (3) the VM exists and the data pull has finished (task compute_box_decision); (4) on the VM: pull the code, pre-register v11 (v10's checks, parser fixed, Jaccard 0.7 is the bar the plateau fix must clear), start the runner inside tmux: it refuses to start under 24 GB free, rebuilds the as-of graph with every node embedded, and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped; (5) say 'v11 finished' when it prints DONE, zip the packet with the line it prints, run the sync up line, download the zip, stop the VM. Never merge a bundle while it runs. If the VM purchase falls through, say so and the laptop runner (run_v11_night.bat, findstr gate) is the fallback. (added 2026-10-11)
