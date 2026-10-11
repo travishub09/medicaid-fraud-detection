@@ -716,20 +716,6 @@
    ]
   },
   {
-   "key": "merge_bundle270",
-   "what": "Merge bundle 270 (cumulative; supersedes 239-269; 269 need not be merged first): the tightened fuzzy tier, the resolver's --verification taking several files, the v9 post-mortem, run_v10_night.bat (new filename). v9 has printed DONE so this is safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own.",
-   "added": "2026-10-11",
-   "commands": [
-    "for %f in (\"%USERPROFILE%\\Downloads\\bundle270*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle270.bundle\"",
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle270.bundle\"",
-    "REM press Enter once, then paste the next line on its own:",
-    "git push origin claude/happy-mccarthy-3skrn3",
-    "python -m src.reminders --done-task merge_bundle270"
-   ]
-  },
-  {
    "key": "fuzzy_tier_verification",
    "what": "STEP A DONE 2026-10-11 (tightened tier: 2,951 tried -> 154 resolved_fuzzy / 180 ambiguous / 27 chains; batch-1 verdicts applied: 25 promoted, 25 rejected; processed\\case_defendant_npis.parquet now carries the promoted rows, 1,571 resolved NPIs; batch 2 = 39 rows in 4 Manus tasks DISPATCHED). STEP C, 30+ minutes later (v10 may be running; the poll only writes under verify2): poll and paste the LABEL_VERIFICATION.md tally. STEP D, ONLY AFTER v10 prints DONE and only if batch 2 reads 90%+ confirmed: rerun the resolver with BOTH verdict files and copy over again. The Manus slot is taken until the batch-2 poll returns.",
    "added": "2026-10-10",
