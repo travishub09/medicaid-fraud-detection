@@ -1101,6 +1101,31 @@ def apply_verification(out: pd.DataFrame, results: pd.DataFrame | None) -> tuple
     return out, stats
 
 
+FUZZY_TIER_RETIRED = True   # 2026-10-11: three verified batches read 26% / 26% / 39%
+
+
+def retire_unverified_fuzzy(out: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """THE FUZZY TIER IS RETIRED (2026-10-11). Three Manus batches graded it at 26, 26 and
+    39 percent confirmed, and the survivors were the same two shapes every time: a parent
+    corporation landing on a differently named local business (Prime Healthcare Services
+    -> PRIME CARE HEALTH SERVICES, Encompass Health Corporation -> ENCOMPASS HEALTHCARE
+    GROUP) and a headline descriptor no word rule catches ("O.C.-Based Health Care
+    Organization", "Berks County Group"). Those are ownership and research questions, not
+    name-matching ones. The tier still RUNS so that ``apply_verification`` can promote the
+    47 rows a verdict confirmed (they stay 'resolved' on every rerun); every row it leaves
+    as 'resolved_fuzzy' is demoted here to 'fuzzy_retired' with the candidate kept in
+    ``npi_candidate``, so nothing unverified ever reaches training or the strict export.
+    ``--fuzzy`` on the CLI keeps the unverified rows (for a review file only)."""
+    out = out.copy()
+    m = out["status"] == "resolved_fuzzy"
+    n = int(m.sum())
+    if n:
+        out.loc[m, "npi_candidate"] = out.loc[m, "npi"].astype(str)
+        out.loc[m, "npi"] = ""
+        out.loc[m, "status"] = "fuzzy_retired"
+    return out, n
+
+
 def mentions_from_case_db(case_db: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for c in case_db.itertuples(index=False):
@@ -1245,6 +1270,9 @@ def main() -> None:
     ap.add_argument("--nppes-file", default=None,
                     help="raw NPPES data file (npidata_pfile_*.csv) or its folder: supplies the middle names "
                          "provider_dim lacks, so a release middle name that contradicts NPPES is caught")
+    ap.add_argument("--fuzzy", action="store_true",
+                    help="keep UNVERIFIED fuzzy-tier rows as resolved_fuzzy (for a review file only); "
+                         "default: the tier is retired and such rows are demoted to fuzzy_retired")
     ap.add_argument("--verification", default=None, nargs="+",
                     help="label_verification's verification_results.csv (one or more files: every "
                          "batch's verdicts): confirmed verdicts promote resolved_fuzzy rows to resolved; "
@@ -1290,6 +1318,10 @@ def main() -> None:
                                                               ignore_index=True))
         print(f"  verification verdicts applied to fuzzy rows: {vs['promoted']:,} promoted to resolved, "
               f"{vs['rejected']:,} rejected")
+    if not a.fuzzy:
+        resolved, n_ret = retire_unverified_fuzzy(resolved)
+        print(f"  fuzzy tier RETIRED (2026-10-11: 26% / 26% / 39% confirmed over three batches): "
+              f"{n_ret:,} unverified fuzzy rows demoted to fuzzy_retired; verified promotions kept")
     resolved.to_parquet(out, index=False)
     res = residuals(resolved, a.min_amount,
                     [x.strip() for x in a.research_states.split(",")] if a.research_states else None)

@@ -193,24 +193,22 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **merge_bundle276** — Merge bundle 276 (cumulative; supersedes 239-275; none of them need merging first): the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh with the storage plan and the sync exclusions) + the reminders. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
+- [ ] **merge_bundle277** — Merge bundle 277 (cumulative; supersedes 239-276; none of them need merging first): the fuzzy tier retired (verified promotions kept), the VM kit (docs/VM_RUNBOOK.md, ops/vm/*.sh) + the reminders. Merge BEFORE the fuzzy last step and v11. NOT while v11 runs. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the push is what the VM clones from). (added 2026-10-11)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle276*.bundle") do copy /y "%f" "C:\Users\treyr\bundle276.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle277*.bundle") do copy /y "%f" "C:\Users\treyr\bundle277.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle276.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle277.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle276
+python -m src.reminders --done-task merge_bundle277
 ```
 
-- [ ] **fuzzy_tier_verification** — BATCH 3 DISPATCHED 2026-10-11 (23 rows in 3 Manus tasks under rule 4; batches 1 and 2 were 108 and 39). NEXT: 30+ min after the dispatch poll it, paste the LABEL_VERIFICATION.md tally, then rerun the resolver with all THREE verdict files and copy the table over so v11 trains with every promoted row. Last-chance rule: 90%+ confirmed or the fuzzy tier is retired (confirmed rows promote either way). (added 2026-10-10)
+- [ ] **fuzzy_tier_verification** — BATCH 3 READ 9/23 (39%) on 2026-10-11: under the last-chance rule the FUZZY TIER IS RETIRED (bundle 277: the resolver demotes every unverified fuzzy row to fuzzy_retired; the 47 rows the three batches confirmed stay promoted on every rerun). LAST STEP, after bundle 277 is merged: rerun the resolver with all THREE verdict files, copy the table over, paste the 'verification verdicts applied' and 'fuzzy tier RETIRED' lines, then close. Parent-company defendants go to ownership broadcast and the research residue from here. (added 2026-10-10)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.model_a.label_verification --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3" --poll
-type "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\LABEL_VERIFICATION.md"
 python -u -m src.enforcement.defendant_resolver --case-db "C:\Users\treyr\OneDrive\Desktop\data\enforcement\doj_cases_v3.csv" --provider-dim "C:\Users\treyr\OneDrive\Desktop\data\processed\provider_dim.parquet" --out "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY --nppes-file "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes" --verification "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify2\verification_results.csv" "C:\Users\treyr\OneDrive\Desktop\data\processed\fca_label_fuzzy\verify3\verification_results.csv"
 copy /y "C:\Users\treyr\OneDrive\Desktop\data\processed\fuzzy_resolver\case_defendant_npis.parquet" "C:\Users\treyr\OneDrive\Desktop\data\processed\case_defendant_npis.parquet"
 python -m src.reminders --done-task fuzzy_tier_verification

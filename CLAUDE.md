@@ -920,7 +920,21 @@ first, then paste" above every move/done block.
   medicaid_enrollment / billing_lm / graph_embeddings is skipped. The VM pulls the
   code with `git pull` from the pushed branch (no bundles); the laptop stays the
   operator's seat (merges, pushes, Manus, reading). v11 = laptop; v12 = first VM run.
-  Full suite: `pytest tests/` (1,049 tests + 2 skipped). Dead columns are left OUT OF THE
+  FUZZY TIER RETIRED (2026-10-11): batch 3 under rule 4 read 9/23 (39%); the three
+  batches read 26 / 26 / 39 and the survivors were always the same two shapes, a parent
+  corporation on a differently named local business (Prime Healthcare Services ->
+  PRIME CARE HEALTH SERVICES; word-set containment ignores order and "healthcare" =
+  "health care" made them equal; North Fulton -> SOUTH FULTON because compass words
+  were place words) and headline descriptors no word rule catches ("O.C.-Based Health
+  Care Organization", "RGV Area Home Health", "Berks County Group"). Those are
+  OWNERSHIP (PECOS owner -> orgs broadcast) and RESEARCH questions, not name matching.
+  `defendant_resolver.retire_unverified_fuzzy`: the tier still runs so
+  `apply_verification` promotes the 47 verdict-confirmed rows on every rerun; every
+  row left `resolved_fuzzy` is demoted to `fuzzy_retired` (candidate kept in
+  `npi_candidate`); `--fuzzy` keeps them for a review file only. Nothing unverified
+  reaches training or the strict export. Total label gain from the tier: 47 rows for
+  about 170 Manus research rows; the next recall lever is the research residue.
+  Full suite: `pytest tests/` (1,050 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

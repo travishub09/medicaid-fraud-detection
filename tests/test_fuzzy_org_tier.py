@@ -166,3 +166,18 @@ def test_every_mention_word_must_appear_in_the_candidate():
     for c in ["k1", "k2", "k3", "k4", "k5", "k6"]:
         assert out.loc[c, "status"] != "resolved_fuzzy", (c, out.loc[c, "status"], out.loc[c, "npi"])
     assert out.loc["k7", "status"] == "resolved_fuzzy" and out.loc["k7", "npi"] == "1000000061"   # healthcare == health care
+
+
+def test_retired_tier_keeps_verified_promotions_and_demotes_the_rest():
+    """2026-10-11: three batches read 26% / 26% / 39%, so unverified fuzzy rows never ship;
+    a row a verdict confirmed stays resolved on every rerun."""
+    from src.enforcement.defendant_resolver import retire_unverified_fuzzy
+    out = resolve_defendants(_mentions(), _pdim())
+    results = pd.DataFrame([dict(case_id="c2", defendant="Lakeside Pediatric Therapy", npi="1000000020", verdict="confirmed")])
+    out2, st = apply_verification(out, results)
+    assert st["promoted"] == 1
+    out3, n = retire_unverified_fuzzy(out2)
+    o = out3.set_index("case_id")
+    assert o.loc["c2", "status"] == "resolved" and o.loc["c2", "match_level"].endswith("_verified")
+    assert n >= 1 and o.loc["c1", "status"] == "fuzzy_retired" and o.loc["c1", "npi"] == ""
+    assert "resolved_fuzzy" not in set(out3["status"])
