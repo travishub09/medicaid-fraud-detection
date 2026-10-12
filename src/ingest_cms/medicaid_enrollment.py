@@ -354,15 +354,19 @@ def main() -> None:
     ap.add_argument("--asof-cutoff", default=None)
     ap.add_argument("--spending", default=None, help="processed/spending_fact.parquet for the paid-after check")
     a = ap.parse_args()
-    import duckdb
-    con = duckdb.connect()
+    # the shared factory: memory ceiling + temp directory, so the 66M-row aggregates
+    # spill to disk instead of asking the laptop for RAM it does not have
+    con = _duck_connect()
     out = Path(a.out_dir)
     seg_p = out / "medicaid_enrollment_segments.parquet"
     info = build_segments(Path(a.inp), seg_p, con=con)
     print(f"[medicaid_enrollment] {info['rows']:,} segments, {info['states']} states -> {seg_p}")
-    seg = pd.read_parquet(seg_p)
-    feats = enrollment_features(seg, a.asof_cutoff)
-    events = termination_events(seg, a.asof_cutoff)
+    # 2026-10-12: pd.read_parquet of the 66M monthly rows + the pandas feature path died
+    # on the 16 GB laptop ("realloc of size 10781263744 failed"); both the features and
+    # the events now run inside DuckDB off the parquet (the pandas functions stay for
+    # small frames and the parity tests)
+    feats = enrollment_features_from_parquet(seg_p, a.asof_cutoff, con=con)
+    events = termination_events_from_parquet(seg_p, a.asof_cutoff, con=con)
     after = None
     if a.spending and Path(a.spending).exists():
         after = paid_after_enrollment_end(a.spending, feats, con=con)
@@ -373,9 +377,6 @@ def main() -> None:
     print(f"[medicaid_enrollment] {len(feats):,} NPI feature rows; {len(events):,} termination events -> "
           f"exclusions_medicaid_enrollment.parquet; report {rp}")
 
-
-if __name__ == "__main__":
-    main()
 
 
 def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None,
@@ -442,3 +443,61 @@ def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None
     cols = ["npi", "mcd_states_enrolled", "mcd_primary_state", "mcd_segments", "mcd_tenure_months",
             "mcd_enrolled_months", "mcd_gap_share", "mcd_open_segments", "mcd_ended_for_cause", "mcd_last_end_date"]
     return df[cols].sort_values("npi").reset_index(drop=True)
+
+
+def termination_events_from_parquet(seg_parquet, asof_cutoff: str | None = None,
+                                    con=None) -> pd.DataFrame:
+    """``termination_events`` computed INSIDE DuckDB from the segments parquet: the same
+    rules (non-benign ended rows -> one episode per npi x state x cause at its FIRST
+    month-end, reinstated by the first benign start in the same state strictly after
+    it), without loading the 66M monthly rows into pandas. Only the episodes (thousands,
+    not millions) come back as a frame. The parity test pins it to the pandas path."""
+    con = con or _duck_connect()
+    p = _pq(seg_parquet)
+    benign = BENIGN_END.pattern.replace("'", "''")
+    cols = ["npi", "entity_name", "name_key", "excl_type", "excl_date", "reinstate_date", "currently_active"]
+    if asof_cutoff:
+        cut = pd.Timestamp(str(asof_cutoff)[:7] + "-01") + pd.offsets.MonthEnd(0)
+        where_cut = f"and start_date <= date '{cut.date().isoformat()}'"
+        end_expr = f"case when end_date > date '{cut.date().isoformat()}' then null else end_date end"
+    else:
+        where_cut = ""
+        end_expr = "end_date"
+    df = con.execute(f"""
+        with s0 as (
+            select cast(npi as varchar) as npi, upper(coalesce(cast(state as varchar), '')) as state,
+                   cast(start_date as date) as start_date, {end_expr} as end_d,
+                   trim(coalesce(cast(status as varchar), '') || ' | ' || coalesce(cast(reason as varchar), ''), ' |') as txt,
+                   trim(coalesce(cast(provider_type as varchar), '')) as ptype
+            from read_parquet('{p}')
+            where regexp_matches(cast(npi as varchar), '^[0-9]{{10}}$') and start_date is not null {where_cut}),
+        s1 as (select *, (txt = '' or regexp_matches(txt, '{benign}', 'i')) as benign from s0),
+        ended as (select npi, state,
+                         'mcd_enroll:' || state || ':' || txt || case when ptype <> '' then ' [' || ptype || ']' else '' end as excl_type,
+                         end_d
+                  from s1 where end_d is not null and not benign),
+        ep as (select npi, state, excl_type, min(end_d) as excl_date from ended group by 1, 2, 3),
+        starts as (select npi, state, start_date from s1 where benign),
+        re as (select e.npi, e.state, e.excl_type, e.excl_date, min(st.start_date) as reinstate_date
+               from ep e left join starts st
+                 on st.npi = e.npi and st.state = e.state and st.start_date > e.excl_date
+               group by 1, 2, 3, 4)
+        select npi, excl_type, excl_date, reinstate_date from re
+        order by npi, excl_date, excl_type
+    """).df()
+    if not len(df):
+        return pd.DataFrame(columns=cols)
+    out = pd.DataFrame({
+        "npi": df["npi"].astype(str).values,
+        "entity_name": "",
+        "name_key": "",
+        "excl_type": df["excl_type"].astype(str).values,
+        "excl_date": pd.to_datetime(df["excl_date"], errors="coerce").values,
+        "reinstate_date": pd.to_datetime(df["reinstate_date"], errors="coerce").values,
+        "currently_active": df["reinstate_date"].isna().astype(int).values,
+    })
+    return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)[cols]
+
+
+if __name__ == "__main__":
+    main()

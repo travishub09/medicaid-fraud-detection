@@ -455,3 +455,48 @@ def test_real_cms_header_maps_and_monthly_segments_collapse_to_one_episode(tmp_p
     assert "STATE EXCLUSION" in ev.iloc[0]["excl_type"] and fca_tier(ev.iloc[0]["excl_type"])[0] == "weak"   # cause unstated beyond the sanction
     f = menr.enrollment_features(seg).set_index("npi")
     assert f.loc[DR1, "mcd_ended_for_cause"] == 1 and f.loc[DR2, "mcd_ended_for_cause"] == 0
+
+
+def _events_key(ev: pd.DataFrame) -> list[tuple]:
+    e = ev.sort_values(["npi", "excl_date", "excl_type"]).reset_index(drop=True)
+    return [(r.npi, r.excl_type, pd.Timestamp(r.excl_date),
+             None if pd.isna(r.reinstate_date) else pd.Timestamp(r.reinstate_date), int(r.currently_active))
+            for r in e.itertuples()]
+
+
+@pytest.mark.parametrize("cutoff", [None, "2022-12", "2023-04"])
+def test_termination_events_duckdb_path_matches_pandas(tmp_path, cutoff):
+    """2026-10-12: the CLI read the 66M monthly rows into pandas and died on the 16 GB
+    laptop ("realloc of size 10781263744 failed") AFTER the segments were written. The
+    CLI now runs the events (and the features) inside DuckDB; the two paths must agree
+    on every fixture, with and without a cutoff, so a laptop rebuild and a pandas
+    unit test describe the same label source."""
+    raw = _enroll_csv(tmp_path)
+    seg_p = tmp_path / "seg.parquet"
+    menr.build_segments(raw, seg_p)
+    seg = pd.read_parquet(seg_p)
+    a = menr.termination_events(seg, asof_cutoff=cutoff)
+    b = menr.termination_events_from_parquet(seg_p, asof_cutoff=cutoff)
+    assert list(b.columns) == list(a.columns)
+    assert _events_key(a) == _events_key(b)
+    # the monthly real-header fixture: one episode, reinstated by the later ACTIVE month
+    hdr = ["NPI", "STATE_CD", "ENRL_START_DT", "ENRL_END_DT", "ENRL_STATUS_CD", "ENRL_STATUS_DESC",
+           "ENRL_PLAN_CD", "ENRL_PLAN_DESC", "PRVDR_TYPE", "PRVDR_TYPE_DESC"]
+    rows = []
+    for m in ["2023-01", "2023-02"]:
+        rows.append([DR1, "ND", f"{m}-01", f"{m}-28", "03", "ACTIVE - ACTIVE", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    for m in ["2023-03", "2023-04", "2023-05"]:
+        rows.append([DR1, "ND", f"{m}-01", f"{m}-28", "09", "TERM - STATE EXCLUSION/ DEBARMENT, ETC.", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    rows.append([DR1, "ND", "2024-01-01", "2024-01-31", "03", "ACTIVE - ACTIVE", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    rows.append([DR2, "ND", "2023-01-01", "2023-01-31", "02", "PENDING - APPLICATION IN PROCESS", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    d = tmp_path / "monthly"
+    d.mkdir()
+    pd.DataFrame(rows, columns=hdr).to_csv(d / "segments.csv", index=False)
+    seg2_p = tmp_path / "seg2.parquet"
+    menr.build_segments(d, seg2_p)
+    a2 = menr.termination_events(pd.read_parquet(seg2_p), asof_cutoff=cutoff)
+    b2 = menr.termination_events_from_parquet(seg2_p, asof_cutoff=cutoff)
+    assert _events_key(a2) == _events_key(b2)
+    if cutoff is None:
+        assert len(b2) == 1 and b2.iloc[0]["npi"] == DR1 and "[INDIVIDUAL]" in b2.iloc[0]["excl_type"]
+        assert pd.Timestamp(b2.iloc[0]["reinstate_date"]) == pd.Timestamp("2024-01-01")

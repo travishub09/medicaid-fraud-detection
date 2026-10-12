@@ -981,7 +981,18 @@ first, then paste" above every move/done block.
   month-end, reinstated by the next benign start; pending / in-process statuses are
   benign. The operator rebuilds the segments (reminder enrollment_rebuild) and pastes
   the status table so BENIGN_END / STATE_TERM_RULES can be tuned to the real vocabulary.
-  Full suite: `pytest tests/` (1,057 tests + 2 skipped). Dead columns are left OUT OF THE
+  The first rebuild (2026-10-12) wrote the 66M-row segments parquet correctly, then the
+  CLI's `pd.read_parquet` + pandas feature path died on the 16 GB laptop ("realloc of
+  size 10781263744 failed"): the CLI now runs `enrollment_features_from_parquet` AND the
+  new `termination_events_from_parquet` (episodes + reinstatement as one DuckDB query,
+  only the episodes come back) through the shared `duck.connect()` factory; the pandas
+  functions stay for small frames and a three-cutoff parity test pins the two paths.
+  VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
+  1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
+  `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
+  `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
+  (personal)", first `sync_data.sh` pull running under tmux `sync`.
+  Full suite: `pytest tests/` (1,060 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
