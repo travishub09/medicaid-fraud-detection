@@ -255,16 +255,26 @@ REM python -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\D
 python -m src.reminders --done-task enrollment_header
 ```
 
-- [ ] **merge_bundle282** — Merge bundle 282 (cumulative; supersedes 239-281): the invalid_identity fix (event flags drive their subscore raw: the peer percentile of a mostly-zero flag was NaN for every row, so the scheme had 0 percent coverage in v9-v11), the dead-percentile diagnostic in the peer step, the loud enrollment warning, the reminders. Safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-12)
+- [ ] **merge_bundle283** — Merge bundle 283 (cumulative; supersedes 239-282): the invalid_identity fix, the dead-percentile diagnostic, the enrollment file's real column names (ENRL_STATUS_DESC carries the cause; monthly rows collapse to one event per episode; the event builder is vectorized), the loud enrollment warning, the reminders. Safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-12)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle282*.bundle") do copy /y "%f" "C:\Users\treyr\bundle282.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle283*.bundle") do copy /y "%f" "C:\Users\treyr\bundle283.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle282.bundle"
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle283.bundle"
 REM press Enter once, then paste the next line on its own:
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle282
+python -m src.reminders --done-task merge_bundle283
+```
+
+- [ ] **enrollment_rebuild** — After bundle 283 is merged: rebuild the enrollment segments with the real column names (the loader now maps ENRL_STATUS_DESC, ENRL_PLAN_DESC, PRVDR_TYPE_DESC; monthly rows collapse to one termination event per episode). Writes processed\medicaid_enrollment_segments.parquet, medicaid_enrollment_features.parquet and exclusions_medicaid_enrollment.parquet (the label source that has been empty in every run). Paste the console summary and the 'state : status / reason | events | tier' table from processed\MEDICAID_ENROLLMENT_REPORT.md so the benign / fraud-shaped rules can be tuned to the file's real vocabulary before v12. Then let OneDrive sync (check marks on the three files) before the VM pull. The as-of graph the VM builds reads the exclusions file, so v12 trains with the enrollment labels; the current-day graph (the forward ruler) is NOT rebuilt, so the ruler stays comparable with v10 and v11. (added 2026-10-12)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -u -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed"
+type "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_ENROLLMENT_REPORT.md"
+REM paste the console summary + the status table in chat, then:
+python -m src.reminders --done-task enrollment_rebuild
 ```
 
 

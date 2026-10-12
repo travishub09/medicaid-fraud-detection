@@ -54,12 +54,19 @@ ENROLL_COLS = {
                    "EFFECTIVE_DATE", "BEGIN_DATE", "PROVIDER_ENROLLMENT_EFF_DATE"],
     "end_date": ["ENROLLMENT_END_DATE", "SEGMENT_END_DATE", "ENRL_END_DT", "END_DATE",
                  "TERMINATION_DATE", "PROVIDER_ENROLLMENT_END_DATE"],
-    "status": ["ENROLLMENT_STATUS", "STATUS", "STATUS_CODE", "ENROLLMENT_STATUS_CODE", "PROVIDER_STATUS"],
+    # the July-2026 CMS file (header read 2026-10-12): NPI, STATE_CD, ENRL_START_DT, ENRL_END_DT,
+    # ENRL_STATUS_CD, ENRL_STATUS_DESC ("ACTIVE - ACTIVE", "TERM - STATE EXCLUSION/ DEBARMENT,
+    # ETC."), ENRL_PLAN_CD, ENRL_PLAN_DESC (MEDICAID / CHIP), PRVDR_TYPE, PRVDR_TYPE_DESC.
+    # The DESC carries "CODE - REASON", so status alone is the cause text; there is no
+    # separate reason column. Segments are MONTHLY rows per NPI x state x plan.
+    "status": ["ENRL_STATUS_DESC", "ENROLLMENT_STATUS", "STATUS", "STATUS_CODE", "ENROLLMENT_STATUS_CODE",
+               "PROVIDER_STATUS", "ENRL_STATUS_CD"],
     "reason": ["TERMINATION_REASON", "END_REASON", "STATUS_REASON", "DISENROLLMENT_REASON",
                "ENROLLMENT_END_REASON", "REASON"],
-    "program": ["PROGRAM", "ENROLLMENT_TYPE", "ENROLLMENT_PROGRAM", "PROGRAM_TYPE", "MEDICAID_CHIP"],
-    "provider_type": ["PROVIDER_TYPE", "PROVIDER_TYPE_CODE", "PROVIDER_CLASSIFICATION", "CLASSIFICATION",
-                      "PROVIDER_TYPE_DESC"],
+    "program": ["ENRL_PLAN_DESC", "PROGRAM", "ENROLLMENT_TYPE", "ENROLLMENT_PROGRAM", "PROGRAM_TYPE",
+                "MEDICAID_CHIP", "ENRL_PLAN_CD"],
+    "provider_type": ["PRVDR_TYPE_DESC", "PROVIDER_TYPE", "PROVIDER_TYPE_CODE", "PROVIDER_CLASSIFICATION",
+                      "CLASSIFICATION", "PROVIDER_TYPE_DESC", "PRVDR_TYPE"],
     "taxonomy": ["TAXONOMY", "TAXONOMY_CODE", "PROVIDER_TAXONOMY"],
 }
 REQUIRED = ["npi", "state", "start_date"]
@@ -71,7 +78,8 @@ BENIGN_END = re.compile(
     r"active|open|current|enrolled$|voluntar|retire|deceas|death|died|moved|relocat|out of state|"
     r"merge|acqui|duplicate|data (?:correction|clean|entry)|administrative|system|conversion|"
     r"re-?enroll|revalidat|re-?validat|no (?:claims|activity)|inactiv|lapse|expir|end of (?:contract|segment)|"
-    r"contract (?:end|expir)|change of (?:ownership|npi)|chow|closed business|ceased|withdraw", re.I)
+    r"contract (?:end|expir)|change of (?:ownership|npi)|chow|closed business|ceased|withdraw|"
+    r"pending|in process|applic", re.I)
 
 
 def _pq(p) -> str:
@@ -211,37 +219,45 @@ def _is_benign(s: pd.DataFrame) -> pd.Series:
 
 
 def termination_events(segments: pd.DataFrame, asof_cutoff: str | None = None) -> pd.DataFrame:
-    """Non-benign segment ends -> exclusions schema (one row per npi x state x end date):
+    """Non-benign segment ends -> exclusions schema, ONE row per episode (npi x state x cause):
     npi, entity_name, name_key, excl_type, excl_date, reinstate_date, currently_active.
     excl_type = "mcd_enroll:<ST>:<status | reason> [provider_type]" so fca_relevance tiers it
-    from the stated cause. reinstate_date = the start of the next segment in the same state
-    when one exists (a re-enrollment closes the window)."""
+    from the stated cause. The CMS file is MONTHLY (one row per NPI x state x plan x month),
+    so a termination status repeats on every month it holds: the episode's excl_date is the
+    FIRST month-end that carried it, and reinstate_date is the first BENIGN segment start
+    in the same state after that (a re-enrollment closes the window). Vectorized: the
+    2026-10-12 version looped over every non-benign row against every start and would not
+    have finished on 66M rows."""
     s = _asof_frame(segments, asof_cutoff)
     cols = ["npi", "entity_name", "name_key", "excl_type", "excl_date", "reinstate_date", "currently_active"]
     if not len(s):
         return pd.DataFrame(columns=cols)
-    ended = s[s["end_date"].notna() & ~_is_benign(s)].copy()
+    benign = _is_benign(s)
+    ended = s[s["end_date"].notna() & ~benign].copy()
     if not len(ended):
         return pd.DataFrame(columns=cols)
-    # next start in the same state after the end = reinstatement
-    starts = s[["npi", "state", "start_date"]].sort_values("start_date")
-    nxt = []
-    for r in ended.itertuples():
-        later = starts[(starts["npi"] == r.npi) & (starts["state"] == r.state) & (starts["start_date"] > r.end_date)]
-        nxt.append(later["start_date"].min() if len(later) else pd.NaT)
-    ended["reinstate_date"] = nxt
     reason = (ended.get("status", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip() + " | "
               + ended.get("reason", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip()).str.strip(" |")
     ptype = ended.get("provider_type", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip()
+    ended["excl_type"] = ("mcd_enroll:" + ended["state"].fillna("").astype(str) + ":" + reason.values
+                          + ptype.map(lambda t: f" [{t}]" if t else "").values)
+    # one episode per (npi, state, cause): the first month-end that carried the status
+    ep = (ended.groupby(["npi", "state", "excl_type"], as_index=False)["end_date"].min()
+          .rename(columns={"end_date": "excl_date"}))
+    # reinstatement = the first benign start in the same state strictly after the episode date
+    starts = (s.loc[benign, ["npi", "state", "start_date"]].dropna()
+              .sort_values("start_date").rename(columns={"start_date": "reinstate_date"}))
+    ep = ep.sort_values("excl_date")
+    merged = pd.merge_asof(ep, starts, left_on="excl_date", right_on="reinstate_date",
+                           by=["npi", "state"], direction="forward", allow_exact_matches=False)
     out = pd.DataFrame({
-        "npi": ended["npi"].values,
+        "npi": merged["npi"].values,
         "entity_name": "",
         "name_key": "",
-        "excl_type": ("mcd_enroll:" + ended["state"].fillna("").astype(str) + ":" + reason.values
-                      + ptype.map(lambda t: f" [{t}]" if t else "").values),
-        "excl_date": ended["end_date"].values,
-        "reinstate_date": ended["reinstate_date"].values,
-        "currently_active": ended["reinstate_date"].isna().astype(int).values,
+        "excl_type": merged["excl_type"].values,
+        "excl_date": merged["excl_date"].values,
+        "reinstate_date": merged["reinstate_date"].values,
+        "currently_active": merged["reinstate_date"].isna().astype(int).values,
     })
     return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)[cols]
 

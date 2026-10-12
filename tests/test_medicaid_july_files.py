@@ -421,3 +421,37 @@ def test_opioid_shares_stay_in_unit_interval_with_refund_lines(tmp_path):
         v = pd.to_numeric(f[c], errors="coerce").dropna()
         assert ((v >= 0) & (v <= 1)).all(), (c, v.to_dict())
     assert f.loc[PH2, "rx_opioid_paid_share"] == 0
+
+
+def test_real_cms_header_maps_and_monthly_segments_collapse_to_one_episode(tmp_path):
+    """The July-2026 CMS file (header read 2026-10-12): ENRL_STATUS_DESC carries the cause
+    ("TERM - STATE EXCLUSION/ DEBARMENT, ETC."), there is no reason column, and the rows
+    are MONTHLY. Before this the status mapped to nothing (NULL on 66M rows, zero events in
+    every run). One termination held for three months is ONE event dated the first
+    month-end; the later ACTIVE start reinstates it."""
+    hdr = ["NPI", "STATE_CD", "ENRL_START_DT", "ENRL_END_DT", "ENRL_STATUS_CD", "ENRL_STATUS_DESC",
+           "ENRL_PLAN_CD", "ENRL_PLAN_DESC", "PRVDR_TYPE", "PRVDR_TYPE_DESC"]
+    r = menr.resolve_enrollment_columns(hdr)
+    assert r["status"] == "ENRL_STATUS_DESC" and r["program"] == "ENRL_PLAN_DESC" and r["provider_type"] == "PRVDR_TYPE_DESC"
+    assert "reason" not in r
+    rows = []
+    for m in ["2023-01", "2023-02"]:
+        rows.append([DR1, "ND", f"{m}-01", f"{m}-28", "03", "ACTIVE - ACTIVE", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    for m in ["2023-03", "2023-04", "2023-05"]:
+        rows.append([DR1, "ND", f"{m}-01", f"{m}-28", "09", "TERM - STATE EXCLUSION/ DEBARMENT, ETC.", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    rows.append([DR1, "ND", "2024-01-01", "2024-01-31", "03", "ACTIVE - ACTIVE", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    rows.append([DR2, "ND", "2023-01-01", "2023-01-31", "02", "PENDING - APPLICATION IN PROCESS", "1", "MEDICAID", "03", "INDIVIDUAL"])
+    d = tmp_path / "medicaid_enrollment"
+    d.mkdir()
+    pd.DataFrame(rows, columns=hdr).to_csv(d / "medicaid-provider-enrollment-segments FILE.csv", index=False)
+    seg_p = tmp_path / "seg.parquet"
+    menr.build_segments(d, seg_p)
+    seg = pd.read_parquet(seg_p)
+    assert seg["status"].notna().all()
+    ev = menr.termination_events(seg)
+    assert len(ev) == 1 and ev.iloc[0]["npi"] == DR1                 # three months, one episode; pending is benign
+    assert pd.Timestamp(ev.iloc[0]["excl_date"]) == pd.Timestamp("2023-03-28")
+    assert pd.Timestamp(ev.iloc[0]["reinstate_date"]) == pd.Timestamp("2024-01-01")
+    assert "STATE EXCLUSION" in ev.iloc[0]["excl_type"] and fca_tier(ev.iloc[0]["excl_type"])[0] == "weak"   # cause unstated beyond the sanction
+    f = menr.enrollment_features(seg).set_index("npi")
+    assert f.loc[DR1, "mcd_ended_for_cause"] == 1 and f.loc[DR2, "mcd_ended_for_cause"] == 0

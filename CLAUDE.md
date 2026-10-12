@@ -972,9 +972,16 @@ first, then paste" above every move/done block.
   logs any column with raw values but no percentile (a dead __peerpct). (2) the
   enrollment segments parquet carries NULL status and reason on all 66M rows: the raw
   file's column names are not in ENROLL_COLS, so the label line was empty in every run;
-  the loader now WARNS loudly when neither maps; the operator pastes the header
-  (reminder enrollment_header), the names get added, segments + graph rebuild before v12.
-  Full suite: `pytest tests/` (1,056 tests + 2 skipped). Dead columns are left OUT OF THE
+  the loader now WARNS loudly when neither maps. HEADER READ 2026-10-12: NPI, STATE_CD,
+  ENRL_START_DT, ENRL_END_DT, ENRL_STATUS_CD, ENRL_STATUS_DESC ("ACTIVE - ACTIVE",
+  "TERM - STATE EXCLUSION/ DEBARMENT, ETC.": the DESC carries the cause, no reason
+  column), ENRL_PLAN_CD/DESC (MEDICAID / CHIP), PRVDR_TYPE/DESC; rows are MONTHLY per
+  NPI x state x plan. ENROLL_COLS maps them; `termination_events` is vectorized
+  (merge_asof) and collapses a status held for N months into ONE event dated the first
+  month-end, reinstated by the next benign start; pending / in-process statuses are
+  benign. The operator rebuilds the segments (reminder enrollment_rebuild) and pastes
+  the status table so BENIGN_END / STATE_TERM_RULES can be tuned to the real vocabulary.
+  Full suite: `pytest tests/` (1,057 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
