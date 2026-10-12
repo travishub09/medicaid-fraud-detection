@@ -262,15 +262,22 @@ python -m src.reminders --done-task enrollment_rebuild
 REM after v12 is graded; Claude writes the exact ablation line then
 ```
 
-- [ ] **merge_bundle291** — Merge bundle291 (cumulative, supersedes 239 to 290): everything in 290 (FCA-shaped training label, train = hard) plus the PI WHEN sheet (pi_facts --deep writes *_WINDOWS.md: active years per practice for Sage's interview phase). Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+- [ ] **sage_followups_2026_10** — Follow-ups from the card-by-card check of Sage's first report against PI Packet v11 (the check itself is PI_FEEDBACK_CROSSREF_2026-10-12.md, kept with the PI report under <data_root>\enforcement\pi_reports\, never in git). OURS: (1) NPPES lookups (npiregistry.cms.hhs.gov) for the six staff NPIs Sage tied to the three Chinatown cards, the two at 61st Street in Brooklyn first (1962055764, 1720792757): 61st Street is two blocks from two of the card-2 cluster addresses, so card 2's network question may be answerable from Xie's staff; (2) Special Homes of NJ billed residential days against 76 licensed places (decides whether that card gets a visit); (3) tell Brad the Infinity PACER first-to-file check is now time-sensitive (a twelve-year witness candidate exists and must not be contacted before it); (4) the WHEN sheets (pi_facts_deep task). SAGE: roles for every former; which practice the two Chang/Xie formers worked at; a second patient-flow window at 2 Mott St plus the Brooklyn office; EEG equipment / technologist presence at 139 Centre St by name of what was seen; exam lanes at 217 Grand St; the untouched Brooklyn route (the five cluster addresses, Zagelbaum's three offices, Community Urgent Care's three sites, Bright Start, New Star); 2024 to 2026 departures for Queens Optometric and CTW / 212 Therapy; interviews at Infinity, Perspectives, Jacoby, Special Homes on hold until counsel says go; Northern Urgent, Glade Run, Gateway-Longview low priority. Close when the reply is sent and the three desk checks are done. (added 2026-10-12)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle291*.bundle") do copy /y "%f" "C:\Users\treyr\bundle291.bundle"
+REM desk check 1: open https://npiregistry.cms.hhs.gov and enter each NPI; note practice locations and any group
+REM desk check 2 (Special Homes) and the WHEN sheets ride on their own tasks; say 'Sage reply sent' in chat
+```
+
+- [ ] **merge_bundle292** — Merge bundle292 (cumulative, supersedes 239 to 291): the reminders carry the Sage follow-ups and desk checks. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle292*.bundle") do copy /y "%f" "C:\Users\treyr\bundle292.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle291.bundle
+merge_bundle.bat C:\Users\treyr\bundle292.bundle
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle291
+python -m src.reminders --done-task merge_bundle292
 REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
 ```
 
