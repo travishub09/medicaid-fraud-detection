@@ -223,16 +223,6 @@ python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop
 python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11
 ```
 
-- [ ] **v11_probes** — Two data questions the v11 packet raised, minutes, no training (bundle 281 ships src/parquet_probe.py): (1) subscore_invalid_identity is all-NaN in three runs although the deactivation adapter produced 8,762 orgs: the probe shows which of billing_after_deactivation (org grain) / deact_paid_after (NPI own) / billing_after_death is empty on the v11 matrix; (2) medicaid_enrollment found 0 segments ended for cause among 3.6M NPIs, so the enrollment label line is empty: the probe lists the status / reason values the segments file carries (the benign rule may be swallowing a state's vocabulary). Paste both tables in chat; the fixes go into v12. (added 2026-10-12)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.parquet_probe --file "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11\provider_features_for_model.parquet" --pattern "deact|after_death|invalid_identity|billing_after"
-python -m src.parquet_probe --file "C:\Users\treyr\OneDrive\Desktop\data\processed\medicaid_enrollment_segments.parquet" --values status reason --top 40
-REM paste both tables in chat, then:
-python -m src.reminders --done-task v11_probes
-```
-
 - [ ] **v12_prereg_and_run** — v12 = the first VM run: v11 plus full graph embeddings (every connected node), 10 seeds (the Jaccard lever), the four packet fixes, and whatever the two v11 probes say. ORDER: (1) bundle 281 merged AND pushed; (2) the VM exists and the data pull has finished (compute_box_decision; OneDrive must show the check mark on processed\case_defendant_npis.parquet before the pull); (3) on the VM: pull the code, pre-register v12 with the checks below (hits100 >= 4 and seeds >= 10 are new), start the runner inside tmux (24 GB gate; stops if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped); (4) say 'v12 finished', zip the packet with the line it prints, run the sync up line, download the zip, stop the VM. (added 2026-10-12)
 
 ```bat
@@ -249,27 +239,6 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 python -m src.reminders --done-task v12_prereg_and_run
 ```
 
-- [ ] **enrollment_header** — The v11 probe (2026-10-12) showed status and reason are NULL on all 66M rows of processed\medicaid_enrollment_segments.parquet: the raw CMS file's status / termination-reason column names are not in the loader's candidate list, so the enrollment label line (ended-for-cause events) has been empty in every run. Paste the header line (and the two rows after it) of the raw file; the names go into ENROLL_COLS, the segments rebuild, the graph rebuilds, and v12 trains with the enrollment labels. The loader now prints a WARNING when neither column maps (bundle 282). (added 2026-10-12)
-
-```bat
-for %f in ("C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment\*.csv") do powershell -Command "Get-Content -TotalCount 3 '%f'"
-REM paste the output in chat; Claude adds the names, then (after the next bundle):
-REM python -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out "C:\Users\treyr\OneDrive\Desktop\data\processed"
-python -m src.reminders --done-task enrollment_header
-```
-
-- [ ] **merge_bundle283** — Merge bundle 283 (cumulative; supersedes 239-282): the invalid_identity fix, the dead-percentile diagnostic, the enrollment file's real column names (ENRL_STATUS_DESC carries the cause; monthly rows collapse to one event per episode; the event builder is vectorized), the loud enrollment warning, the reminders. Safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-12)
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\bundle283*.bundle") do copy /y "%f" "C:\Users\treyr\bundle283.bundle"
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle283.bundle"
-REM press Enter once, then paste the next line on its own:
-git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle283
-```
-
 - [ ] **enrollment_rebuild** — REBUILD the Medicaid enrollment tables (segments -> features + the ended-for-cause exclusions file) with the real CMS column names. 2026-10-12 first attempt: the 66M-row segments parquet was written, then the CLI died in pandas (realloc of 10.8 GB failed on the 16 GB laptop). Bundle 284 moves the features + events into DuckDB; MERGE 284 FIRST, then rerun the same command. Paste the console summary and the 'state : status / reason | events | tier' table so BENIGN_END / STATE_TERM_RULES are tuned to the real vocabulary before v12. Then re-run sync_data.sh on the VM once. (added 2026-10-12)
 
 ```bat
@@ -277,18 +246,6 @@ cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed"
 type "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_ENROLLMENT_REPORT.md"
 python -m src.reminders --done-task enrollment_rebuild
-```
-
-- [ ] **merge_bundle284** — Merge bundle284 (cumulative, supersedes 239 to 283): the enrollment CLI runs its features + termination events inside DuckDB (the pandas path crashed the 16 GB laptop after writing the 66M-row segments), parity test, the VM launch state in the reminders. Download the card, then paste; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\bundle284*.bundle") do copy /y "%f" "C:\Users\treyr\bundle284.bundle"
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle284.bundle
-git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle284
-REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
 ```
 
 
