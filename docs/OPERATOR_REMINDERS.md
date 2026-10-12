@@ -201,20 +201,6 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). The FIRST VM run is v12 (2026-10-11: the vCPU quota request was pending, so v11 went to the laptop). AWS account created 2026-10-11 (paid plan); Service Quotas request for 32 On-Demand Standard vCPUs pending; when it lands: EC2 Launch instance in us-east-2, Ubuntu 24.04, r6i.4xlarge, key pair medicaid-vm, SSH from My IP only, 1000 GiB gp3 root; ssh -i %USERPROFILE%\.ssh\medicaid-vm.pem ubuntu@<ip>. The data pull must start AFTER the fuzzy last step has synced to OneDrive. Close this when the VM exists and the data pull has finished. LAUNCHED 2026-10-12: r6i.4xlarge in us-east-2 (quota 32 approved), public IPv4 3.17.37.139 at launch (changes on every Stop/Start; read it from the EC2 Details panel). Remaining: ssh in, setup script, rclone config, data pull, S3 mirror, then 'VM ready'. 2026-10-12: the first key file (medicaid-vm.pem) was uploaded into a chat session, so it is replaced: terminate the first instance, relaunch with a NEW key pair medicaid-vm2 (never upload a .pem anywhere; it stays in %USERPROFILE%\.ssh), delete the old key pair in EC2 > Key Pairs, read the new public IP. (added 2026-10-11)
-
-```bat
-REM laptop: connect (replace the IP if the VM was stopped and started since)
-ssh -i "%USERPROFILE%\.ssh\medicaid-vm2.pem" ubuntu@<NEW-PUBLIC-IP>
-REM on the VM, in order:
-curl -fsSL https://raw.githubusercontent.com/travishub09/medicaid-fraud-detection/claude/happy-mccarthy-3skrn3/ops/vm/setup_ubuntu.sh | bash
-rclone config
-tmux new -s sync
-bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh
-REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in chat; on the laptop:
-python -m src.reminders --done-task compute_box_decision
-```
-
 - [ ] **pursuit_dossier__frozen_2021-12_v11** — HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). Build + dispatch the pursuit dossier for frozen_2021-12_v11 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) Only if the packet read-out says PROMOTE, or the operator says go. (added 2026-10-12)
 
 ```bat
@@ -247,15 +233,6 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 python -m src.reminders --done-task v12_prereg_and_run
 ```
 
-- [ ] **enrollment_rebuild** — RERUN the enrollment rebuild after merging bundle 290 (the fifth rebuild read 5,427 candidates: the rate rule also demoted FL 'LOSS OF LICENSE' 3,095 and OH 898 because the reference states barely use the code; 289 adds a 2 percent-of-enrolled-NPIs floor so only CT 'LICENSE REVOKED' 8.9 percent and AZ 'STATE EXCLUSION' 2.25 percent are demoted). Same command, about three minutes; paste the final console line (expect about 9,400 candidates) and the administrative table's state_outlier_rate rows (expect CT and AZ only). Then let OneDrive sync and re-run sync_data.sh on the VM once. (added 2026-10-12)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -u -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed"
-type "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_ENROLLMENT_REPORT.md"
-python -m src.reminders --done-task enrollment_rebuild
-```
-
 - [ ] **v13_label_ablation_agency_codes** — CLAUDE / operator question for AFTER v12 (never gates a run): the enrollment file's agency codes with no stated cause are label candidates only where they are a MINORITY code in their state (FL 'TERM - MEDICAID AUTHORITY' 2,133 at 2 percent of FL's ends; IA / TX / AL 'ACTION TAKEN BY MEDICAID/CHIP' at 5 to 6 percent; CT 'MEDICAID AUTHORITY' 2,410 at 37 percent). Run label_ablation on the v12 matrix with those rows added as a source and read the forward-lift delta; admit them to v13's label only if the delta is positive with a CI above zero. (added 2026-10-12)
 
 ```bat
@@ -269,16 +246,17 @@ REM desk check 1: open https://npiregistry.cms.hhs.gov and enter each NPI; note 
 REM desk check 2 (Special Homes) and the WHEN sheets ride on their own tasks; say 'Sage reply sent' in chat
 ```
 
-- [ ] **merge_bundle292** — Merge bundle292 (cumulative, supersedes 239 to 291): the reminders carry the Sage follow-ups and desk checks. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+- [ ] **merge_bundle293** — Merge bundle293 (cumulative, supersedes 239 to 292; the laptop is at 289, so this carries the FCA-shaped training label and 'train = hard' check (290), the PI WHEN sheet (291), the Sage follow-ups (292), and the operator's closures of enrollment_rebuild and compute_box_decision). Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; confirm git log shows the 293 commit; then git pull on the VM. (added 2026-10-12)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle292*.bundle") do copy /y "%f" "C:\Users\treyr\bundle292.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
+for %f in ("%USERPROFILE%\Downloads\bundle293*.bundle") do copy /y "%f" "C:\Users\treyr\bundle293.bundle"
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle292.bundle
+merge_bundle.bat C:\Users\treyr\bundle293.bundle
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle292
-REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
+git log --oneline -1
+python -m src.reminders --done-task merge_bundle293
+REM on the VM (the ubuntu@ prompt): cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1
 ```
 
 
