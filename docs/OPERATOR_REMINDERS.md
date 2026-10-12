@@ -72,7 +72,15 @@ python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop
 python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6
 ```
 
-- [ ] **pi_facts_deep:_after_merging_bundle** — pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins (added 2026-09-13)
+- [ ] **pi_facts_deep:_after_merging_bundle** — pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins 2026-10-12: --deep now ALSO writes PI_FACTS_<set>_WINDOWS.md + _windows.json (the WHEN sheet per practice: active years, ramp month, peak year, first / last billed) for Sage Intelligence's interview phase. Run it on the packet org list and send the three WINDOWS sheets to Brad for Sage. (added 2026-09-13)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -u -m src.model_a.pi_facts --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11" --orgs-file <the packet org list csv> --deep --out-prefix pi_facts_nynj
+REM repeat with the national and Miami org lists (out-prefix pi_facts_national / pi_facts_miami); upload the *_WINDOWS.md files
+python -m src.reminders --done-task pi_facts_deep:_after_merging_bundle
+```
+
 - [ ] **run_packet__frozen_2021-12_v7** — Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-09-14)
 
 ```bat
@@ -100,7 +108,7 @@ python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7
 
 - [ ] **peer_hard2:_after_the_fraud** — peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names (added 2026-09-15)
 - [ ] **state_letter:_every_named** — State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter (added 2026-09-16)
-- [ ] **pi_packet_v9_feedback** — PI Packet v11 (final for this round, 2026-09-16; v10 superseded by the limitations clock: paid_after check over Tiers 1-2, Tier 1 reordered by live dollars, Infinity/Jacoby/Perspectives to desk-first) sent to Trey: 9 Tier 1 + 7 Tier 2 + 2 Tier 3 + 6 national + 1 desk-first, 19 do-not-send rows, all 50 cards reviewed. OPEN until the PIs' feedback comes back and is folded into v10 (or Trey confirms no changes). Next capacity pass to-dos recorded in the packet: minutes map H2035=60; find the pre-2020 Hope Pediatrics NPI in the spending fact; Special Homes billed residential days vs 76 licensed places. Consensus read 2026-09-16: five-run national book is hospitals/health systems/national chains (do-not-send class); it adds no PI card; ACT HOME HEALTH SERVICES, INC (org:pac:3971547985, $18M/yr, hot 3/5, rapid_ramp) is the one new non-institutional name, held for a desk check next round (state unknown; no state column in the CSV). Successor-NPI check ran 2026-09-16: Renew Resources, Perspectives Counseling Center and Velocity have no claims through 2024-12; Perspectives is lowest priority, Velocity waits for the next data refresh. (added 2026-09-16)
+- [ ] **pi_packet_v9_feedback** — PI Packet v11 (final for this round, 2026-09-16; v10 superseded by the limitations clock: paid_after check over Tiers 1-2, Tier 1 reordered by live dollars, Infinity/Jacoby/Perspectives to desk-first) sent to Trey: 9 Tier 1 + 7 Tier 2 + 2 Tier 3 + 6 national + 1 desk-first, 19 do-not-send rows, all 50 cards reviewed. OPEN until the PIs' feedback comes back and is folded into v10 (or Trey confirms no changes). Next capacity pass to-dos recorded in the packet: minutes map H2035=60; find the pre-2020 Hope Pediatrics NPI in the spending fact; Special Homes billed residential days vs 76 licensed places. Consensus read 2026-09-16: five-run national book is hospitals/health systems/national chains (do-not-send class); it adds no PI card; ACT HOME HEALTH SERVICES, INC (org:pac:3971547985, $18M/yr, hot 3/5, rapid_ramp) is the one new non-institutional name, held for a desk check next round (state unknown; no state column in the CSV). Successor-NPI check ran 2026-09-16: Renew Resources, Perspectives Counseling Center and Velocity have no claims through 2024-12; Perspectives is lowest priority, Velocity waits for the next data refresh. FIRST PI REPORT RECEIVED 2026-10-12 (Sage Intelligence case 260136, dated 2026-10-07, to Brad; attorney work product, keep it OUT of git and OUT of OneDrive-shared folders: save under <data_root>\enforcement\pi_reports\): Part I surveillance of the three Chinatown cards (Lau 2 Mott St, Chang 217 Grand St, Xie 139 Centre St): Lau = a real solo pediatric office with two receptionists, two child patients in 75 minutes, a Brooklyn second site, and two NPs plus an FNP tied to the address (NP services billed under the physician NPI is the innocent explanation to rule out first, and the scheme if the rate was the physician's); Chang = busy ophthalmology office open 7 days, an optometrist and a second physician at the address; Xie = neurology office EMPTY on both visits (85 minutes), a PA and an NP tied to it at Brooklyn addresses. Part II: former employees with tenure windows identified for about 20 packet practices; next phase = door knocks and interviews. OUR NEXT STEP: send Sage the WHEN sheet (pi_facts --deep now writes PI_FACTS_*_WINDOWS.md: active years / ramp month / peak year per practice) so interviews go to formers whose tenure overlaps the active window; and the three surveillance facts go into the Lau / Chang / Xie cards as field observations. (added 2026-09-16)
 
 ```bat
 (no command: paste the PIs' notes into the chat)
@@ -254,15 +262,15 @@ python -m src.reminders --done-task enrollment_rebuild
 REM after v12 is graded; Claude writes the exact ablation line then
 ```
 
-- [ ] **merge_bundle290** — Merge bundle290 (cumulative, supersedes 239 to 289): the production scorer trains on the FCA-shaped HARD tier only (runner flags, no silent fallback, train_policy in the registry, 'train = hard' check), the 2 percent floor on the enrollment rate rule, a bare felony on the enrollment file tiered weak. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+- [ ] **merge_bundle291** — Merge bundle291 (cumulative, supersedes 239 to 290): everything in 290 (FCA-shaped training label, train = hard) plus the PI WHEN sheet (pi_facts --deep writes *_WINDOWS.md: active years per practice for Sage's interview phase). Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle290*.bundle") do copy /y "%f" "C:\Users\treyr\bundle290.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle291*.bundle") do copy /y "%f" "C:\Users\treyr\bundle291.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle290.bundle
+merge_bundle.bat C:\Users\treyr\bundle291.bundle
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle290
+python -m src.reminders --done-task merge_bundle291
 REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
 ```
 

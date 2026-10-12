@@ -1068,12 +1068,21 @@ first, then paste" above every move/done block.
   file's bare "FELONY CONVICTION" is weak (a conviction of unstated kind); "ABUSE
   OF BILLING PRIVILEGES" stays hard. The weak candidates stay in the exclusions
   file (graph nodes, fraud proximity, the per-se checks) but never train.
+  PI FEEDBACK LOOP (2026-10-12): the field investigator's first report on PI packet
+  v11 (surveillance of three cards + former employees WITH tenure windows for about
+  20 practices; interviews next) is attorney work product: it lives under
+  <data_root>/enforcement/pi_reports/, never in git, and no person it names goes
+  into a committed file or a reminder. `pi_facts --deep` now also writes the WHEN
+  sheet (`window_sheet` -> PI_FACTS_<set>_WINDOWS.md + _windows.json: active years =
+  years with >= 25 percent of the peak year's dollars, ramp month, peak year, first /
+  last billed, per practice, no person named) so interviews go to formers whose
+  tenure overlaps the active window.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
   `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
-  Full suite: `pytest tests/` (1,067 tests + 2 skipped). Dead columns are left OUT OF THE
+  Full suite: `pytest tests/` (1,068 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

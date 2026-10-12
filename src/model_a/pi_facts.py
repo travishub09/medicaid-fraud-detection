@@ -435,6 +435,67 @@ def to_markdown(res: dict) -> str:
     return "\n".join(L) + "\n"
 
 
+def window_sheet(res: dict, active_share: float = 0.25) -> tuple[str, list[dict]]:
+    """The WHEN sheet for the field (2026-10-12, after Sage Intelligence's first
+    report on PI packet v11: the investigator identified former employees per
+    practice WITH their tenure windows and will interview them next). Per org,
+    from the members' billing facts: the years the billing was active (a year with
+    at least ``active_share`` of the peak year's dollars), the ramp month, the peak
+    year, the last billed month. An interview is worth most when the former's
+    tenure overlaps the active window; the sheet says which years those are, and
+    names no person. Returns (markdown, rows)."""
+    rows: list[dict] = []
+    for oid, o in res.items():
+        if "error" in o:
+            continue
+        by_year: dict[str, float] = {}
+        ramps, firsts, lasts = [], [], []
+        for m in o.get("members", []):
+            bf = m.get("billing_facts")
+            if not bf:
+                continue
+            for y, v in (bf.get("paid_by_year") or {}).items():
+                by_year[str(y)] = by_year.get(str(y), 0.0) + float(v or 0)
+            if bf.get("ramp") and bf["ramp"].get("month"):
+                ramps.append(str(bf["ramp"]["month"]))
+            if bf.get("first_month"):
+                firsts.append(str(bf["first_month"]))
+            if bf.get("last_month"):
+                lasts.append(str(bf["last_month"]))
+        if not by_year:
+            continue
+        peak_year = max(by_year, key=by_year.get)
+        peak = by_year[peak_year]
+        active = sorted(y for y, v in by_year.items() if peak > 0 and v >= active_share * peak)
+        rows.append({
+            "org_id": oid, "org_name": o.get("org_name") or oid,
+            "active_years": active, "active_from": active[0] if active else None,
+            "active_to": active[-1] if active else None,
+            "ramp_month": min(ramps) if ramps else None,
+            "peak_year": peak_year, "peak_year_paid": peak,
+            "first_month": min(firsts) if firsts else None,
+            "last_month": max(lasts) if lasts else None,
+            "paid_by_year": by_year,
+        })
+    L = ["# PI WINDOW SHEET: when the billing was active, per practice", "",
+         "_For the field investigator. A former employee's account is worth most when "
+         "their time at the practice overlaps the years the billing pattern was active. "
+         "Active years = years with at least a quarter of the peak year's Medicaid dollars; "
+         "the ramp month is when the run-rate first crossed half its peak. Billing is as "
+         "billed (Medicaid Provider Spending by HCPCS); names no person; leads for counsel "
+         "review, never accusations._", "",
+         "| practice | active years | ramp month | peak year (paid) | first billed | last billed | prioritize formers whose tenure overlaps |",
+         "|---|---|---|---|---|---|---|"]
+    for r in rows:
+        yrs = ", ".join(r["active_years"]) if r["active_years"] else ""
+        L.append(f"| {r['org_name']} | {yrs} | {r['ramp_month'] or ''} | {r['peak_year']} "
+                 f"(${r['peak_year_paid']:,.0f}) | {r['first_month'] or ''} | {r['last_month'] or ''} | "
+                 f"{r['active_from']} to {r['active_to']} |")
+    if not rows:
+        L.append("_no billing facts attached (run with --deep)_")
+    return "\n".join(L) + "\n", rows
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-dir", required=True,
@@ -502,6 +563,12 @@ def main() -> None:
     found = sum(1 for v in res.values() if "error" not in v)
     print(f"[pi_facts] {found}/{len(org_ids)} orgs -> {jp}")
     print(f"[pi_facts] fact sheets -> {mp}")
+    if args.deep:
+        wmd, wrows = window_sheet(res)
+        wp = run_dir / f"{args.out_prefix.upper()}_WINDOWS.md"
+        wp.write_text(wmd, encoding="utf-8")
+        (run_dir / f"{args.out_prefix}_windows.json").write_text(json.dumps(wrows, indent=1), encoding="utf-8")
+        print(f"[pi_facts] window sheet ({len(wrows)} practices) -> {wp}")
 
 
 if __name__ == "__main__":
