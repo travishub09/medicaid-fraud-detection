@@ -1085,6 +1085,16 @@ first, then paste" above every move/done block.
   and teachers with no therapist among them reads as an agency, not a clinic.
   The read-outs (PI_FEEDBACK_CROSSREF / PI_ROLES_READOUT) identify people by role
   and tenure only and stay with the PI report, never in git.
+  ORG FIND (`model_a/org_find.py`, 2026-10-12, counsel's "did we see this one?"):
+  `--name <regex>` prints every NPPES NPI the name matches (provider_dim), the
+  same NPIs in the run matrix (org node, dollars, label, top subscores) and their
+  rank on every provider_priority_list*.csv, plus the pi_facts line for the org
+  ids; `--codes 90867,90868,90869` prints the matched NPIs' dollars and share on
+  the codes and the NATIONAL top-N billing NPIs on them with distinct rendering
+  clinicians and the entity type, classed by shape (an individual's NPI with one
+  or no renderer on the codes = one person's number; an org NPI over many
+  renderers = the agency shape). All DuckDB; the fact never enters pandas. A tip
+  from outside the model is answered from the operator's files, never from memory.
   EMBEDDINGS BACK ON IN FULL (operator, 2026-10-12): the node cap was already liftable
   (`--max-embed-nodes 0`, the VM runner's setting); the walk lightening above one
   million connected nodes (4 walks of 12, window 3 instead of 10 of 20, window 5) was

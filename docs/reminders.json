@@ -803,6 +803,34 @@
         "python -m src.reminders --done-task merge_bundle295",
         "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
       ]
+    },
+    {
+      "key": "ltaw_tms_lookup",
+      "what": "Brad's tip 2026-10-12 (EC Ops group, with Michelle Bishop): a multi-site practice billing TMS (transcranial magnetic stimulation, CPT 90867 initial with physician planning / 90868 subsequent delivery / 90869 re-planning) under one psychiatrist's NPI who never sees the patients, about ten locations. The name is in no committed artifact or run packet (checked 2026-10-12), so the answer comes from the data: run org_find on the VM (the processed files are there and it has the RAM): (1) the name lookup prints every NPPES NPI that matches, its rows in the v11 matrix with the label and top subscores, and its rank on every priority list; 'not in the matrix' means the practice bills under a number the name does not match (an org NPI, a management company), which the code table then finds; (2) the TMS concentration table = the national billing NPIs with the most dollars on 90867/90868/90869, the share of their own billing, distinct rendering clinicians on the claims and whether the number is an individual's: an INDIVIDUAL psychiatrist NPI carrying the TMS dollars with one or no rendering clinician on the claims is the shape Brad described (one person's number over technician-delivered sessions at several sites); an org NPI over many renderers is the ordinary agency shape. Innocent explanations to rule out first: 90868 is technician-delivered under physician supervision and is routinely billed under the supervising psychiatrist (the question is whether 90867, the physician-planned initial session, and the medical-necessity visits were really his); a second site; Medicaid is a thin payer for TMS (most TMS is Medicare / commercial, so a small Medicaid footprint says nothing). Paste the two Markdown files into chat; then call Brad. Close when both files are in chat.",
+      "added": "2026-10-12",
+      "commands": [
+        "# on the VM (bash), after git pull of bundle 296 or later:",
+        "cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env",
+        "python -m src.model_a.org_find --run-dir \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v11\" --name \"learning to achieve\" --codes 90867,90868,90869 --top 100 --out ~/ltaw_find.md",
+        "python -m src.model_a.org_find --run-dir \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v11\" --name \"achieve wellness|learn.*achieve\" --no-national --out ~/ltaw_find_wide.md",
+        "# download ~/ltaw_find.md and ~/ltaw_find_wide.md (scp from the laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:~/ltaw_find*.md C:\\Users\\treyr\\Downloads\\ ) and attach them in chat",
+        "REM on the laptop instead (slower, 16 GB): python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --name \"learning to achieve\" --codes 90867,90868,90869 --top 100 --out ltaw_find.md",
+        "python -m src.reminders --done-task ltaw_tms_lookup"
+      ]
+    },
+    {
+      "key": "merge_bundle296",
+      "what": "Merge bundle296 (cumulative, supersedes 239 to 295): org_find (the name lookup + TMS code-concentration table for Brad's tip) on top of 295. If 294 / 295 are NOT merged yet, merge 296 instead and close all three tasks. Then git pull on the VM.",
+      "added": "2026-10-12",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle296*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle296.bundle\"",
+        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle296.bundle",
+        "git push origin claude/happy-mccarthy-3skrn3",
+        "python -m src.reminders --done-task merge_bundle296",
+        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
+      ]
     }
   ]
 }
