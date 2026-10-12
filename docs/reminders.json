@@ -753,12 +753,12 @@
   },
   {
    "key": "v12_prereg_and_run",
-   "what": "v12 = the first VM run: v11 plus full graph embeddings (every connected node), 10 seeds (the Jaccard lever), the four packet fixes, and whatever the two v11 probes say. ORDER: (1) bundle 281 merged AND pushed; (2) the VM exists and the data pull has finished (compute_box_decision; OneDrive must show the check mark on processed\\case_defendant_npis.parquet before the pull); (3) on the VM: pull the code, pre-register v12 with the checks below (hits100 >= 4 and seeds >= 10 are new), start the runner inside tmux (24 GB gate; stops if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped); (4) say 'v12 finished', zip the packet with the line it prints, run the sync up line, download the zip, stop the VM.",
+   "what": "v12 = the first VM run: v11 plus full graph embeddings (every connected node), 10 seeds (the Jaccard lever), the four packet fixes, and whatever the two v11 probes say. ORDER: (1) bundle 281 merged AND pushed; (2) the VM exists and the data pull has finished (compute_box_decision; OneDrive must show the check mark on processed\\case_defendant_npis.parquet before the pull); (3) on the VM: pull the code, pre-register v12 with the checks below (hits100 >= 4, seeds >= 10 and train = hard are new: the scorer trains on the FCA-shaped hard tier only), start the runner inside tmux (24 GB gate; stops if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped); (4) say 'v12 finished', zip the packet with the line it prints, run the sync up line, download the zip, stop the VM.",
    "added": "2026-10-12",
    "commands": [
     "# on the VM (ssh in; every line is bash):",
     "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && pip install -r requirements.txt -q && source ~/.medicaid_env",
-    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v12 --goal \"Full graph embeddings and ten seeds on the VM hold v11's gains at 100 and 250 while the top 50 clears the stability bar and matches v10's two hits\" --expected \"hits@50 on provider_priority_list_pursuit.csv at least 2, hits@100 at least 4, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, every source present\" --check \"hits50 >= 2\" \"hits100 >= 4\" \"prec50_lo > base50\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.7\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\"",
+    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v12 --goal \"Full graph embeddings and ten seeds on the VM hold v11's gains at 100 and 250 while the top 50 clears the stability bar and matches v10's two hits\" --expected \"hits@50 on provider_priority_list_pursuit.csv at least 2, hits@100 at least 4, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, every source present\" --check \"hits50 >= 2\" \"hits100 >= 4\" \"prec50_lo > base50\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.7\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
     "tmux new -s night",
     "bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v12 2021-12",
     "# detach with Ctrl-b then d; come back with: tmux attach -t night",
@@ -771,7 +771,7 @@
   },
   {
    "key": "enrollment_rebuild",
-   "what": "RERUN the enrollment rebuild after merging bundle 289 (the fifth rebuild read 5,427 candidates: the rate rule also demoted FL 'LOSS OF LICENSE' 3,095 and OH 898 because the reference states barely use the code; 289 adds a 2 percent-of-enrolled-NPIs floor so only CT 'LICENSE REVOKED' 8.9 percent and AZ 'STATE EXCLUSION' 2.25 percent are demoted). Same command, about three minutes; paste the final console line (expect about 9,400 candidates) and the administrative table's state_outlier_rate rows (expect CT and AZ only). Then let OneDrive sync and re-run sync_data.sh on the VM once.",
+   "what": "RERUN the enrollment rebuild after merging bundle 290 (the fifth rebuild read 5,427 candidates: the rate rule also demoted FL 'LOSS OF LICENSE' 3,095 and OH 898 because the reference states barely use the code; 289 adds a 2 percent-of-enrolled-NPIs floor so only CT 'LICENSE REVOKED' 8.9 percent and AZ 'STATE EXCLUSION' 2.25 percent are demoted). Same command, about three minutes; paste the final console line (expect about 9,400 candidates) and the administrative table's state_outlier_rate rows (expect CT and AZ only). Then let OneDrive sync and re-run sync_data.sh on the VM once.",
    "added": "2026-10-12",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -789,16 +789,16 @@
    ]
   },
   {
-   "key": "merge_bundle289",
-   "what": "Merge bundle289 (cumulative, supersedes 239 to 288): the 2 percent floor on the enrollment rate rule (FL / OH license losses back in the label, CT / AZ conventions still out). Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM.",
+   "key": "merge_bundle290",
+   "what": "Merge bundle290 (cumulative, supersedes 239 to 289): the production scorer trains on the FCA-shaped HARD tier only (runner flags, no silent fallback, train_policy in the registry, 'train = hard' check), the 2 percent floor on the enrollment rate rule, a bare felony on the enrollment file tiered weak. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM.",
    "added": "2026-10-12",
    "commands": [
-    "for %f in (\"%USERPROFILE%\\Downloads\\bundle289*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle289.bundle\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\bundle290*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle290.bundle\"",
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-    "merge_bundle.bat C:\\Users\\treyr\\bundle289.bundle",
+    "merge_bundle.bat C:\\Users\\treyr\\bundle290.bundle",
     "git push origin claude/happy-mccarthy-3skrn3",
-    "python -m src.reminders --done-task merge_bundle289",
+    "python -m src.reminders --done-task merge_bundle290",
     "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3"
    ]
   }

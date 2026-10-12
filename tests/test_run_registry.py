@@ -116,3 +116,18 @@ def test_check_right_hand_side_may_be_another_metric():
     assert not r2["ok"] and "0.005" in r2["why"]
     assert eval_check("hits50 >= 2", row)["ok"]                        # literals still work
     assert not eval_check("hits50 >= nonsense", row)["ok"]             # an unknown name is not silently true
+
+
+def test_registry_reads_the_training_label_policy(tmp_path):
+    """The forward ruler's policy (label_policy) and the TRAINING policy (train_policy,
+    written by the priority-list builder) are different things; v12 pre-registers
+    "train = hard" so an 'all'-trained list can never pass as FCA-shaped."""
+    d = _make_run(tmp_path, "v12")
+    (d / "training_label_policy.json").write_text(json.dumps(
+        {"label_tier": "hard", "n_positives": 2345, "n_doj_positives": 1644}), encoding="utf-8")
+    row = parse_run_dir(d)
+    assert row["train_policy"] == "hard" and row["train_positives"] == 2345
+    from src.model_a.run_registry import eval_check
+    assert eval_check("train = hard", row)["ok"]
+    assert not eval_check("train = all", row)["ok"]
+    assert eval_check("train_positives >= 2000", row)["ok"]

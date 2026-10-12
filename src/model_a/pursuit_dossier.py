@@ -665,6 +665,13 @@ def build_priority_list(run_dir: str | Path,
     # and the diagnostics analyse what shipped instead of a refit (2026-10-10)
     pd.DataFrame({"npi": matrix["npi"].astype(str), "score": scores, "prob": probs}).to_parquet(
         d / "provider_oof_scores.parquet", index=False)
+    # the TRAINING label policy of the shipped list, for the registry (--check "train = hard"):
+    # the forward ruler's policy is a different thing and is recorded separately
+    from .company_list import training_label_summary
+    tls = training_label_summary(matrix)
+    (d / "training_label_policy.json").write_text(json.dumps(tls, indent=1), encoding="utf-8")
+    print(f"[pursuit_dossier] training label policy {tls['label_tier']}: {tls['n_positives']:,} positives "
+          f"({tls['n_doj_positives']:,} DOJ-case; in-matrix label {tls['n_in_matrix_label']:,})")
     orgs = rollup(matrix, scores, drop_excluded=True, probs=probs)
     orgs = orgs.merge(org_case_size(matrix), on="org_id", how="left")
     orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"],

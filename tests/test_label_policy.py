@@ -79,3 +79,28 @@ def test_default_exclusion_nodes_prefers_asof_graph(tmp_path):
     run2 = tmp_path / "current"; run2.mkdir()
     (run2 / "feature_manifest.json").write_text(json.dumps({"asof_cutoff": None}))
     assert cl.default_exclusion_nodes(run2, root).parent.parent.name == "graph"
+
+
+def test_tier_policy_without_nodes_raises_instead_of_training_on_all():
+    """2026-10-12 (operator: the label is FCA-shaped only): a tier policy with no
+    exclusion nodes used to fall back to 'all' silently, so a runner could say
+    'hard' and train on every license action anyway."""
+    m = pd.DataFrame({"npi": ["1000000001", "1000000002"], "provider_on_exclusion": [1, 0]})
+    cl.set_label_policy("hard", None)
+    with pytest.raises(ValueError, match="needs exclusion nodes"):
+        cl._training_label(m, "provider_on_exclusion")
+
+
+def test_training_label_summary_reports_the_policy_and_counts(tmp_path):
+    m = pd.DataFrame({"npi": [f"10000000{i:02d}" for i in range(1, 8)],
+                      "provider_on_exclusion": [1, 1, 1, 1, 1, 0, 0],
+                      "exclusion_label_sources": ["leie", "leie", "leie", "leie", "leie", "doj_case", ""]})
+    p = tmp_path / "exclusion_nodes.parquet"
+    _nodes().to_parquet(p, index=False)
+    s_all = cl.training_label_summary(m)
+    assert s_all["label_tier"] == "all" and s_all["n_positives"] == 5
+    cl.set_label_policy("hard", p, cutoff="2021-12")
+    s = cl.training_label_summary(m)
+    assert s["label_tier"] == "hard" and s["cutoff"] == "2021-12"
+    assert s["n_positives"] == 2 and s["n_doj_positives"] == 1        # a1 (2020) + the DOJ row
+    assert s["n_in_matrix_label"] == 5 and s["exclusion_nodes"] == str(p)

@@ -1189,8 +1189,12 @@ def main() -> None:
     matrix = pd.read_parquet(run_dir / "provider_features_for_model.parquet")
     matrix["npi"] = matrix["npi"].astype(str)
     if a.label_tier != "all":
-        from .company_list import set_label_policy
-        set_label_policy(a.label_tier, a.exclusion_nodes, cutoff=cutoff)
+        from .company_list import set_label_policy, default_exclusion_nodes
+        ex = Path(a.exclusion_nodes) if a.exclusion_nodes else default_exclusion_nodes(run_dir)
+        if not ex.exists():
+            ap.error(f"--label-tier {a.label_tier} needs exclusion nodes; not found at {ex} (pass --exclusion-nodes)")
+        set_label_policy(a.label_tier, ex, cutoff=cutoff)
+        print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
     if a.seeds is not None or a.broadcast_rows is not None:
         from .company_list import set_training_policy
         set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows)

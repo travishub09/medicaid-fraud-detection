@@ -254,6 +254,9 @@ def fca_tier(excl_type) -> tuple[str, str]:
         for pat, why in MCD_ENROLL_EXCLUDED:
             if re.search(pat, body):
                 return "excluded", f"Medicaid enrollment end: {why} (never a positive)"
+        if re.search(r"felony|convict", body) and not re.search(
+                r"fraud|false claim|kickback|health ?care|program|billing|medicaid|medicare", body):
+            return "weak", "Medicaid enrollment end on a conviction of unstated kind (not FCA on its face)"
         if re.search(r"medicare/?\s*medicaid exclusion", body):
             return "weak", "Medicaid enrollment end derivative of a Medicare / Medicaid exclusion (the exclusion record sets the tier)"
         if re.search(r"state exclusion|debar", body):

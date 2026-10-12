@@ -23,6 +23,14 @@ RUN="$DATA/model_a/frozen_${CUT}_${TAG}"
 PREV="${PREV_RUN:-}"
 SEEDS="${SEEDS:-10}"       # v12: 10 seeds (v11 top-50 Jaccard 0.60 on 5; the VM makes 10 cheap)
 GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
+# THE TRAINING LABEL (operator, 2026-10-12: "our label should be purely focused on the
+# types of fraud cases that could be prosecuted under the False Claims Act"): the
+# production scorer trains on the HARD tier only (fca_relevance: program-related
+# crimes, health care fraud, kickbacks, abuse of billing privileges, false enrollment,
+# DOJ cases); license actions / unstated-cause exclusions never train. Every scorer
+# call below carries it; the registry records it as train_policy ("train = hard").
+TRAIN_TIER="${TRAIN_TIER:-hard}"
+EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
 NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"
 CASES="$DATA/enforcement/doj_cases_v3.csv"
 DEFENDANTS="$DATA/processed/case_defendant_npis.parquet"
@@ -81,29 +89,29 @@ step 5/12 "scheme triage"
 python -u -m src.model_a.scheme_triage --run-dir "$RUN" || fail 5
 
 step 6/12 "priority list + pursuit book + large-biller book"
-python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list || fail 6
+python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
 
 step 7/12 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --repeats 3 --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/12 "the large-biller book, and the broadcast A/B (weight vs mask, refit on the same matrix)"
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --list-name provider_priority_list_large.csv || fail 8
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
 
 step 9/12 "results digest + pursuit dossier (operator book; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
-python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book || fail 9
+python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 9
 
 step 10/12 "register the run against the locked pre-registration"
 python -u -m src.model_a.run_registry --data-root "$DATA" --run-dir "$RUN" || fail 10
 
 step 11/12 "learning loop"
-python -u -m src.model_a.learning_loop --run-dir "$RUN" --data-root "$DATA" ${PREV:+--prev-run-dir "$PREV"} || fail 11
+python -u -m src.model_a.learning_loop --run-dir "$RUN" --data-root "$DATA" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" ${PREV:+--prev-run-dir "$PREV"} || fail 11
 
 step 12/12 "the run issue ledger"
 python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:+--prev-run-dir "$PREV"} || fail 12

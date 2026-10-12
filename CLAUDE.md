@@ -1050,12 +1050,30 @@ first, then paste" above every move/done block.
   (0.02): a convention must ALSO cover at least 2 percent of all the state's enrolled
   NPIs (no real sanction category does). CT 8.9 percent and AZ 2.25 percent stay
   out; FL and OH come back; expected about 9,400 candidates.
+  THE TRAINING LABEL IS FCA-SHAPED ONLY (operator, 2026-10-12: "our label should be
+  purely focused on the types of fraud cases that could be prosecuted under the
+  False Claims Act"). The ruler already tiered every record (hard = FCA-shaped on
+  its face; weak = license actions, unstated-cause exclusions, patient abuse,
+  derivative; excluded = never), and the FORWARD ruler used `--fca-tier hard`, but
+  the runners trained under policy 'all'. Now: `ops/vm/run_frozen_night.sh` passes
+  `--label-tier hard --exclusion-nodes <as-of graph>` (TRAIN_TIER env) to
+  pursuit_dossier, every accuracy_diagnostics call and learning_loop;
+  `company_list._training_label` RAISES when a tier policy has no exclusion nodes
+  (it used to fall back to 'all' silently); `default_exclusion_nodes` finds the
+  VM's graph_asof_<cut>_full; accuracy_diagnostics resolves the default nodes;
+  `training_label_summary` is written by build_priority_list as
+  training_label_policy.json and the registry reads it as `train_policy` /
+  `train_positives` (aliases `train`, `train_positives`): v12 pre-registers
+  `train = hard`, distinct from `policy` (the forward ruler). The enrollment
+  file's bare "FELONY CONVICTION" is weak (a conviction of unstated kind); "ABUSE
+  OF BILLING PRIVILEGES" stays hard. The weak candidates stay in the exclusions
+  file (graph nodes, fraud proximity, the per-se checks) but never train.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
   `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
-  Full suite: `pytest tests/` (1,064 tests + 2 skipped). Dead columns are left OUT OF THE
+  Full suite: `pytest tests/` (1,067 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

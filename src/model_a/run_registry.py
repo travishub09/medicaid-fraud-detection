@@ -163,6 +163,17 @@ def parse_run_dir(run_dir: str | Path) -> dict:
         except Exception:
             pass
         row["future_bans_path"] = str(fb.resolve())
+    # the TRAINING label policy of the shipped list (pursuit_dossier writes it beside
+    # the OOF scores): 'all' = every exclusion record trains, 'hard' = FCA-shaped only.
+    # Distinct from label_policy (the forward RULER); --check "train = hard" enforces it.
+    tlp = d / "training_label_policy.json"
+    if tlp.exists():
+        try:
+            tj = json.loads(_read(tlp))
+            row["train_policy"] = tj.get("label_tier")
+            row["train_positives"] = tj.get("n_positives")
+        except Exception:
+            pass
 
     oof = _read(d / "SOURCE_ABLATION_OOF_FULL.md") or _read(
         d / "SOURCE_ABLATION_OOF.md")
@@ -359,6 +370,7 @@ CHECK_ALIASES = {
     "sources_evaluated": "schemes_evaluated",
     "columns": "n_columns", "providers": "n_providers",
     "frozen": "substrate_frozen", "policy": "label_policy",
+    "train": "train_policy", "train_positives": "train_positives",
     "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
     # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)

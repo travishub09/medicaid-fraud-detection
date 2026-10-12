@@ -160,10 +160,44 @@ def default_exclusion_nodes(run_dir: str | Path, data_root: str | Path | None = 
         except Exception:
             asof = None
     if asof:
-        p = root / f"graph_asof_{asof}" / "nodes" / "exclusion_nodes.parquet"
-        if p.exists():
-            return p
+        # the VM runner builds graph_asof_<cut>_full (uncapped embeddings); the
+        # laptop runner graph_asof_<cut>; both hold the same as-of exclusion nodes
+        for name in (f"graph_asof_{asof}_full", f"graph_asof_{asof}"):
+            p = root / name / "nodes" / "exclusion_nodes.parquet"
+            if p.exists():
+                return p
     return root / "graph" / "nodes" / "exclusion_nodes.parquet"
+
+
+def training_label_summary(matrix: pd.DataFrame, label_col: str = "provider_on_exclusion") -> dict:
+    """What the production scorer trained on, for the run folder and the registry:
+    the label policy (all / hard / hard+weak), the exclusion nodes + cutoff it was
+    resolved against, and the positive count (DOJ-case rows counted separately)."""
+    pol = label_policy()
+    if label_col not in matrix.columns:
+        for cand in ("provider_on_exclusion", "provider_on_leie"):
+            if cand in matrix.columns:
+                label_col = cand
+                break
+    # tier_label directly (not _training_label): the summary describes the label even
+    # on a frame too small to train, where _training_label raises its < 50 guard
+    if label_col not in matrix.columns:
+        y = np.zeros(len(matrix), int)
+    elif pol["tier"] == "all":
+        y = _to_num(matrix[label_col])
+    elif not pol.get("exclusion_nodes"):
+        raise ValueError(f"label policy '{pol['tier']}' needs exclusion nodes (none set)")
+    else:
+        y = tier_label(matrix, pol["exclusion_nodes"], keep=pol["tier"], cutoff=pol.get("cutoff"))
+    n_doj = 0
+    if "exclusion_label_sources" in matrix.columns:
+        prov = matrix["exclusion_label_sources"].fillna("").astype(str)
+        n_doj = int((prov.str.split(";").apply(lambda xs: "doj_case" in xs) & (np.asarray(y) > 0)).sum())
+    return {"label_tier": pol["tier"],
+            "exclusion_nodes": str(pol["exclusion_nodes"]) if pol.get("exclusion_nodes") else None,
+            "cutoff": pol.get("cutoff"), "label_col": label_col,
+            "n_positives": int(np.asarray(y).sum()), "n_doj_positives": n_doj,
+            "n_in_matrix_label": int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0}
 
 
 def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
@@ -202,8 +236,15 @@ def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
 def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
     """The scorer's y under the current label policy (see set_label_policy)."""
     pol = _LABEL_POLICY
-    if pol["tier"] == "all" or not pol.get("exclusion_nodes"):
+    if pol["tier"] == "all":
         return _to_num(matrix[label_col])
+    if not pol.get("exclusion_nodes"):
+        # 2026-10-12: a tier policy with no exclusion nodes used to fall back to
+        # 'all' WITHOUT A WORD, so a runner could say 'hard' and train on every
+        # license action anyway. The operator's label standard is FCA-shaped only;
+        # a silent fallback would defeat it.
+        raise ValueError(f"label policy '{pol['tier']}' needs exclusion nodes (none set); "
+                         f"pass --exclusion-nodes or let the caller resolve default_exclusion_nodes")
     y = tier_label(matrix, pol["exclusion_nodes"], keep=pol["tier"],
                    cutoff=pol.get("cutoff"))
     base = int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0
