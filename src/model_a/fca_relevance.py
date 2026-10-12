@@ -159,6 +159,18 @@ STATE_TERM_RULES = [
 ]
 
 
+# Medicaid enrollment-segment end statuses that name no cause (the CMS file's
+# ENRL_STATUS_DESC vocabulary). Matched on the lower-cased "CODE - REASON" text.
+MCD_ENROLL_EXCLUDED = [
+    (r"^(term|terminat[a-z]*)\s*-\s*(other|unknown)\b", "cause not stated (OTHER / UNKNOWN)"),
+    (r"^denied\b", "an application denial, not the end of an enrollment"),
+    (r"same number|two provider numbers", "a duplicate-enrollment correction"),
+    (r"no longer operational|onsite review", "the provider closed (no cause stated)"),
+    (r"failure to report a change", "a paperwork ground"),
+    (r"non-?compliance", "non-compliance (revalidation / screening) with no cause stated"),
+    (r"medicaid authority\s*$|action taken by medicaid", "an agency action code with no stated cause"),
+]
+
 _STATE_LEIE_CODE = re.compile(r"1128\s*\(?\s*[ab]\s*\)?\s*\(?\s*\d{1,2}\s*\)?|brch\s*(cia|sa)\b", re.I)
 
 
@@ -231,6 +243,21 @@ def fca_tier(excl_type) -> tuple[str, str]:
         if re.search(r"voluntar|retire|deceas|death|moved|relocat|duplicate|revalidat|"
                      r"administrative|no (claims|activity)|inactiv|expir|withdraw", body):
             return "excluded", "Medicaid enrollment ended for a benign reason (never a positive)"
+        # the July-2026 CMS file's own vocabulary (ENRL_STATUS_DESC, first rebuild
+        # 2026-10-12: 439,416 events). The codes that name NO cause are never a
+        # positive: "TERM - OTHER" (FL stamps 114k of them), "TERM - UNKNOWN",
+        # "TERM - NON-COMPLIANCE" (CO 46k: revalidation), "DENIED - ..." (an
+        # application that never enrolled), "NO LONGER OPERATIONAL" (a closed
+        # business), "FAILURE TO REPORT A CHANGE OF ADDRESS/OWNERSHIP" (paperwork),
+        # and the two agency codes with no stated cause ("MEDICAID AUTHORITY",
+        # "ACTION TAKEN BY MEDICAID/CHIP"), each a state's bulk code (TN 23k, MO 19k).
+        for pat, why in MCD_ENROLL_EXCLUDED:
+            if re.search(pat, body):
+                return "excluded", f"Medicaid enrollment end: {why} (never a positive)"
+        if re.search(r"medicare/?\s*medicaid exclusion", body):
+            return "weak", "Medicaid enrollment end derivative of a Medicare / Medicaid exclusion (the exclusion record sets the tier)"
+        if re.search(r"state exclusion|debar", body):
+            return "weak", "Medicaid enrollment end on a state exclusion / debarment (cause unstated beyond the sanction)"
         tier, basis = _classify_state_reason(body)
         return tier, basis.replace("state termination", "Medicaid enrollment end", 1)
     if t.startswith("doj") or t.startswith("case"):

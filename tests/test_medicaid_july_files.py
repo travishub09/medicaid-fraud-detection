@@ -457,6 +457,60 @@ def test_real_cms_header_maps_and_monthly_segments_collapse_to_one_episode(tmp_p
     assert f.loc[DR1, "mcd_ended_for_cause"] == 1 and f.loc[DR2, "mcd_ended_for_cause"] == 0
 
 
+def test_enrollment_ends_split_into_label_candidates_and_administrative():
+    """The first real rebuild (2026-10-12) produced 439,416 ended episodes: FL stamps
+    114k 'TERM - OTHER', CO 46k 'NON-COMPLIANCE', IA 13k 'STATE EXCLUSION/ DEBARMENT'
+    on nearly every termination, TN 23k 'MEDICAID AUTHORITY'. Under label policy
+    'all' every one would have trained as a positive. Only a sanction-named status
+    that is NOT the state's bulk code is a label candidate; the rest are kept with a
+    reason, never deleted."""
+    def ev(npi, st, status, n):
+        return [dict(npi=f"{npi}{i:04d}", entity_name="", name_key="",
+                     excl_type=f"mcd_enroll:{st}:{status} [INDIVIDUAL]",
+                     excl_date=pd.Timestamp("2021-03-31"), reinstate_date=pd.NaT, currently_active=1)
+                for i in range(n)]
+    rows = (ev("100000", "FL", "TERM - OTHER", 60) + ev("200000", "FL", "TERM - LOSS OF LICENSE OR OTHER STATE ACTION", 5)
+            + ev("300000", "IA", "TERM - STATE EXCLUSION/ DEBARMENT, ETC.", 100) + ev("400000", "IA", "TERM - ACTION TAKEN BY MEDICAID/CHIP", 10)
+            + ev("500000", "NC", "TERM - NON-COMPLIANCE", 30) + ev("600000", "NC", "TERM - MEDICARE/MEDICAID EXCLUSION", 6)
+            + ev("700000", "MN", "DENIED - NOT ELIGIBLE", 4) + ev("800000", "TN", "TERM - MEDICAID AUTHORITY", 25)
+            + ev("900000", "GA", "TERM - CREDIBLE ALLEGATION OF FRAUD", 3))
+    events = pd.DataFrame(rows)
+    label, admin = menr.split_label_candidates(events)
+    assert len(label) + len(admin) == len(events)                     # quarantine, never delete
+    kept = label["excl_type"].str.extract(r"^mcd_enroll:(\w\w):([^\[]+)")
+    kept_set = set(zip(kept[0], kept[1].str.strip()))
+    assert kept_set == {("FL", "TERM - LOSS OF LICENSE OR OTHER STATE ACTION"),
+                        ("NC", "TERM - MEDICARE/MEDICAID EXCLUSION"),
+                        ("GA", "TERM - CREDIBLE ALLEGATION OF FRAUD")}
+    why = admin.set_index(admin["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())["drop_reason"]
+    assert why["IA:TERM - STATE EXCLUSION/ DEBARMENT, ETC."].iloc[0] == "state_default_code"   # 100 of 110 = IA's bulk code
+    assert why["FL:TERM - OTHER"].iloc[0] == "no_sanction_named"
+    assert why["NC:TERM - NON-COMPLIANCE"].iloc[0] == "no_sanction_named"
+    assert why["MN:DENIED - NOT ELIGIBLE"].iloc[0] == "no_sanction_named"
+    assert why["TN:TERM - MEDICAID AUTHORITY"].iloc[0] == "no_sanction_named"
+    assert float(admin.loc[admin["excl_type"].str.contains("IA:TERM - STATE"), "state_share"].iloc[0]) > 0.9
+    # the ruler agrees: the no-cause codes are 'excluded', the sanctions weak, fraud hard
+    assert fca_tier("mcd_enroll:FL:TERM - OTHER [INDIVIDUAL]")[0] == "excluded"
+    assert fca_tier("mcd_enroll:CO:TERM - NON-COMPLIANCE")[0] == "excluded"
+    assert fca_tier("mcd_enroll:TN:TERM - MEDICAID AUTHORITY")[0] == "excluded"
+    assert fca_tier("mcd_enroll:MO:TERM - ACTION TAKEN BY MEDICAID/CHIP")[0] == "excluded"
+    assert fca_tier("mcd_enroll:MN:DENIED - FOR OTHER REASONS")[0] == "excluded"
+    assert fca_tier("mcd_enroll:WI:TERM - FAILURE TO REPORT A CHANGE OF ADDRESS/OWNERSHIP")[0] == "excluded"
+    assert fca_tier("mcd_enroll:MA:TERM - ONSITE REVIEW/ PROVIDER IS NO LONGER OPERATIONAL")[0] == "excluded"
+    assert fca_tier("mcd_enroll:NC:TERM - MEDICARE/MEDICAID EXCLUSION")[0] == "weak"
+    assert fca_tier("mcd_enroll:IA:TERM - STATE EXCLUSION/ DEBARMENT, ETC.")[0] == "weak"
+    assert fca_tier("mcd_enroll:CT:TERM - LICENSE REVOKED")[0] == "weak"
+    assert fca_tier("mcd_enroll:GA:TERM - CREDIBLE ALLEGATION OF FRAUD")[0] == "hard"
+    # a fraud-shaped status is never a "default" (GA: 3 of 3 are CREDIBLE ALLEGATION), and a
+    # state below the minimum size has no bulk code (ND: one event is 100 percent of ND)
+    nd = pd.DataFrame(ev("990000", "ND", "TERM - STATE EXCLUSION/ DEBARMENT, ETC.", 1))
+    l_nd, a_nd = menr.split_label_candidates(nd)
+    assert len(l_nd) == 1 and len(a_nd) == 0
+    # empty input survives
+    l0, a0 = menr.split_label_candidates(events.iloc[0:0])
+    assert len(l0) == 0 and len(a0) == 0 and "drop_reason" in a0.columns
+
+
 def _events_key(ev: pd.DataFrame) -> list[tuple]:
     e = ev.sort_values(["npi", "excl_date", "excl_type"]).reset_index(drop=True)
     return [(r.npi, r.excl_type, pd.Timestamp(r.excl_date),

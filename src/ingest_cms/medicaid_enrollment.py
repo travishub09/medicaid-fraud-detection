@@ -262,6 +262,59 @@ def termination_events(segments: pd.DataFrame, asof_cutoff: str | None = None) -
     return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)[cols]
 
 
+# A termination status is a LABEL candidate only when its text names a sanction.
+# Everything else ("TERM - OTHER", "TERM - UNKNOWN", "NON-COMPLIANCE", "DENIED - ...",
+# "NO LONGER OPERATIONAL", "FAILURE TO REPORT ...", the agency codes with no cause)
+# is an enrollment fact, never a label positive (first rebuild 2026-10-12: FL stamps
+# 114k "OTHER", CO 46k "NON-COMPLIANCE", TN 23k "MEDICAID AUTHORITY", MO 19k "ACTION
+# TAKEN": a state's bulk code says nothing about the provider).
+LABEL_WORTHY = re.compile(r"exclu|debar|licens|revok|fraud|convict|felony|abuse|kickback|"
+                          r"false claim|credible allegation|sanction|suspen", re.I)
+# ...and even a sanction-named status is that state's DEFAULT code when it covers this
+# share of the state's ended episodes (IA: 12,952 of 13,802 are "STATE EXCLUSION/
+# DEBARMENT"; a code every terminated provider carries carries no information).
+STATE_DEFAULT_SHARE = 0.40
+# the default-code rule needs a state with enough ended episodes to have a bulk code
+# at all (one event in ND is 100 percent of ND and means nothing)
+STATE_DEFAULT_MIN_EPISODES = 100
+
+
+def split_label_candidates(events: pd.DataFrame,
+                           state_default_share: float = STATE_DEFAULT_SHARE,
+                           min_state_episodes: int = STATE_DEFAULT_MIN_EPISODES) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """events (exclusions schema, excl_type 'mcd_enroll:<ST>:<status> [type]') ->
+    (label_candidates, administrative). The administrative frame keeps every row
+    with a ``drop_reason`` (no_sanction_named / excluded_tier / state_default_code)
+    and the status's ``state_share``: quarantined, never deleted. A fraud-shaped
+    (hard-tier) status is never demoted as a default: its text states the cause."""
+    from src.model_a.fca_relevance import classify_series
+    cols = list(events.columns)
+    if not len(events):
+        return events.copy(), events.iloc[0:0].assign(drop_reason=pd.Series(dtype=str),
+                                                      state_share=pd.Series(dtype=float))
+    ev = events.reset_index(drop=True).copy()
+    et = ev["excl_type"].astype(str)
+    st = et.str.extract(r"^mcd_enroll:([^:]*):")[0].fillna("")
+    body = (et.str.replace(r"^mcd_enroll:[^:]*:", "", regex=True)
+              .str.replace(r"\s*\[[^\]]*\]\s*$", "", regex=True).str.strip())
+    tiers = classify_series(et)["fca_tier"].reset_index(drop=True)
+    named = body.str.contains(LABEL_WORTHY)
+    per_state = st.map(st.value_counts()).astype(float)
+    per_status = pd.Series(list(zip(st, body))).map(pd.Series(list(zip(st, body))).value_counts()).astype(float)
+    share = (per_status / per_state.where(per_state > 0)).fillna(0.0)
+    reason = pd.Series("", index=ev.index, dtype=object)
+    reason[~named] = "no_sanction_named"
+    reason[named & (tiers == "excluded")] = "excluded_tier"
+    reason[named & (tiers == "weak") & (share >= state_default_share)
+           & (per_state >= float(min_state_episodes))] = "state_default_code"
+    ev["drop_reason"] = reason
+    ev["state_share"] = share.round(4)
+    keep = reason == ""
+    label = ev.loc[keep, cols].reset_index(drop=True)
+    admin = ev.loc[~keep, cols + ["drop_reason", "state_share"]].reset_index(drop=True)
+    return label, admin
+
+
 def paid_after_enrollment_end(spending_path: str | Path, features: pd.DataFrame,
                               con=None) -> pd.DataFrame:
     """Per NPI with NO open segment at the cutoff: dollars and months with a service month
@@ -307,7 +360,7 @@ def fill_state(provider_dim: pd.DataFrame, features: pd.DataFrame,
 
 
 def write_report(out_dir: Path, info: dict, feats: pd.DataFrame, events: pd.DataFrame,
-                 after: pd.DataFrame | None) -> Path:
+                 after: pd.DataFrame | None, admin: pd.DataFrame | None = None) -> Path:
     from src.model_a.fca_relevance import classify_series
     L = ["# MEDICAID ENROLLMENT SEGMENTS — load report", "",
          f"- files: {', '.join(info['files'])}",
@@ -335,6 +388,21 @@ def write_report(out_dir: Path, info: dict, feats: pd.DataFrame, events: pd.Data
                   "fca_relevance.STATE_TERM_RULES; a tier is a label policy, never a finding about a provider._"]
     else:
         L.append("- none (no non-benign segment ends, or no status/reason column in the file)")
+    if admin is not None and len(admin):
+        L += ["", "## Enrollment ends that are NOT label candidates (medicaid_enrollment_ends_administrative.parquet)", "",
+              f"- {len(admin):,} ended episodes kept with a reason: " + ", ".join(
+                  f"{k} {v:,}" for k, v in admin["drop_reason"].value_counts().items()),
+              "- no_sanction_named = the status text names no sanction (OTHER / UNKNOWN / NON-COMPLIANCE / DENIED / "
+              "not operational / paperwork / an agency code with no cause); excluded_tier = the ruler tiers it "
+              "'excluded'; state_default_code = a sanction-named status that is the state's bulk code "
+              f"(at least {STATE_DEFAULT_SHARE:.0%} of that state's ended episodes)",
+              "", "| state : status | ends | reason | state share |", "|---|--:|---|--:|"]
+        reason = admin["excl_type"].str.replace(r"^mcd_enroll:", "", regex=True).str.replace(r"\s*\[[^\]]*\]$", "", regex=True)
+        cen = (pd.DataFrame({"status": reason, "why": admin["drop_reason"].values, "share": admin["state_share"].values})
+               .groupby(["status", "why"], as_index=False).agg(n=("share", "size"), share=("share", "max"))
+               .sort_values("n", ascending=False))
+        for r in cen.head(40).itertuples():
+            L.append(f"| {r.status} | {r.n:,} | {r.why} | {r.share:.0%} |")
     if after is not None and len(after):
         hot = after[after["mcd_paid_after_end"] > 0]
         L += ["", "## Paid after the last enrollment end (per-se check)", "",
@@ -366,16 +434,22 @@ def main() -> None:
     # the events now run inside DuckDB off the parquet (the pandas functions stay for
     # small frames and the parity tests)
     feats = enrollment_features_from_parquet(seg_p, a.asof_cutoff, con=con)
-    events = termination_events_from_parquet(seg_p, a.asof_cutoff, con=con)
+    all_events = termination_events_from_parquet(seg_p, a.asof_cutoff, con=con)
+    # only sanction-named, non-default statuses are label candidates; the rest are
+    # enrollment facts kept in their own file with the reason (quarantine, never delete)
+    events, admin = split_label_candidates(all_events)
     after = None
     if a.spending and Path(a.spending).exists():
         after = paid_after_enrollment_end(a.spending, feats, con=con)
         feats = feats.merge(after.drop(columns=["mcd_last_end_date"]), on="npi", how="left")
     feats.to_parquet(out / "medicaid_enrollment_features.parquet", index=False)
     events.to_parquet(out / "exclusions_medicaid_enrollment.parquet", index=False)
-    rp = write_report(out, info, feats, events, after)
-    print(f"[medicaid_enrollment] {len(feats):,} NPI feature rows; {len(events):,} termination events -> "
-          f"exclusions_medicaid_enrollment.parquet; report {rp}")
+    admin.to_parquet(out / "medicaid_enrollment_ends_administrative.parquet", index=False)
+    rp = write_report(out, info, feats, events, after, admin=admin)
+    print(f"[medicaid_enrollment] {len(feats):,} NPI feature rows; {len(all_events):,} ended episodes = "
+          f"{len(events):,} label candidates -> exclusions_medicaid_enrollment.parquet + "
+          f"{len(admin):,} administrative / default-code ends -> medicaid_enrollment_ends_administrative.parquet; "
+          f"report {rp}")
 
 
 

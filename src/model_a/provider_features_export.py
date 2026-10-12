@@ -1110,6 +1110,18 @@ def _widened_label_from_graph(graph_dir: Path, log):
     srcs = sorted({s for v in g.values for s in v.split(";")})
     log(f"    [label] widened positives from {len(out):,} NPI-matched exclusions "
         f"across: {', '.join(srcs)}")
+    # per-source composition, and a loud line when ONE source outweighs all the
+    # others together: the 2026-10-12 enrollment rebuild produced 439,416 ended
+    # segments (389k NPIs) before the administrative / state-default codes were
+    # split off, and under label policy 'all' every one of them would have been a
+    # training positive beside about 2,500 real ones
+    per_src = ex.groupby("src")["npi"].nunique().sort_values(ascending=False)
+    log("    [label] positives by source: " + ", ".join(f"{k} {v:,}" for k, v in per_src.items()))
+    if len(per_src) > 1 and per_src.iloc[0] > per_src.iloc[1:].sum():
+        log(f"    [label] WARNING: source '{per_src.index[0]}' alone supplies {per_src.iloc[0]:,} "
+            f"positives, more than every other source combined ({int(per_src.iloc[1:].sum()):,}); "
+            f"under label policy 'all' the scorer trains on that source's definition of a positive. "
+            f"Check the source's tiering before reading the run.")
     return out.reset_index(drop=True)
 
 

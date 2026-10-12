@@ -987,12 +987,32 @@ first, then paste" above every move/done block.
   new `termination_events_from_parquet` (episodes + reinstatement as one DuckDB query,
   only the episodes come back) through the shared `duck.connect()` factory; the pandas
   functions stay for small frames and a three-cutoff parity test pins the two paths.
+  THE STATUS TABLE READ (2026-10-12, 439,416 ended episodes, 389k NPIs): every state
+  stamps ONE bulk code on nearly every termination (FL "TERM - OTHER" 114k, CO
+  "NON-COMPLIANCE" 46k, TN "MEDICAID AUTHORITY" 23k, MO "ACTION TAKEN BY MEDICAID/CHIP"
+  19k, IA "STATE EXCLUSION/ DEBARMENT" 13k of IA's 14k), and under label policy 'all'
+  (the runners pass no --label-tier, so `provider_on_exclusion` = ANY exclusion node)
+  all 389k would have trained as positives beside about 2,500 real ones. Fix, three
+  layers: (1) `fca_relevance.MCD_ENROLL_EXCLUDED` tiers the no-cause codes 'excluded'
+  (OTHER / UNKNOWN / DENIED / duplicate number / not operational / failure to report /
+  NON-COMPLIANCE / MEDICAID AUTHORITY / ACTION TAKEN), Medicare-Medicaid exclusion and
+  state exclusion/debarment weak, license actions weak, fraud text hard; (2)
+  `medicaid_enrollment.split_label_candidates`: only a sanction-NAMED status
+  (`LABEL_WORTHY`) that is not the state's bulk code (`STATE_DEFAULT_SHARE` 0.40 of
+  the state's ended episodes, states with >= 100 episodes, weak tier only: a hard
+  fraud status is never a "default") reaches exclusions_medicaid_enrollment.parquet;
+  everything else is kept in medicaid_enrollment_ends_administrative.parquet with
+  `drop_reason` + `state_share` (quarantine, never delete) and its own report table;
+  (3) `_widened_label_from_graph` logs positives by source and WARNS when one source
+  outweighs all others combined. Expected label candidates: a few thousand license /
+  exclusion ends (FL 3k, NC/MN/OH/CT hundreds), weak tier; the per-se
+  billing_after_enrollment_end check keeps reading the features' last end date.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
   `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
-  Full suite: `pytest tests/` (1,060 tests + 2 skipped). Dead columns are left OUT OF THE
+  Full suite: `pytest tests/` (1,061 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

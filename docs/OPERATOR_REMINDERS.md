@@ -239,13 +239,25 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 python -m src.reminders --done-task v12_prereg_and_run
 ```
 
-- [ ] **enrollment_rebuild** — REBUILD the Medicaid enrollment tables (segments -> features + the ended-for-cause exclusions file) with the real CMS column names. 2026-10-12 first attempt: the 66M-row segments parquet was written, then the CLI died in pandas (realloc of 10.8 GB failed on the 16 GB laptop). Bundle 284 moves the features + events into DuckDB; MERGE 284 FIRST, then rerun the same command. Paste the console summary and the 'state : status / reason | events | tier' table so BENIGN_END / STATE_TERM_RULES are tuned to the real vocabulary before v12. Then re-run sync_data.sh on the VM once. (added 2026-10-12)
+- [ ] **enrollment_rebuild** — RERUN the Medicaid enrollment rebuild after merging bundle 285 (the 2026-10-12 rebuild worked: 4,400,791 NPIs, 439,416 ended episodes; the status table showed every state stamps one bulk code, so 285 splits the ended episodes into LABEL CANDIDATES (sanction-named, not the state's bulk code -> exclusions_medicaid_enrollment.parquet, expected a few thousand) and ADMINISTRATIVE ends (medicaid_enrollment_ends_administrative.parquet, with the reason). Same command, about three minutes. Paste the console line and BOTH report tables; then let OneDrive sync and re-run sync_data.sh on the VM once. (added 2026-10-12)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out-dir "C:\Users\treyr\OneDrive\Desktop\data\processed"
 type "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_ENROLLMENT_REPORT.md"
 python -m src.reminders --done-task enrollment_rebuild
+```
+
+- [ ] **merge_bundle285** — Merge bundle285 (cumulative, supersedes 239 to 284): the enrollment label split (sanction-named, non-default statuses only), the tier ruler for the CMS status vocabulary, the one-source label warning in the export, the reminder bookkeeping fix. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle285*.bundle") do copy /y "%f" "C:\Users\treyr\bundle285.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+merge_bundle.bat C:\Users\treyr\bundle285.bundle
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle285
+REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
 ```
 
 
