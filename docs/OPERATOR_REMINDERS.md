@@ -239,7 +239,7 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 python -m src.reminders --done-task v12_prereg_and_run
 ```
 
-- [ ] **enrollment_rebuild** — RERUN the enrollment rebuild once more after merging bundle 286 (the second rebuild gave 6,435 label candidates + 432,981 administrative ends, the right split; it also showed a median tenure of 95,809 months: placeholder 9999-12-31 end dates set the current-day as-of 8,000 years out, fixed in 286). Same command, about three minutes; paste the Features line (median tenure should read tens of months) and the label-candidate count (6,435 again). Then let OneDrive sync and re-run sync_data.sh on the VM once. (added 2026-10-12)
+- [ ] **enrollment_rebuild** — RERUN the enrollment rebuild once more after merging bundle 287 (the third rebuild read 299,247 ended episodes / 3,726 label candidates: the placeholder fix had turned every termination still in force, one TERM row ending 9999-12-31, into an 'open segment' and dropped its event; 287 dates those by the month the status began). Same command, about three minutes; paste the final console line (expect the candidates back above 6,435, since in-force terminations now count) and the Features line (median tenure in tens of months). Then let OneDrive sync and re-run sync_data.sh on the VM once. (added 2026-10-12)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -248,22 +248,22 @@ type "C:\Users\treyr\OneDrive\Desktop\data\processed\MEDICAID_ENROLLMENT_REPORT.
 python -m src.reminders --done-task enrollment_rebuild
 ```
 
-- [ ] **merge_bundle286** — Merge bundle286 (cumulative, supersedes 239 to 285): the placeholder-end-date fix for the current-day enrollment features (median tenure 95,809 months), parity test. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
-
-```bat
-for %f in ("%USERPROFILE%\Downloads\bundle286*.bundle") do copy /y "%f" "C:\Users\treyr\bundle286.bundle"
-cd /d C:\Users\treyr\medicaid-fraud-detection
-git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle286.bundle
-git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle286
-REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
-```
-
 - [ ] **v13_label_ablation_agency_codes** — CLAUDE / operator question for AFTER v12 (never gates a run): the enrollment file's agency codes with no stated cause are label candidates only where they are a MINORITY code in their state (FL 'TERM - MEDICAID AUTHORITY' 2,133 at 2 percent of FL's ends; IA / TX / AL 'ACTION TAKEN BY MEDICAID/CHIP' at 5 to 6 percent; CT 'MEDICAID AUTHORITY' 2,410 at 37 percent). Run label_ablation on the v12 matrix with those rows added as a source and read the forward-lift delta; admit them to v13's label only if the delta is positive with a CI above zero. (added 2026-10-12)
 
 ```bat
 REM after v12 is graded; Claude writes the exact ablation line then
+```
+
+- [ ] **merge_bundle287** — Merge bundle287 (cumulative, supersedes 239 to 286): terminations still in force (open-ended TERM rows) are events dated by their start and are not open enrollments; parity tests at two cutoffs. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle287*.bundle") do copy /y "%f" "C:\Users\treyr\bundle287.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+merge_bundle.bat C:\Users\treyr\bundle287.bundle
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle287
+REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
 ```
 
 

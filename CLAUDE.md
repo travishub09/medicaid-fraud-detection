@@ -1019,6 +1019,17 @@ first, then paste" above every move/done block.
   current-day as-of 8,000 years out. Both feature paths and both event paths now take
   the as-of as the latest end date NOT in the future, and an end after it is an OPEN
   segment (frozen runs pass a real cutoff and were never affected).
+  THIRD REBUILD (2026-10-12, bundle 286) read 299,247 ended episodes / 3,726 candidates:
+  nulling the placeholder ends had turned every termination STILL IN FORCE (one row,
+  TERM status, end 9999-12-31) into an "open segment" and dropped its event. The two
+  readings of a non-benign status row are now explicit in both paths (`_future_end`):
+  a real end beyond the cutoff = still enrolled as of the cutoff (no event, an open
+  segment: the state-list shape where the status says how the segment ENDED); an
+  open-ended terminated status = a termination in force, dated by its START, not an
+  open enrollment (the CMS monthly shape where the status is the state DURING the
+  row); a row with a real end = an event at that end. mcd_open_segments counts only
+  benign or future-end rows, mcd_last_end_date takes the start of an in-force
+  termination, and the placeholder test covers both readings at two cutoffs.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from

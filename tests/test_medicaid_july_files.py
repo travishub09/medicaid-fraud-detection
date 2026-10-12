@@ -531,12 +531,27 @@ def test_placeholder_end_dates_are_open_segments_not_the_asof(tmp_path):
               menr.enrollment_features_from_parquet(seg_p).set_index("npi")):
         assert f.loc[DR1, "mcd_open_segments"] == 1 and pd.isna(f.loc[DR1, "mcd_last_end_date"])
         assert 40 <= f.loc[DR1, "mcd_tenure_months"] <= 43              # 2020-01 to the as-of 2023-06-30
-        assert f.loc[DR2, "mcd_ended_for_cause"] == 1 and f.loc[PH1, "mcd_ended_for_cause"] == 0
+        assert f.loc[DR2, "mcd_ended_for_cause"] == 1
+        # PH1: an open-ended terminated status is a termination IN FORCE, not an open
+        # enrollment: ended for cause, no open segment, last end = the status start
+        assert f.loc[PH1, "mcd_ended_for_cause"] == 1 and f.loc[PH1, "mcd_open_segments"] == 0
+        assert pd.Timestamp(f.loc[PH1, "mcd_last_end_date"]) == pd.Timestamp("2021-01-01")
     a = menr.termination_events(seg)
     b = menr.termination_events_from_parquet(seg_p)
     assert _events_key(a) == _events_key(b)
-    assert list(a["npi"]) == [DR2]                                      # the 9999 "end" is not an ended episode
-    assert pd.Timestamp(a.iloc[0]["excl_date"]) == pd.Timestamp("2023-06-30")
+    ev = a.set_index("npi")
+    assert set(ev.index) == {DR2, PH1}
+    assert pd.Timestamp(ev.loc[DR2, "excl_date"]) == pd.Timestamp("2023-06-30")   # the real end
+    assert pd.Timestamp(ev.loc[PH1, "excl_date"]) == pd.Timestamp("2021-01-01")   # the status start
+    assert ev.loc[PH1, "currently_active"] == 1
+    # frozen at 2020-12: PH1's status began 2021-01 -> not an event yet; DR2's real end is
+    # beyond the cutoff -> still enrolled as of the cutoff (open), no event
+    for f in (menr.enrollment_features(seg, "2020-12").set_index("npi"),
+              menr.enrollment_features_from_parquet(seg_p, "2020-12").set_index("npi")):
+        assert f.loc[DR2, "mcd_open_segments"] == 1 and f.loc[DR2, "mcd_ended_for_cause"] == 0
+        assert PH1 not in f.index
+    assert len(menr.termination_events(seg, "2020-12")) == 0
+    assert len(menr.termination_events_from_parquet(seg_p, "2020-12")) == 0
 
 
 def _events_key(ev: pd.DataFrame) -> list[tuple]:

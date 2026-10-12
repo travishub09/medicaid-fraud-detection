@@ -157,21 +157,24 @@ def _asof_frame(segments: pd.DataFrame, asof_cutoff: str | None) -> pd.DataFrame
     s["npi"] = s["npi"].astype(str)
     s["start_date"] = pd.to_datetime(s["start_date"], errors="coerce")
     s["end_date"] = pd.to_datetime(s["end_date"], errors="coerce")
-    s = s[s["npi"].str.fullmatch(r"\d{10}").fillna(False) & s["start_date"].notna()]
+    s = s[s["npi"].str.fullmatch(r"\d{10}").fillna(False) & s["start_date"].notna()].copy()
+    # a placeholder end (9999-12-31, or any end after today) is an OPEN-ENDED row
+    # (2026-10-12: those ends made the current-day as-of 8,000 years out and the
+    # median tenure 95,809 months); nulled BEFORE the cutoff logic so an open-ended
+    # terminated status is read as a termination in force, not as a future end
+    today = pd.Timestamp.today().normalize()
+    s.loc[s["end_date"] > today, "end_date"] = pd.NaT
+    s["_future_end"] = False
     if asof_cutoff:
         cut = pd.Timestamp(asof_cutoff[:7] + "-01") + pd.offsets.MonthEnd(0)
         s = s[s["start_date"] <= cut].copy()
-        s.loc[s["end_date"] > cut, "end_date"] = pd.NaT      # not ended yet as of the cutoff
+        fut = s["end_date"] > cut                             # a real end beyond the cutoff
+        s.loc[fut, "end_date"] = pd.NaT                       # not ended yet as of the cutoff
+        s["_future_end"] = fut
         s["_asof"] = cut
     else:
-        # the current-day "as of" = the latest end date that is not in the future
-        # (2026-10-12: placeholder ends of 9999-12-31 made the as-of 8,000 years out and
-        # the median tenure 95,809 months); an end after the as-of is an OPEN segment
-        today = pd.Timestamp.today().normalize()
-        real = s.loc[s["end_date"] <= today, "end_date"]
-        cut = real.max() if len(real) else today
-        s.loc[s["end_date"] > cut, "end_date"] = pd.NaT
-        s["_asof"] = cut
+        real = s["end_date"].dropna()
+        s["_asof"] = real.max() if len(real) else today
     return s
 
 
@@ -194,7 +197,14 @@ def enrollment_features(segments: pd.DataFrame, asof_cutoff: str | None = None) 
                                      "mcd_open_segments", "mcd_ended_for_cause", "mcd_last_end_date"])
     s["_end"] = s["end_date"].fillna(s["_asof"])
     s["_months"] = ((s["_end"] - s["start_date"]).dt.days / 30.44).clip(lower=0)
-    s["_cause"] = (~_is_benign(s)).astype(int) * s["end_date"].notna().astype(int)
+    # a non-benign status row is a termination event unless its real end lies beyond
+    # the cutoff (then, as of the cutoff, the provider is still enrolled); an
+    # open-ended terminated status (placeholder end) is a termination IN FORCE dated
+    # by its start, not an open enrollment
+    benign = _is_benign(s)
+    s["_cause"] = ((~benign) & ~s["_future_end"]).astype(int)
+    s["_open"] = (s["end_date"].isna() & (benign | s["_future_end"])).astype(int)
+    s["_last_end"] = s["end_date"].where(s["end_date"].notna() | (s["_cause"] == 0), s["start_date"])
     by_state = s.groupby(["npi", "state"], as_index=False)["_months"].sum()
     primary = by_state.sort_values(["npi", "_months"], ascending=[True, False]).drop_duplicates("npi")
     g = s.groupby("npi")
@@ -203,9 +213,9 @@ def enrollment_features(segments: pd.DataFrame, asof_cutoff: str | None = None) 
         "mcd_segments": g.size(),
         "mcd_tenure_months": ((g["_asof"].first() - g["start_date"].min()).dt.days / 30.44).clip(lower=0),
         "mcd_enrolled_months": g["_months"].sum(),
-        "mcd_open_segments": g["end_date"].apply(lambda x: int(x.isna().sum())),
+        "mcd_open_segments": g["_open"].sum(),
         "mcd_ended_for_cause": g["_cause"].max(),
-        "mcd_last_end_date": g["end_date"].max(),
+        "mcd_last_end_date": g["_last_end"].max(),
     }).reset_index()
     out = out.merge(primary[["npi", "state"]].rename(columns={"state": "mcd_primary_state"}), on="npi", how="left")
     _ten = pd.to_numeric(out["mcd_tenure_months"], errors="coerce").astype(float)
@@ -240,17 +250,20 @@ def termination_events(segments: pd.DataFrame, asof_cutoff: str | None = None) -
     if not len(s):
         return pd.DataFrame(columns=cols)
     benign = _is_benign(s)
-    ended = s[s["end_date"].notna() & ~benign].copy()
+    ended = s[~benign & ~s["_future_end"]].copy()
     if not len(ended):
         return pd.DataFrame(columns=cols)
+    # the event date: the row's (month-)end when it has one, else the start of the
+    # open-ended terminated status (a termination still in force at the as-of)
+    ended["_event_d"] = ended["end_date"].fillna(ended["start_date"])
     reason = (ended.get("status", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip() + " | "
               + ended.get("reason", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip()).str.strip(" |")
     ptype = ended.get("provider_type", pd.Series("", index=ended.index)).fillna("").astype(str).str.strip()
     ended["excl_type"] = ("mcd_enroll:" + ended["state"].fillna("").astype(str) + ":" + reason.values
                           + ptype.map(lambda t: f" [{t}]" if t else "").values)
     # one episode per (npi, state, cause): the first month-end that carried the status
-    ep = (ended.groupby(["npi", "state", "excl_type"], as_index=False)["end_date"].min()
-          .rename(columns={"end_date": "excl_date"}))
+    ep = (ended.groupby(["npi", "state", "excl_type"], as_index=False)["_event_d"].min()
+          .rename(columns={"_event_d": "excl_date"}))
     # reinstatement = the first benign start in the same state strictly after the episode date
     starts = (s.loc[benign, ["npi", "state", "start_date"]].dropna()
               .sort_values("start_date").rename(columns={"start_date": "reinstate_date"}))
@@ -474,23 +487,31 @@ def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None
         asof_expr = f"date '{cut.date().isoformat()}'"
         where_cut = f"and start_date <= date '{cut.date().isoformat()}'"
     else:
-        # the latest end date that is not in the future (placeholder 9999-12-31 ends are open)
-        asof_expr = "(select coalesce(max(end_date) filter (where end_date <= current_date), current_date) from s0)"
+        # the latest real end date (placeholder / future ends were nulled in s0)
+        asof_expr = "(select coalesce(max(end_date), current_date) from s0)"
         where_cut = ""
+    # the same reading as the pandas path: a placeholder end (after today) is an
+    # open-ended row; a real end beyond the cutoff is a FUTURE end (the row is still an
+    # enrollment as of the cutoff); a non-benign row that is not a future end is a
+    # termination event, an open-ended one dated by its start (in force)
     df = con.execute(f"""
         with s0 as (
             select cast(npi as varchar) as npi, upper(cast(state as varchar)) as state,
-                   cast(start_date as date) as start_date, cast(end_date as date) as end_date,
+                   cast(start_date as date) as start_date,
+                   case when cast(end_date as date) > current_date then null else cast(end_date as date) end as end_date,
                    trim(coalesce(cast(status as varchar), '') || ' | ' || coalesce(cast(reason as varchar), ''), ' |') as txt
             from read_parquet('{p}')
             where regexp_matches(cast(npi as varchar), '^[0-9]{{10}}$') and start_date is not null),
         s1 as (select *, {asof_expr} as asof_d from s0 where true {where_cut}),
         s2 as (select npi, state, start_date, asof_d, txt,
-                      case when end_date > asof_d then null else end_date end as end_d
+                      case when end_date > asof_d then null else end_date end as end_d,
+                      (end_date > asof_d) as future_end,
+                      (txt = '' or regexp_matches(txt, '{benign}', 'i')) as benign
                from s1),
         s3 as (select *, greatest(date_diff('day', start_date, coalesce(end_d, asof_d)) / 30.44, 0) as months,
-                      case when end_d is not null
-                                and not (txt = '' or regexp_matches(txt, '{benign}', 'i')) then 1 else 0 end as cause
+                      case when not benign and not coalesce(future_end, false) then 1 else 0 end as cause,
+                      case when end_d is null and (benign or coalesce(future_end, false)) then 1 else 0 end as open_seg,
+                      case when end_d is null and not benign and not coalesce(future_end, false) then start_date else end_d end as last_end
                from s2),
         by_state as (select npi, state, sum(months) as m from s3 group by 1, 2),
         prim as (select npi, state as mcd_primary_state from (
@@ -501,9 +522,9 @@ def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None
                        count(*) as mcd_segments,
                        greatest(date_diff('day', min(start_date), any_value(asof_d)) / 30.44, 0) as mcd_tenure_months,
                        sum(months) as mcd_enrolled_months,
-                       sum(case when end_d is null then 1 else 0 end) as mcd_open_segments,
+                       sum(open_seg) as mcd_open_segments,
                        max(cause) as mcd_ended_for_cause,
-                       max(end_d) as mcd_last_end_date
+                       max(last_end) as mcd_last_end_date
                 from s3 group by npi)
         select a.npi, a.mcd_states_enrolled, p.mcd_primary_state, a.mcd_segments, a.mcd_tenure_months,
                a.mcd_enrolled_months, a.mcd_open_segments, a.mcd_ended_for_cause, a.mcd_last_end_date
@@ -541,25 +562,31 @@ def termination_events_from_parquet(seg_parquet, asof_cutoff: str | None = None,
     if asof_cutoff:
         cut = pd.Timestamp(str(asof_cutoff)[:7] + "-01") + pd.offsets.MonthEnd(0)
         where_cut = f"and start_date <= date '{cut.date().isoformat()}'"
-        end_expr = f"case when end_date > date '{cut.date().isoformat()}' then null else end_date end"
+        cut_expr = f"date '{cut.date().isoformat()}'"
     else:
         where_cut = ""
-        end_expr = ("case when end_date > (select coalesce(max(end_date) filter (where end_date <= current_date), "
-                    "current_date) from read_parquet('" + p + "')) then null else end_date end")
+        cut_expr = "null"
+    # same reading as the pandas path (see termination_events): placeholder ends are
+    # open-ended rows; a real end beyond the cutoff is a future end (no event yet); a
+    # non-benign row is an event dated by its (month-)end, or by its start when open-ended
     df = con.execute(f"""
         with s0 as (
             select cast(npi as varchar) as npi, upper(coalesce(cast(state as varchar), '')) as state,
-                   cast(start_date as date) as start_date, {end_expr} as end_d,
+                   cast(start_date as date) as start_date,
+                   case when cast(end_date as date) > current_date then null else cast(end_date as date) end as end_date,
                    trim(coalesce(cast(status as varchar), '') || ' | ' || coalesce(cast(reason as varchar), ''), ' |') as txt,
                    trim(coalesce(cast(provider_type as varchar), '')) as ptype
             from read_parquet('{p}')
             where regexp_matches(cast(npi as varchar), '^[0-9]{{10}}$') and start_date is not null {where_cut}),
-        s1 as (select *, (txt = '' or regexp_matches(txt, '{benign}', 'i')) as benign from s0),
+        s1 as (select *, (txt = '' or regexp_matches(txt, '{benign}', 'i')) as benign,
+                      case when {cut_expr} is not null and end_date > {cut_expr} then null else end_date end as end_d,
+                      coalesce({cut_expr} is not null and end_date > {cut_expr}, false) as future_end
+               from s0),
         ended as (select npi, state,
                          'mcd_enroll:' || state || ':' || txt || case when ptype <> '' then ' [' || ptype || ']' else '' end as excl_type,
-                         end_d
-                  from s1 where end_d is not null and not benign),
-        ep as (select npi, state, excl_type, min(end_d) as excl_date from ended group by 1, 2, 3),
+                         coalesce(end_d, start_date) as event_d
+                  from s1 where not benign and not future_end),
+        ep as (select npi, state, excl_type, min(event_d) as excl_date from ended group by 1, 2, 3),
         starts as (select npi, state, start_date from s1 where benign),
         re as (select e.npi, e.state, e.excl_type, e.excl_date, min(st.start_date) as reinstate_date
                from ep e left join starts st
