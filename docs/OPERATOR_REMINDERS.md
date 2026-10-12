@@ -246,17 +246,16 @@ REM desk check 1: open https://npiregistry.cms.hhs.gov and enter each NPI; note 
 REM desk check 2 (Special Homes) and the WHEN sheets ride on their own tasks; say 'Sage reply sent' in chat
 ```
 
-- [ ] **merge_bundle293** — Merge bundle293 (cumulative, supersedes 239 to 292; the laptop is at 289, so this carries the FCA-shaped training label and 'train = hard' check (290), the PI WHEN sheet (291), the Sage follow-ups (292), and the operator's closures of enrollment_rebuild and compute_box_decision). Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; confirm git log shows the 293 commit; then git pull on the VM. (added 2026-10-12)
+- [ ] **merge_bundle294** — Merge bundle294 (cumulative, supersedes 239 to 293): full-density graph embeddings on the VM (the walk lightening is now a flag, the VM runner passes --light-walks-above 0). Merge, push, then git pull on the VM BEFORE pre-registering v12. (added 2026-10-12)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
-for %f in ("%USERPROFILE%\Downloads\bundle293*.bundle") do copy /y "%f" "C:\Users\treyr\bundle293.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle294*.bundle") do copy /y "%f" "C:\Users\treyr\bundle294.bundle"
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle293.bundle
+merge_bundle.bat C:\Users\treyr\bundle294.bundle
 git push origin claude/happy-mccarthy-3skrn3
-git log --oneline -1
-python -m src.reminders --done-task merge_bundle293
-REM on the VM (the ubuntu@ prompt): cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1
+python -m src.reminders --done-task merge_bundle294
+REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1
 ```
 
 

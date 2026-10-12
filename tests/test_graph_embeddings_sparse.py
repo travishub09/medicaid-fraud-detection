@@ -96,3 +96,17 @@ def test_small_components_and_the_embed_cap_keep_rows_but_skip_the_heavy_compute
     # legacy behaviour is still reachable: no minimum, no cap
     legacy = compute_node_embeddings_sparse(nodes, A, dim=4, min_component_size=0, max_embed_nodes=0).set_index("node_id")
     assert legacy.loc["p1", emb].abs().sum() > 0
+
+
+def test_light_walks_threshold_is_a_parameter_and_zero_means_full_walks(capsys):
+    """2026-10-12 (operator: turn the embeddings back on in full now that there is a VM):
+    the node cap was already liftable (max_embed_nodes=0); the walk lightening above a
+    million connected nodes was hard-coded. It is now ``light_walks_above``; 0 = never."""
+    pairs = [("a", "b"), ("b", "c"), ("c", "a"), ("c", "d"), ("d", "e"), ("e", "c")]
+    nodes, A = build_sparse_adjacency(None, None, None, _EMPTY, _edges(pairs), _EMPTY, _EMPTY)
+    compute_node_embeddings_sparse(nodes, A, dim=4, light_walks_above=2)   # 5 connected nodes > 2
+    assert "lighter walks (n_walks=4, walk_len=12, window=3)" in capsys.readouterr().out
+    compute_node_embeddings_sparse(nodes, A, dim=4, light_walks_above=0)
+    assert "full walks (n_walks=10, walk_len=20, window=5)" in capsys.readouterr().out
+    compute_node_embeddings_sparse(nodes, A, dim=4)                        # default threshold untouched
+    assert "full walks" in capsys.readouterr().out

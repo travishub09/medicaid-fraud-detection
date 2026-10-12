@@ -5,7 +5,8 @@
 #   bash ops/vm/run_frozen_night.sh v12 2021-12 --rebuild-graph   # force the as-of graph rebuild
 #
 # What differs from the laptop runner (2026-10-11):
-#   * FULL graph embeddings: --max-embed-nodes 0 (no cap; the laptop embeds 1.5M of the
+#   * FULL graph embeddings: --max-embed-nodes 0 --light-walks-above 0 (no node cap and
+#     full-density walks, 10 of 20 with window 5; the laptop embeds 1.5M of the
 #     13.6M connected nodes and zero-fills the rest, which is why the motif columns came
 #     out constant). The as-of graph is REBUILT here the first time, into
 #     graph_asof_<cut>_full, so the capped laptop graph is never reused by mistake.
@@ -53,13 +54,13 @@ if [ "$FREEGB" -lt 24 ]; then echo "[$TAG] REFUSING TO START: only ${FREEGB} GB 
 [ -f "$CASES" ] || { echo "[$TAG] MISSING $CASES (the case labels are the point)"; fail 0; }
 [ -f "$DEFENDANTS" ] || { echo "[$TAG] MISSING $DEFENDANTS (run the defendant resolver first)"; fail 0; }
 
-step 1/12 "point-in-time graph WITH FULL EMBEDDINGS (rebuilt into $GRAPH_ASOF unless present)"
+step 1/12 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (rebuilt into $GRAPH_ASOF unless present)"
 if [ -f "$GRAPH_ASOF/nodes/exclusion_nodes.parquet" ] && [ -z "$REBUILD" ]; then
   echo "[$TAG]   reusing $GRAPH_ASOF"
 else
   [ -n "$NPPES_ASOF" ] || { echo "[$TAG] MISSING the as-of NPPES edition preclean/nppes/npidata_pfile_*-${CUT//-/}xx.csv"; fail 1; }
   python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH_ASOF" --asof "$CUT" --asof-nppes "$NPPES_ASOF" \
-      --max-embed-nodes 0 || fail 1
+      --max-embed-nodes 0 --light-walks-above 0 || fail 1
 fi
 
 step 2/12 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS)"

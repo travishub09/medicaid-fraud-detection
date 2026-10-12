@@ -200,7 +200,8 @@ def _walk_cooccurrence(A, n, walk_len, n_walks, window, seed,
 def compute_node_embeddings_sparse(nodes, A, exclusion_ids=frozenset(), dim: int = 16,
                                    walk_len: int = 20, n_walks: int = 10, window: int = 5,
                                    seed: int = 42, max_component_size: int = 150_000,
-                                   min_component_size: int = 3, max_embed_nodes: int = 1_500_000
+                                   min_component_size: int = 3, max_embed_nodes: int = 1_500_000,
+                                   light_walks_above: int = 1_000_000
                                    ) -> pd.DataFrame:
     """One row per (kept, non-exclusion) node: embeddings + proximity + motifs.
     ``nodes``/``A`` come from ``graph_features.build_sparse_adjacency``.
@@ -277,12 +278,16 @@ def compute_node_embeddings_sparse(nodes, A, exclusion_ids=frozenset(), dim: int
 
     # On a large connected graph, lighten the walks (fewer/shorter/narrower) so the
     # co-occurrence support stays within a 16 GB box; the signal is unchanged in kind,
-    # only sampled less densely. Logged so the run is auditable.
-    if len(cidx) > 1_000_000:
+    # only sampled less densely. Logged so the run is auditable. ``light_walks_above``
+    # 0 = never lighten (the 128 GB VM, 2026-10-12: full walks on every connected node).
+    if light_walks_above and len(cidx) > light_walks_above:
         n_walks = min(n_walks, 4)
         walk_len = min(walk_len, 12)
         window = min(window, 3)
         print(f"    [embeddings] {len(cidx):,} connected nodes — using lighter walks "
+              f"(n_walks={n_walks}, walk_len={walk_len}, window={window})", flush=True)
+    else:
+        print(f"    [embeddings] {len(cidx):,} connected nodes — full walks "
               f"(n_walks={n_walks}, walk_len={walk_len}, window={window})", flush=True)
 
     # Output = nodes with structure (connected) OR with fraud-proximity > 0 (a node

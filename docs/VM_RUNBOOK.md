@@ -54,6 +54,8 @@ bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v12 2021-12
 
 The runner trains the production scorer on the HARD tier only (`TRAIN_TIER=hard`: FCA-shaped exclusion records and DOJ cases; license actions and unstated-cause exclusions never train) and records it as `train_policy` in the registry, which the check `train = hard` enforces. The forward ruler is the FCA case ruler as before.
 
+The embeddings run at full density on the VM: every connected node (`--max-embed-nodes 0`) and full walks (`--light-walks-above 0`: 10 walks of 20 steps, window 5; the laptop drops to 4 of 12 above a million nodes). Expect the graph step to take one to three hours.
+
 The runner refuses to start under 24 GB free, rebuilds the as-of graph with full embeddings into `graph_asof_2021-12_full` the first time (later runs reuse it; pass `--rebuild-graph` as the third argument to force it), and stops after the export if servicing, MUE, sector schemes, enrollment, the billing LM or the graph embeddings were skipped. It writes everything to `night_run.log` in the run folder. Detach with Ctrl-b then d; `tmux attach -t night` to come back.
 
 Pull the code forward before a run when a new bundle has been merged and pushed from the laptop:

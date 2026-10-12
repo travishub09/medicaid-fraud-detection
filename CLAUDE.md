@@ -1077,12 +1077,19 @@ first, then paste" above every move/done block.
   years with >= 25 percent of the peak year's dollars, ramp month, peak year, first /
   last billed, per practice, no person named) so interviews go to formers whose
   tenure overlaps the active window.
+  EMBEDDINGS BACK ON IN FULL (operator, 2026-10-12): the node cap was already liftable
+  (`--max-embed-nodes 0`, the VM runner's setting); the walk lightening above one
+  million connected nodes (4 walks of 12, window 3 instead of 10 of 20, window 5) was
+  hard-coded for the 16 GB laptop and is now `compute_node_embeddings_sparse(
+  light_walks_above=)` / `python -m src.entity_graph --light-walks-above N` (0 = never
+  lighten); `ops/vm/run_frozen_night.sh` passes 0. The component cap (150k) and the
+  mail-drop pruning (100 orgs per address) stay: those are signal rules, not memory.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
   `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
-  Full suite: `pytest tests/` (1,068 tests + 2 skipped). Dead columns are left OUT OF THE
+  Full suite: `pytest tests/` (1,069 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
