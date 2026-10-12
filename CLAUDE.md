@@ -1076,7 +1076,15 @@ first, then paste" above every move/done block.
   sheet (`window_sheet` -> PI_FACTS_<set>_WINDOWS.md + _windows.json: active years =
   years with >= 25 percent of the peak year's dollars, ramp month, peak year, first /
   last billed, per practice, no person named) so interviews go to formers whose
-  tenure overlaps the active window.
+  tenure overlaps the active window. The investigator's titles list (same day) is
+  read by the ROLE RULE: billers / revenue-cycle / QA / compliance know whose NPI
+  went on the claim, rendering clinicians know who saw the patient, HR / operations
+  / service coordinators know the headcount (the innocent explanation on every
+  hours-per-day card, so that role ends a card as fast as it advances one); front
+  desk and assistants are second-call. A card whose formers are all coordinators
+  and teachers with no therapist among them reads as an agency, not a clinic.
+  The read-outs (PI_FEEDBACK_CROSSREF / PI_ROLES_READOUT) identify people by role
+  and tenure only and stay with the PI report, never in git.
   EMBEDDINGS BACK ON IN FULL (operator, 2026-10-12): the node cap was already liftable
   (`--max-embed-nodes 0`, the VM runner's setting); the walk lightening above one
   million connected nodes (4 walks of 12, window 3 instead of 10 of 20, window 5) was
