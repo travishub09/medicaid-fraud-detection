@@ -393,3 +393,24 @@ def test_operator_book_dossier_sets_hospitals_aside(tmp_path):
     build(tmp_path, top=50, min_billed=1.0)
     t2 = pd.read_csv(tmp_path / "pursuit_targets.csv")
     assert t2["org_name"].str.contains("HOSPITAL").any()                 # the default still lists it
+
+
+def test_operator_book_sets_person_named_and_unnamed_rows_aside(tmp_path):
+    """v11 dossier: target 9 was 'MERKLEY, PATRICIA' (a two-NPI org whose name is a
+    person) and target 10 'UNNAMED ORGANIZATION (org:npi:...)'. Neither is an operator
+    the strategy targets; the operator book now reads the name shape too."""
+    from src.model_a.pursuit_dossier import person_shaped_name, unnamed_org
+    assert person_shaped_name("MERKLEY, PATRICIA") and person_shaped_name("O'BRIEN, MARY ANN")
+    assert not person_shaped_name("MORI, BEAN AND BROOKS INC") and not person_shaped_name("CASA DE AMISTAD, INC.")
+    assert unnamed_org("UNNAMED ORGANIZATION (org:npi:1619299500)") and unnamed_org("") and not unnamed_org("ACME LLC")
+    m, man = _matrix()
+    m["entity_type"] = "2"
+    who = m["org_node_id"] == "org:002"
+    m.loc[who, ["org_legal_name", "provider_name"]] = "MERKLEY, PATRICIA"
+    m.loc[who, "subscore_upcoding"] = 1.0
+    m.loc[who, "net_paid"] = 9e7
+    m.to_parquet(tmp_path / "provider_features_for_model.parquet")
+    (tmp_path / "feature_manifest.json").write_text(json.dumps(man))
+    build(tmp_path, top=5, min_billed=1.0, operator_book=True)
+    t = pd.read_csv(tmp_path / "pursuit_targets.csv")
+    assert len(t) > 0 and not t["org_name"].str.contains("MERKLEY").any()

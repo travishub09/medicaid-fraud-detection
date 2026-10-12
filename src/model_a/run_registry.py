@@ -363,6 +363,9 @@ CHECK_ALIASES = {
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
     # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)
     "hits50": "acc_org_hits50", "hits16": "acc_org_hits16",
+    "hits100": "acc_org_hits100", "hits250": "acc_org_hits250",
+    "base100": "acc_base100", "base250": "acc_base250",
+    "p100_vs_random": "acc_org_p100_vs_random", "p250_vs_random": "acc_org_p250_vs_random",
     "prec50": "acc_org_prec50", "prec50_lo": "acc_org_prec50_lo",
     "base50": "acc_base50", "p50_vs_random": "acc_org_p50_vs_random",
     "lift50_vs_dollar": "acc_org_lift50_vs_dollar",

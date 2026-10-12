@@ -42,7 +42,7 @@ Every run is pre-registered first, from the laptop or the VM (the registry files
 
 ```bash
 cd ~/medicaid-fraud-detection && source ~/.medicaid_env
-python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v12 --goal "..." --expected "..." --check "hits50 >= 2" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 5" "groups = case_cluster" "broadcast = weight"
+python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v12 --goal "..." --expected "..." --check "hits50 >= 2" "hits100 >= 4" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight"
 ```
 
 Then the runner, inside `tmux` or `nohup` so an SSH drop does not kill it:

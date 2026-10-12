@@ -130,3 +130,23 @@ def test_psi_is_zero_for_identical_and_large_for_shifted():
     assert ll._psi(a, a.copy()) < 1e-9
     assert ll._psi(a, a + 2.0) > ll.PSI_FAIL
     assert ll._psi(a[:10], a) != ll._psi(a[:10], a)                  # too few rows -> NaN
+
+
+def test_near_miss_z_is_guarded_against_a_degenerate_top_set():
+    """v11: rx_spread_coverage was constant to 1e-15 across the top set, so one miss read
+    z = minus 2.7e14 and crowded the gap list. A MAD under a millionth of the column's
+    scale is treated as degenerate (the column drops out) and every z is clipped."""
+    rng = np.random.default_rng(3)
+    n = 400
+    m = pd.DataFrame({"npi": [f"1{i:09d}" for i in range(n)],
+                      "good": rng.normal(0, 1, n),
+                      "flat": np.where(np.arange(n) < 20, 1.0, 1.0 - 1e-15)})
+    m.loc[0, "flat"] = 0.0
+    m.loc[0, "good"] = -4.0
+    oof = pd.DataFrame({"npi": m["npi"], "score": np.linspace(1, 0, n)})   # rank = row order
+    ruler = pd.DataFrame({"npi": [m.loc[0, "npi"], m.loc[399, "npi"]], "is_prospective_positive": [1, 1]})
+    misses, counts = ll.near_misses(m, oof, ruler, ["good", "flat"], top_frac=0.05)
+    assert len(misses) == 1 and misses.iloc[0]["npi"] == m.loc[399, "npi"]
+    short = str(misses.iloc[0].get("where_short", misses.iloc[0].to_dict()))
+    assert "e+1" not in short and "e+0" not in short
+    assert "flat" not in set(counts["feature"]) if len(counts) else True

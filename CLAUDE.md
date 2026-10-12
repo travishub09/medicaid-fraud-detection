@@ -940,7 +940,30 @@ first, then paste" above every move/done block.
   longer match 17 of the confirmed mentions. Fixed: a confirmed (case, defendant, Luhn NPI)
   verdict promotes the mention on its own (`carried`, match_level `fuzzy_verified`,
   strength moderate in fca_label_export.OK_MATCH_LEVELS). A verdict outlives the rule.
-  Full suite: `pytest tests/` (1,050 tests + 2 skipped). Dead columns are left OUT OF THE
+  V11 READ-OUT (2026-10-12, `docs/ACCURACY_READOUT_v11_2026-10-12.md`): the first
+  COMPLETE run (40 sources, 22 schemes, the five v10 memory casualties back, plateau
+  gone: 1 tie at rank 50). HOLD on three checks, all about the top 50: hits@50 = 1
+  (bar 2; random 0.3), prec50_lo 0.0035 < base 0.0057, top-50 Jaccard 0.60 (bar 0.7;
+  v10 0.09; 31 of 50 orgs in every draw). Below 50 the best list yet: 4 at 100 and 6
+  at 250 (random 0.6 / 1.4, p 0.001 both), NPI top-1% lift 8.4 (v10 2.2), lead 29 mo,
+  institutional share 0. 44 of the top 50 are `capped_no_basis` rows with 0 hits;
+  the order sweep (basis-first 1/2/3/3 vs shipped 0/1/4/6) does not beat the shipped
+  order across budgets, so the sort stays. Broadcast A/B refit: weight 1/2/3/5, mask
+  0/1/1/4 (policy stays weight). Fixed from the packet: rx_opioid shares on positive
+  lines + clipped (NULL stays NULL: DuckDB greatest() skips NULLs); the near-miss z
+  guarded (MAD floor 1e-6 x scale, z clipped at 50; rx_spread_coverage had read
+  -2.7e14); the operator-book dossier sets aside person-named ("LAST, FIRST", no
+  business token: `person_shaped_name`) and unnamed orgs; the large book's floor is
+  50M (at 10M it equalled the pursuit book, since the list's case-size bar implies 10M
+  billed); acc_org_hits100 / hits250 KPIs + registry aliases `hits100` / `hits250` /
+  `base100` / `p100_vs_random` so a pre-registration can hold the deeper budgets.
+  OPEN, needs the data: subscore_invalid_identity is all-NaN (0% coverage) in three
+  runs, and medicaid_enrollment found 0 segments ended for cause in 3.6M NPIs (its
+  label line is empty); `src/parquet_probe.py` (`--pattern` liveness table,
+  `--values` top values, DuckDB-streamed) is the operator's one-line answer to both.
+  v12 = first VM run: full embeddings, SEEDS=10 (run_frozen_night.sh env), the fixes,
+  checks add `hits100 >= 4` and `seeds >= 10`. The v11 dossier was not dispatched.
+  Full suite: `pytest tests/` (1,055 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

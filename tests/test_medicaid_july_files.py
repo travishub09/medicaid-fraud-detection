@@ -396,3 +396,28 @@ def test_enrollment_features_duckdb_matches_pandas(tmp_path):
         same = a["mcd_last_end_date"].notna()
         assert (pd.to_datetime(a.loc[same, "mcd_last_end_date"]).dt.date.tolist()
                 == pd.to_datetime(b.loc[same, "mcd_last_end_date"]).dt.date.tolist())
+
+
+def test_opioid_shares_stay_in_unit_interval_with_refund_lines(tmp_path):
+    """v11 EXPECTATIONS FAIL: rx_opioid_paid_share read -0.008 and 3.94 on pharmacies with
+    refund (negative) lines. Opioid dollars are counted on positive lines only and both
+    shares are clipped to [0, 1]."""
+    rows = []
+    for m in ["2023-01", "2023-02"]:
+        # PH1: 1000 of opioid, then a -900 refund on a non-opioid line: total 100, opioid 1000
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH1, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00071015523", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=1000.0))
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH1, PRESCRIBING_PROVIDER_NPI_NUM=DR1, NDC="00093505601", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=-900.0))
+        # PH2: a negative opioid line only
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH2, PRESCRIBING_PROVIDER_NPI_NUM=DR2, NDC="00071015523", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=-50.0))
+        rows.append(dict(BILLING_PROVIDER_NPI_NUM=PH2, PRESCRIBING_PROVIDER_NPI_NUM=DR2, NDC="00093505601", CLAIM_FROM_MONTH=m, TOTAL_PATIENTS=10, TOTAL_CLAIM_LINES=20, TOTAL_PAID=1000.0))
+    d = tmp_path / "medicaid_ndc"
+    d.mkdir()
+    pd.DataFrame(rows).to_csv(d / "medicaid_ndc.csv", index=False)
+    fact = tmp_path / "ndc_fact.parquet"
+    mndc.build_ndc_fact(d, fact)
+    flags = pd.DataFrame({"ndc": ["00071015523", "00093505601"], "is_opioid": [1, 0], "is_long_acting": [1, 0]})
+    f = mndc.npi_features(fact, opioid_flags=flags).set_index("npi")
+    for c in ("rx_opioid_paid_share", "rx_opioid_la_share"):
+        v = pd.to_numeric(f[c], errors="coerce").dropna()
+        assert ((v >= 0) & (v <= 1)).all(), (c, v.to_dict())
+    assert f.loc[PH2, "rx_opioid_paid_share"] == 0

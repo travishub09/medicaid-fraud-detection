@@ -913,7 +913,10 @@ def kpi_block(res: dict) -> dict:
         rows = res["rulers"].get(name, {}).get("org_budgets", [])
         return next((r for r in rows if r["budget"] == k), None)
     for name in res["rulers"]:
-        for k in (16, 50):
+        # 100 and 250 joined the KPI block after v11 (2026-10-12): the deeper budgets are
+        # where an 8-hit pool can tell a model from chance (v11: 4 at 100 and 6 at 250 at
+        # p 0.001 while 50 sat at 1 vs 0.3), so a pre-registration can hold them
+        for k in (16, 50, 100, 250):
             r = _b(name, k)
             if r:
                 out[f"acc_org_hits{k}_{name}"] = r["hits"]

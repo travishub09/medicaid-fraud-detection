@@ -241,7 +241,50 @@ python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop
 python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11
 ```
 
-- [ ] **registry_verdict__frozen_2021-12_v11** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v11 — close only when you have them (added 2026-10-12)
+- [ ] **registry_verdict__frozen_2021-12_v11** — VERDICT DELIVERED 2026-10-12: HOLD on frozen_2021-12_v11, on the three top-50 checks (hits@50 1 vs bar 2, random 0.3; lower Wilson bound 0.0035 vs base 0.0057; top-50 Jaccard 0.60 vs 0.7, up from 0.09 on v10). Eight checks met. The first COMPLETE run: 40 sources, 22 schemes, plateau gone (1 tie). Below 50 the best list yet: 4 hits at 100 and 6 at 250 (random 0.6 / 1.4, p 0.001 both), NPI top-1% lift 8.4 (v10 2.2), median lead 29 months, institutional share 0. 44 of the top 50 are capped-no-basis rows with 0 hits. Read docs/ACCURACY_READOUT_v11_2026-10-12.md (bundle 281), then close with the line below. No Manus dispatch on this run (HOLD). (added 2026-10-12)
+
+```bat
+python -m src.reminders --done-task registry_verdict__frozen_2021-12_v11
+```
+
+- [ ] **v11_probes** — Two data questions the v11 packet raised, minutes, no training (bundle 281 ships src/parquet_probe.py): (1) subscore_invalid_identity is all-NaN in three runs although the deactivation adapter produced 8,762 orgs: the probe shows which of billing_after_deactivation (org grain) / deact_paid_after (NPI own) / billing_after_death is empty on the v11 matrix; (2) medicaid_enrollment found 0 segments ended for cause among 3.6M NPIs, so the enrollment label line is empty: the probe lists the status / reason values the segments file carries (the benign rule may be swallowing a state's vocabulary). Paste both tables in chat; the fixes go into v12. (added 2026-10-12)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.parquet_probe --file "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11\provider_features_for_model.parquet" --pattern "deact|after_death|invalid_identity|billing_after"
+python -m src.parquet_probe --file "C:\Users\treyr\OneDrive\Desktop\data\processed\medicaid_enrollment_segments.parquet" --values status reason --top 40
+REM paste both tables in chat, then:
+python -m src.reminders --done-task v11_probes
+```
+
+- [ ] **merge_bundle281** — Merge bundle 281 (cumulative; supersedes 239-280): the v11 read-out, the four packet fixes (opioid shares clipped, near-miss z guarded, operator-book dossier filter, large book at 50M), the hits100 / hits250 KPIs + aliases, src/parquet_probe.py, SEEDS=10 on the VM runner, the reminders. Safe now (no run going). Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the VM clones the pushed branch). (added 2026-10-12)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle281*.bundle") do copy /y "%f" "C:\Users\treyr\bundle281.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle281.bundle"
+REM press Enter once, then paste the next line on its own:
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle281
+```
+
+- [ ] **v12_prereg_and_run** — v12 = the first VM run: v11 plus full graph embeddings (every connected node), 10 seeds (the Jaccard lever), the four packet fixes, and whatever the two v11 probes say. ORDER: (1) bundle 281 merged AND pushed; (2) the VM exists and the data pull has finished (compute_box_decision; OneDrive must show the check mark on processed\case_defendant_npis.parquet before the pull); (3) on the VM: pull the code, pre-register v12 with the checks below (hits100 >= 4 and seeds >= 10 are new), start the runner inside tmux (24 GB gate; stops if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped); (4) say 'v12 finished', zip the packet with the line it prints, run the sync up line, download the zip, stop the VM. (added 2026-10-12)
+
+```bat
+# on the VM (ssh in; every line is bash):
+cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && pip install -r requirements.txt -q && source ~/.medicaid_env
+python -u -m src.model_a.run_registry --data-root "$MEDICAID_DATA_ROOT" --preregister --tag frozen_2021-12_v12 --goal "Full graph embeddings and ten seeds on the VM hold v11's gains at 100 and 250 while the top 50 clears the stability bar and matches v10's two hits" --expected "hits@50 on provider_priority_list_pursuit.csv at least 2, hits@100 at least 4, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, every source present" --check "hits50 >= 2" "hits100 >= 4" "prec50_lo > base50" "lead_ge_gap >= 0.5" "inst_share50 <= 0.4" "top50_jaccard >= 0.7" "eval_policy = fca" "horizon = 36" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight"
+tmux new -s night
+bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v12 2021-12
+# detach with Ctrl-b then d; come back with: tmux attach -t night
+# when it prints [v12] DONE: say 'v12 finished' in chat, then:
+(cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v12 && zip -r ~/run_packet_v12.zip *.md *.json ab_broadcast_weight ab_broadcast_mask)
+bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
+# download ~/run_packet_v12.zip, attach it in chat, STOP the VM; then on the laptop:
+python -m src.reminders --done-task v12_prereg_and_run
+```
+
 
 ## After ANY download session (standing rule)
 

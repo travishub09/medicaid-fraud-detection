@@ -473,6 +473,26 @@ _INSTITUTIONAL_RE = (r"\b(?:HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|"
                      r"MEDICAL GROUP|PHYSICIANS NETWORK|HEALTH CENTER|"
                      r"HEALTH CENTERS|NEIGHBORHOOD HEALTH)\b")
 
+# a "LAST, FIRST [MIDDLE]" name with no business token is a person, whatever the
+# org roster says (v11 dossier: "MERKLEY, PATRICIA" sat at target 9 because the
+# solo-individual test needs entity_type 1 on a one-NPI org and the row had two)
+_PERSON_NAME_RE = re.compile(r"^[A-Z][A-Z'\-\. ]{1,40},\s*[A-Z][A-Z'\-\. ]{1,40}$")
+_BUSINESS_TOKEN_RE = re.compile(r"\b(?:INC|LLC|LLP|L\.L\.C|PC|P\.C|PA|P\.A|PLLC|CORP|CO|LTD|LP|GROUP|"
+                                r"ASSOC|ASSOCIATES|PARTNERS|SERVICES|CENTER|CLINIC|CARE|HEALTH|"
+                                r"MEDICAL|PHARMACY|HOSPICE|HOME|AGENCY|FOUNDATION|TRUST|DBA)\b")
+
+
+def person_shaped_name(name: str) -> bool:
+    """True for 'LAST, FIRST' names that carry no business token."""
+    n = str(name or "").strip().upper()
+    return bool(_PERSON_NAME_RE.match(n)) and not _BUSINESS_TOKEN_RE.search(n)
+
+
+def unnamed_org(name: str) -> bool:
+    n = str(name or "").strip()
+    return n == "" or n.lower() == "nan" or n.upper().startswith("UNNAMED ORGANIZATION")
+
+
 # single provider number billing above this is intermediary-shaped: fiscal
 # agents for self-directed care channel MANY caregivers' services through one
 # NPI, so org-level anomaly math describes the program, not the biller
@@ -552,10 +572,12 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
             solo_ids = set(matrix.loc[~mk.duplicated(keep=False)
                                       & (matrix["entity_type"].astype(str) == "1"), "org_node_id"].astype(str))
             solo = orgs["org_id"].astype(str).isin(solo_ids)
+        person = names.map(person_shaped_name)
+        unnamed = names.map(unnamed_org)
         n_before = len(orgs)
-        orgs = orgs[~inst & ~gov & ~solo]
+        orgs = orgs[~inst & ~gov & ~solo & ~person & ~unnamed]
         print(f"[pursuit_dossier] operator book: {len(orgs):,} of {n_before:,} orgs kept "
-              f"(institutional / government / solo-individual rows set aside)")
+              f"(institutional / government / solo-individual / person-named / unnamed rows set aside)")
     if min_damages is not None:
         # recovery-space selection under the universal rule (operator
         # decision 2026-08-04): SIGNAL SORTS, EVERYTHING ELSE FILTERS.
@@ -616,7 +638,7 @@ def build_priority_list(run_dir: str | Path,
                         min_damages: float = 10_000_000.0,
                         include_government: bool = False,
                         mask_individuals: bool = False,
-                        large_min_billed: float = 10_000_000.0) -> Path:
+                        large_min_billed: float = 50_000_000.0) -> Path:
     """The full funder-facing priority list: EVERY qualifying organization,
     ranked by FRAUD SIGNAL alone. Dollars and entity class are FILTERS,
     never sort keys:
@@ -788,7 +810,7 @@ def build_priority_list(run_dir: str | Path,
         f"- Companion books, same order: `provider_priority_list_pursuit.csv` "
         f"({len(pursuit):,} operator orgs) and `{LARGE_LIST_NAME}` "
         f"({len(large):,} of them billed >= ${large_min_billed:,.0f} in the matrix window, "
-        "the band where the v7 diagnostics found precision highest). Filters, never sorts.",
+        "the band where the v7 and v11 size tables found precision highest). Filters, never sorts.",
         "", "Columns: priority_rank; org_name; entity_segment "
         "(institutional / operator / individual); member_npis (full roster); "
         "states; cities; n_providers; "
@@ -859,10 +881,11 @@ def main() -> None:
                          "manifest's training_policy.n_seeds, else 1)")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="broadcast-row training policy override (default: the manifest's)")
-    ap.add_argument("--large-min-billed", type=float, default=10_000_000.0,
+    ap.add_argument("--large-min-billed", type=float, default=50_000_000.0,
                     help="priority list only: the billed-in-window floor of the "
                          "large-biller companion book (provider_priority_list_large.csv; "
-                         "default 10000000, the band the v7 diagnostics found hottest)")
+                         "default 50000000: at 10M every pursuit-book org qualified on v11, "
+                         "since the list's case-size bar already implies 10M billed)")
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)

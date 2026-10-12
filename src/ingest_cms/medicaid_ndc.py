@@ -347,8 +347,11 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
     has_excl = _events_view(con, "_excl", exclusions, "excl_date")
     has_deact = _events_view(con, "_deact", deactivations, "deactivation_date")
     has_opi = _opioid_view(con, opioid_flags)
-    opi_sql = (", sum(case when o.is_opioid = 1 then f.total_paid else 0 end) as opi_paid, "
-               "sum(case when o.is_long_acting = 1 then f.total_paid else 0 end) as opi_la_paid"
+    # positive dollars only: refund lines pushed rx_opioid_paid_share to -0.008 and
+    # 3.94 on v11 (the same refund class as rx_spread_top_share); the shares are clipped
+    # below as well so a lone negative total can never leave [0, 1]
+    opi_sql = (", sum(case when o.is_opioid = 1 then greatest(f.total_paid, 0) else 0 end) as opi_paid, "
+               "sum(case when o.is_long_acting = 1 then greatest(f.total_paid, 0) else 0 end) as opi_la_paid"
                if has_opi else ", NULL as opi_paid, NULL as opi_la_paid")
     opi_join = "left join _opi o on o.ndc = f.ndc " if has_opi else ""
     excl_sql = ("sum(case when x.month is not null and f.service_month >= x.month then f.total_paid else 0 end)"
@@ -414,8 +417,10 @@ def pharmacy_features(fact_parquet: Path, exclusions: pd.DataFrame | None = None
                n.rx_distinct_ndc, n.rx_ndc_hhi,
                t.excl_paid / nullif(t.rx_paid_total, 0) as rx_excluded_prescriber_share,
                t.deact_paid / nullif(t.rx_paid_total, 0) as rx_deactivated_prescriber_share,
-               t.opi_paid / nullif(t.rx_paid_total, 0) as rx_opioid_paid_share,
-               t.opi_la_paid / nullif(t.opi_paid, 0) as rx_opioid_la_share
+               case when t.opi_paid is null then null
+                    else least(1.0, greatest(0.0, t.opi_paid / nullif(t.rx_paid_total, 0))) end as rx_opioid_paid_share,
+               case when t.opi_la_paid is null then null
+                    else least(1.0, greatest(0.0, t.opi_la_paid / nullif(t.opi_paid, 0))) end as rx_opioid_la_share
         from tot t left join conc c using (billing_npi) left join conc_ext x using (billing_npi)
              left join nconc n using (billing_npi)
         """).df()

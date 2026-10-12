@@ -21,6 +21,7 @@ DATA="${MEDICAID_DATA_ROOT:-/data/medicaid}"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 RUN="$DATA/model_a/frozen_${CUT}_${TAG}"
 PREV="${PREV_RUN:-}"
+SEEDS="${SEEDS:-10}"       # v12: 10 seeds (v11 top-50 Jaccard 0.60 on 5; the VM makes 10 cheap)
 GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
 NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"
 CASES="$DATA/enforcement/doj_cases_v3.csv"
@@ -53,9 +54,9 @@ else
       --max-embed-nodes 0 || fail 1
 fi
 
-step 2/12 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=5)"
+step 2/12 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS)"
 python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH_ASOF" --asof-cutoff "$CUT" --with-analytics \
-    --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds 5 --broadcast-rows weight \
+    --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
     --group-policy case_cluster --leads "$DATA/detection/fraud_leads_v3.parquet" --preclean "$DATA/preclean" \
     --processed "$DATA/processed" --out "$RUN" || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }

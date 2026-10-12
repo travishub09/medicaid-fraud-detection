@@ -287,12 +287,17 @@ def near_misses(matrix: pd.DataFrame, oof: pd.DataFrame, ruler: pd.DataFrame, co
     X_top = m.loc[top, cols].apply(pd.to_numeric, errors="coerce").astype("float64")
     med = X_top.median()
     mad = ((X_top - med).abs().median() * 1.4826).astype("float64")
-    ok = [c for c in cols if c in mad.index and np.isfinite(mad[c]) and mad[c] > 0]
+    # a near-constant top set gives a MAD of 1e-15 and a z of minus 2.7e14 (v11,
+    # rx_spread_coverage): the floor is a millionth of the column's scale, and the
+    # z is clipped so one degenerate column can never dominate the gap list
+    scale = X_top.abs().max().fillna(0.0)
+    floor = (scale * 1e-6).clip(lower=1e-9)
+    ok = [c for c in cols if c in mad.index and np.isfinite(mad[c]) and mad[c] > floor[c]]
     miss_idx = [n for n in m.index if n in pos and rank[n] > k]
     rows, counts = [], {}
     if miss_idx and ok:
         Xm = m.loc[miss_idx, ok].apply(pd.to_numeric, errors="coerce").astype("float64")
-        Z = (Xm - med[ok]) / mad[ok]
+        Z = ((Xm - med[ok]) / mad[ok]).clip(-50.0, 50.0)
         for n in miss_idx:
             z = Z.loc[n].dropna().sort_values()
             gaps = z.head(n_gap)
