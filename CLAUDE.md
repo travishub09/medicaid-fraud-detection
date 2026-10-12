@@ -1043,6 +1043,13 @@ first, then paste" above every move/done block.
   rows); `state_npi_counts_from_parquet` supplies the denominators, the admin table
   carries `state_rate`. FL's 3,095 license actions sit within a few x of OH / IN / AL
   and stay. Hard statuses are never demoted.
+  FIFTH REBUILD (2026-10-12, bundle 288): 5,427 candidates; the rate rule had also
+  demoted FL "LOSS OF LICENSE" (0.98 percent of FL's enrolled NPIs) and OH (0.4
+  percent) because the reference states barely use the code (GA 0.01, TX 0.0003
+  percent) and the median sat near zero. Bundle 289 adds `STATE_OUTLIER_MIN_RATE`
+  (0.02): a convention must ALSO cover at least 2 percent of all the state's enrolled
+  NPIs (no real sanction category does). CT 8.9 percent and AZ 2.25 percent stay
+  out; FL and OH come back; expected about 9,400 candidates.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from

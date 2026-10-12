@@ -306,6 +306,13 @@ STATE_DEFAULT_MIN_EPISODES = 100
 STATE_OUTLIER_RATE_X = 20.0
 STATE_OUTLIER_MIN_NPIS = 10_000     # a reference state needs this many enrolled NPIs
 STATE_OUTLIER_MIN_REFS = 3          # and at least this many reference states exist
+# ...and the state must apply the status to at least this share of ALL its enrolled
+# NPIs: no real sanction category reaches 2 percent of every provider in a state
+# (fifth rebuild 2026-10-12: the multiple alone also demoted FL "LOSS OF LICENSE" at
+# 0.98 percent and OH at 0.4 percent, because the reference states barely use the
+# code, GA 0.01 percent and TX 0.0003 percent, which drags the median toward zero;
+# CT "LICENSE REVOKED" 8.9 percent and AZ "STATE EXCLUSION" 2.25 percent stay out)
+STATE_OUTLIER_MIN_RATE = 0.02
 
 
 def split_label_candidates(events: pd.DataFrame,
@@ -367,7 +374,7 @@ def split_label_candidates(events: pd.DataFrame,
                            for a, b in zip(st, body)], index=ev.index, dtype=float)
         outlier = (named & (tiers == "weak") & (reason == "") & (per_status >= float(min_state_episodes))
                    & (nrefs >= STATE_OUTLIER_MIN_REFS) & ref.notna() & (ref > 0)
-                   & (rate >= outlier_rate_x * ref))
+                   & (rate >= outlier_rate_x * ref) & (rate >= STATE_OUTLIER_MIN_RATE))
         reason[outlier] = "state_outlier_rate"
     ev["drop_reason"] = reason
     ev["state_share"] = share.round(4)
@@ -488,7 +495,8 @@ def write_report(out_dir: Path, info: dict, feats: pd.DataFrame, events: pd.Data
               "'excluded'; state_default_code = a sanction-named status that is the state's bulk code "
               f"(at least {STATE_DEFAULT_SHARE:.0%} of that state's ended episodes); state_outlier_rate = a "
               f"sanction-named status the state applies at {STATE_OUTLIER_RATE_X:.0f}x or more the median rate per "
-              "enrolled NPI of the other sizeable states that use the same text (a coding convention, not a sanction)",
+              f"enrolled NPI of the other sizeable states that use the same text AND to at least "
+              f"{STATE_OUTLIER_MIN_RATE:.0%} of all its enrolled NPIs (a coding convention, not a sanction)",
               "", "| state : status | ends | reason | state share | per enrolled NPI |", "|---|--:|---|--:|--:|"]
         reason = admin["excl_type"].str.replace(r"^mcd_enroll:", "", regex=True).str.replace(r"\s*\[[^\]]*\]$", "", regex=True)
         rate_col = admin["state_rate"] if "state_rate" in admin.columns else pd.Series(float("nan"), index=admin.index)

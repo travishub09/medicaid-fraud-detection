@@ -525,17 +525,17 @@ def test_state_outlier_rate_demotes_a_states_coding_convention():
                 for i in range(n)]
     LR = "TERM - LICENSE REVOKED"
     rows = (ev("10000", "CT", LR, 1500) + ev("11000", "CT", "TERM - OTHER", 3000)      # CT: 15% of 10k NPIs
-            + ev("20000", "FL", LR, 120) + ev("21000", "FL", "TERM - OTHER", 5000)      # FL: 0.3% of 40k
-            + ev("30000", "OH", LR, 100) + ev("31000", "OH", "TERM - OTHER", 4000)      # OH: 0.25% of 40k
-            + ev("40000", "NC", LR, 100) + ev("41000", "NC", "TERM - OTHER", 4000)      # NC: 0.25% of 40k
-            + ev("50000", "GA", LR, 100) + ev("51000", "GA", "TERM - OTHER", 4000)      # GA: 0.25% of 40k
+            + ev("20000", "FL", LR, 400) + ev("21000", "FL", "TERM - OTHER", 5000)      # FL: 1% of 40k = 20x the
+            + ev("30000", "OH", LR, 20) + ev("31000", "OH", "TERM - OTHER", 4000)       #   others, but under the
+            + ev("40000", "NC", LR, 20) + ev("41000", "NC", "TERM - OTHER", 4000)       #   2% floor -> kept
+            + ev("50000", "GA", LR, 20) + ev("51000", "GA", "TERM - OTHER", 4000)       # OH / NC / GA: 0.05%
             + ev("60000", "CT", "TERM - CREDIBLE ALLEGATION OF FRAUD", 1200))           # hard: 12%, never demoted
     events = pd.DataFrame(rows)
     npis = pd.DataFrame({"state": ["CT", "FL", "OH", "NC", "GA"], "n_npis": [10_000, 40_000, 40_000, 40_000, 40_000]})
     label, admin = menr.split_label_candidates(events, state_npis=npis)
     assert len(label) + len(admin) == len(events)
     why = admin.groupby(admin["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())["drop_reason"].first()
-    assert why[f"CT:{LR}"] == "state_outlier_rate"                    # 15% vs median 0.25% = 60x
+    assert why[f"CT:{LR}"] == "state_outlier_rate"                    # 15% vs median 0.05%, above the 2% floor
     kept = set(label["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())
     assert {f"FL:{LR}", f"OH:{LR}", f"NC:{LR}", f"GA:{LR}", "CT:TERM - CREDIBLE ALLEGATION OF FRAUD"} <= kept
     assert f"CT:{LR}" not in kept
