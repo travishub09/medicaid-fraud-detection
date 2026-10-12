@@ -75,6 +75,15 @@ ANALYTICS_FEATURES = ["clinical_implausibility", "local_volume_implausibility",
 # Every feature column the scheme registry references that is NOT a v3 concept or a
 # graph feature — i.e. comes from a CMS source adapter. These are peer-normalized to
 # one-sided taxonomy percentiles before they feed a subscore.
+# EVENT FLAGS drive their subscore RAW (2026-10-12, the v11 probe): billing_after_deactivation
+# is an org-grain share that is exactly 0 for 9,195 of its 9,378 non-null rows and positive for
+# 183. The peer ladder has no national level, so the thin cells fall to "not scored" and the
+# all-zero cells are degenerate: the percentile came out NaN for every row, and with it the
+# whole invalid_identity subscore (0 percent coverage in v9, v10 and v11). A percentile of a
+# sparse event flag is also meaningless (every zero would sit at the 49th percentile), so these
+# columns bypass peer normalization: the clipped 0..1 share is the subscore input.
+RAW_SUBSCORE_INPUTS = {"billing_after_deactivation", "billing_after_death"}
+
 ADAPTER_FEATURE_COLS = sorted({
     col for wmap in DEFAULT_SCHEME_WEIGHTS.values() for col in wmap
     if col not in V3_CONCEPTS and col not in GRAPH_FEATURES
@@ -283,6 +292,16 @@ def _one_sided_peer_pct(df: pd.DataFrame, cols: list[str],
     # min_peer enforced on the metric's NON-NULL count per cell (per-metric fallback):
     # a Part-B metric present for 5 of a 30-row cell is ranked at the next level up
     pct = one_sided_percentiles(assigned, present, min_peer=min_peer)
+    # a raw column with values whose percentile came out empty is a silent dead feature
+    # (v11: billing_after_deactivation, 9,378 non-null -> 0 percentiles); name it
+    for c in present:
+        if c in pct.columns:
+            n_raw = int(pd.to_numeric(df[c], errors="coerce").notna().sum())
+            n_pct = int(pct[c].notna().sum())
+            if n_raw and not n_pct:
+                print(f"    [peers] {c}: {n_raw:,} raw values but NO peer percentile (every cell "
+                      f"thin or constant) -- the __peerpct column is dead; raw drives any subscore "
+                      f"that lists it in RAW_SUBSCORE_INPUTS")
     fb = [c for c in pct.columns if c.endswith("__peer_fallback")]
     if fb:
         moved = int(pct[fb].to_numpy().sum())
@@ -513,7 +532,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         if c in m.columns:
             subin[c] = pd.to_numeric(m[c], errors="coerce")
     for c in adapter_present:
-        subin[c] = peerpct[f"{c}__peerpct"]      # peer-relative value drives the subscore
+        if c in RAW_SUBSCORE_INPUTS:
+            subin[c] = pd.to_numeric(m[c], errors="coerce").clip(0, 1)   # event flag: raw drives it
+        else:
+            subin[c] = peerpct[f"{c}__peerpct"]      # peer-relative value drives the subscore
     subscores, coverage = compute_subscores(subin)
 
     # --- assemble the export frame ---

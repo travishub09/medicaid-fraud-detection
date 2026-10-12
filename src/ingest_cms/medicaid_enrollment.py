@@ -106,6 +106,16 @@ def build_segments(paths, out_parquet: Path, con=None) -> dict:
         f"describe select * from read_csv_auto('{_pq(files[0])}', {_csv}, sample_size=20480)").fetchall()]
     print(f"    [medicaid_enrollment] header: {header}")
     resolved = resolve_enrollment_columns(header)
+    if "status" not in resolved and "reason" not in resolved:
+        # v11 (2026-10-12): the segments parquet carried NULL status and reason on all 66M
+        # rows, so "ended for cause" was 0 and the enrollment label line was empty for
+        # three runs without a word. Loud, never silent: the feature columns still build,
+        # the label use of the file does not.
+        unmatched = [h for h in header if h not in resolved.values()]
+        print(f"    [medicaid_enrollment] WARNING: neither a status nor a reason column matched "
+              f"ENROLL_COLS -- the label source (ended-for-cause events) will be EMPTY. Columns "
+              f"not mapped: {unmatched}. Add the file's status / reason names to "
+              f"medicaid_enrollment.ENROLL_COLS and rebuild.")
 
     def q(k):
         return f'"{resolved[k]}"' if k in resolved else "NULL"

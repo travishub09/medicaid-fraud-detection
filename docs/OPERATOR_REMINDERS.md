@@ -246,6 +246,27 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 python -m src.reminders --done-task v12_prereg_and_run
 ```
 
+- [ ] **enrollment_header** — The v11 probe (2026-10-12) showed status and reason are NULL on all 66M rows of processed\medicaid_enrollment_segments.parquet: the raw CMS file's status / termination-reason column names are not in the loader's candidate list, so the enrollment label line (ended-for-cause events) has been empty in every run. Paste the header line (and the two rows after it) of the raw file; the names go into ENROLL_COLS, the segments rebuild, the graph rebuilds, and v12 trains with the enrollment labels. The loader now prints a WARNING when neither column maps (bundle 282). (added 2026-10-12)
+
+```bat
+for %f in ("C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment\*.csv") do powershell -Command "Get-Content -TotalCount 3 '%f'"
+REM paste the output in chat; Claude adds the names, then (after the next bundle):
+REM python -m src.ingest_cms.medicaid_enrollment --in "C:\Users\treyr\OneDrive\Desktop\data\preclean\medicaid_enrollment" --out "C:\Users\treyr\OneDrive\Desktop\data\processed"
+python -m src.reminders --done-task enrollment_header
+```
+
+- [ ] **merge_bundle282** — Merge bundle 282 (cumulative; supersedes 239-281): the invalid_identity fix (event flags drive their subscore raw: the peer percentile of a mostly-zero flag was NaN for every row, so the scheme had 0 percent coverage in v9-v11), the dead-percentile diagnostic in the peer step, the loud enrollment warning, the reminders. Safe now. Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own. (added 2026-10-12)
+
+```bat
+for %f in ("%USERPROFILE%\Downloads\bundle282*.bundle") do copy /y "%f" "C:\Users\treyr\bundle282.bundle"
+cd /d C:\Users\treyr\medicaid-fraud-detection
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
+"C:\Users\treyr\medicaid-fraud-detection\merge_bundle.bat" "C:\Users\treyr\bundle282.bundle"
+REM press Enter once, then paste the next line on its own:
+git push origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task merge_bundle282
+```
+
 
 ## After ANY download session (standing rule)
 

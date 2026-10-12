@@ -963,7 +963,18 @@ first, then paste" above every move/done block.
   `--values` top values, DuckDB-streamed) is the operator's one-line answer to both.
   v12 = first VM run: full embeddings, SEEDS=10 (run_frozen_night.sh env), the fixes,
   checks add `hits100 >= 4` and `seeds >= 10`. The v11 dossier was not dispatched.
-  Full suite: `pytest tests/` (1,055 tests + 2 skipped). Dead columns are left OUT OF THE
+  THE TWO PROBES ANSWERED (2026-10-12): (1) billing_after_deactivation had 9,378 non-null
+  rows (9,195 exactly 0, 183 positive) and its __peerpct 0: the peer ladder has no
+  national level, so thin cells fall to "not scored" and all-zero cells are degenerate,
+  NaN everywhere, and the subscore that consumed the percentile died with it. Fix:
+  `RAW_SUBSCORE_INPUTS` (billing_after_deactivation, billing_after_death) bypass peer
+  normalization and drive invalid_identity raw (clipped 0..1); `_one_sided_peer_pct`
+  logs any column with raw values but no percentile (a dead __peerpct). (2) the
+  enrollment segments parquet carries NULL status and reason on all 66M rows: the raw
+  file's column names are not in ENROLL_COLS, so the label line was empty in every run;
+  the loader now WARNS loudly when neither maps; the operator pastes the header
+  (reminder enrollment_header), the names get added, segments + graph rebuild before v12.
+  Full suite: `pytest tests/` (1,056 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

@@ -161,3 +161,27 @@ def test_constant_graph_feature_is_dropped(tmp_path):
     assert "betweenness" not in manifest["sources_used"].get("entity_graph", [])
     # live graph features still flow
     assert "within_2_hops_of_exclusion" in matrix.columns
+
+
+def test_sparse_event_flag_drives_its_subscore_raw(tmp_path):
+    """v11 probe (2026-10-12): billing_after_deactivation was 0 for 9,195 of 9,378 rows and
+    positive for 183, spread over 244 taxonomy cells; every cell was thin or constant, the
+    peer percentile came out NaN for all, and subscore_invalid_identity had 0 percent
+    coverage in three runs. Event flags now drive their subscore raw: the subscore is
+    present wherever the flag is, and highest where the flag is positive."""
+    inputs = build_synthetic_inputs()
+    outputs = run_graph(inputs, tmp_path / "graph")
+    leads = build_provider_leads(inputs["provider_dim"])
+    npi_to_org = outputs["npi_to_org"]
+    org_ids = npi_to_org["org_node_id"].astype(str).unique().tolist()
+    # one org lit, every other org exactly 0: the shape that killed the percentile
+    org_frame = pd.DataFrame({"org_node_id": org_ids,
+                              "billing_after_deactivation": [0.6] + [0.0] * (len(org_ids) - 1)})
+    matrix, manifest = build_provider_matrix(
+        leads, npi_to_org, org_graph_features=outputs["org_graph_features"],
+        org_grain_frames={"nppes_deactivation": org_frame}, min_peer=5)
+    sub = pd.to_numeric(matrix["subscore_invalid_identity"], errors="coerce")
+    flag = pd.to_numeric(matrix["billing_after_deactivation"], errors="coerce")
+    assert sub.notna().sum() == flag.notna().sum() > 0
+    hi = matrix["org_node_id"].astype(str) == org_ids[0]
+    assert sub[hi].min() > sub[~hi].max()
