@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-11. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-12. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -217,6 +217,31 @@ REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in ch
 python -m src.reminders --done-task compute_box_decision
 ```
 
+- [ ] **run_packet__frozen_2021-12_v11** — Send the run packet for frozen_2021-12_v11 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-10-12)
+
+```bat
+powershell -Command "Compress-Archive -Force -Path 'C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11\*.md','C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11\*.json','C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11\ab_broadcast_weight\*','C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11\ab_broadcast_mask\*' -DestinationPath '%USERPROFILE%\Desktop\run_packet_v11.zip'"
+REM then upload run_packet_v11.zip to the chat
+python -m src.reminders --done-task run_packet__frozen_2021-12_v11
+```
+
+- [ ] **pursuit_dossier__frozen_2021-12_v11** — HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). Build + dispatch the pursuit dossier for frozen_2021-12_v11 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) Only if the packet read-out says PROMOTE, or the operator says go. (added 2026-10-12)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11" --dispatch
+python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v11
+```
+
+- [ ] **dossier_poll__frozen_2021-12_v11** — HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). ~30 min after dispatch: collect Manus research into the frozen_2021-12_v11 dossier and send PURSUIT_DOSSIER.md Only if the packet read-out says PROMOTE, or the operator says go. (added 2026-10-12)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11" --poll
+python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11
+```
+
+- [ ] **registry_verdict__frozen_2021-12_v11** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v11 — close only when you have them (added 2026-10-12)
 
 ## After ANY download session (standing rule)
 
