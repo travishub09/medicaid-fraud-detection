@@ -297,21 +297,34 @@ STATE_DEFAULT_SHARE = 0.40
 # the default-code rule needs a state with enough ended episodes to have a bulk code
 # at all (one event in ND is 100 percent of ND and means nothing)
 STATE_DEFAULT_MIN_EPISODES = 100
+# ...and a sanction-named status is a state's CONVENTION, not a sanction, when the
+# state applies it at this multiple of the median rate (per enrolled NPI) at which
+# the other sizeable states apply the same text (fourth rebuild 2026-10-12: CT
+# "LICENSE REVOKED" on 9,732 providers, 19 percent of its ends and about 100x any
+# other state's rate; AZ "STATE EXCLUSION/ DEBARMENT" on 3,080; both under the 40
+# percent share bar). FL's 3,095 license actions sit within a few x of other states.
+STATE_OUTLIER_RATE_X = 20.0
+STATE_OUTLIER_MIN_NPIS = 10_000     # a reference state needs this many enrolled NPIs
+STATE_OUTLIER_MIN_REFS = 3          # and at least this many reference states exist
 
 
 def split_label_candidates(events: pd.DataFrame,
                            state_default_share: float = STATE_DEFAULT_SHARE,
-                           min_state_episodes: int = STATE_DEFAULT_MIN_EPISODES) -> tuple[pd.DataFrame, pd.DataFrame]:
+                           min_state_episodes: int = STATE_DEFAULT_MIN_EPISODES,
+                           state_npis: pd.DataFrame | None = None,
+                           outlier_rate_x: float = STATE_OUTLIER_RATE_X) -> tuple[pd.DataFrame, pd.DataFrame]:
     """events (exclusions schema, excl_type 'mcd_enroll:<ST>:<status> [type]') ->
     (label_candidates, administrative). The administrative frame keeps every row
-    with a ``drop_reason`` (no_sanction_named / excluded_tier / state_default_code)
-    and the status's ``state_share``: quarantined, never deleted. A fraud-shaped
-    (hard-tier) status is never demoted as a default: its text states the cause."""
+    with a ``drop_reason`` (no_sanction_named / excluded_tier / state_default_code /
+    state_outlier_rate) and the status's ``state_share`` + ``state_rate``:
+    quarantined, never deleted. A fraud-shaped (hard-tier) status is never demoted.
+    ``state_npis`` (state, n_npis: enrolled NPIs per state) enables the rate rule."""
     from src.model_a.fca_relevance import classify_series
     cols = list(events.columns)
     if not len(events):
         return events.copy(), events.iloc[0:0].assign(drop_reason=pd.Series(dtype=str),
-                                                      state_share=pd.Series(dtype=float))
+                                                      state_share=pd.Series(dtype=float),
+                                                      state_rate=pd.Series(dtype=float))
     ev = events.reset_index(drop=True).copy()
     et = ev["excl_type"].astype(str)
     st = et.str.extract(r"^mcd_enroll:([^:]*):")[0].fillna("")
@@ -327,12 +340,70 @@ def split_label_candidates(events: pd.DataFrame,
     reason[named & (tiers == "excluded")] = "excluded_tier"
     reason[named & (tiers == "weak") & (share >= state_default_share)
            & (per_state >= float(min_state_episodes))] = "state_default_code"
+    # the rate rule: this status's count per enrolled NPI in the state, against the
+    # median of the same status's rate across the other sizeable states that use it
+    rate = pd.Series(float("nan"), index=ev.index)
+    if state_npis is not None and len(state_npis):
+        n_npis = (state_npis.assign(state=state_npis["state"].astype(str).str.upper())
+                  .drop_duplicates("state").set_index("state")["n_npis"].astype(float))
+        key = pd.DataFrame({"state": st, "status": body})
+        cnt = key.groupby(["state", "status"]).size().rename("n").reset_index()
+        cnt["n_npis"] = cnt["state"].map(n_npis)
+        cnt["rate"] = cnt["n"] / cnt["n_npis"].where(cnt["n_npis"] > 0)
+        big = cnt[cnt["n_npis"] >= STATE_OUTLIER_MIN_NPIS]
+        # leave-one-out: the reference is the median over the OTHER sizeable states
+        def _loo(row):
+            others = big[(big["status"] == row["status"]) & (big["state"] != row["state"])]["rate"].dropna()
+            return (others.median() if len(others) else float("nan")), float(len(others))
+        loo = cnt.apply(_loo, axis=1, result_type="expand") if len(cnt) else pd.DataFrame(columns=[0, 1])
+        cnt["ref_median"] = loo[0].astype(float) if len(cnt) else float("nan")
+        cnt["ref_states"] = loo[1].astype(float) if len(cnt) else 0.0
+        own = cnt.set_index(["state", "status"])
+        rate = pd.Series([own.loc[(a, b), "rate"] if (a, b) in own.index else float("nan")
+                          for a, b in zip(st, body)], index=ev.index, dtype=float)
+        ref = pd.Series([own.loc[(a, b), "ref_median"] if (a, b) in own.index else float("nan")
+                         for a, b in zip(st, body)], index=ev.index, dtype=float)
+        nrefs = pd.Series([own.loc[(a, b), "ref_states"] if (a, b) in own.index else 0
+                           for a, b in zip(st, body)], index=ev.index, dtype=float)
+        outlier = (named & (tiers == "weak") & (reason == "") & (per_status >= float(min_state_episodes))
+                   & (nrefs >= STATE_OUTLIER_MIN_REFS) & ref.notna() & (ref > 0)
+                   & (rate >= outlier_rate_x * ref))
+        reason[outlier] = "state_outlier_rate"
     ev["drop_reason"] = reason
     ev["state_share"] = share.round(4)
+    ev["state_rate"] = rate.round(5)
     keep = reason == ""
     label = ev.loc[keep, cols].reset_index(drop=True)
-    admin = ev.loc[~keep, cols + ["drop_reason", "state_share"]].reset_index(drop=True)
+    admin = ev.loc[~keep, cols + ["drop_reason", "state_share", "state_rate"]].reset_index(drop=True)
     return label, admin
+
+
+def state_npi_counts_from_parquet(seg_parquet, asof_cutoff: str | None = None, con=None) -> pd.DataFrame:
+    """Enrolled NPIs per state (distinct valid NPIs with any segment started on/before
+    the cutoff): the denominator of the state rate rule in split_label_candidates."""
+    con = con or _duck_connect()
+    p = _pq(seg_parquet)
+    where_cut = ""
+    if asof_cutoff:
+        cut = pd.Timestamp(str(asof_cutoff)[:7] + "-01") + pd.offsets.MonthEnd(0)
+        where_cut = f"and start_date <= date '{cut.date().isoformat()}'"
+    df = con.execute(f"""
+        select upper(coalesce(cast(state as varchar), '')) as state, count(distinct cast(npi as varchar)) as n_npis
+        from read_parquet('{p}')
+        where regexp_matches(cast(npi as varchar), '^[0-9]{{10}}$') and start_date is not null {where_cut}
+        group by 1""").df()
+    df["state"] = df["state"].astype(str)
+    df["n_npis"] = pd.to_numeric(df["n_npis"], errors="coerce").fillna(0).astype(int)
+    return df
+
+
+def state_npi_counts(segments: pd.DataFrame, asof_cutoff: str | None = None) -> pd.DataFrame:
+    """pandas twin of state_npi_counts_from_parquet (small frames / tests)."""
+    s = _asof_frame(segments, asof_cutoff)
+    if not len(s):
+        return pd.DataFrame({"state": pd.Series(dtype=str), "n_npis": pd.Series(dtype=int)})
+    g = s.groupby(s["state"].fillna("").astype(str).str.upper())["npi"].nunique()
+    return pd.DataFrame({"state": g.index.astype(str), "n_npis": g.values.astype(int)})
 
 
 def paid_after_enrollment_end(spending_path: str | Path, features: pd.DataFrame,
@@ -415,14 +486,19 @@ def write_report(out_dir: Path, info: dict, feats: pd.DataFrame, events: pd.Data
               "- no_sanction_named = the status text names no sanction (OTHER / UNKNOWN / NON-COMPLIANCE / DENIED / "
               "not operational / paperwork / an agency code with no cause); excluded_tier = the ruler tiers it "
               "'excluded'; state_default_code = a sanction-named status that is the state's bulk code "
-              f"(at least {STATE_DEFAULT_SHARE:.0%} of that state's ended episodes)",
-              "", "| state : status | ends | reason | state share |", "|---|--:|---|--:|"]
+              f"(at least {STATE_DEFAULT_SHARE:.0%} of that state's ended episodes); state_outlier_rate = a "
+              f"sanction-named status the state applies at {STATE_OUTLIER_RATE_X:.0f}x or more the median rate per "
+              "enrolled NPI of the other sizeable states that use the same text (a coding convention, not a sanction)",
+              "", "| state : status | ends | reason | state share | per enrolled NPI |", "|---|--:|---|--:|--:|"]
         reason = admin["excl_type"].str.replace(r"^mcd_enroll:", "", regex=True).str.replace(r"\s*\[[^\]]*\]$", "", regex=True)
-        cen = (pd.DataFrame({"status": reason, "why": admin["drop_reason"].values, "share": admin["state_share"].values})
-               .groupby(["status", "why"], as_index=False).agg(n=("share", "size"), share=("share", "max"))
+        rate_col = admin["state_rate"] if "state_rate" in admin.columns else pd.Series(float("nan"), index=admin.index)
+        cen = (pd.DataFrame({"status": reason, "why": admin["drop_reason"].values, "share": admin["state_share"].values,
+                             "rate": rate_col.values})
+               .groupby(["status", "why"], as_index=False).agg(n=("share", "size"), share=("share", "max"), rate=("rate", "max"))
                .sort_values("n", ascending=False))
         for r in cen.head(40).itertuples():
-            L.append(f"| {r.status} | {r.n:,} | {r.why} | {r.share:.0%} |")
+            rt = "" if pd.isna(r.rate) else f"{r.rate:.2%}"
+            L.append(f"| {r.status} | {r.n:,} | {r.why} | {r.share:.0%} | {rt} |")
     if after is not None and len(after):
         hot = after[after["mcd_paid_after_end"] > 0]
         L += ["", "## Paid after the last enrollment end (per-se check)", "",
@@ -457,7 +533,8 @@ def main() -> None:
     all_events = termination_events_from_parquet(seg_p, a.asof_cutoff, con=con)
     # only sanction-named, non-default statuses are label candidates; the rest are
     # enrollment facts kept in their own file with the reason (quarantine, never delete)
-    events, admin = split_label_candidates(all_events)
+    events, admin = split_label_candidates(all_events,
+                                           state_npis=state_npi_counts_from_parquet(seg_p, a.asof_cutoff, con=con))
     after = None
     if a.spending and Path(a.spending).exists():
         after = paid_after_enrollment_end(a.spending, feats, con=con)

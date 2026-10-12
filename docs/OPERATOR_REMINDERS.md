@@ -239,7 +239,7 @@ bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12
 python -m src.reminders --done-task v12_prereg_and_run
 ```
 
-- [ ] **enrollment_rebuild** — RERUN the enrollment rebuild once more after merging bundle 287 (the third rebuild read 299,247 ended episodes / 3,726 label candidates: the placeholder fix had turned every termination still in force, one TERM row ending 9999-12-31, into an 'open segment' and dropped its event; 287 dates those by the month the status began). Same command, about three minutes; paste the final console line (expect the candidates back above 6,435, since in-force terminations now count) and the Features line (median tenure in tens of months). Then let OneDrive sync and re-run sync_data.sh on the VM once. (added 2026-10-12)
+- [ ] **enrollment_rebuild** — RERUN the enrollment rebuild after merging bundle 288 (the fourth rebuild read 1,001,644 episodes / 22,232 candidates with a sane tenure; its table showed CT 'LICENSE REVOKED' 9,732 and AZ 'STATE EXCLUSION' 3,080 as state coding conventions under the 40 percent share bar; 288 adds a cross-state rate rule that demotes those and keeps FL's 3,095). Same command, about three minutes; paste the final console line and BOTH report tables (expect roughly 9,000 candidates; CT / AZ rows in the administrative table as state_outlier_rate). Then let OneDrive sync and re-run sync_data.sh on the VM once. (added 2026-10-12)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection
@@ -254,15 +254,15 @@ python -m src.reminders --done-task enrollment_rebuild
 REM after v12 is graded; Claude writes the exact ablation line then
 ```
 
-- [ ] **merge_bundle287** — Merge bundle287 (cumulative, supersedes 239 to 286): terminations still in force (open-ended TERM rows) are events dated by their start and are not open enrollments; parity tests at two cutoffs. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
+- [ ] **merge_bundle288** — Merge bundle288 (cumulative, supersedes 239 to 287): the cross-state rate rule for the enrollment label (CT / AZ coding conventions demoted, FL kept), per-state NPI denominators, tests. Download the card, paste one line at a time; press Enter once when merge_bundle.bat pauses; push; then git pull on the VM. (added 2026-10-12)
 
 ```bat
-for %f in ("%USERPROFILE%\Downloads\bundle287*.bundle") do copy /y "%f" "C:\Users\treyr\bundle287.bundle"
+for %f in ("%USERPROFILE%\Downloads\bundle288*.bundle") do copy /y "%f" "C:\Users\treyr\bundle288.bundle"
 cd /d C:\Users\treyr\medicaid-fraud-detection
 git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md
-merge_bundle.bat C:\Users\treyr\bundle287.bundle
+merge_bundle.bat C:\Users\treyr\bundle288.bundle
 git push origin claude/happy-mccarthy-3skrn3
-python -m src.reminders --done-task merge_bundle287
+python -m src.reminders --done-task merge_bundle288
 REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3
 ```
 

@@ -511,6 +511,49 @@ def test_enrollment_ends_split_into_label_candidates_and_administrative():
     assert len(l0) == 0 and len(a0) == 0 and "drop_reason" in a0.columns
 
 
+def test_state_outlier_rate_demotes_a_states_coding_convention():
+    """Fourth rebuild (2026-10-12): CT stamps 'LICENSE REVOKED' on 9,732 providers (19
+    percent of its ends, under the 40 percent share bar, about 100x any other state's
+    rate per enrolled NPI); AZ 'STATE EXCLUSION' on 3,080. FL's 3,095 license actions
+    sit within a few x of the other states. The rate rule demotes the first two and
+    keeps FL; a hard (fraud-worded) status is never demoted; without denominators the
+    rule is off."""
+    def ev(npi, st, status, n):
+        return [dict(npi=f"{npi}{i:05d}", entity_name="", name_key="",
+                     excl_type=f"mcd_enroll:{st}:{status} [INDIVIDUAL]",
+                     excl_date=pd.Timestamp("2021-03-31"), reinstate_date=pd.NaT, currently_active=1)
+                for i in range(n)]
+    LR = "TERM - LICENSE REVOKED"
+    rows = (ev("10000", "CT", LR, 1500) + ev("11000", "CT", "TERM - OTHER", 3000)      # CT: 15% of 10k NPIs
+            + ev("20000", "FL", LR, 120) + ev("21000", "FL", "TERM - OTHER", 5000)      # FL: 0.3% of 40k
+            + ev("30000", "OH", LR, 100) + ev("31000", "OH", "TERM - OTHER", 4000)      # OH: 0.25% of 40k
+            + ev("40000", "NC", LR, 100) + ev("41000", "NC", "TERM - OTHER", 4000)      # NC: 0.25% of 40k
+            + ev("50000", "GA", LR, 100) + ev("51000", "GA", "TERM - OTHER", 4000)      # GA: 0.25% of 40k
+            + ev("60000", "CT", "TERM - CREDIBLE ALLEGATION OF FRAUD", 1200))           # hard: 12%, never demoted
+    events = pd.DataFrame(rows)
+    npis = pd.DataFrame({"state": ["CT", "FL", "OH", "NC", "GA"], "n_npis": [10_000, 40_000, 40_000, 40_000, 40_000]})
+    label, admin = menr.split_label_candidates(events, state_npis=npis)
+    assert len(label) + len(admin) == len(events)
+    why = admin.groupby(admin["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())["drop_reason"].first()
+    assert why[f"CT:{LR}"] == "state_outlier_rate"                    # 15% vs median 0.25% = 60x
+    kept = set(label["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())
+    assert {f"FL:{LR}", f"OH:{LR}", f"NC:{LR}", f"GA:{LR}", "CT:TERM - CREDIBLE ALLEGATION OF FRAUD"} <= kept
+    assert f"CT:{LR}" not in kept
+    assert float(admin.loc[admin["excl_type"].str.contains(f"CT:{LR}", regex=False), "state_rate"].iloc[0]) == 0.15
+    # no denominators -> the rule is off, CT's rows stay (the share rule alone: 15% < 40%)
+    label0, _ = menr.split_label_candidates(events)
+    assert f"CT:{LR}" in set(label0["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())
+
+
+def test_state_npi_counts_parity(tmp_path):
+    raw = _enroll_csv(tmp_path)
+    seg_p = tmp_path / "seg.parquet"
+    menr.build_segments(raw, seg_p)
+    a = menr.state_npi_counts(pd.read_parquet(seg_p)).set_index("state")["n_npis"].to_dict()
+    b = menr.state_npi_counts_from_parquet(seg_p).set_index("state")["n_npis"].to_dict()
+    assert a == b and a["GA"] == 1 and a["FL"] == 1 and a["TN"] == 2           # "bad" NPI never counts
+
+
 def test_placeholder_end_dates_are_open_segments_not_the_asof(tmp_path):
     """2026-10-12 real rebuild: median tenure 95,809 months (8,000 years). Some rows carry
     a placeholder end of 9999-12-31 and the current-day as-of was the latest end date.

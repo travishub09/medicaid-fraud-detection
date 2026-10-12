@@ -1030,12 +1030,25 @@ first, then paste" above every move/done block.
   row); a row with a real end = an event at that end. mcd_open_segments counts only
   benign or future-end rows, mcd_last_end_date takes the start of an in-force
   termination, and the placeholder test covers both readings at two cutoffs.
+  FOURTH REBUILD (2026-10-12, bundle 287): 1,001,644 ended or in-force episodes (the
+  560k terminations still in force were invisible before), median tenure 140 months,
+  22,232 label candidates (weak 21,855, hard 377). The table showed a convention the
+  share rule misses: CT "LICENSE REVOKED" on 9,732 providers (19 percent of CT's
+  ends, about 100x any other state's rate per enrolled NPI), AZ "STATE EXCLUSION/
+  DEBARMENT" 3,080; NC's bulk "MEDICARE/MEDICAID EXCLUSION" 94,336 was already
+  demoted at 70 percent. Bundle 288 adds the RATE RULE (`state_outlier_rate`): a
+  weak sanction-named status is demoted when the state applies it at
+  `STATE_OUTLIER_RATE_X` (20) times the leave-one-out median rate per enrolled NPI of
+  the other states with >= 10,000 NPIs that use the same text (>= 3 references, >= 100
+  rows); `state_npi_counts_from_parquet` supplies the denominators, the admin table
+  carries `state_rate`. FL's 3,095 license actions sit within a few x of OH / IN / AL
+  and stay. Hard statuses are never demoted.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
   `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
-  Full suite: `pytest tests/` (1,062 tests + 2 skipped). Dead columns are left OUT OF THE
+  Full suite: `pytest tests/` (1,064 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
