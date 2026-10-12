@@ -193,14 +193,17 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "C:\Users\treyr\OneDrive
 python -m src.reminders --done-task grade_large_book_v7
 ```
 
-- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). The FIRST VM run is v12 (2026-10-11: the vCPU quota request was pending, so v11 went to the laptop). AWS account created 2026-10-11 (paid plan); Service Quotas request for 32 On-Demand Standard vCPUs pending; when it lands: EC2 Launch instance in us-east-2, Ubuntu 24.04, r6i.4xlarge, key pair medicaid-vm, SSH from My IP only, 1000 GiB gp3 root; ssh -i %USERPROFILE%\.ssh\medicaid-vm.pem ubuntu@<ip>. The data pull must start AFTER the fuzzy last step has synced to OneDrive. Close this when the VM exists and the data pull has finished. (added 2026-10-11)
+- [ ] **compute_box_decision** — DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). The FIRST VM run is v12 (2026-10-11: the vCPU quota request was pending, so v11 went to the laptop). AWS account created 2026-10-11 (paid plan); Service Quotas request for 32 On-Demand Standard vCPUs pending; when it lands: EC2 Launch instance in us-east-2, Ubuntu 24.04, r6i.4xlarge, key pair medicaid-vm, SSH from My IP only, 1000 GiB gp3 root; ssh -i %USERPROFILE%\.ssh\medicaid-vm.pem ubuntu@<ip>. The data pull must start AFTER the fuzzy last step has synced to OneDrive. Close this when the VM exists and the data pull has finished. LAUNCHED 2026-10-12: r6i.4xlarge in us-east-2 (quota 32 approved), public IPv4 3.17.37.139 at launch (changes on every Stop/Start; read it from the EC2 Details panel). Remaining: ssh in, setup script, rclone config, data pull, S3 mirror, then 'VM ready'. (added 2026-10-11)
 
 ```bat
-REM on the VM, after it boots (Ubuntu 22.04 / 24.04, 1 TB gp3 disk, SSH key only):
+REM laptop: connect (replace the IP if the VM was stopped and started since)
+ssh -i "%USERPROFILE%\.ssh\medicaid-vm.pem" ubuntu@3.17.37.139
+REM on the VM, in order:
 curl -fsSL https://raw.githubusercontent.com/travishub09/medicaid-fraud-detection/claude/happy-mccarthy-3skrn3/ops/vm/setup_ubuntu.sh | bash
 rclone config
+tmux new -s sync
 bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh
-REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in chat
+REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in chat; on the laptop:
 python -m src.reminders --done-task compute_box_decision
 ```
 
@@ -294,3 +297,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+
