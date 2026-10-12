@@ -511,6 +511,34 @@ def test_enrollment_ends_split_into_label_candidates_and_administrative():
     assert len(l0) == 0 and len(a0) == 0 and "drop_reason" in a0.columns
 
 
+def test_placeholder_end_dates_are_open_segments_not_the_asof(tmp_path):
+    """2026-10-12 real rebuild: median tenure 95,809 months (8,000 years). Some rows carry
+    a placeholder end of 9999-12-31 and the current-day as-of was the latest end date.
+    The as-of is now the latest end that is not in the future, and an end after it is
+    an OPEN segment, on both the pandas and the DuckDB paths."""
+    hdr = ["NPI", "STATE_CD", "ENRL_START_DT", "ENRL_END_DT", "ENRL_STATUS_CD", "ENRL_STATUS_DESC",
+           "ENRL_PLAN_CD", "ENRL_PLAN_DESC", "PRVDR_TYPE", "PRVDR_TYPE_DESC"]
+    rows = [[DR1, "ND", "2020-01-01", "9999-12-31", "03", "ACTIVE - ACTIVE", "1", "MEDICAID", "03", "INDIVIDUAL"],
+            [DR2, "ND", "2020-01-01", "2023-06-30", "19", "TERM - LICENSE REVOKED", "1", "MEDICAID", "03", "INDIVIDUAL"],
+            [PH1, "ND", "2021-01-01", "9999-12-31", "19", "TERM - LICENSE REVOKED", "1", "MEDICAID", "03", "INDIVIDUAL"]]
+    d = tmp_path / "ph"
+    d.mkdir()
+    pd.DataFrame(rows, columns=hdr).to_csv(d / "segments.csv", index=False)
+    seg_p = tmp_path / "seg.parquet"
+    menr.build_segments(d, seg_p)
+    seg = pd.read_parquet(seg_p)
+    for f in (menr.enrollment_features(seg).set_index("npi"),
+              menr.enrollment_features_from_parquet(seg_p).set_index("npi")):
+        assert f.loc[DR1, "mcd_open_segments"] == 1 and pd.isna(f.loc[DR1, "mcd_last_end_date"])
+        assert 40 <= f.loc[DR1, "mcd_tenure_months"] <= 43              # 2020-01 to the as-of 2023-06-30
+        assert f.loc[DR2, "mcd_ended_for_cause"] == 1 and f.loc[PH1, "mcd_ended_for_cause"] == 0
+    a = menr.termination_events(seg)
+    b = menr.termination_events_from_parquet(seg_p)
+    assert _events_key(a) == _events_key(b)
+    assert list(a["npi"]) == [DR2]                                      # the 9999 "end" is not an ended episode
+    assert pd.Timestamp(a.iloc[0]["excl_date"]) == pd.Timestamp("2023-06-30")
+
+
 def _events_key(ev: pd.DataFrame) -> list[tuple]:
     e = ev.sort_values(["npi", "excl_date", "excl_type"]).reset_index(drop=True)
     return [(r.npi, r.excl_type, pd.Timestamp(r.excl_date),

@@ -1007,12 +1007,24 @@ first, then paste" above every move/done block.
   outweighs all others combined. Expected label candidates: a few thousand license /
   exclusion ends (FL 3k, NC/MN/OH/CT hundreds), weak tier; the per-se
   billing_after_enrollment_end check keeps reading the features' last end date.
+  SECOND REBUILD (2026-10-12, bundle 285): 439,416 ended episodes = 6,435 label
+  candidates (weak 6,365: FL license 3,095, NC / MN / MA / IA Medicare-Medicaid
+  exclusion, CT / MN / AL license revoked, state / federal debarment; hard 70: AL
+  abuse of billing privileges 40, MO felony conviction 18) + 432,981 administrative
+  (no_sanction_named 419,830, state_default_code 13,100 = IA's bulk "STATE
+  EXCLUSION", excluded_tier 51). Gray zone for a v13 label ablation, NOT in v12's
+  label: the agency codes where they are a minority code (FL "MEDICAID AUTHORITY"
+  2,133 at 2 percent, IA / TX / AL "ACTION TAKEN" at 5 to 6 percent). The same report
+  showed median tenure 95,809 months: placeholder end dates (9999-12-31) set the
+  current-day as-of 8,000 years out. Both feature paths and both event paths now take
+  the as-of as the latest end date NOT in the future, and an end after it is an OPEN
+  segment (frozen runs pass a real cutoff and were never affected).
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
   `rclone authorize "onedrive"` on the laptop, drive = the entry named "OneDrive
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
-  Full suite: `pytest tests/` (1,061 tests + 2 skipped). Dead columns are left OUT OF THE
+  Full suite: `pytest tests/` (1,062 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one

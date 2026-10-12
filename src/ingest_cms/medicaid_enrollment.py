@@ -164,7 +164,14 @@ def _asof_frame(segments: pd.DataFrame, asof_cutoff: str | None) -> pd.DataFrame
         s.loc[s["end_date"] > cut, "end_date"] = pd.NaT      # not ended yet as of the cutoff
         s["_asof"] = cut
     else:
-        s["_asof"] = s["end_date"].max() if s["end_date"].notna().any() else pd.Timestamp.today().normalize()
+        # the current-day "as of" = the latest end date that is not in the future
+        # (2026-10-12: placeholder ends of 9999-12-31 made the as-of 8,000 years out and
+        # the median tenure 95,809 months); an end after the as-of is an OPEN segment
+        today = pd.Timestamp.today().normalize()
+        real = s.loc[s["end_date"] <= today, "end_date"]
+        cut = real.max() if len(real) else today
+        s.loc[s["end_date"] > cut, "end_date"] = pd.NaT
+        s["_asof"] = cut
     return s
 
 
@@ -467,7 +474,8 @@ def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None
         asof_expr = f"date '{cut.date().isoformat()}'"
         where_cut = f"and start_date <= date '{cut.date().isoformat()}'"
     else:
-        asof_expr = "(select coalesce(max(end_date), current_date) from s0)"
+        # the latest end date that is not in the future (placeholder 9999-12-31 ends are open)
+        asof_expr = "(select coalesce(max(end_date) filter (where end_date <= current_date), current_date) from s0)"
         where_cut = ""
     df = con.execute(f"""
         with s0 as (
@@ -536,7 +544,8 @@ def termination_events_from_parquet(seg_parquet, asof_cutoff: str | None = None,
         end_expr = f"case when end_date > date '{cut.date().isoformat()}' then null else end_date end"
     else:
         where_cut = ""
-        end_expr = "end_date"
+        end_expr = ("case when end_date > (select coalesce(max(end_date) filter (where end_date <= current_date), "
+                    "current_date) from read_parquet('" + p + "')) then null else end_date end")
     df = con.execute(f"""
         with s0 as (
             select cast(npi as varchar) as npi, upper(coalesce(cast(state as varchar), '')) as state,
