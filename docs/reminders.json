@@ -716,21 +716,6 @@
    ]
   },
   {
-   "key": "v11_prereg_and_run",
-   "what": "v11 = v10 with the five memory casualties back and the regularized scorer (the plateau fix), same 2021-12 freeze, ON THE LAPTOP (PRE-REGISTERED 2026-10-11 17:19 UTC, goal locked; operator 2026-10-11: the AWS vCPU quota request is pending, so the laptop fallback runs now; the VM run is v12 with full embeddings). ORDER: (1) bundle 280 merged and pushed; (2) the resolver rerun (fuzzy_rerun_after_279) done, so v11 trains with all 47 promoted rows; (3) close Chrome and every other Python window (the resolver holds 4.8 GB); (4) copy run_v11c_night.bat (runner c, 2026-10-11d: the bar is 8 GB available, since the laptop tops out at 9 with Chrome closed and the DuckDB ceiling is 6 GB with spilling; runner b, 2026-10-11c: the memory gate reads AVAILABLE memory via the Available MBytes counter; the first runner read Windows FreePhysicalMemory, which excludes the standby cache and said 5 GB on a fresh boot while 11 GB was usable) from Downloads and read the findstr line: it MUST print the gate line; (5) the pre-registration is already locked, never run that line twice; start the runner: it refuses to start under 8 GB available and stops after the export if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm is skipped; (6) say 'v11 finished' when it prints DONE and zip the packet with the line it prints. Never merge a bundle while it runs.",
-   "added": "2026-10-11",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "copy /y \"%USERPROFILE%\\Downloads\\run_v11c_night.bat\" \"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v11c_night.bat\"",
-    "findstr /C:\"Available MBytes\" \"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v11c_night.bat\"",
-    "REM the findstr line must print the gate line; if it prints nothing STOP and say so in chat",
-    "REM (v11 is already pre-registered; do not run the --preregister line again)",
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_v11c_night.bat\"",
-    "REM when it prints [v11] DONE: say 'v11 finished' in chat",
-    "python -m src.reminders --done-task v11_prereg_and_run"
-   ]
-  },
-  {
    "key": "compute_box_decision",
    "what": "DECIDED 2026-10-11: move the night runs to a VM, cost permitting (the laptop is 16 GB with 840 MB free; the resolver alone takes 4.8 GB). Cost: AWS r6i.4xlarge or Azure E16s v5 (16 vCPU / 128 GB, about $1 an hour, about $6 a run) plus a 1 TB disk (the data root is 291 GB) at about $80 a month while stopped, and an S3 mirror made from the VM (about $7 a month) as the durable copy; the 64 GB class is half that per hour. The kit is in the repo: docs/VM_RUNBOOK.md (costs, provisioning, rclone-from-OneDrive data pull, running under tmux, bringing the packet back), ops/vm/setup_ubuntu.sh, ops/vm/sync_data.sh, ops/vm/run_frozen_night.sh (full embeddings: --max-embed-nodes 0, rebuilds graph_asof_2021-12_full, a 24 GB free-RAM gate, stops if any of the six heavy sources is skipped). The FIRST VM run is v12 (2026-10-11: the vCPU quota request was pending, so v11 went to the laptop). AWS account created 2026-10-11 (paid plan); Service Quotas request for 32 On-Demand Standard vCPUs pending; when it lands: EC2 Launch instance in us-east-2, Ubuntu 24.04, r6i.4xlarge, key pair medicaid-vm, SSH from My IP only, 1000 GiB gp3 root; ssh -i %USERPROFILE%\\.ssh\\medicaid-vm.pem ubuntu@<ip>. The data pull must start AFTER the fuzzy last step has synced to OneDrive. Close this when the VM exists and the data pull has finished.",
    "added": "2026-10-11",
@@ -742,18 +727,6 @@
     "REM then the S3 mirror (docs/VM_RUNBOOK.md section 5), then say 'VM ready' in chat",
     "python -m src.reminders --done-task compute_box_decision"
    ]
-  },
-  {
-   "key": "run_packet__frozen_2021-12_v11",
-   "what": "Send the run packet for frozen_2021-12_v11 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-   "added": "2026-10-12",
-   "commands": [
-    "powershell -Command \"Compress-Archive -Force -Path 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\\*.md','C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\\*.json','C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\\ab_broadcast_weight\\*','C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\\ab_broadcast_mask\\*' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet_v11.zip'\"",
-    "REM then upload run_packet_v11.zip to the chat",
-    "python -m src.reminders --done-task run_packet__frozen_2021-12_v11"
-   ],
-   "done": true,
-   "done_on": "2026-10-12"
   },
   {
    "key": "pursuit_dossier__frozen_2021-12_v11",
@@ -776,14 +749,6 @@
    ]
   },
   {
-   "key": "registry_verdict__frozen_2021-12_v11",
-   "what": "VERDICT DELIVERED 2026-10-12: HOLD on frozen_2021-12_v11, on the three top-50 checks (hits@50 1 vs bar 2, random 0.3; lower Wilson bound 0.0035 vs base 0.0057; top-50 Jaccard 0.60 vs 0.7, up from 0.09 on v10). Eight checks met. The first COMPLETE run: 40 sources, 22 schemes, plateau gone (1 tie). Below 50 the best list yet: 4 hits at 100 and 6 at 250 (random 0.6 / 1.4, p 0.001 both), NPI top-1% lift 8.4 (v10 2.2), median lead 29 months, institutional share 0. 44 of the top 50 are capped-no-basis rows with 0 hits. Read docs/ACCURACY_READOUT_v11_2026-10-12.md (bundle 281), then close with the line below. No Manus dispatch on this run (HOLD).",
-   "added": "2026-10-12",
-   "commands": [
-    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v11"
-   ]
-  },
-  {
    "key": "v11_probes",
    "what": "Two data questions the v11 packet raised, minutes, no training (bundle 281 ships src/parquet_probe.py): (1) subscore_invalid_identity is all-NaN in three runs although the deactivation adapter produced 8,762 orgs: the probe shows which of billing_after_deactivation (org grain) / deact_paid_after (NPI own) / billing_after_death is empty on the v11 matrix; (2) medicaid_enrollment found 0 segments ended for cause among 3.6M NPIs, so the enrollment label line is empty: the probe lists the status / reason values the segments file carries (the benign rule may be swallowing a state's vocabulary). Paste both tables in chat; the fixes go into v12.",
    "added": "2026-10-12",
@@ -793,20 +758,6 @@
     "python -m src.parquet_probe --file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\medicaid_enrollment_segments.parquet\" --values status reason --top 40",
     "REM paste both tables in chat, then:",
     "python -m src.reminders --done-task v11_probes"
-   ]
-  },
-  {
-   "key": "merge_bundle281",
-   "what": "Merge bundle 281 (cumulative; supersedes 239-280): the v11 read-out, the four packet fixes (opioid shares clipped, near-miss z guarded, operator-book dossier filter, large book at 50M), the hits100 / hits250 KPIs + aliases, src/parquet_probe.py, SEEDS=10 on the VM runner, the reminders. Safe now (no run going). Download the bundle card first, then paste. After merge_bundle.bat, press Enter once, THEN paste the push line on its own (the VM clones the pushed branch).",
-   "added": "2026-10-12",
-   "commands": [
-    "for %f in (\"%USERPROFILE%\\Downloads\\bundle281*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle281.bundle\"",
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\merge_bundle.bat\" \"C:\\Users\\treyr\\bundle281.bundle\"",
-    "REM press Enter once, then paste the next line on its own:",
-    "git push origin claude/happy-mccarthy-3skrn3",
-    "python -m src.reminders --done-task merge_bundle281"
    ]
   },
   {
