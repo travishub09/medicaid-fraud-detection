@@ -289,3 +289,28 @@ def test_name_resolve_funnel_names_the_empty_stage():
     nodes["state"] = ["FL", "FL", "FL"]
     f2 = name_resolve_funnel(nodes)
     assert f2["with_state"] == 2 and f2["since_2015"] == 2 and f2["tier_hard"] == 1   # b14 is excluded tier
+
+
+def test_names_cli_builds_the_table_from_the_raw_leie(tmp_path):
+    """--leie <Caught.csv>: the resolver runs off the raw LEIE (state / upin present) when
+    the graph's exclusion nodes predate those columns (the 2026-10-13 VM reading)."""
+    import subprocess, sys
+    leie = tmp_path / "Caught.csv"
+    pd.DataFrame({"LASTNAME": ["ROE", "", "SMITH"], "FIRSTNAME": ["RICK", "", "ANN"], "MIDNAME": ["", "", ""],
+                  "BUSNAME": ["", "NOBODY CORP", ""], "GENERAL": ["", "", ""], "SPECIALTY": ["", "", ""],
+                  "UPIN": ["", "", ""], "NPI": ["", "", ""], "DOB": ["", "", ""], "ADDRESS": ["", "", ""],
+                  "CITY": ["ATLANTA", "MIAMI", "OCALA"], "STATE": ["GA", "FL", "FL"], "ZIP": ["", "", ""],
+                  "EXCLTYPE": ["1128a1", "1128a1", "1128b14"], "EXCLDATE": ["20190101", "20200101", "20200101"],
+                  "REINDATE": ["00000000"] * 3, "WAIVERDATE": ["00000000"] * 3, "WVRSTATE": ["", "", ""]}).to_csv(leie, index=False)
+    dim = tmp_path / "provider_dim.parquet"
+    _dim().to_parquet(dim, index=False)
+    out = tmp_path / "res.parquet"
+    r = subprocess.run([sys.executable, "-m", "src.model_a.label_expansion", "names", "--leie", str(leie),
+                        "--provider-dim", str(dim), "--out", str(out)], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-2000:]
+    assert "built from the raw LEIE" in r.stdout and "names funnel" in r.stdout
+    res = pd.read_parquet(out)
+    by = res.set_index("entity_name")
+    assert by.loc["ROE, RICK", "status"] == "resolved" and by.loc["ROE, RICK", "npi"] == "1000000003"
+    assert by.loc["NOBODY CORP", "status"] == "no_match"
+    assert "SMITH, ANN" not in by.index                   # b14 (loan default) is never hard tier

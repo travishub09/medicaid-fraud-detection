@@ -1306,6 +1306,11 @@ first, then paste" above every move/done block.
   manufacturer list. The `names` step
   had NEVER run: the module's `__main__` guard sat above `exclusion_name_resolve`
   so the CLI raised NameError (guard moved to the end; a subprocess test pins it).
+  Its second run read 0 rows: the VM's current-day graph predates bundle 309, so
+  its exclusion nodes carry no state / upin (338,572 of 388,634 rows name-only).
+  `names --leie preclean/Caught.csv` (bundle 317) builds the table from the raw
+  LEIE through integrate.build_exclusions instead, and `name_resolve_funnel`
+  prints the rows surviving each filter so an empty result names its stage.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

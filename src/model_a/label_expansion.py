@@ -425,7 +425,11 @@ def main() -> None:
     a2.add_argument("--out-cases", required=True, help="enforcement/cia_cases.csv (case-DB schema)")
     a2.add_argument("--out-npis", required=True, help="processed/cia_defendant_npis.parquet")
     a3 = sub.add_parser("names", help="name-only exclusion rows -> NPIs, offline first (unique NPPES match in state)")
-    a3.add_argument("--exclusion-nodes", required=True)
+    a3.add_argument("--exclusion-nodes", default=None,
+                    help="graph/nodes/exclusion_nodes.parquet (needs the state / upin columns: a graph built since bundle 309)")
+    a3.add_argument("--leie", default=None,
+                    help="preclean/Caught.csv: build the exclusion table from the RAW LEIE instead (integrate.build_exclusions, "
+                         "every column the resolver needs, no graph rebuild); used when --exclusion-nodes predates the columns")
     a3.add_argument("--provider-dim", required=True, help="processed/provider_dim.parquet")
     a3.add_argument("--tier", default="hard", choices=["all", "hard", "hard+charged", "hard+weak"])
     a3.add_argument("--year-min", type=int, default=2015)
@@ -438,7 +442,17 @@ def main() -> None:
     a = ap.parse_args()
 
     if a.cmd == "names":
-        nodes = pd.read_parquet(a.exclusion_nodes)
+        if not a.exclusion_nodes and not a.leie:
+            ap.error("names needs --exclusion-nodes <graph nodes> or --leie <preclean/Caught.csv>")
+        if a.leie:
+            # the raw LEIE through the integrate builder: npi / entity_name / state / upin /
+            # dates / statute, the columns a pre-bundle-309 graph lacks
+            from src.attempt_2.ingest.integrate import QA, build_exclusions
+            nodes = build_exclusions(a.leie, QA(), [])
+            nodes["node_id"] = "exclusion:leie:" + nodes.index.astype(str)
+            print(f"[label_expansion] exclusion table built from the raw LEIE {a.leie}: {len(nodes):,} rows")
+        else:
+            nodes = pd.read_parquet(a.exclusion_nodes)
         dim = pd.read_parquet(a.provider_dim)
         oth = pd.read_parquet(a.other_ids) if a.other_ids else None
         fun = name_resolve_funnel(nodes, tier=a.tier, year_min=a.year_min)
