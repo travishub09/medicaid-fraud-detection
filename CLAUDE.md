@@ -1297,8 +1297,10 @@ first, then paste" above every move/done block.
   chains); `evidence_strength` rates cia_* / research_cia moderate (they used to
   fall to weak and be dropped by case_labels); case_labels honours a resolver
   row's own `label_weight` as a cap on the direct tier (the per-party budget).
-  The operator re-runs the cia line after merging 314 (the first output is not
-  usable as a label: the chains must be listed, not labelled).
+  The operator re-runs the cia line after merging 315 (the first output is not
+  usable as a label: the chains must be listed, not labelled). The `names` step
+  had NEVER run: the module's `__main__` guard sat above `exclusion_name_resolve`
+  so the CLI raised NameError (guard moved to the end; a subprocess test pins it).
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

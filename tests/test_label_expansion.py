@@ -265,3 +265,15 @@ def test_case_labels_honour_resolver_row_weight(tmp_path):
     assert row["label_basis"] == "resolved_defendant" and abs(row["label_weight"] - 0.25) < 1e-9
     dn2 = dn.drop(columns=["label_weight"])
     assert build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=dn2).set_index("npi").loc[npi, "label_weight"] == 1.0
+
+
+def test_cli_entry_sees_every_subcommand_function(tmp_path):
+    """2026-10-13 VM: `label_expansion names` raised NameError because the __main__ guard
+    sat ABOVE the later function definitions; the guard is the last statement now."""
+    import subprocess, sys
+    from pathlib import Path
+    src = Path("src/model_a/label_expansion.py").read_text(encoding="utf-8")
+    assert src.rstrip().endswith("main()") and src.count('if __name__ == "__main__"') == 1
+    r = subprocess.run([sys.executable, "-m", "src.model_a.label_expansion", "names", "--help"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and "--other-ids" in r.stdout

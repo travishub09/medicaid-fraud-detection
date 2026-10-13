@@ -510,8 +510,6 @@ def main() -> None:
           f"resolved ({len(resolved):,} NPIs), {len(residue):,} residue -> {a.out_npis}; cases -> {a.out_cases}; {rep}")
 
 
-if __name__ == "__main__":
-    main()
 
 
 # ------------------------------------------------- name-only exclusion rows
@@ -612,3 +610,7 @@ def name_resolved_exclusions(res: pd.DataFrame) -> pd.DataFrame:
                         "reinstate_date": pd.NaT, "currently_active": 1,
                         "match_level": k["match_level"], "source_node_id": k["source_node_id"]})
     return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)
+
+
+if __name__ == "__main__":
+    main()
