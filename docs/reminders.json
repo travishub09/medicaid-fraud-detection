@@ -837,23 +837,6 @@
       ]
     },
     {
-      "key": "v13_prereg_and_run",
-      "what": "v13 = the second VM run, a NEW pre-registration (v12 read-out: docs/ACCURACY_READOUT_v12_2026-10-13.md). What changed in code (bundle 303): (1) the dossier's institutional rule carries a curated national-name list (Mayo, SSM, Sutter, Assurex, Ameritox, Alere ...) so the operator book cannot name a hospital system or national lab again; (2) the pursuit book has ONE sort definition shared by the ship and the sweep, with a second order 'basis50' (basis-backed rows fill the first 50 slots, dollar-weighted below) and the order sweep prints it as a row; (3) the registry reads the large book's KPIs (large_hits50 ...) so two books can be graded. SWEEP DONE 2026-10-13 02:21 (v12 re-graded with the new row): basis50 on dollar-weighted = 1/3/3/7 vs shipped 1/1/4/7: wins the 50 (3 vs 1), loses the 100 (3 vs 4), ties 16 and 250. Not a win across budgets, so the SORT STAYS dollar (PURSUIT_ORDER=dollar); the top-50 question is answered by the large book instead. ORDER OF WORK: (a) merge + push bundle 303, start the VM, git pull; (b) RE-GRADE v12 with the new sweep row (step 1 below, about 40 minutes: it refits on the v12 matrix) and paste section 2b of the new ACCURACY_DIAGNOSTICS__pursuit.md; the basis50 row beating 1/1/4/7 across budgets decides PURSUIT_ORDER (basis50) else dollar; (c) pre-register v13 with the checks below (the top-50 bars move to the large book; the pursuit book is held at 100 and 250; Jaccard 0.6), then run the runner with PURSUIT_ORDER set; the as-of graph from v12 is reused (not rebuilt); (d) say 'v13 finished', tar the packet, sync up, scp, attach, STOP the VM. No Manus dispatch unless the verdict is not HOLD.",
-      "added": "2026-10-13",
-      "commands": [
-        "# on the VM (bash), after bundle 303 is merged and pushed from the laptop:",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1 && source .venv/bin/activate && source ~/.medicaid_env",
-        "export PURSUIT_ORDER=dollar",
-        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v13 --goal \"Two books graded on the FCA ruler under the hard training label: the large-biller book clears one review round, the pursuit book holds its deep budgets, the dossier names no institution\" --expected \"large book hits@50 at least 2 with lower Wilson bound above random; pursuit book hits@100 at least 4 and hits@250 at least 6; lead-time share beyond the gap at least half; institutional share 0; top-50 Jaccard at least 0.6; every source present; train = hard\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-        "tmux new -s night",
-        "PURSUIT_ORDER=$PURSUIT_ORDER bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v13 2021-12",
-        "# detach with Ctrl-b then d; when it prints [v13] DONE say 'v13 finished', then:",
-        "cd /data/medicaid/model_a/frozen_2021-12_v13 && tar -czf /home/ubuntu/run_packet_v13.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v13",
-        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v13.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and STOP the VM",
-        "python -m src.reminders --done-task v13_prereg_and_run"
-      ]
-    },
-    {
       "key": "tms_nevada_followup",
       "what": "Brad's TMS tip, answered 2026-10-13 (TMS_LOOKUP_READOUT_2026-10-13.md with the PI reports): Learning to Achieve Wellness (Brandon FL, org NPI 1033849575) has ZERO Medicaid dollars on 90867/90868/90869 and no rank anywhere; its TMS is Medicare / commercial or billed under the psychiatrist's individual NPI. ASK BRAD for the psychiatrist's name or NPI and the payer mix, then run the line below. The 'others' list: seven individual NPIs carrying TMS with one renderer (Rosa Bellota NV $1.0M the largest) and a NEVADA CLUSTER of 20+ short-lived single-renderer TMS entities at 100 percent TMS share (Salvi, Nula, Sunrise Health Solutions, Cerebral Medical Center, DC Medical, Evolutionary Beginnings, Mana, TM Services, Vitalmind ...): an ownership / address / rendering-psychiatrist research question; check Nevada Medicaid's TMS coverage date first (the innocent explanation).",
       "added": "2026-10-13",
@@ -863,6 +846,44 @@
         "REM Nevada cluster owners / addresses (pi_facts on the org ids from the lookup table, --deep):",
         "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npis \"1578258281;1740998202;1871372003;1841928397;1962094714;1255000386;1780428698;1336988831;1467287391;1811280183\" --deep --out-prefix pi_facts_nv_tms"
       ]
+    },
+    {
+      "key": "run_packet__frozen_2021-12_v13",
+      "what": "v13 finished on the VM 2026-10-13 08:22 (two graded books, dollar order, hard tier; the ledger says 8 FAIL / 75 WARN). Tar the packet ON THE VM, sync the reports up, scp the tar to the laptop, attach it in chat, then STOP the VM. Not closed until the tar is in chat and Claude has graded it.",
+      "added": "2026-10-13",
+      "commands": [
+        "# on the VM (bash):",
+        "cd /data/medicaid/model_a/frozen_2021-12_v13 && tar -czf /home/ubuntu/run_packet_v13.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v13",
+        "REM on the laptop (cmd):",
+        "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v13.tar.gz C:\\Users\\treyr\\Downloads\\",
+        "REM attach C:\\Users\\treyr\\Downloads\\run_packet_v13.tar.gz in chat, then STOP the instance (EC2 > Instances > Instance state > Stop)",
+        "python -m src.reminders --done-task run_packet__frozen_2021-12_v13"
+      ]
+    },
+    {
+      "key": "pursuit_dossier__frozen_2021-12_v13",
+      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v13 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+      "added": "2026-10-13",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v13\" --dispatch",
+        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v13"
+      ]
+    },
+    {
+      "key": "dossier_poll__frozen_2021-12_v13",
+      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v13 dossier and send PURSUIT_DOSSIER.md",
+      "added": "2026-10-13",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v13\" --poll",
+        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v13"
+      ]
+    },
+    {
+      "key": "registry_verdict__frozen_2021-12_v13",
+      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v13 \u2014 close only when you have them",
+      "added": "2026-10-13"
     }
   ]
 }
