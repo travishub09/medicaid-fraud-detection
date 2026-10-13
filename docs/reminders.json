@@ -731,24 +731,6 @@
       ]
     },
     {
-      "key": "v12_prereg_and_run",
-      "what": "v12 = the first VM run: v11 plus full graph embeddings (every connected node), 10 seeds (the Jaccard lever), the four packet fixes, and whatever the two v11 probes say. ORDER: (1) bundle 281 merged AND pushed; (2) the VM exists and the data pull has finished (compute_box_decision; OneDrive must show the check mark on processed\\case_defendant_npis.parquet before the pull); (3) on the VM: pull the code, pre-register v12 with the checks below (hits100 >= 4, seeds >= 10 and train = hard are new: the scorer trains on the FCA-shaped hard tier only), start the runner inside tmux (24 GB gate; stops if any of servicing / mue / sector_schemes / medicaid_enrollment / billing_lm / graph_embeddings is skipped); (4) say 'v12 finished', zip the packet with the line it prints, run the sync up line, download the zip, stop the VM.",
-      "added": "2026-10-12",
-      "commands": [
-        "# on the VM (ssh in; every line is bash):",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && pip install -r requirements.txt -q && source ~/.medicaid_env",
-        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v12 --goal \"Full graph embeddings and ten seeds on the VM hold v11's gains at 100 and 250 while the top 50 clears the stability bar and matches v10's two hits\" --expected \"hits@50 on provider_priority_list_pursuit.csv at least 2, hits@100 at least 4, lower Wilson bound above random, lead-time share beyond the gap at least half, institutional share at most 40 percent, top-50 Jaccard at least 0.7 across repeats, every source present\" --check \"hits50 >= 2\" \"hits100 >= 4\" \"prec50_lo > base50\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.7\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-        "tmux new -s night",
-        "bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v12 2021-12",
-        "# detach with Ctrl-b then d; come back with: tmux attach -t night",
-        "# when it prints [v12] DONE: say 'v12 finished' in chat, then:",
-        "(cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v12 && zip -r ~/run_packet_v12.zip *.md *.json ab_broadcast_weight ab_broadcast_mask)",
-        "bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12",
-        "# download ~/run_packet_v12.zip, attach it in chat, STOP the VM; then on the laptop:",
-        "python -m src.reminders --done-task v12_prereg_and_run"
-      ]
-    },
-    {
       "key": "v13_label_ablation_agency_codes",
       "what": "CLAUDE / operator question for AFTER v12 (never gates a run): the enrollment file's agency codes with no stated cause are label candidates only where they are a MINORITY code in their state (FL 'TERM - MEDICAID AUTHORITY' 2,133 at 2 percent of FL's ends; IA / TX / AL 'ACTION TAKEN BY MEDICAID/CHIP' at 5 to 6 percent; CT 'MEDICAID AUTHORITY' 2,410 at 37 percent). Run label_ablation on the v12 matrix with those rows added as a source and read the forward-lift delta; admit them to v13's label only if the delta is positive with a CI above zero.",
       "added": "2026-10-12",
@@ -851,18 +833,57 @@
       ]
     },
     {
-      "key": "merge_bundle299",
-      "what": "Merge bundle299 (cumulative, supersedes 239 to 298): pi_facts names the rendering NPIs by dollars and prints the per-code monthly census / lines per calendar day (the Special Homes occupancy ratio). If 294 to 298 are NOT merged yet, merge 299 instead and close all six tasks. Then git pull on the VM.",
+      "key": "merge_bundle300",
+      "what": "Merge bundle300 (cumulative, supersedes 239 to 299): everything in 299 plus the v12 post-run checklist. Merge 300 INSTEAD of 299 (Downloads holds two bundle299 files and the wildcard copy picks the older one). Close the 294 to 299 merge tasks with it.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle299*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle299.bundle\"",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle300*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle300.bundle\"",
         "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle299.bundle",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle300.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle299",
+        "python -m src.reminders --done-task merge_bundle300",
         "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
       ]
+    },
+    {
+      "key": "run_packet__frozen_2021-12_v12",
+      "what": "v12 finished on the VM 2026-10-13 01:10 (first VM run: full embeddings, 10 seeds, hard-tier training). Zip the packet ON THE VM, sync the reports up to OneDrive, pull the zip to the laptop, attach it in chat, then STOP the VM in the AWS console (it bills by the hour). Not closed until the zip is in chat.",
+      "added": "2026-10-13",
+      "commands": [
+        "# on the VM (bash):",
+        "cd /data/medicaid/model_a/frozen_2021-12_v12 && zip -r ~/run_packet_v12.zip *.md *.json ab_broadcast_weight ab_broadcast_mask",
+        "bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v12",
+        "REM on the laptop (cmd):",
+        "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:~/run_packet_v12.zip C:\\Users\\treyr\\Downloads\\",
+        "REM attach C:\\Users\\treyr\\Downloads\\run_packet_v12.zip in chat, then STOP the instance in the AWS console (EC2 > Instances > Instance state > Stop)",
+        "python -m src.reminders --done-task run_packet__frozen_2021-12_v12"
+      ]
+    },
+    {
+      "key": "pursuit_dossier__frozen_2021-12_v12",
+      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v12 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+      "added": "2026-10-13",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --dispatch",
+        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v12"
+      ]
+    },
+    {
+      "key": "dossier_poll__frozen_2021-12_v12",
+      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v12 dossier and send PURSUIT_DOSSIER.md",
+      "added": "2026-10-13",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --poll",
+        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v12"
+      ]
+    },
+    {
+      "key": "registry_verdict__frozen_2021-12_v12",
+      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v12 \u2014 close only when you have them",
+      "added": "2026-10-13"
     }
   ]
 }
