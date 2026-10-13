@@ -277,3 +277,15 @@ def test_cli_entry_sees_every_subcommand_function(tmp_path):
     r = subprocess.run([sys.executable, "-m", "src.model_a.label_expansion", "names", "--help"],
                        capture_output=True, text=True)
     assert r.returncode == 0 and "--other-ids" in r.stdout
+
+
+def test_name_resolve_funnel_names_the_empty_stage():
+    from src.model_a.label_expansion import name_resolve_funnel
+    nodes = pd.DataFrame({"npi": ["", "", "1000000004"], "entity_name": ["DOE, JANE", "ACME LLC", "X"],
+                          "excl_type": ["1128a1", "1128b14", "1128a1"], "excl_date": ["2019-01-01", "2020-01-01", "2019-01-01"]})
+    f = name_resolve_funnel(nodes)                      # no state column: everything dies at with_state
+    assert f["rows"] == 3 and f["no_npi"] == 2 and f["with_name"] == 2 and f["with_state"] == 0
+    assert "state" in f["missing_columns"] and "upin" in f["missing_columns"] and f["tier_hard"] == 0
+    nodes["state"] = ["FL", "FL", "FL"]
+    f2 = name_resolve_funnel(nodes)
+    assert f2["with_state"] == 2 and f2["since_2015"] == 2 and f2["tier_hard"] == 1   # b14 is excluded tier

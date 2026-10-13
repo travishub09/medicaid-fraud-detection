@@ -439,6 +439,11 @@ def main() -> None:
         nodes = pd.read_parquet(a.exclusion_nodes)
         dim = pd.read_parquet(a.provider_dim)
         oth = pd.read_parquet(a.other_ids) if a.other_ids else None
+        fun = name_resolve_funnel(nodes, tier=a.tier, year_min=a.year_min)
+        print("[label_expansion] names funnel: " + ", ".join(f"{k} {v}" for k, v in fun.items()))
+        if fun.get("missing_columns"):
+            print(f"[label_expansion] WARNING: the exclusion nodes lack {fun['missing_columns']}: the graph predates "
+                  "the columns the resolver needs (integrate + a graph rebuild carry state / upin / zip since bundle 309)")
         res = exclusion_name_resolve(nodes, dim, tier=a.tier, year_min=a.year_min, other_ids=oth)
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)
         res.to_parquet(a.out, index=False)
@@ -516,6 +521,39 @@ def main() -> None:
 
 NAME_RES_COLS = ["source_node_id", "entity_name", "state", "excl_type", "excl_date", "fca_tier", "fca_basis",
                  "kind", "person_key", "npi", "match_level", "n_candidates", "candidate_npis", "status"]
+
+
+def name_resolve_funnel(exclusion_nodes: pd.DataFrame, tier: str = "hard", year_min: int = 2015) -> dict:
+    """Why the name resolver saw N rows: the count surviving each filter in order
+    (rows, no NPI, with a name, with a state, dated, since year_min, kept tier) and
+    the columns the nodes lack. The first real run read 0 rows on a graph built
+    before the exclusion nodes carried `state`; this names the stage that emptied."""
+    from .fca_relevance import classify_series, tier_mask
+    e = exclusion_nodes
+    need = ["npi", "entity_name", "state", "excl_date", "excl_type", "upin"]
+    missing = [c for c in need if c not in e.columns]
+    f: dict = {"rows": int(len(e)), "missing_columns": missing}
+    npi = e.get("npi", pd.Series("", index=e.index)).astype("string").fillna("").str.strip()
+    m = (npi == "") | (npi.str.lower() == "none")
+    f["no_npi"] = int(m.sum())
+    name = e.get("entity_name", pd.Series("", index=e.index)).fillna("").astype(str).str.strip()
+    m &= name != ""
+    f["with_name"] = int(m.sum())
+    st = e.get("state", pd.Series("", index=e.index)).fillna("").astype(str).str.strip()
+    m &= st != ""
+    f["with_state"] = int(m.sum())
+    dt = pd.to_datetime(e.get("excl_date", pd.Series(None, index=e.index)), errors="coerce")
+    m &= dt.notna()
+    f["dated"] = int(m.sum())
+    m &= dt.dt.year >= int(year_min)
+    f[f"since_{year_min}"] = int(m.sum())
+    if m.any():
+        tiers = classify_series(e.loc[m, "excl_type"].fillna("").astype(str)) if "excl_type" in e.columns \
+            else pd.DataFrame({"fca_tier": pd.Series("weak", index=e.index[m])})
+        f[f"tier_{tier}"] = int(tier_mask(tiers["fca_tier"], tier).sum())
+    else:
+        f[f"tier_{tier}"] = 0
+    return f
 
 
 def exclusion_name_resolve(exclusion_nodes: pd.DataFrame, provider_dim: pd.DataFrame,
