@@ -1079,7 +1079,12 @@ first, then paste" above every move/done block.
   tenure overlaps the active window. `--orgs-file` / `--npis` accept bare NPIs
   (resolved to org ids through the run matrix: the packet prints NPIs); the
   packet's NPI list is a target list and stays under enforcement/pi_reports/,
-  never in git. The investigator's titles list (same day) is
+  never in git. `billing_facts` also names the rendering NPIs by dollars and
+  share (a clinician seen on site who is not on the list worked under someone
+  else's number) and, per top code, the worst / median month in lines per
+  CALENDAR day and patients (for a per-diem code that is residents per day and
+  the census: the occupancy ratio against licensed places, the Special Homes
+  question; for a visit code, patients that month against the clinicians). The investigator's titles list (same day) is
   read by the ROLE RULE: billers / revenue-cycle / QA / compliance know whose NPI
   went on the claim, rendering clinicians know who saw the patient, HR / operations
   / service coordinators know the headcount (the innocent explanation on every

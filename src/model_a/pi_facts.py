@@ -178,6 +178,25 @@ def billing_facts(spending_path: str | Path, npis: list[str],
                COUNT(DISTINCT srv) n_servicing, MIN(ym) first_month, MAX(ym) last_month
         FROM s GROUP BY npi""").df()
 
+    # the rendering NPIs by dollars (who the claims say rendered) and, per top
+    # code, the worst / median month in patients and in lines per calendar day
+    # (for a per-diem code, lines per day = residents per day: the occupancy
+    # ratio against licensed places; for a visit code, patients that month)
+    renderers = con.execute("""
+        SELECT * FROM (
+            SELECT npi, srv, SUM(paid) AS paid, COUNT(DISTINCT ym) AS n_months,
+                   ROW_NUMBER() OVER (PARTITION BY npi ORDER BY SUM(paid) DESC) AS rn
+            FROM s WHERE srv IS NOT NULL GROUP BY npi, srv)
+        WHERE rn <= 6 ORDER BY npi, rn""").df()
+    code_months = con.execute("""
+        SELECT s.npi, s.hcpcs, s.ym, SUM(s.pats) AS pats, SUM(s.lines) AS lines,
+               SUM(s.lines) / day(last_day(CAST(s.ym || '-01' AS DATE))) AS lines_per_day
+        FROM s JOIN (SELECT npi, hcpcs FROM (
+                SELECT npi, hcpcs, ROW_NUMBER() OVER (PARTITION BY npi ORDER BY SUM(paid) DESC) AS rn
+                FROM s GROUP BY npi, hcpcs) WHERE rn <= 3) AS t
+          ON s.npi = t.npi AND s.hcpcs = t.hcpcs
+        GROUP BY s.npi, s.hcpcs, s.ym""").df()
+
     hours = {}
     mins_p = Path(minutes_csv) if minutes_csv else None
     if mins_p and mins_p.exists():
@@ -242,6 +261,32 @@ def billing_facts(spending_path: str | Path, npis: list[str],
                 "patient_months": (float(r["pats"]) if pd.notna(r["pats"]) else None),
             } for _, r in tc.iterrows()],
         }
+        rd = renderers[renderers["npi"] == npi]
+        if len(rd):
+            rec["renderers"] = [{"npi": str(r["srv"]), "paid": float(r["paid"]),
+                                 "share": (float(r["paid"]) / paid_total if paid_total else None),
+                                 "months": int(r["n_months"])} for _, r in rd.iterrows()]
+        cm = code_months[code_months["npi"] == npi]
+        if len(cm):
+            per_code = {}
+            for code, g in cm.groupby("hcpcs"):
+                g = g.dropna(subset=["lines_per_day"])
+                if not len(g):
+                    continue
+                w = g.loc[g["lines_per_day"].idxmax()]
+                entry = {"worst_month": str(w["ym"]),
+                         "worst_lines_per_day": float(w["lines_per_day"]),
+                         "median_lines_per_day": float(g["lines_per_day"].median())}
+                gp = g.dropna(subset=["pats"])
+                if len(gp):
+                    wp = gp.loc[gp["pats"].idxmax()]
+                    entry.update({"worst_patients_month": str(wp["ym"]),
+                                  "worst_patients": float(wp["pats"]),
+                                  "median_patients": float(gp["pats"].median())})
+                per_code[str(code)] = entry
+            for c in rec["top_codes"]:
+                if c["hcpcs"] in per_code:
+                    c["by_month"] = per_code[c["hcpcs"]]
         if npi in hours:
             h = dict(hours[npi])
             h["timed_share_of_paid"] = (h["timed_paid"] / paid_total
@@ -352,6 +397,15 @@ def _billing_lines(bf: dict) -> list[str]:
                  f"{bf.get('n_codes')} distinct codes)")
         L.append("  - field use: count the clinicians on site; the billing "
                  "says how many rendered.")
+        rd = bf.get("renderers") or []
+        if rd:
+            L.append("  - by dollars: " + "; ".join(
+                f"{r['npi']} {_money(r['paid'])}"
+                + (f" ({r['share']:.0%}, {r['months']} mo)" if r.get("share") is not None else "")
+                for r in rd))
+            L.append("  - field use: the rendering NPIs the claims name, with their share; "
+                     "a clinician seen on site who is not on this list did their work "
+                     "under someone else's number.")
     pm = bf.get("patient_months")
     if pm:
         lpp = bf.get("lines_per_patient_month")
@@ -371,6 +425,19 @@ def _billing_lines(bf: dict) -> list[str]:
             if c.get("patient_months") is not None:
                 bits.append(f"{c['patient_months']:,.0f} patient-months")
             L.append("  - " + ", ".join(bits))
+            bm = c.get("by_month")
+            if bm:
+                sub = (f"    - per month: worst {bm['worst_month']} = "
+                       f"{bm['worst_lines_per_day']:,.1f} lines per calendar day"
+                       f" (median {bm['median_lines_per_day']:,.1f})")
+                if bm.get("worst_patients") is not None:
+                    sub += (f"; patients worst {bm['worst_patients']:,.0f} "
+                            f"({bm['worst_patients_month']}), median {bm['median_patients']:,.0f}")
+                L.append(sub)
+        L.append("  - field use: for a per-diem code (residential, day program) lines "
+                 "per calendar day is residents per day and patients per month is the "
+                 "census: compare both to the licensed places; for a visit code, "
+                 "patients per month against the clinicians on site.")
         L.append("  - field use: ask what each code is in their own words and "
                  "who performs it; the answer must match the license, the "
                  "equipment and the room.")

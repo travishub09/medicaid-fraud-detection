@@ -41,3 +41,37 @@ def test_resolve_npis_to_orgs_bridges_the_packet_list():
     orgs, missing = resolve_npis_to_orgs(m, ["1000000002", "1000000001", "1999999999", "1000000003"])
     assert orgs == ["org:a", "org:b"] and missing == ["1999999999"]
     assert _is_npi("1558452730") and not _is_npi("org:a") and not _is_npi("155845273")
+
+
+def test_billing_facts_names_renderers_and_per_diem_census(tmp_path):
+    """2026-10-13: Special Homes bills H2016 per diem under one NPI; the occupancy
+    ratio is lines per calendar day (residents per day) and patients per month
+    (census) against licensed places. Lau's claims carry 3 rendering NPIs; the
+    sheet now names them with dollars."""
+    import pandas as pd
+    from src.model_a.pi_facts import billing_facts, _billing_lines
+    rows = []
+    # per-diem: 31 lines a day in Jan 2024 (31 days x 80 residents = 2,480 lines), 60 in Feb
+    rows.append(("1639500796", "1639500796", "H2016", "2024-01-01", 950000.0, 2480, 80))
+    rows.append(("1639500796", "1639500796", "H2016", "2024-02-01", 700000.0, 1740, 60))
+    rows.append(("1639500796", "1639500796", "A0090", "2024-01-01", 1000.0, 10, 5))
+    # Lau: three renderers
+    rows.append(("1508848441", "1508848441", "99213", "2022-01-01", 300000.0, 3000, 2000))
+    rows.append(("1508848441", "1124638242", "99213", "2022-01-01", 10000.0, 100, 90))
+    rows.append(("1508848441", "1999999990", "99213", "2022-01-01", 5000.0, 50, 40))
+    sp = pd.DataFrame(rows, columns=["billing_npi", "servicing_npi", "hcpcs_code", "service_month",
+                                     "total_paid", "total_claim_lines", "total_patients"])
+    f = tmp_path / "spending_fact.parquet"; sp.to_parquet(f, index=False)
+    bf = billing_facts(f, ["1639500796", "1508848441"])
+    h = bf["1639500796"]["top_codes"][0]
+    assert h["hcpcs"] == "H2016"
+    assert h["by_month"]["worst_month"] == "2024-01" and abs(h["by_month"]["worst_lines_per_day"] - 80) < 1e-9
+    assert abs(h["by_month"]["median_lines_per_day"] - 70) < 1e-9        # (80 + 60) / 2
+    assert h["by_month"]["worst_patients"] == 80 and h["by_month"]["median_patients"] == 70
+    r = bf["1508848441"]["renderers"]
+    assert [x["npi"] for x in r] == ["1508848441", "1124638242", "1999999990"]
+    assert abs(r[0]["share"] - 300000 / 315000) < 1e-9
+    md = "\n".join(_billing_lines(bf["1508848441"]))
+    assert "1124638242 $10,000 (3%, 1 mo)" in md
+    md2 = "\n".join(_billing_lines(bf["1639500796"]))
+    assert "80.0 lines per calendar day" in md2 and "patients worst 80 (2024-01)" in md2
