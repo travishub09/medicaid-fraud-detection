@@ -18,7 +18,7 @@ DATA_ROOT="${MEDICAID_DATA_ROOT:-/data/medicaid}"
 
 echo "[setup] packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-venv python3-pip git rclone build-essential libgomp1 htop
+sudo apt-get install -y -qq python3 python3-venv python3-pip git rclone build-essential libgomp1 htop zip unzip
 
 echo "[setup] repo -> $REPO_DIR (branch $BRANCH)"
 if [ -d "$REPO_DIR/.git" ]; then

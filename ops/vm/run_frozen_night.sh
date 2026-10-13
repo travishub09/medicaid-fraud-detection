@@ -119,5 +119,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:
 
 echo
 echo "[$TAG] DONE $(date '+%F %T')  -- tell Claude '$TAG finished'; then the packet:"
-echo "  (cd $RUN && zip -r ~/run_packet_${TAG}.zip *.md *.json ab_broadcast_weight ab_broadcast_mask)"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask)   # tar is always installed; zip is not"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${TAG}     # reports back to OneDrive"
