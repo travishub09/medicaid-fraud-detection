@@ -1136,8 +1136,11 @@ first, then paste" above every move/done block.
   env PURSUIT_ORDER) and the diagnostics' order sweep (row "basis-backed first in
   the top 50"); the registry reads accuracy_diagnostics__large.json as
   `acc_large_*` with aliases `large_hits50` / `large_prec50_lo` / `large_base50`
-  so a pre-registration grades two books. v13 order of work: re-grade v12 with
-  the new sweep row, choose the order from that table, pre-register, run.
+  so a pre-registration grades two books. THE SWEEP (v12 re-graded 2026-10-13):
+  basis50 on dollar-weighted = 1 / 3 / 3 / 7 vs shipped 1 / 1 / 4 / 7 (wins 50,
+  loses 100, ties 16 and 250): not a win across budgets, so the pursuit sort
+  STAYS dollar and the 50 budget is graded on the large book. v13 runs with
+  PURSUIT_ORDER=dollar.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
