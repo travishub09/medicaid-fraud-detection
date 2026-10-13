@@ -131,3 +131,18 @@ def test_registry_reads_the_training_label_policy(tmp_path):
     assert eval_check("train = hard", row)["ok"]
     assert not eval_check("train = all", row)["ok"]
     assert eval_check("train_positives >= 2000", row)["ok"]
+
+
+def test_registry_reads_the_large_book_kpis(tmp_path):
+    """v12 (2026-10-13): the large-biller book was the first to pass hits50 >= 2 under
+    the FCA ruler; v13 grades two books, so its KPIs ride beside the pursuit book's
+    as acc_large_* with their own check aliases."""
+    d = _make_run(tmp_path, "v13")
+    (d / "accuracy_diagnostics__large.json").write_text(json.dumps(
+        {"kpis": {"acc_org_hits50": 3, "acc_org_prec50_lo": 0.021, "acc_base50": 0.008}}), encoding="utf-8")
+    row = parse_run_dir(d)
+    assert row["acc_large_org_hits50"] == 3
+    from src.model_a.run_registry import eval_check
+    assert eval_check("large_hits50 >= 2", row)["ok"]
+    assert eval_check("large_prec50_lo > large_base50", row)["ok"]
+    assert not eval_check("large_hits50 >= 4", row)["ok"]

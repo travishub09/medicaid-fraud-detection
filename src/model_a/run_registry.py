@@ -250,6 +250,19 @@ def parse_run_dir(run_dir: str | Path) -> dict:
         except Exception:
             pass
 
+    # THE LARGE-BILLER BOOK (v12, 2026-10-13: the first book to pass hits50 >= 2
+    # under the FCA ruler): its diagnostics ride beside the pursuit book's as
+    # acc_large_* so a pre-registration can grade two books (`large_hits50 >= 2`).
+    acc_l = d / "accuracy_diagnostics__large.json"
+    if acc_l.exists():
+        try:
+            lj = json.loads(_read(acc_l))
+            for k, v in (lj.get("kpis") or {}).items():
+                if k.startswith("acc_"):
+                    row["acc_large_" + k[4:]] = v
+        except Exception:
+            pass
+
     try:
         row["git_commit"] = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"], capture_output=True,
@@ -387,6 +400,12 @@ CHECK_ALIASES = {
     "ece_top": "acc_ece_top1000", "top50_jaccard": "acc_top50_jaccard",
     "prec50_sd": "acc_prec50_sd", "eval_policy": "acc_eval_policy",
     "horizon": "acc_horizon_mo", "dollar_recall50": "acc_dollar_recall50",
+    # the large-biller book (accuracy_diagnostics__large.json), v13 co-primary
+    "large_hits16": "acc_large_org_hits16", "large_hits50": "acc_large_org_hits50",
+    "large_hits100": "acc_large_org_hits100", "large_hits250": "acc_large_org_hits250",
+    "large_prec50_lo": "acc_large_org_prec50_lo", "large_base50": "acc_large_base50",
+    "large_p50_vs_random": "acc_large_org_p50_vs_random",
+    "list_order": "acc_list_order",
 }
 _CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"
                        r"(>=|<=|==|!=|=|>|<)\s*(.+?)\s*$")

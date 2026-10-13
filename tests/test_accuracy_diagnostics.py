@@ -248,3 +248,19 @@ def test_companion_list_outputs_get_their_own_suffix():
     assert output_suffix("provider_priority_list.csv") == ""
     assert output_suffix("provider_priority_list_pursuit.csv") == "__pursuit"
     assert output_suffix("some_other_list.csv") == "__some_other_list"
+
+
+def test_order_sweep_carries_the_basis50_row():
+    """v13 sweep row: basis-backed rows fill the first 50, then score order."""
+    import numpy as np, pandas as pd
+    from src.model_a.accuracy_diagnostics import order_sweep
+    n = 80
+    df = pd.DataFrame({"score_dollar_weighted": np.linspace(1, 0, n),
+                       "case_size_capped": [i % 2 == 0 for i in range(n)],     # even rows capped
+                       "hit": [1 if i in (1, 3, 60) else 0 for i in range(n)]})  # hits on basis rows 1, 3 and capped row 60
+    rows = {r["order"]: r for r in order_sweep(df)}
+    plain = rows["score_dollar_weighted"]; mixed = rows["score_dollar_weighted (basis-backed first in the top 50)"]
+    assert plain["hits@16"] == 2 and plain["hits@50"] == 2 and plain["hits@80"] == 3
+    # mixed: the 40 basis rows come first (hits 1 and 3 inside), then the capped rows by score
+    assert mixed["hits@16"] == 2 and mixed["hits@50"] == 2 and mixed["hits@80"] == 3
+    assert rows["score_dollar_weighted (basis-backed first)"]["hits@50"] == 2

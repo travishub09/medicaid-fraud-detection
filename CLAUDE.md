@@ -1129,6 +1129,15 @@ first, then paste" above every move/done block.
   Not dispatched. v13 = two graded books (pursuit at 100/250, large at 50), the
   mixed-order sweep row, the institutional list, Jaccard bar 0.6 or at 100.
   The VM packet is a tar (zip is not on the image; setup now installs it).
+  V13 CODE (2026-10-13): `pursuit_dossier._NATIONAL_NAMES` / `is_national_name`
+  (curated hospital-system / national-lab / national-chain names) joins the
+  entity_segment institutional rule; `pursuit_order(book, 'dollar'|'basis50')` is
+  the ONE sort definition shared by the shipped pursuit book (`--order`, runner
+  env PURSUIT_ORDER) and the diagnostics' order sweep (row "basis-backed first in
+  the top 50"); the registry reads accuracy_diagnostics__large.json as
+  `acc_large_*` with aliases `large_hits50` / `large_prec50_lo` / `large_base50`
+  so a pre-registration grades two books. v13 order of work: re-grade v12 with
+  the new sweep row, choose the order from that table, pre-register, run.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

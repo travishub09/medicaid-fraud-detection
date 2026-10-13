@@ -473,6 +473,40 @@ _INSTITUTIONAL_RE = (r"\b(?:HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|"
                      r"MEDICAL GROUP|PHYSICIANS NETWORK|HEALTH CENTER|"
                      r"HEALTH CENTERS|NEIGHBORHOOD HEALTH)\b")
 
+# NATIONAL NAMES (2026-10-13, the v12 operator-book dossier named Mayo Clinic
+# Arizona, SSM Health, Sutter VNA, Assurex, Ameritox and Alere): hospital systems,
+# national labs and national chains whose subsidiaries carry ONE billing NPI and
+# no cue word, so neither the 25-provider rule nor _INSTITUTIONAL_RE catches
+# them. Curated, not inferred; a name here is the do-not-send class (the
+# consensus-book read of 2026-09-16), never a signal about the organization.
+_NATIONAL_NAMES = (
+    "MAYO CLINIC", "SSM HEALTH", "SUTTER", "KAISER", "CLEVELAND CLINIC", "GEISINGER",
+    "INTERMOUNTAIN", "ASCENSION", "HCA HEALTHCARE", "TENET", "COMMONSPIRIT", "DIGNITY HEALTH",
+    "PROVIDENCE HEALTH", "ADVENTHEALTH", "ADVENTIST HEALTH", "BAPTIST HEALTH", "NORTHWELL",
+    "MOUNT SINAI", "NYU LANGONE", "MONTEFIORE", "JOHNS HOPKINS", "MASS GENERAL",
+    "BRIGHAM", "TRINITY HEALTH", "ATRIUM HEALTH", "NOVANT", "UPMC", "HIGHMARK",
+    "CHRISTUS", "BANNER HEALTH", "SCRIPPS", "SHARP HEALTHCARE", "CEDARS", "OCHSNER",
+    "LIFEPOINT", "COMMUNITY HEALTH SYSTEMS", "PRIME HEALTHCARE", "STEWARD HEALTH",
+    "UNIVERSAL HEALTH SERVICES", "ACADIA HEALTHCARE", "SELECT MEDICAL", "ENCOMPASS HEALTH",
+    "KINDRED", "AMEDISYS", "LHC GROUP", "GENTIVA", "BAYADA", "MAXIM HEALTHCARE", "AVEANNA",
+    "ADDUS", "HELP AT HOME", "BRIGHTSPRING", "RESCARE", "DAVITA", "FRESENIUS",
+    "QUEST DIAGNOSTICS", "LABCORP", "LABORATORY CORPORATION OF AMERICA", "BIOREFERENCE",
+    "AMERITOX", "ALERE", "ASSUREX", "MILLENNIUM HEALTH", "MYRIAD GENETICS", "NATERA",
+    "EXACT SCIENCES", "GENOMIC HEALTH", "SONIC HEALTHCARE", "CVS", "WALGREENS", "RITE AID",
+    "OMNICARE", "PHARMERICA", "LINCARE", "APRIA", "ROTECH", "ADAPTHEALTH", "HANGER",
+    "MEDNAX", "PEDIATRIX", "TEAM HEALTH", "TEAMHEALTH", "ENVISION HEALTHCARE",
+    "SOUND PHYSICIANS", "US ANESTHESIA PARTNERS", "ASPEN DENTAL", "SMILE BRANDS",
+    "VISITING NURSE ASSOCIATION", "VISITING NURSE SERVICE", "VNA OF", "PLANNED PARENTHOOD",
+)
+_NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
+
+
+def is_national_name(name: str) -> bool:
+    """True when the org name carries a curated hospital-system / national-lab /
+    national-chain name (the do-not-send class the cue words miss)."""
+    return bool(_NATIONAL_NAMES_RE.search(str(name or "").upper()))
+
+
 # a "LAST, FIRST [MIDDLE]" name with no business token is a person, whatever the
 # org roster says (v11 dossier: "MERKLEY, PATRICIA" sat at target 9 because the
 # solo-individual test needs entity_type 1 on a one-NPI org and the row had two)
@@ -634,11 +668,41 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
 LARGE_LIST_NAME = "provider_priority_list_large.csv"
 
 
+BASIS_HEAD = 50
+PURSUIT_ORDERS = ("dollar", "basis50")
+
+
+def pursuit_order(book: pd.DataFrame, order: str = "dollar", head: int = BASIS_HEAD) -> pd.DataFrame:
+    """The pursuit book's sort, ONE definition shared by the ship and the sweep.
+
+    dollar    score_dollar_weighted desc, score_max tiebreak (the v7-settled order).
+    basis50   the MIXED order (v13 sweep row): the basis-backed rows (case_size_capped
+              false) fill the first ``head`` slots in dollar-weighted order, then
+              everything else in dollar-weighted order. v10-v12: 44 of the top 50 were
+              cap-pinned rows with zero hits in three runs while the full basis-first
+              block won the 50 budget and lost 100 / 250; this promotes basis rows
+              only as far as one review round reaches and leaves the deep budgets to
+              the shipped order. Pre-registered as a sweep row; shipped only when it
+              beats the dollar order across budgets."""
+    if order not in PURSUIT_ORDERS:
+        raise ValueError(f"pursuit order {order!r}: choose from {PURSUIT_ORDERS}")
+    keys = ["score_dollar_weighted"] + (["score_max"] if "score_max" in book.columns else [])
+    ranked = book.sort_values(keys, ascending=False, kind="mergesort")
+    if order == "dollar" or "case_size_capped" not in ranked.columns:
+        return ranked
+    capped = ranked["case_size_capped"].astype(str).str.lower().isin(["true", "1"])
+    basis = ranked[~capped]
+    top = basis.head(head)
+    rest = ranked.drop(top.index)
+    return pd.concat([top, rest])
+
+
 def build_priority_list(run_dir: str | Path,
                         min_damages: float = 10_000_000.0,
                         include_government: bool = False,
                         mask_individuals: bool = False,
-                        large_min_billed: float = 50_000_000.0) -> Path:
+                        large_min_billed: float = 50_000_000.0,
+                        pursuit_sort: str = "dollar") -> Path:
     """The full funder-facing priority list: EVERY qualifying organization,
     ranked by FRAUD SIGNAL alone. Dollars and entity class are FILTERS,
     never sort keys:
@@ -729,6 +793,7 @@ def build_priority_list(run_dir: str | Path,
                        "org_node_id"].astype(str))
     seg = pd.Series("operator", index=out.index)
     inst = (out["org_name"].astype(str).str.contains(_INSTITUTIONAL_RE, na=False)
+            | out["org_name"].astype(str).map(is_national_name)
             | (pd.to_numeric(out["n_providers"], errors="coerce")
                .fillna(1) >= 25)
             | (out["screening_cautions"].astype(str).str.len() > 0))
@@ -769,9 +834,10 @@ def build_priority_list(run_dir: str | Path,
     # LOST hits, so the book keeps the dollar-weighted order with score_max as
     # the tiebreak. score_p_any / score_p_max stay as COLUMNS for the reader.
     pursuit = out[out["entity_segment"] == "operator"].copy()
-    sort_keys = ["score_dollar_weighted"] + (["score_max"] if "score_max" in pursuit.columns else [])
-    pursuit = pursuit.sort_values(sort_keys, ascending=False, kind="mergesort")
-    pursuit = pursuit.reset_index(drop=True)
+    pursuit = pursuit_order(pursuit, order=pursuit_sort).reset_index(drop=True)
+    print(f"[priority_list] pursuit book order: {pursuit_sort}"
+          + (f" (basis-backed rows fill the first {BASIS_HEAD} slots, dollar-weighted below)"
+             if pursuit_sort == "basis50" else " (dollar-weighted, score_max tiebreak)"))
     pursuit.insert(0, "pursuit_rank", pursuit.index + 1)
     pursuit_cols = ["pursuit_rank"] + [c for c in cols if c != "priority_rank"] + ["priority_rank"]
     pursuit[[c for c in pursuit_cols if c in pursuit.columns]].to_csv(d / "provider_priority_list_pursuit.csv", index=False)
@@ -888,6 +954,10 @@ def main() -> None:
                          "manifest's training_policy.n_seeds, else 1)")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="broadcast-row training policy override (default: the manifest's)")
+    ap.add_argument("--order", default="dollar", choices=list(PURSUIT_ORDERS),
+                    help="pursuit-book sort: dollar (v7-settled, default) or basis50 "
+                         "(basis-backed rows fill the first 50, dollar-weighted below; "
+                         "ship only when the sweep says it wins)")
     ap.add_argument("--large-min-billed", type=float, default=50_000_000.0,
                     help="priority list only: the billed-in-window floor of the "
                          "large-biller companion book (provider_priority_list_large.csv; "
@@ -926,7 +996,8 @@ def main() -> None:
                          else 10_000_000.0),
             include_government=args.include_government,
             mask_individuals=args.mask_individuals,
-            large_min_billed=args.large_min_billed)
+            large_min_billed=args.large_min_billed,
+            pursuit_sort=args.order)
         return
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,

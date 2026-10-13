@@ -819,16 +819,16 @@
       ]
     },
     {
-      "key": "merge_bundle302",
-      "what": "Merge bundle302 (cumulative, supersedes 239 to 301): the v12 read-out, the run closed as HOLD, the TMS answer, the VM tar fix. Built on the commit the laptop already has (8e85f3c), merges clean after 'git merge --abort'. Close the 294 to 300 merge tasks with it.",
+      "key": "merge_bundle303",
+      "what": "Merge bundle303 (cumulative, supersedes 239 to 302): the v13 code (national-name list in the dossier, the basis50 pursuit order + sweep row, large-book registry aliases, PURSUIT_ORDER in the VM runner) on top of 302's v12 read-out. Built on the commit the laptop has (8e85f3c), merges clean after 'git merge --abort'. Close the 294 to 302 merge tasks with it.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
         "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle302*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle302.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle302.bundle",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle303*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle303.bundle\"",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle303.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle302",
+        "python -m src.reminders --done-task merge_bundle303",
         "python -m src.reminders --done-task merge_bundle298",
         "python -m src.reminders --done-task merge_bundle297",
         "python -m src.reminders --done-task merge_bundle296",
@@ -837,11 +837,24 @@
       ]
     },
     {
-      "key": "v13_prereg_plan",
-      "what": "v12 = HOLD (docs/ACCURACY_READOUT_v12_2026-10-13.md): pursuit book 1/1/4/7 at 16/50/100/250 under the FCA ruler (best 250 of the series), hits100 passed, the same three top-50 checks failed (hits50 1, prec50_lo < base, Jaccard 0.62), full embeddings = no measurable signal, ten seeds did not move stability, 44 of the top 50 are capped_no_basis rows with 0 hits for the third run. THE LARGE BOOK PASSED: 3 at 50 (random 0.4, p 0.004). v13 is a NEW pre-registration: (1) grade two books (pursuit hits100 >= 4 and hits250 >= 6; large hits50 >= 2 as co-primary); (2) pre-register the MIXED order (basis-backed first inside the top 50, dollar-weighted below) as a sweep row, ship only if it beats 1/1/4/7 across budgets; (3) fix the institutional-name cue in pursuit_dossier.entity_segment BEFORE the dossier runs (v12's operator-book top 10 held Mayo Clinic Arizona, SSM Health St. Louis, Sutter VNA, Assurex, Ameritox, Alere); (4) Jaccard bar 0.6 or moved to the 100 budget; (5) keep seeds 10, hard tier, full embeddings. The v12 dossier was NOT dispatched (no Manus credits on a HOLD). Code for (2) and (3) comes in the next bundle; the VM stays STOPPED until then.",
+      "key": "v13_prereg_and_run",
+      "what": "v13 = the second VM run, a NEW pre-registration (v12 read-out: docs/ACCURACY_READOUT_v12_2026-10-13.md). What changed in code (bundle 303): (1) the dossier's institutional rule carries a curated national-name list (Mayo, SSM, Sutter, Assurex, Ameritox, Alere ...) so the operator book cannot name a hospital system or national lab again; (2) the pursuit book has ONE sort definition shared by the ship and the sweep, with a second order 'basis50' (basis-backed rows fill the first 50 slots, dollar-weighted below) and the order sweep prints it as a row; (3) the registry reads the large book's KPIs (large_hits50 ...) so two books can be graded. ORDER OF WORK: (a) merge + push bundle 303, start the VM, git pull; (b) RE-GRADE v12 with the new sweep row (step 1 below, about 40 minutes: it refits on the v12 matrix) and paste section 2b of the new ACCURACY_DIAGNOSTICS__pursuit.md; the basis50 row beating 1/1/4/7 across budgets decides PURSUIT_ORDER (basis50) else dollar; (c) pre-register v13 with the checks below (the top-50 bars move to the large book; the pursuit book is held at 100 and 250; Jaccard 0.6), then run the runner with PURSUIT_ORDER set; the as-of graph from v12 is reused (not rebuilt); (d) say 'v13 finished', tar the packet, sync up, scp, attach, STOP the VM. No Manus dispatch unless the verdict is not HOLD.",
       "added": "2026-10-13",
       "commands": [
-        "REM nothing to run yet: the v13 code (mixed-order sweep row, institutional-name list) arrives in a bundle first"
+        "# on the VM (bash), after bundle 303 is merged and pushed from the laptop:",
+        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1 && source .venv/bin/activate && source ~/.medicaid_env",
+        "# step 1: re-grade v12's pursuit book with the basis50 sweep row (writes over v12's ACCURACY_DIAGNOSTICS__pursuit.md; the KPIs are unchanged)",
+        "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v12\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --label-tier hard --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet\" --horizon-months 36 --list-name provider_priority_list_pursuit.csv",
+        "sed -n '/## 2b/,/## 3/p' \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v12/ACCURACY_DIAGNOSTICS__pursuit.md\"",
+        "# paste that table in chat; Claude names the order. Then step 2, the pre-registration (replace basis50 with dollar if told so):",
+        "export PURSUIT_ORDER=basis50",
+        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v13 --goal \"Two books graded on the FCA ruler under the hard training label: the large-biller book clears one review round, the pursuit book holds its deep budgets, the dossier names no institution\" --expected \"large book hits@50 at least 2 with lower Wilson bound above random; pursuit book hits@100 at least 4 and hits@250 at least 6; lead-time share beyond the gap at least half; institutional share 0; top-50 Jaccard at least 0.6; every source present; train = hard\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+        "tmux new -s night",
+        "PURSUIT_ORDER=$PURSUIT_ORDER bash ~/medicaid-fraud-detection/ops/vm/run_frozen_night.sh v13 2021-12",
+        "# detach with Ctrl-b then d; when it prints [v13] DONE say 'v13 finished', then:",
+        "cd /data/medicaid/model_a/frozen_2021-12_v13 && tar -czf /home/ubuntu/run_packet_v13.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v13",
+        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v13.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and STOP the VM",
+        "python -m src.reminders --done-task v13_prereg_and_run"
       ]
     },
     {

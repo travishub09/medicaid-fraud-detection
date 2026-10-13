@@ -31,6 +31,7 @@ GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
 # DOJ cases); license actions / unstated-cause exclusions never train. Every scorer
 # call below carries it; the registry records it as train_policy ("train = hard").
 TRAIN_TIER="${TRAIN_TIER:-hard}"
+PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"   # v13: dollar (shipped) or basis50 (ship only when the v12 sweep says it wins)
 EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
 NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"
 CASES="$DATA/enforcement/doj_cases_v3.csv"
@@ -90,7 +91,7 @@ step 5/12 "scheme triage"
 python -u -m src.model_a.scheme_triage --run-dir "$RUN" || fail 5
 
 step 6/12 "priority list + pursuit book + large-biller book"
-python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
+python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
 
 step 7/12 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \

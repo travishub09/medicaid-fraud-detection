@@ -414,3 +414,37 @@ def test_operator_book_sets_person_named_and_unnamed_rows_aside(tmp_path):
     build(tmp_path, top=5, min_billed=1.0, operator_book=True)
     t = pd.read_csv(tmp_path / "pursuit_targets.csv")
     assert len(t) > 0 and not t["org_name"].str.contains("MERKLEY").any()
+
+
+def test_national_names_are_institutional_and_pursuit_order_basis50():
+    """2026-10-13: the v12 operator-book dossier named Mayo Clinic Arizona, SSM Health,
+    Sutter VNA, Assurex, Ameritox and Alere (one-NPI subsidiaries with no cue word);
+    the curated national list catches them. And the pursuit book's sort has ONE
+    definition shared by the ship and the sweep: 'basis50' promotes basis-backed rows
+    into the first 50 slots only."""
+    from src.model_a.pursuit_dossier import is_national_name, pursuit_order, BASIS_HEAD
+    for n in ("MAYO CLINIC ARIZONA", "SSM HEALTH CARE ST. LOUIS", "SUTTER VISITING NURSE ASSOCIATION AND HOSPICE",
+              "ASSUREX HEALTH, INC.", "AMERITOX, LLC", "ALERE TOXICOLOGY SERVICES, INC"):
+        assert is_national_name(n), n
+    for n in ("INTERIM HEALTHCARE OF WESTERN PENNSYLVANIA INC", "MOORE ENTERPRISES", "BRIGHT START PT & PTA PLLC"):
+        assert not is_national_name(n), n
+    n = 120
+    book = pd.DataFrame({"org_id": [f"org:{i}" for i in range(n)],
+                         "score_dollar_weighted": np.linspace(1.0, 0.0, n),
+                         "score_max": np.linspace(1.0, 0.0, n),
+                         "case_size_capped": [i % 3 != 0 for i in range(n)]})   # every third row basis-backed
+    d = pursuit_order(book, "dollar")
+    assert list(d["org_id"].head(3)) == ["org:0", "org:1", "org:2"]
+    b = pursuit_order(book, "basis50")
+    head = b.head(40)                                                            # only 40 basis rows exist (< BASIS_HEAD)
+    assert not head["case_size_capped"].any()                                    # all of them come first
+    assert list(head["org_id"].head(3)) == ["org:0", "org:3", "org:6"]           # in score order
+    tail = b.iloc[40:]
+    assert list(tail["org_id"].head(2)) == ["org:1", "org:2"]                    # then the rest by score
+    assert BASIS_HEAD == 50
+    big = pd.concat([book, book.assign(org_id=[f"org:b{i}" for i in range(n)], case_size_capped=False)])
+    bb = pursuit_order(big, "basis50")
+    assert not bb.head(BASIS_HEAD)["case_size_capped"].any() and bb.iloc[BASIS_HEAD:]["case_size_capped"].any()
+    assert len(b) == n and b["org_id"].is_unique
+    with pytest.raises(ValueError):
+        pursuit_order(book, "random")

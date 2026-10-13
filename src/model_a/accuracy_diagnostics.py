@@ -476,10 +476,22 @@ def order_sweep(orgs_hit: pd.DataFrame, budgets=(16, 50, 100, 250)) -> list[dict
     out = []
     for key in keys:
         v = pd.to_numeric(orgs_hit[key], errors="coerce").fillna(-1).to_numpy()
-        for basis_first in (False, True):
-            order = np.lexsort((-v, capped)) if basis_first else np.argsort(-v, kind="stable")
+        for variant in ("plain", "basis_first", "basis50"):
+            if variant == "basis_first":
+                order = np.lexsort((-v, capped))
+            elif variant == "basis50":
+                # the MIXED order (pursuit_dossier.pursuit_order 'basis50'): the
+                # basis-backed rows fill the first 50 slots by score, the rest by score
+                by_score = np.argsort(-v, kind="stable")
+                head = [i for i in by_score if not capped[i]][:50]
+                taken = set(head)
+                order = np.array(head + [i for i in by_score if i not in taken], dtype=int)
+            else:
+                order = np.argsort(-v, kind="stable")
             y = orgs_hit["hit"].to_numpy()[order]
-            row = {"order": f"{key}{' (basis-backed first)' if basis_first else ''}"}
+            label = {"plain": "", "basis_first": " (basis-backed first)",
+                     "basis50": " (basis-backed first in the top 50)"}[variant]
+            row = {"order": f"{key}{label}"}
             for k in budgets:
                 k = int(min(k, len(y)))
                 row[f"hits@{k}"] = int(y[:k].sum()) if k else 0
