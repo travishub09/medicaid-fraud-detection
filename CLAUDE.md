@@ -1267,6 +1267,19 @@ first, then paste" above every move/done block.
   marks a dismissed / acquitted charge `usable=0` with a `qc_note` (quarantine,
   never delete). v15 = the A/B hard vs hard+charged on one matrix (two
   accuracy_diagnostics refits) before the runner default moves.
+  V14 READ-OUT (2026-10-13, `docs/ACCURACY_READOUT_v14_2026-10-13.md`): v13's
+  matrix re-graded with the book restored. Seven of eight checks pass (large
+  hits@50 2, p 0.049; pursuit 1 / 1 / 3 / 7 at 16 / 50 / 100 / 250; lead 29 mo;
+  inst share 0; Jaccard 0.61; train = hard); HOLD on hits100 >= 4 (3: v12's
+  fourth hit sits between 100 and 250 under v13's seed draw, the noise floor the
+  Jaccard describes). The v13 HOLD was the code, confirmed. The dossier named no
+  institution for the first time (home-health / toxicology / pain / hospice /
+  spine operators); not dispatched. Sweep second reading: basis50 on dollar =
+  1/3/3/7 vs shipped 1/1/3/7 (wins 50, ties the rest; v12 won 50, lost 100):
+  sort stays dollar, the row runs again in v15. Broadcast A/B weight 1/2/2/3 vs
+  mask 0/1/1/3: weight stays. v15 = full VM run on the expanded label (bundles
+  307 to 312) under the v14 checks + the hard vs hard+charged A/B + the three-
+  ruler sweep; 100 bar stays at 4.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

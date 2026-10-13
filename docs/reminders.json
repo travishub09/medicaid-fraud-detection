@@ -873,7 +873,7 @@
       "what": "Tier 0 + L1.1 of the label plan are BUILT (bundle 307; docs/LABEL_EXPANSION_PLAN_2026-10.md section 5 has the audit read-out): (1) `label_expansion affiliated` = convicted / excluded individuals -> the biller whose claims carried them as the rendering provider in the 24 months before the exclusion (basis affiliated_conviction, one biller per individual, share >= 5 percent or $25k; the rest listed); (2) `label_expansion cia` = the 339 OIG CIA parties -> enrolled providers by EXACT name or by PECOS organization OWNER (every org the owner owns, chains over 150 orgs listed not broadcast), written as cia_cases.csv (case-DB schema) + cia_defendant_npis.parquet (resolver schema) + CIA_RESOLUTION.md + cia_residue.csv (the research list); (3) self-disclosure settlements flagged in the case DB and never a positive; (4) the qui tam ruler (prospective_label --qui-tam-only; accuracy_diagnostics --qui-tam-ruler). RUN on the VM after v14 (the affiliated step reads the full spending fact: minutes on the VM) and attach the three reports; the counts decide the v15 pre-registration (qui tam ruler + the two new sources as a sweep, never a silent swap). Re-harvest the CIA residue list next (the research queue). ALSO (bundle 308): `label_expansion names` resolves the name-only hard-tier exclusion rows since 2015 OFFLINE (unique NPPES record in the state = resolved; several = the Manus residue exclusion_name_residue.csv); paste its summary line too. Bundle 309 (the exclusion-source audit, docs/EXCLUSION_SOURCES_AUDIT_2026-10.md): the UPIN join (NPPES Other Provider Identifier type 02) runs before the name match, so the crosswalk line with --other-ids-out comes first; the exclusion nodes now carry upin / zip / specialty / dob, which needs integrate + the graph rebuilt before the names step sees them (the as-of graph for v15 does that).",
       "added": "2026-10-13",
       "commands": [
-        "# on the VM, after bundle 307 is merged + pushed and pulled:",
+        "# on the VM, after bundle 313 is merged + pushed on the laptop (the VM gets the code with git pull):",
         "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
         "python -u -m src.ingest_cms.ccn_npi_crosswalk --in \"$(ls $MEDICAID_DATA_ROOT/preclean/nppes/npidata_pfile_*.csv | tail -1)\" --out \"$MEDICAID_DATA_ROOT/processed/ccn_to_npi_from_nppes.parquet\" --other-ids-out \"$MEDICAID_DATA_ROOT/processed/nppes_other_ids.parquet\"",
         "python -u -m src.model_a.label_expansion affiliated --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --spending \"$MEDICAID_DATA_ROOT/processed/spending_fact.parquet\" --out \"$MEDICAID_DATA_ROOT/processed/affiliated_convictions.parquet\"",
@@ -924,16 +924,16 @@
       ]
     },
     {
-      "key": "merge_bundle312",
-      "what": "Merge bundle312 (cumulative, supersedes 239 to 311): charged-only case rows as charged_case positives + the outcome-refresh lane + the org-resolution fix for convictions without a dollar amount, on top of 310 (the label plan code: tier 0, CIA, names, Manus lanes, the exclusion-source audit, the charged tier). One merge closes every open merge task (the lines below). Then push, and git pull on the VM before task label_expansion_run. Bundle 312 also carries the v14 post-run task queue.",
+      "key": "merge_bundle313",
+      "what": "Merge bundle313 (cumulative, supersedes 239 to 312): charged-only case rows as charged_case positives + the outcome-refresh lane + the org-resolution fix for convictions without a dollar amount, on top of 310 (the label plan code: tier 0, CIA, names, Manus lanes, the exclusion-source audit, the charged tier). One merge closes every open merge task (the lines below). Then push, and git pull on the VM before task label_expansion_run. Bundle 313 also carries the v14 read-out (HOLD on hits100, seven of eight checks pass) and closes the v14 post-run tasks.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
         "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle312*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle312.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle312.bundle",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle313*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle313.bundle\"",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle313.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle312",
+        "python -m src.reminders --done-task merge_bundle313",
         "python -m src.reminders --done-task merge_bundle294",
         "python -m src.reminders --done-task merge_bundle295",
         "python -m src.reminders --done-task merge_bundle296",
@@ -942,42 +942,6 @@
         "python -m src.reminders --done-task merge_bundle309",
         "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
       ]
-    },
-    {
-      "key": "run_packet__frozen_2021-12_v14",
-      "what": "Send the run packet for frozen_2021-12_v14 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-      "added": "2026-10-13",
-      "commands": [
-        "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v14",
-        "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-        "REM then upload run_packet.zip to the chat",
-        "python -m src.reminders --done-task run_packet__frozen_2021-12_v14"
-      ]
-    },
-    {
-      "key": "pursuit_dossier__frozen_2021-12_v14",
-      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v14 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v14\" --dispatch",
-        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v14"
-      ]
-    },
-    {
-      "key": "dossier_poll__frozen_2021-12_v14",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v14 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v14\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v14"
-      ]
-    },
-    {
-      "key": "registry_verdict__frozen_2021-12_v14",
-      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v14 \u2014 close only when you have them",
-      "added": "2026-10-13"
     }
   ]
 }
