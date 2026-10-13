@@ -94,6 +94,15 @@ LEIE_COLS = {
     "city":           ["CITY"],
     "state":          ["STATE"],
     "zip":            ["ZIP"],
+    # identifier aids for the name-only rows (2026-10-13 exclusion-source audit):
+    # UPIN joins to NPPES Other Provider Identifier type 02, DOB to the death
+    # master, GENERAL / SPECIALTY to a taxonomy family, ZIP to the NPPES address
+    "upin":           ["UPIN"],
+    "dob":            ["DOB"],
+    "general":        ["GENERAL"],
+    "specialty":      ["SPECIALTY"],
+    "waiver_date":    ["WAIVERDATE"],
+    "waiver_state":   ["WVRSTATE"],
 }
 
 OWNER_COLS = {
@@ -505,6 +514,14 @@ def build_exclusions(leie_pq: str, qa: QA, quarantine: list) -> pd.DataFrame:
     person = (last + ", " + first).str.strip(", ")
     out["entity_name"] = person.where(person != "", busname)
     out["name_key"] = _normalize_name(out["entity_name"])
+    # the identifier aids ride along as strings (the name-only resolver and the
+    # UPIN join read them; blank when the file lacks the column)
+    for c in ("state", "city", "zip", "upin", "general", "specialty", "waiver_state"):
+        out[c] = (df[c].fillna("").astype(str).str.strip().str.upper() if c in df
+                  else pd.Series("", index=df.index))
+    out["zip"] = out["zip"].str.replace(r"\D", "", regex=True).str[:5]
+    out["dob"] = parse("dob")
+    out["waiver_date"] = parse("waiver_date")
     out = out.reset_index(drop=True)
     qa.count("exclusions", len(out))
     return out

@@ -65,6 +65,62 @@ def _nppes_opi_columns(cols: list[str]) -> list[tuple[str, str]]:
     return [(vals[i], types[i]) for i in vals if i in types]
 
 
+# NPPES Other Provider Identifier type codes (the public data dictionary):
+# 01 OTHER, 02 MEDICARE UPIN, 04 MEDICARE ID-TYPE UNSPECIFIED, 05 MEDICAID (with the
+# issuing state), 06 MEDICARE OSCAR / CERTIFICATION, 07 MEDICARE NSC, 08 MEDICARE PIN.
+OTHER_ID_TYPES = {"01": "other", "02": "upin", "04": "medicare_unspecified", "05": "medicaid",
+                  "06": "ccn", "07": "medicare_nsc", "08": "medicare_pin"}
+
+
+def _nppes_opi_triplets(cols: list[str]) -> list[tuple[str, str, str | None]]:
+    """(value column, type column, state column or None) per Other Provider Identifier slot."""
+    import re
+    vals, types, states = {}, {}, {}
+    for c in cols:
+        low = str(c).lower()
+        if "other" not in low or "provider" not in low or "identifier" not in low:
+            continue
+        idx_m = re.search(r"(\d+)\s*$", str(c).strip())
+        idx = idx_m.group(1) if idx_m else ""
+        if "type" in low and "code" in low:
+            types[idx] = c
+        elif "state" in low:
+            states[idx] = c
+        elif "issuer" not in low:
+            vals[idx] = c
+    return [(vals[i], types[i], states.get(i)) for i in vals if i in types]
+
+
+def other_ids_from_nppes(raw: pd.DataFrame, types: tuple[str, ...] = ("02", "05")) -> pd.DataFrame:
+    """Long table (npi, id_type, identifier, issuer_state) of the NPPES Other Provider
+    Identifiers of the requested types. Type 02 is the Medicare UPIN (the LEIE carries
+    UPIN on its pre-NPI rows: a HARD join for name-only exclusions); type 05 is the
+    state Medicaid provider id with its issuing state (state exclusion lists that
+    print a Medicaid id but no NPI join here). Exclusion-source audit 2026-10-13."""
+    npi_col = next((c for c in raw.columns if str(c).strip().lower() in ("npi", "npi_number")), None)
+    trip = _nppes_opi_triplets(list(raw.columns))
+    if npi_col is None or not trip:
+        return pd.DataFrame(columns=["npi", "id_type", "identifier", "issuer_state"])
+    npi = canonicalize_series(raw[npi_col])
+    want = {str(t).zfill(2) for t in types}
+    rows = []
+    for val_c, type_c, state_c in trip:
+        tcode = raw[type_c].fillna("").astype(str).str.strip().str.zfill(2)
+        mask = tcode.isin(want)
+        if not mask.any():
+            continue
+        ident = raw[val_c][mask].fillna("").astype(str).str.strip().str.upper()
+        st = (raw[state_c][mask].fillna("").astype(str).str.strip().str.upper() if state_c
+              else pd.Series("", index=ident.index))
+        rows.append(pd.DataFrame({"npi": npi[mask], "id_type": tcode[mask].map(OTHER_ID_TYPES).fillna(tcode[mask]),
+                                  "identifier": ident, "issuer_state": st}))
+    if not rows:
+        return pd.DataFrame(columns=["npi", "id_type", "identifier", "issuer_state"])
+    df = pd.concat(rows, ignore_index=True).dropna(subset=["npi"])
+    df = df[df["identifier"] != ""]
+    return df.drop_duplicates().reset_index(drop=True)
+
+
 def crosswalk_from_nppes(raw: pd.DataFrame) -> pd.DataFrame:
     """Build (ccn, npi) from the NPPES 'Other Provider Identifier' fields.
 
@@ -244,6 +300,9 @@ def main() -> None:
                     help="raw NPPES file: when set, --in is treated as the POS file and "
                          "CCN↔NPI is built by the POS↔NPPES (Medicaid# + name/ZIP) join")
     ap.add_argument("--out", required=True, help="output ccn_to_npi parquet")
+    ap.add_argument("--other-ids-out", default=None,
+                    help="also write the NPPES Other Provider Identifiers of type 02 (UPIN) and 05 (state "
+                         "Medicaid id) as a long parquet (npi, id_type, identifier, issuer_state)")
     args = ap.parse_args()
     from src.attempt_2.clean_data import read_csv_text
     p = Path(args.inp)
@@ -259,6 +318,13 @@ def main() -> None:
             xw = xw[["ccn", "npi"]]
     else:
         xw = build_ccn_npi_crosswalk(raw)
+        if args.other_ids_out:
+            ids = other_ids_from_nppes(raw)
+            Path(args.other_ids_out).parent.mkdir(parents=True, exist_ok=True)
+            ids.to_parquet(args.other_ids_out, index=False)
+            by = ids["id_type"].value_counts().to_dict() if len(ids) else {}
+            print(f"  other identifiers: {len(ids):,} rows (" + ", ".join(f"{k} {v:,}" for k, v in by.items())
+                  + f") -> {args.other_ids_out}")
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     xw.to_parquet(out, index=False)

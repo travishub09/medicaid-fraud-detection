@@ -117,7 +117,9 @@ def test_tiers_from_the_reason_text(in_dir, provider_dim):
 
 
 @pytest.mark.parametrize("excl_type,tier", [
-    ("state_term:TN:Credible allegation of fraud", "hard"),
+    # 2026-10-13 exclusion-source audit: a payment suspension on a credible allegation is an
+    # ALLEGATION (42 CFR 455.23), not a resolved outcome; weak, never a training positive
+    ("state_term:TN:Credible allegation of fraud", "weak"),
     ("state_term:MS:Kickback scheme [Physician]", "hard"),
     ("state_term:NC:OIG Exclusion", "weak"),
     ("state_term:KY:License revoked by board|name_match", "weak"),

@@ -819,16 +819,16 @@
       ]
     },
     {
-      "key": "merge_bundle308",
-      "what": "Merge bundle308 (cumulative, supersedes 239 to 307): the Manus lanes for label expansion (cia + exclusion_names prompt sets, the offline name resolver, the two answer loaders) on top of 307. Close the 294 to 307 merge tasks with it.",
+      "key": "merge_bundle309",
+      "what": "Merge bundle309 (cumulative, supersedes 239 to 308): the exclusion-source audit (LEIE identifier aids carried, UPIN / Medicaid-id extractor from NPPES, allegations demoted in the state rules, the commercial-plan answer) on top of 308. Close the 294 to 308 merge tasks with it.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
         "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle308*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle308.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle308.bundle",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle309*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle309.bundle\"",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle309.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle308",
+        "python -m src.reminders --done-task merge_bundle309",
         "python -m src.reminders --done-task merge_bundle298",
         "python -m src.reminders --done-task merge_bundle297",
         "python -m src.reminders --done-task merge_bundle296",
@@ -837,7 +837,8 @@
         "python -m src.reminders --done-task merge_bundle304",
         "python -m src.reminders --done-task merge_bundle305",
         "python -m src.reminders --done-task merge_bundle306",
-        "python -m src.reminders --done-task merge_bundle307"
+        "python -m src.reminders --done-task merge_bundle307",
+        "python -m src.reminders --done-task merge_bundle308"
       ]
     },
     {
@@ -869,14 +870,15 @@
     },
     {
       "key": "label_expansion_run",
-      "what": "Tier 0 + L1.1 of the label plan are BUILT (bundle 307; docs/LABEL_EXPANSION_PLAN_2026-10.md section 5 has the audit read-out): (1) `label_expansion affiliated` = convicted / excluded individuals -> the biller whose claims carried them as the rendering provider in the 24 months before the exclusion (basis affiliated_conviction, one biller per individual, share >= 5 percent or $25k; the rest listed); (2) `label_expansion cia` = the 339 OIG CIA parties -> enrolled providers by EXACT name or by PECOS organization OWNER (every org the owner owns, chains over 150 orgs listed not broadcast), written as cia_cases.csv (case-DB schema) + cia_defendant_npis.parquet (resolver schema) + CIA_RESOLUTION.md + cia_residue.csv (the research list); (3) self-disclosure settlements flagged in the case DB and never a positive; (4) the qui tam ruler (prospective_label --qui-tam-only; accuracy_diagnostics --qui-tam-ruler). RUN on the VM after v14 (the affiliated step reads the full spending fact: minutes on the VM) and attach the three reports; the counts decide the v15 pre-registration (qui tam ruler + the two new sources as a sweep, never a silent swap). Re-harvest the CIA residue list next (the research queue). ALSO (bundle 308): `label_expansion names` resolves the name-only hard-tier exclusion rows since 2015 OFFLINE (unique NPPES record in the state = resolved; several = the Manus residue exclusion_name_residue.csv); paste its summary line too.",
+      "what": "Tier 0 + L1.1 of the label plan are BUILT (bundle 307; docs/LABEL_EXPANSION_PLAN_2026-10.md section 5 has the audit read-out): (1) `label_expansion affiliated` = convicted / excluded individuals -> the biller whose claims carried them as the rendering provider in the 24 months before the exclusion (basis affiliated_conviction, one biller per individual, share >= 5 percent or $25k; the rest listed); (2) `label_expansion cia` = the 339 OIG CIA parties -> enrolled providers by EXACT name or by PECOS organization OWNER (every org the owner owns, chains over 150 orgs listed not broadcast), written as cia_cases.csv (case-DB schema) + cia_defendant_npis.parquet (resolver schema) + CIA_RESOLUTION.md + cia_residue.csv (the research list); (3) self-disclosure settlements flagged in the case DB and never a positive; (4) the qui tam ruler (prospective_label --qui-tam-only; accuracy_diagnostics --qui-tam-ruler). RUN on the VM after v14 (the affiliated step reads the full spending fact: minutes on the VM) and attach the three reports; the counts decide the v15 pre-registration (qui tam ruler + the two new sources as a sweep, never a silent swap). Re-harvest the CIA residue list next (the research queue). ALSO (bundle 308): `label_expansion names` resolves the name-only hard-tier exclusion rows since 2015 OFFLINE (unique NPPES record in the state = resolved; several = the Manus residue exclusion_name_residue.csv); paste its summary line too. Bundle 309 (the exclusion-source audit, docs/EXCLUSION_SOURCES_AUDIT_2026-10.md): the UPIN join (NPPES Other Provider Identifier type 02) runs before the name match, so the crosswalk line with --other-ids-out comes first; the exclusion nodes now carry upin / zip / specialty / dob, which needs integrate + the graph rebuilt before the names step sees them (the as-of graph for v15 does that).",
       "added": "2026-10-13",
       "commands": [
         "# on the VM, after bundle 307 is merged + pushed and pulled:",
         "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
+        "python -u -m src.ingest_cms.ccn_npi_crosswalk --in \"$(ls $MEDICAID_DATA_ROOT/preclean/nppes/npidata_pfile_*.csv | tail -1)\" --out \"$MEDICAID_DATA_ROOT/processed/ccn_to_npi_from_nppes.parquet\" --other-ids-out \"$MEDICAID_DATA_ROOT/processed/nppes_other_ids.parquet\"",
         "python -u -m src.model_a.label_expansion affiliated --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --spending \"$MEDICAID_DATA_ROOT/processed/spending_fact.parquet\" --out \"$MEDICAID_DATA_ROOT/processed/affiliated_convictions.parquet\"",
         "python -u -m src.model_a.label_expansion cia --cia \"$MEDICAID_DATA_ROOT/preclean/cia/cia_list.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --out-cases \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\" --out-npis \"$MEDICAID_DATA_ROOT/processed/cia_defendant_npis.parquet\"",
-        "python -u -m src.model_a.label_expansion names --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --provider-dim \"$MEDICAID_DATA_ROOT/processed/provider_dim.parquet\" --out \"$MEDICAID_DATA_ROOT/processed/exclusion_name_resolution.parquet\" --out-exclusions \"$MEDICAID_DATA_ROOT/processed/exclusions_name_resolved.parquet\"",
+        "python -u -m src.model_a.label_expansion names --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --provider-dim \"$MEDICAID_DATA_ROOT/processed/provider_dim.parquet\" --other-ids \"$MEDICAID_DATA_ROOT/processed/nppes_other_ids.parquet\" --out \"$MEDICAID_DATA_ROOT/processed/exclusion_name_resolution.parquet\" --out-exclusions \"$MEDICAID_DATA_ROOT/processed/exclusions_name_resolved.parquet\"",
         "# the three rulers on v14's matrix, as a sweep (nothing ships): exclusion+case, +affiliated, qui tam only",
         "python -u -m src.model_a.prospective_label --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --cutoff 2021-12 --fca-tier hard --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --affiliated \"$MEDICAID_DATA_ROOT/processed/affiliated_convictions.parquet\" --out \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14/future_bans_after_2021-12__aff36.csv\"",
         "python -u -m src.model_a.prospective_label --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --cutoff 2021-12 --fca-tier hard --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --fca-case-only --qui-tam-only --out \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14/future_bans_after_2021-12__quitam36.csv\"",
@@ -901,6 +903,14 @@
         "REM excluded names (after reading the residue count): python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_names\" --sets exclusion_names --exclusion-residue \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\exclusion_name_residue.csv\"   then --dispatch / --poll; load with: research_evidence exclusion-npis --in <csv> --residue <residue csv> --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\exclusions_name_resolved.parquet\"",
         "REM big states: python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_bigstates\" --sets mfcu --states CA,NY,TX,FL,IL,PA,OH,MI,NJ,GA --years 2020-2025   then --dispatch / --poll / mfcu-cases",
         "python -m src.reminders --done-task label_manus_lanes"
+      ]
+    },
+    {
+      "key": "label_sources_followups",
+      "what": "Follow-ups from docs/EXCLUSION_SOURCES_AUDIT_2026-10.md, in order: (1) big-state exclusion lists (NY OMIG, CA DHCS S&I, TX HHSC-OIG, FL AHCA, IL HFS-OIG, PA, OH, MI, NJ) with license_number / medicaid_id aliases and the NPPES type-05 join (adapter work + downloads; the fl_la_state_lists task covers two); (2) OpenSanctions as an identifier CROSSWALK (read program / reason / notes, tier by the underlying statute, attach every identifier of the merged entity; gated on the commercial license, Brad); (3) 1128(b)(8) / (b)(15) hard when the controlling individual is hard-tier (via the DOJ affiliation path); (4) the 1128(a)(4) pill-mill ablation; (5) the case date over the exclusion date when an NPI resolves to a DOJ case; (6) `hcf_commercial`: state AG / insurance-department fraud convictions as a TRAINING-only source tag, switched on by a label ablation on the FCA ruler, never a forward positive. Nothing to run until the code lands.",
+      "added": "2026-10-13",
+      "commands": [
+        "REM nothing to run yet: each item arrives in a bundle with its own lines"
       ]
     }
   ]

@@ -342,6 +342,8 @@ def main() -> None:
     a3.add_argument("--provider-dim", required=True, help="processed/provider_dim.parquet")
     a3.add_argument("--tier", default="hard", choices=["all", "hard", "hard+weak"])
     a3.add_argument("--year-min", type=int, default=2015)
+    a3.add_argument("--other-ids", default=None,
+                    help="processed/nppes_other_ids.parquet (ccn_npi_crosswalk --other-ids-out): UPIN joins first")
     a3.add_argument("--out", required=True, help="processed/exclusion_name_resolution.parquet (every row + status)")
     a3.add_argument("--out-exclusions", default=None,
                     help="processed/exclusions_name_resolved.parquet (resolved rows in the exclusions schema; "
@@ -351,7 +353,8 @@ def main() -> None:
     if a.cmd == "names":
         nodes = pd.read_parquet(a.exclusion_nodes)
         dim = pd.read_parquet(a.provider_dim)
-        res = exclusion_name_resolve(nodes, dim, tier=a.tier, year_min=a.year_min)
+        oth = pd.read_parquet(a.other_ids) if a.other_ids else None
+        res = exclusion_name_resolve(nodes, dim, tier=a.tier, year_min=a.year_min, other_ids=oth)
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)
         res.to_parquet(a.out, index=False)
         amb = res[res["status"] == "ambiguous"] if len(res) else res
@@ -433,7 +436,8 @@ NAME_RES_COLS = ["source_node_id", "entity_name", "state", "excl_type", "excl_da
 
 
 def exclusion_name_resolve(exclusion_nodes: pd.DataFrame, provider_dim: pd.DataFrame,
-                           tier: str = "hard", year_min: int = 2015) -> pd.DataFrame:
+                           tier: str = "hard", year_min: int = 2015,
+                           other_ids: pd.DataFrame | None = None) -> pd.DataFrame:
     """The audit's biggest identifier gap (LEIE 66,081 name-only rows, SAM 102,232,
     state lists 3,795): a kept-tier exclusion record with NO NPI, a name and a
     state, dated ``year_min`` or later, is resolved OFFLINE first against NPPES
@@ -470,8 +474,22 @@ def exclusion_name_resolve(exclusion_nodes: pd.DataFrame, provider_dim: pd.DataF
     okeys = set(e.loc[~is_person, "person_key"]) - {""}
     states = set(e["state"]) - {""}
     people, orgs, _ = _index_nppes(provider_dim, pkeys, okeys, states)
+    # UPIN first (a HARD identifier): the LEIE's pre-NPI rows carry the Medicare UPIN
+    # and NPPES records it as Other Provider Identifier type 02 (ccn_npi_crosswalk
+    # --other-ids-out); one NPI per UPIN resolves without any name logic
+    upin_to_npi: dict[str, list[str]] = {}
+    if other_ids is not None and len(other_ids):
+        u = other_ids[other_ids["id_type"].astype(str) == "upin"]
+        for ident, n in zip(u["identifier"].astype(str).str.upper(), u["npi"].astype(str)):
+            upin_to_npi.setdefault(ident, []).append(n)
+    upins = e.get("upin", pd.Series("", index=e.index)).fillna("").astype(str).str.upper().str.strip()
     rows = []
-    for r in e.itertuples():
+    for r, upin in zip(e.itertuples(), upins):
+        hits = sorted(set(upin_to_npi.get(upin, []))) if upin else []
+        if len(hits) == 1:
+            rows.append({"npi": hits[0], "match_level": "excl_upin", "n_candidates": 1,
+                         "candidate_npis": hits[0], "status": "resolved"})
+            continue
         key = r.person_key
         if not key:
             rows.append({"npi": "", "match_level": "", "n_candidates": 0, "candidate_npis": "", "status": "no_key"})

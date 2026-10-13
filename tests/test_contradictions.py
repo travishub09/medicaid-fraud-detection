@@ -79,7 +79,9 @@ def test_enrollment_end_for_cause_is_its_own_tier_a_event():
     from src.model_a.contradictions import INNOCENT, TIER
     excl = pd.DataFrame({"npi": [A, C],
                          "excl_date": ["2022-01-15", "2020-01-01"],
-                         "excl_type": ["mcd_enroll:FL:TERMINATED | CREDIBLE ALLEGATION OF FRAUD [PHYSICIAN]", "1128a1"],
+                         # 2026-10-13: a credible-allegation suspension is an allegation (weak); the per-se event
+                         # here is a termination on a CONVICTION, which stays hard
+                         "excl_type": ["mcd_enroll:FL:TERMINATED | CONVICTED OF MEDICAID FRAUD [PHYSICIAN]", "1128a1"],
                          "reinstate_date": ["2022-09-01", None],
                          "entity_name": ["", "ROE, JANE"]})
     ev = _events(excl, None).set_index("npi")

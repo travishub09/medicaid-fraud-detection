@@ -157,3 +157,28 @@ def test_cia_and_exclusion_name_prompts_and_loaders(tmp_path):
     assert out.iloc[0]["match_level"] == "research_high" and out.iloc[0]["excl_type"] == "1128a1"
     low = pd.DataFrame({"source_node_id": ["exclusion:2"], "npi": ["1000000012"], "confidence": ["low"], "evidence_url": ["u"]})
     assert len(load_exclusion_npis(low, ex_res)) == 0
+
+
+def test_upin_join_resolves_before_names_and_other_ids_extractor():
+    from src.model_a.label_expansion import exclusion_name_resolve
+    from src.ingest_cms.ccn_npi_crosswalk import other_ids_from_nppes
+    raw = pd.DataFrame({"NPI": ["1000000004", "1000000012"],
+                        "Other Provider Identifier_1": ["A12345", "MD999"],
+                        "Other Provider Identifier Type Code_1": ["02", "05"],
+                        "Other Provider Identifier State_1": ["", "OH"],
+                        "Other Provider Identifier_2": ["450123", ""],
+                        "Other Provider Identifier Type Code_2": ["06", ""]})
+    ids = other_ids_from_nppes(raw)
+    assert ids.to_dict("records") == [{"npi": "1000000004", "id_type": "upin", "identifier": "A12345", "issuer_state": ""},
+                                      {"npi": "1000000012", "id_type": "medicaid", "identifier": "MD999", "issuer_state": "OH"}]
+    nodes = pd.DataFrame({"node_id": ["exclusion:7"], "npi": [""], "entity_name": ["DOE, JANE"], "state": ["FL"],
+                          "excl_type": ["1128a1"], "excl_date": ["2021-05-01"], "upin": ["a12345"]})
+    res = exclusion_name_resolve(nodes, _dim(), other_ids=ids)    # two DOE, JANE in FL, but the UPIN settles it
+    assert res.iloc[0]["status"] == "resolved" and res.iloc[0]["npi"] == "1000000004" and res.iloc[0]["match_level"] == "excl_upin"
+
+
+def test_state_termination_allegations_are_weak():
+    from src.model_a.fca_relevance import classify_series
+    t = classify_series(pd.Series(["state_term:FL:indicted for medicaid fraud", "state_term:FL:payment suspension credible allegation of fraud",
+                                   "state_term:FL:convicted of medicaid fraud"]))
+    assert list(t["fca_tier"]) == ["weak", "weak", "hard"]

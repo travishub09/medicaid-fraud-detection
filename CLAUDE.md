@@ -1208,6 +1208,24 @@ first, then paste" above every move/done block.
   resolved only on a Luhn-valid NPI) and `exclusion-npis` (valid NPI, confidence
   >= medium, and the NPI must be one of the candidates we listed). Offline exact
   first, Manus for the residue, a human gate on every answer.
+  EXCLUSION-SOURCE AUDIT (2026-10-13, `docs/EXCLUSION_SOURCES_AUDIT_2026-10.md`):
+  LEIE's UPIN / DOB / GENERAL / SPECIALTY / ZIP / waiver fields were dropped by
+  `integrate.build_exclusions`; now carried into processed/exclusions.parquet and
+  the exclusion nodes. `ccn_npi_crosswalk --other-ids-out` writes the NPPES Other
+  Provider Identifiers of type 02 (Medicare UPIN) and 05 (state Medicaid id +
+  issuing state) as a long table; `label_expansion names --other-ids` resolves by
+  UPIN first (`excl_upin`, a hard identifier, no name logic). STATE_TERM_RULES:
+  indictments, charges and credible-allegation payment suspensions are weak (an
+  allegation is not an outcome; one pinned test moved). OpenSanctions' value is as
+  an identifier crosswalk (it de-duplicates LEIE + SAM + 45 state lists into one
+  entity), never a label; its program / reason properties would make its rows
+  tier-able. SAM's 'NPI' field holds UEI / CAGE / DUNS (11,234 bad Luhn):
+  quarantine. COMMERCIAL-PLAN FRAUD (operator's question): already in the label
+  where it is federal (18 USC 1347 covers private programs; 1128(a)(3) is hard
+  tier); the gap is state-court insurance-fraud convictions, which belong as a
+  TRAINING-only source tag `hcf_commercial` admitted on a conviction or judgment,
+  switched on by a label ablation on the FCA ruler, never a forward positive and
+  never in the strict PurpleLab label. Follow-ups in task label_sources_followups.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

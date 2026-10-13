@@ -124,8 +124,13 @@ _TIER_RANK = {"hard": 2, "weak": 1, "excluded": 0}
 # finding, and an entry that merely mirrors a federal exclusion carries no
 # statute of its own (the LEIE row of the same NPI already sets the tier).
 STATE_TERM_RULES = [
-    (r"fraud|false claim|kickback|anti-?kickback|bribe|credible allegation|program integrity|"
-     r"mfcu|medicaid fraud control|convict|felony|guilty|indict|plea|theft|embezzl|forg|"
+    # an indictment, a charge or a payment suspension on a credible allegation of fraud
+    # is an ALLEGATION, not an outcome (exclusion-source audit 2026-10-13): weak, so it
+    # never trains or grades as an FCA-shaped event while staying a graph node
+    (r"indict|charged|pending (charges|investigation)|credible allegation|payment suspension", "weak",
+     "state termination on an allegation or charge (no resolved outcome)"),
+    (r"fraud|false claim|kickback|anti-?kickback|bribe|program integrity|"
+     r"mfcu|medicaid fraud control|convict|felony|guilty|plea|theft|embezzl|forg|"
      r"misrepresent|abuse of billing|billing (abuse|irregularit|fraud)|overbill|upcod|"
      r"phantom|false (record|statement|document)|health ?care (fraud|offense)|"
      r"criminal conduct|financial integrity", "hard",

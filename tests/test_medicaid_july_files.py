@@ -161,7 +161,7 @@ def _enroll_csv(tmp_path: Path) -> Path:
     rows = [
         # DR1: GA since 2015, still open; FL segment ended for fraud 2022-06-30, re-enrolled 2023-03-01
         dict(NPI=DR1, STATE="GA", ENROLLMENT_START_DATE="2015-01-01", ENROLLMENT_END_DATE="", ENROLLMENT_STATUS="ACTIVE", TERMINATION_REASON="", PROVIDER_TYPE="PHYSICIAN"),
-        dict(NPI=DR1, STATE="FL", ENROLLMENT_START_DATE="2018-01-01", ENROLLMENT_END_DATE="2022-06-30", ENROLLMENT_STATUS="TERMINATED", TERMINATION_REASON="CREDIBLE ALLEGATION OF FRAUD", PROVIDER_TYPE="PHYSICIAN"),
+        dict(NPI=DR1, STATE="FL", ENROLLMENT_START_DATE="2018-01-01", ENROLLMENT_END_DATE="2022-06-30", ENROLLMENT_STATUS="TERMINATED", TERMINATION_REASON="CONVICTED OF MEDICAID FRAUD", PROVIDER_TYPE="PHYSICIAN"),
         dict(NPI=DR1, STATE="FL", ENROLLMENT_START_DATE="2023-03-01", ENROLLMENT_END_DATE="", ENROLLMENT_STATUS="ACTIVE", TERMINATION_REASON="", PROVIDER_TYPE="PHYSICIAN"),
         # DR2: one segment, ended voluntarily (benign) 2021-12-31 -> no label, no open segment
         dict(NPI=DR2, STATE="TN", ENROLLMENT_START_DATE="2019-01-01", ENROLLMENT_END_DATE="2021-12-31", ENROLLMENT_STATUS="INACTIVE", TERMINATION_REASON="VOLUNTARY WITHDRAWAL", PROVIDER_TYPE="PHYSICIAN"),
@@ -192,7 +192,7 @@ def test_enrollment_segments_features_and_events(tmp_path):
     ev = menr.termination_events(seg)
     assert set(ev["npi"]) == {DR1, PH1}                           # the voluntary end is not an event
     row = ev[ev["npi"] == DR1].iloc[0]
-    assert row["excl_type"].startswith("mcd_enroll:FL:") and "CREDIBLE ALLEGATION" in row["excl_type"]
+    assert row["excl_type"].startswith("mcd_enroll:FL:") and "CONVICTED OF MEDICAID FRAUD" in row["excl_type"]
     assert pd.Timestamp(row["reinstate_date"]) == pd.Timestamp("2023-03-01") and row["currently_active"] == 0
     assert fca_tier(row["excl_type"])[0] == "hard"
     assert fca_tier(ev[ev["npi"] == PH1].iloc[0]["excl_type"])[0] == "weak"
@@ -473,7 +473,7 @@ def test_enrollment_ends_split_into_label_candidates_and_administrative():
             + ev("300000", "IA", "TERM - STATE EXCLUSION/ DEBARMENT, ETC.", 100) + ev("400000", "IA", "TERM - ACTION TAKEN BY MEDICAID/CHIP", 10)
             + ev("500000", "NC", "TERM - NON-COMPLIANCE", 30) + ev("600000", "NC", "TERM - MEDICARE/MEDICAID EXCLUSION", 6)
             + ev("700000", "MN", "DENIED - NOT ELIGIBLE", 4) + ev("800000", "TN", "TERM - MEDICAID AUTHORITY", 25)
-            + ev("900000", "GA", "TERM - CREDIBLE ALLEGATION OF FRAUD", 3))
+            + ev("900000", "GA", "TERM - FRAUD CONVICTION", 3))
     events = pd.DataFrame(rows)
     label, admin = menr.split_label_candidates(events)
     assert len(label) + len(admin) == len(events)                     # quarantine, never delete
@@ -481,7 +481,7 @@ def test_enrollment_ends_split_into_label_candidates_and_administrative():
     kept_set = set(zip(kept[0], kept[1].str.strip()))
     assert kept_set == {("FL", "TERM - LOSS OF LICENSE OR OTHER STATE ACTION"),
                         ("NC", "TERM - MEDICARE/MEDICAID EXCLUSION"),
-                        ("GA", "TERM - CREDIBLE ALLEGATION OF FRAUD")}
+                        ("GA", "TERM - FRAUD CONVICTION")}
     why = admin.set_index(admin["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())["drop_reason"]
     assert why["IA:TERM - STATE EXCLUSION/ DEBARMENT, ETC."].iloc[0] == "state_default_code"   # 100 of 110 = IA's bulk code
     assert why["FL:TERM - OTHER"].iloc[0] == "no_sanction_named"
@@ -500,8 +500,11 @@ def test_enrollment_ends_split_into_label_candidates_and_administrative():
     assert fca_tier("mcd_enroll:NC:TERM - MEDICARE/MEDICAID EXCLUSION")[0] == "weak"
     assert fca_tier("mcd_enroll:IA:TERM - STATE EXCLUSION/ DEBARMENT, ETC.")[0] == "weak"
     assert fca_tier("mcd_enroll:CT:TERM - LICENSE REVOKED")[0] == "weak"
-    assert fca_tier("mcd_enroll:GA:TERM - CREDIBLE ALLEGATION OF FRAUD")[0] == "hard"
-    # a fraud-shaped status is never a "default" (GA: 3 of 3 are CREDIBLE ALLEGATION), and a
+    assert fca_tier("mcd_enroll:GA:TERM - FRAUD CONVICTION")[0] == "hard"
+    # 2026-10-13 exclusion-source audit: a credible-allegation payment suspension is an
+    # allegation (42 CFR 455.23): weak, never a training positive
+    assert fca_tier("mcd_enroll:GA:TERM - CREDIBLE ALLEGATION OF FRAUD")[0] == "weak"
+    # a fraud-shaped status is never a "default" (GA: 3 of 3 are FRAUD CONVICTION), and a
     # state below the minimum size has no bulk code (ND: one event is 100 percent of ND)
     nd = pd.DataFrame(ev("990000", "ND", "TERM - STATE EXCLUSION/ DEBARMENT, ETC.", 1))
     l_nd, a_nd = menr.split_label_candidates(nd)
@@ -529,7 +532,7 @@ def test_state_outlier_rate_demotes_a_states_coding_convention():
             + ev("30000", "OH", LR, 20) + ev("31000", "OH", "TERM - OTHER", 4000)       #   others, but under the
             + ev("40000", "NC", LR, 20) + ev("41000", "NC", "TERM - OTHER", 4000)       #   2% floor -> kept
             + ev("50000", "GA", LR, 20) + ev("51000", "GA", "TERM - OTHER", 4000)       # OH / NC / GA: 0.05%
-            + ev("60000", "CT", "TERM - CREDIBLE ALLEGATION OF FRAUD", 1200))           # hard: 12%, never demoted
+            + ev("60000", "CT", "TERM - FRAUD CONVICTION", 1200))           # hard: 12%, never demoted
     events = pd.DataFrame(rows)
     npis = pd.DataFrame({"state": ["CT", "FL", "OH", "NC", "GA"], "n_npis": [10_000, 40_000, 40_000, 40_000, 40_000]})
     label, admin = menr.split_label_candidates(events, state_npis=npis)
@@ -537,7 +540,7 @@ def test_state_outlier_rate_demotes_a_states_coding_convention():
     why = admin.groupby(admin["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())["drop_reason"].first()
     assert why[f"CT:{LR}"] == "state_outlier_rate"                    # 15% vs median 0.05%, above the 2% floor
     kept = set(label["excl_type"].str.extract(r"^mcd_enroll:(\w\w:[^\[]+)")[0].str.strip())
-    assert {f"FL:{LR}", f"OH:{LR}", f"NC:{LR}", f"GA:{LR}", "CT:TERM - CREDIBLE ALLEGATION OF FRAUD"} <= kept
+    assert {f"FL:{LR}", f"OH:{LR}", f"NC:{LR}", f"GA:{LR}", "CT:TERM - FRAUD CONVICTION"} <= kept
     assert f"CT:{LR}" not in kept
     assert float(admin.loc[admin["excl_type"].str.contains(f"CT:{LR}", regex=False), "state_rate"].iloc[0]) == 0.15
     # no denominators -> the rule is off, CT's rows stay (the share rule alone: 15% < 40%)
