@@ -314,3 +314,37 @@ def test_names_cli_builds_the_table_from_the_raw_leie(tmp_path):
     assert by.loc["ROE, RICK", "status"] == "resolved" and by.loc["ROE, RICK", "npi"] == "1000000003"
     assert by.loc["NOBODY CORP", "status"] == "no_match"
     assert "SMITH, ANN" not in by.index                   # b14 (loan default) is never hard tier
+
+
+def test_merge_label_inputs_and_cia_rows_pass_the_outcome_rule(tmp_path):
+    from src.model_a.label_expansion import merge_label_inputs
+    from src.enforcement.cia import normalize_cia, cia_case_rows
+    from src.model_a.fca_label_export import outcome_tier
+    from src.entity_graph.resolve_entities import norm_org_name
+    base = pd.DataFrame([{"case_id": "https://doj/1", "announced_date": "2022-01-01", "defendant_name": "Acme",
+                          "defendant_name_key": "ACME", "sector": "", "scheme": "", "amount_usd": "100", "qui_tam": "1",
+                          "self_disclosure": "0", "intervened": "", "jurisdiction": "", "source_url": "https://doj/1",
+                          "summary": "agreed to pay", "case_type": "civil_fca", "duplicate_of": ""}])
+    cia_norm = normalize_cia(pd.DataFrame({"Entity": ["Beta Clinic LLC", "Acme"], "Status": ["Active", "Active"],
+                                           "Effective Date": ["2023-02-01", "2022-01-01"], "State": ["TX", "TX"],
+                                           "Link": ["", ""]}))
+    cia_rows = cia_case_rows(cia_norm)
+    # the CIA summary reads as a RESOLVED civil outcome under the shared rule
+    assert outcome_tier("civil_fca", cia_rows.iloc[0]["summary"], None)[0] == "fca_civil"
+    cases_p, cia_p = tmp_path / "cases.csv", tmp_path / "cia_cases.csv"
+    base.to_csv(cases_p, index=False); cia_rows.to_csv(cia_p, index=False)
+    dn = pd.DataFrame({"case_id": ["https://doj/1"], "npi": ["1000000004"], "status": ["resolved"],
+                       "match_level": ["name_state"], "role_agree": [""], "name_national_hits": [1]})
+    cn = pd.DataFrame({"case_id": ["cia:BETA CLINIC:2023-02-01", "cia:BETA CLINIC:2023-02-01"], "defendant_name": ["Beta Clinic LLC"] * 2,
+                       "npi": ["1000000012", "1000000004"], "org_node_id": ["org:b", "org:b"], "status": ["resolved", "resolved"],
+                       "match_level": ["cia_exact_org"] * 2, "n_orgs_for_party": [1, 1], "label_weight": [0.5, 0.5]})
+    dn_p, cn_p = tmp_path / "dn.parquet", tmp_path / "cn.parquet"
+    dn.to_parquet(dn_p, index=False); cn.to_parquet(cn_p, index=False)
+    cases, npis, info = merge_label_inputs(cases_p, cia_p, dn_p, cn_p)
+    assert len(cases) == len(base) + len(cia_rows) and info["cases_cia"] == 2
+    assert len(npis) == 3 and info["npis_cia"] == 2
+    assert set(npis.columns) >= {"case_id", "npi", "status", "match_level", "label_weight"}
+    assert npis.set_index(["case_id", "npi"]).loc[("cia:BETA CLINIC:2023-02-01", "1000000004"), "label_weight"] == 0.5
+    # without the CIA files the inputs pass through unchanged
+    cases2, npis2, info2 = merge_label_inputs(cases_p, None, dn_p, None)
+    assert len(cases2) == 1 and len(npis2) == 1 and info2["cases_cia"] == 0

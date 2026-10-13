@@ -371,6 +371,37 @@ def cia_resolve(cia_norm: pd.DataFrame, org_nodes: pd.DataFrame, owner_nodes: pd
     return res, rsd
 
 
+def merge_label_inputs(case_db_path: str | Path, cia_cases_path: str | Path | None,
+                       defendant_npis_path: str | Path, cia_npis_path: str | Path | None
+                       ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """The v15 training inputs as ONE case file and ONE defendant-NPI file: the DOJ
+    case DB plus the CIA case rows (case_db.merge_case_files: a case already stored
+    is never duplicated or re-keyed), and the resolver's NPIs plus the CIA party
+    NPIs (de-duplicated on case_id x npi; the CIA rows keep their label_weight, the
+    per-party budget case_labels honours). Returns (cases, npis, counts). Neither
+    source file is modified: the merged files are the runner's inputs, so the
+    original harvest and resolver outputs stay reproducible."""
+    from src.attempt_2.clean_data import read_csv_text
+    from src.enforcement.case_db import merge_case_files
+    base = read_csv_text(str(case_db_path), dtype=str)
+    info = {"cases_base": int(len(base)), "cases_cia": 0, "npis_base": 0, "npis_cia": 0}
+    cases = base
+    if cia_cases_path and Path(cia_cases_path).exists():
+        cia = read_csv_text(str(cia_cases_path), dtype=str)
+        cases = merge_case_files(base, cia)
+        info["cases_cia"] = int(len(cases) - len(base))
+    npis = pd.read_parquet(defendant_npis_path)
+    info["npis_base"] = int(len(npis))
+    if cia_npis_path and Path(cia_npis_path).exists():
+        cn = pd.read_parquet(cia_npis_path)
+        cn = cn[cn.get("status", pd.Series("resolved", index=cn.index)) == "resolved"]
+        before = len(npis)
+        npis = pd.concat([npis, cn], ignore_index=True, sort=False)
+        npis = npis.drop_duplicates(["case_id", "npi"], keep="first")
+        info["npis_cia"] = int(len(npis) - before)
+    return cases, npis, info
+
+
 def cia_report(cia_norm: pd.DataFrame, resolved: pd.DataFrame, residue: pd.DataFrame) -> str:
     n = len(cia_norm)
     parties_resolved = resolved["case_id"].nunique() if len(resolved) else 0
@@ -424,6 +455,13 @@ def main() -> None:
     a2.add_argument("--budget", type=int, default=100)
     a2.add_argument("--out-cases", required=True, help="enforcement/cia_cases.csv (case-DB schema)")
     a2.add_argument("--out-npis", required=True, help="processed/cia_defendant_npis.parquet")
+    a4 = sub.add_parser("merge-inputs", help="the v15 label inputs: case DB + CIA cases, resolver NPIs + CIA NPIs")
+    a4.add_argument("--case-db", required=True, help="enforcement/doj_cases_v3.csv")
+    a4.add_argument("--cia-cases", default=None, help="enforcement/cia_cases.csv (label_expansion cia --out-cases)")
+    a4.add_argument("--defendant-npis", required=True, help="processed/case_defendant_npis.parquet")
+    a4.add_argument("--cia-npis", default=None, help="processed/cia_defendant_npis.parquet (label_expansion cia --out-npis)")
+    a4.add_argument("--out-cases", required=True, help="enforcement/doj_cases_v3_plus_cia.csv")
+    a4.add_argument("--out-npis", required=True, help="processed/case_defendant_npis_plus_cia.parquet")
     a3 = sub.add_parser("names", help="name-only exclusion rows -> NPIs, offline first (unique NPPES match in state)")
     a3.add_argument("--exclusion-nodes", default=None,
                     help="graph/nodes/exclusion_nodes.parquet (needs the state / upin columns: a graph built since bundle 309)")
@@ -440,6 +478,17 @@ def main() -> None:
                     help="processed/exclusions_name_resolved.parquet (resolved rows in the exclusions schema; "
                          "the next graph build merges it)")
     a = ap.parse_args()
+
+    if a.cmd == "merge-inputs":
+        cases, npis, info = merge_label_inputs(a.case_db, a.cia_cases, a.defendant_npis, a.cia_npis)
+        Path(a.out_cases).parent.mkdir(parents=True, exist_ok=True)
+        Path(a.out_npis).parent.mkdir(parents=True, exist_ok=True)
+        cases.to_csv(a.out_cases, index=False)
+        npis.to_parquet(a.out_npis, index=False)
+        print(f"[label_expansion] merged inputs: cases {info['cases_base']:,} + CIA {info['cases_cia']:,} new -> "
+              f"{len(cases):,} ({a.out_cases}); defendant NPIs {info['npis_base']:,} + CIA {info['npis_cia']:,} new -> "
+              f"{len(npis):,} ({a.out_npis})")
+        return
 
     if a.cmd == "names":
         if not a.exclusion_nodes and not a.leie:

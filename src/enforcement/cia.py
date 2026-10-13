@@ -129,8 +129,12 @@ def cia_case_rows(normalized_cia: pd.DataFrame) -> pd.DataFrame:
         "intervened": 1,
         "jurisdiction": "",
         "source_url": c["source_url"].astype(str),
-        "summary": ("OIG Corporate Integrity Agreement ("
-                    + c["cia_status"].astype(str) + ")"),
+        # the outcome rule (case_labels / prospective_label) reads the OUTCOME from the
+        # text; a CIA accompanies a resolved FCA settlement, and the summary says so in
+        # the rule's own words (a bare "Corporate Integrity Agreement" was dropped as
+        # 'no outcome' on the first v15 dry read, 2026-10-13)
+        "summary": ("OIG Corporate Integrity Agreement (" + c["cia_status"].astype(str)
+                    + "): the party agreed to pay a False Claims Act settlement and signed the CIA with HHS-OIG."),
         "case_type": "civil_fca",
     }, index=c.index)
     for col in CASE_COLUMNS:                       # columns added to the schema later (duplicate_of)

@@ -34,8 +34,15 @@ TRAIN_TIER="${TRAIN_TIER:-hard}"
 PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"   # v13: dollar (shipped) or basis50 (ship only when the v12 sweep says it wins)
 EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
 NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"
-CASES="$DATA/enforcement/doj_cases_v3.csv"
-DEFENDANTS="$DATA/processed/case_defendant_npis.parquet"
+# v15 (2026-10-13): the case DB plus the CIA case rows, the resolver NPIs plus the CIA
+# party NPIs, merged by step 0 into ONE file each (the originals are never modified)
+CASES_BASE="$DATA/enforcement/doj_cases_v3.csv"
+DEFENDANTS_BASE="$DATA/processed/case_defendant_npis.parquet"
+CIA_CASES="$DATA/enforcement/cia_cases.csv"
+CIA_NPIS="$DATA/processed/cia_defendant_npis.parquet"
+AFFILIATED="$DATA/processed/affiliated_convictions.parquet"
+CASES="$DATA/enforcement/doj_cases_v3_plus_cia.csv"
+DEFENDANTS="$DATA/processed/case_defendant_npis_plus_cia.parquet"
 export MEDICAID_DUCKDB_TMP="${MEDICAID_DUCKDB_TMP:-$DATA/interim/duckdb_tmp}"
 export MEDICAID_DUCKDB_MEM="${MEDICAID_DUCKDB_MEM:-$(awk '/MemTotal/ {printf "%dGB", int($2/1024/1024*0.4)}' /proc/meminfo)}"
 mkdir -p "$MEDICAID_DUCKDB_TMP" "$RUN"
@@ -52,12 +59,19 @@ echo "[$TAG] started $(date '+%F %T')  (VM runner 2026-10-11: full embeddings, s
 FREEGB=$(awk '/MemAvailable/ {print int($2/1024/1024)}' /proc/meminfo)
 echo "[$TAG]   free RAM: ${FREEGB} GB"
 if [ "$FREEGB" -lt 24 ]; then echo "[$TAG] REFUSING TO START: only ${FREEGB} GB free (need 24)"; fail 0; fi
-[ -f "$CASES" ] || { echo "[$TAG] MISSING $CASES (the case labels are the point)"; fail 0; }
-[ -f "$DEFENDANTS" ] || { echo "[$TAG] MISSING $DEFENDANTS (run the defendant resolver first)"; fail 0; }
+[ -f "$CASES_BASE" ] || { echo "[$TAG] MISSING $CASES_BASE (the case labels are the point)"; fail 0; }
+[ -f "$DEFENDANTS_BASE" ] || { echo "[$TAG] MISSING $DEFENDANTS_BASE (run the defendant resolver first)"; fail 0; }
+[ -f "$CIA_CASES" ] || echo "[$TAG]   note: no $CIA_CASES (label_expansion cia not run): the CIA parties stay out of this run"
+[ -f "$AFFILIATED" ] || echo "[$TAG]   note: no $AFFILIATED (label_expansion affiliated not run): the affiliated ruler is skipped"
+[ -f "$DATA/processed/exclusions_name_resolved.parquet" ] || echo "[$TAG]   note: no exclusions_name_resolved.parquet (label_expansion names not run)"
+
+step 0/12 "the merged label inputs (case DB + CIA cases; resolver NPIs + CIA party NPIs)"
+python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
+    --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0
 
 step 1/12 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (rebuilt into $GRAPH_ASOF unless present)"
 if [ -f "$GRAPH_ASOF/nodes/exclusion_nodes.parquet" ] && [ -z "$REBUILD" ]; then
-  echo "[$TAG]   reusing $GRAPH_ASOF"
+  echo "[$TAG]   reusing $GRAPH_ASOF  (pass --rebuild-graph when processed/exclusions_*.parquet changed: v15 did)"
 else
   [ -n "$NPPES_ASOF" ] || { echo "[$TAG] MISSING the as-of NPPES edition preclean/nppes/npidata_pfile_*-${CUT//-/}xx.csv"; fail 1; }
   python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH_ASOF" --asof "$CUT" --asof-nppes "$NPPES_ASOF" \
@@ -82,6 +96,14 @@ python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 \
     --out "$RUN/future_bans_after_${CUT}__fca36.csv" || fail 3
+if [ -f "$AFFILIATED" ]; then
+  python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --affiliated "$AFFILIATED" \
+      --out "$RUN/future_bans_after_${CUT}__aff36.csv" || fail 3
+fi
+python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+    --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --fca-case-only --qui-tam-only \
+    --out "$RUN/future_bans_after_${CUT}__quitam36.csv" || fail 3
 
 step 4/12 "network A/B (size-matched) on the forward label"
 python -u -m src.model_a.network_ab --matrix "$RUN/provider_features_for_model.parquet" --manifest "$RUN/feature_manifest.json" \
@@ -95,7 +117,7 @@ python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --orde
 
 step 7/12 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --repeats 3 --list-name provider_priority_list_pursuit.csv || fail 7
+    --horizon-months 36 --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/12 "the large-biller book, and the broadcast A/B (weight vs mask, refit on the same matrix)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
@@ -104,6 +126,9 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES
     --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
+# v15: the charged tier A/B (the hard arm is ab_broadcast_weight above: same matrix, same seeds, tier hard)
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier hard+charged --exclusion-nodes "$EXCL" \
+    --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md" || fail 8
 
 step 9/12 "results digest + pursuit dossier (operator book; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
@@ -120,5 +145,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:
 
 echo
 echo "[$TAG] DONE $(date '+%F %T')  -- tell Claude '$TAG finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask)   # tar is always installed; zip is not"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged)   # tar is always installed; zip is not"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${TAG}     # reports back to OneDrive"
