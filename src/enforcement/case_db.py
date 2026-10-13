@@ -31,6 +31,7 @@ CASE_COLUMNS = [
     "scheme",             # kickback/upcoding/medical_necessity/billing_fraud/...
     "amount_usd",
     "qui_tam",            # 1/0/<NA>
+    "self_disclosure",    # 1 when the announcement says the defendant disclosed the conduct itself (never a positive)
     "intervened",         # 1/0/<NA>  (NA = not stated — most releases)
     "jurisdiction",       # district, e.g. "M.D. Fla."
     "source_url",
@@ -233,12 +234,28 @@ def _classify_all(text: str, keyword_map: dict[str, list[str]]) -> str:
     return ";".join(label for _, label in hits)
 
 
+_SELF_DISCLOSURE_RE = re.compile(
+    r"(voluntar\w*\s+(self[- ])?disclos\w*|self[- ]disclos\w*|self[- ]report\w*\s+(the\s+)?(overpayment|conduct|billing)"
+    r"|disclosed\s+the\s+(overpayment|conduct|error)s?\s+to\s+(the\s+)?(government|OIG|HHS|CMS|United States))",
+    re.IGNORECASE)
+
+
+def is_self_disclosure(text: str) -> bool:
+    """True when the announcement says the defendant disclosed the conduct itself
+    (OIG Self-Disclosure Protocol, voluntary disclosure, self-reported overpayment)."""
+    return bool(_SELF_DISCLOSURE_RE.search(str(text or "")))
+
+
 def parse_press_release(text: str, source_url: str = "",
                         announced_date: str = "",
                         defendant_name: str = "") -> dict:
     """One announcement text → one case dict (empty fields = needs human review)."""
     low = text.lower()
     qui_tam = 1 if ("qui tam" in low or "whistleblower" in low) else pd.NA
+    # a VOLUNTARY self-disclosure settlement is not a qui tam shape (no relator, no
+    # allegation of knowing false claims the model should learn); flagged here,
+    # tiered out of the positives by case_labels (label plan L0.3, 2026-10-13)
+    self_disclosure = 1 if is_self_disclosure(text) else 0
     if "declined to intervene" in low or "government declined" in low:
         intervened = 0
     elif "intervened" in low or "joined the lawsuit" in low:
@@ -259,6 +276,7 @@ def parse_press_release(text: str, source_url: str = "",
         "scheme": _classify_all(text, _SCHEME_KEYWORDS),  # multi: split on ';'
         "amount_usd": _extract_amount(text),
         "qui_tam": qui_tam,
+        "self_disclosure": self_disclosure,
         "intervened": intervened,
         "jurisdiction": juris,
         "source_url": source_url,

@@ -149,7 +149,7 @@ def _load(path: str) -> pd.DataFrame:
 
 def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame,
                              npi_to_org: pd.DataFrame, defendant_npis: pd.DataFrame | None = None,
-                             horizon_months: int | None = None) -> pd.DataFrame:
+                             horizon_months: int | None = None, qui_tam_only: bool = False) -> pd.DataFrame:
     """The FORWARD FCA RULER (2026-10-08): providers named in a DOJ / OIG case that
     was ANNOUNCED strictly after the cutoff (and, when a horizon is given, within
     ``horizon_months`` of it), whose conduct window began on or before the cutoff
@@ -171,6 +171,11 @@ def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.D
     if lab is None or not len(lab):
         return pd.DataFrame(columns=cols)
     lab = lab[(lab["label_source"] == "doj_case") & (lab.get("fca_strict_tier", "").astype(str) != "")]
+    if qui_tam_only and len(lab):
+        # THE QUI TAM RULER (label plan L0.2): only cases the release calls qui tam /
+        # whistleblower, i.e. relator-originated: the business outcome itself
+        qt = pd.to_numeric(lab.get("qui_tam"), errors="coerce").fillna(0).astype(int) == 1
+        lab = lab[qt]
     if not len(lab):
         return pd.DataFrame(columns=cols)
     cases = case_db.drop_duplicates("case_id").set_index(case_db.drop_duplicates("case_id")["case_id"].astype(str))
@@ -268,6 +273,11 @@ def main() -> None:
                     help="count only events within this many months after the cutoff (both rulers)")
     ap.add_argument("--fca-case-only", action="store_true",
                     help="write ONLY the FCA-case ruler (ignore the exclusion ruler)")
+    ap.add_argument("--qui-tam-only", action="store_true",
+                    help="the case ruler counts only qui tam / whistleblower cases (relator-originated)")
+    ap.add_argument("--affiliated", default=None,
+                    help="processed/affiliated_convictions.parquet (label_expansion affiliated): the billers "
+                         "whose claims carried a convicted individual become positives dated by the exclusion")
     ap.add_argument("--tier-report", default=None,
                     help="write the per-tier/basis positive counts as Markdown "
                          "(default: <out>.TIERS.md)")
@@ -293,10 +303,17 @@ def main() -> None:
         dn = pd.read_parquet(args.defendant_npis) if args.defendant_npis else None
         case_label = build_forward_case_label(case_db, args.cutoff, pd.read_parquet(g / "nodes" / "org_nodes.parquet"),
                                               pd.read_parquet(g / "npi_to_org.parquet"), defendant_npis=dn,
-                                              horizon_months=args.horizon_months)
+                                              horizon_months=args.horizon_months, qui_tam_only=args.qui_tam_only)
         print(f"[prospective_label] FCA-case ruler: {int(case_label['is_prospective_positive'].sum()):,} "
               f"forward positives, {int(case_label['was_excluded_pre_cutoff'].sum()):,} known at the freeze")
         label = case_label if args.fca_case_only else merge_forward_labels(label, case_label)
+    if args.affiliated:
+        from .label_expansion import merge_affiliated
+        aff = pd.read_parquet(args.affiliated)
+        before = int(label["is_prospective_positive"].sum())
+        label = merge_affiliated(label, aff, args.cutoff, horizon_months=args.horizon_months)
+        print(f"[prospective_label] affiliated convictions: +{int(label['is_prospective_positive'].sum()) - before:,} "
+              f"biller positives from {args.affiliated}")
     pos = int(label["is_prospective_positive"].sum())
     pre = int(label["was_excluded_pre_cutoff"].sum())
     und = int(label["undated_exclusion"].sum())

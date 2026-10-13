@@ -819,23 +819,24 @@
       ]
     },
     {
-      "key": "merge_bundle306",
-      "what": "Merge bundle306 (cumulative, supersedes 239 to 305): the label audit + expansion plan (docs/LABEL_EXPANSION_PLAN_2026-10.md) and the two label tasks on top of 305's v13 fix. Close the 294 to 305 merge tasks with it.",
+      "key": "merge_bundle307",
+      "what": "Merge bundle307 (cumulative, supersedes 239 to 306): Tier 0 + L1.1 of the label plan (label_expansion: affiliated convictions + CIA parties through ownership; self-disclosure flag; qui tam ruler) and the audit read-out. Close the 294 to 306 merge tasks with it.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
         "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle306*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle306.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle306.bundle",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle307*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle307.bundle\"",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle307.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle306",
+        "python -m src.reminders --done-task merge_bundle307",
         "python -m src.reminders --done-task merge_bundle298",
         "python -m src.reminders --done-task merge_bundle297",
         "python -m src.reminders --done-task merge_bundle296",
         "python -m src.reminders --done-task merge_bundle295",
         "python -m src.reminders --done-task merge_bundle294",
         "python -m src.reminders --done-task merge_bundle304",
-        "python -m src.reminders --done-task merge_bundle305"
+        "python -m src.reminders --done-task merge_bundle305",
+        "python -m src.reminders --done-task merge_bundle306"
       ]
     },
     {
@@ -866,23 +867,20 @@
       ]
     },
     {
-      "key": "label_audit_v13",
-      "what": "The label audit the operator asked for 2026-10-13 (docs/LABEL_EXPANSION_PLAN_2026-10.md holds the findings read from the packets and the ranked expansion plan). The VM-side auditor adds what no packet carries: identifier / date / tier / reach grades per label source, the source of the 24,774 undated exclusion rows, the matrix label join, and the case database's recall against the OIG CIA roster. Run it on the VM in a SECOND tmux window while v14 runs (it reads the v13 matrix; the VM has the RAM), then attach LABEL_AUDIT.md in chat. Close when the file is in chat.",
+      "key": "label_expansion_run",
+      "what": "Tier 0 + L1.1 of the label plan are BUILT (bundle 307; docs/LABEL_EXPANSION_PLAN_2026-10.md section 5 has the audit read-out): (1) `label_expansion affiliated` = convicted / excluded individuals -> the biller whose claims carried them as the rendering provider in the 24 months before the exclusion (basis affiliated_conviction, one biller per individual, share >= 5 percent or $25k; the rest listed); (2) `label_expansion cia` = the 339 OIG CIA parties -> enrolled providers by EXACT name or by PECOS organization OWNER (every org the owner owns, chains over 150 orgs listed not broadcast), written as cia_cases.csv (case-DB schema) + cia_defendant_npis.parquet (resolver schema) + CIA_RESOLUTION.md + cia_residue.csv (the research list); (3) self-disclosure settlements flagged in the case DB and never a positive; (4) the qui tam ruler (prospective_label --qui-tam-only; accuracy_diagnostics --qui-tam-ruler). RUN on the VM after v14 (the affiliated step reads the full spending fact: minutes on the VM) and attach the three reports; the counts decide the v15 pre-registration (qui tam ruler + the two new sources as a sweep, never a silent swap). Re-harvest the CIA residue list next (the research queue).",
       "added": "2026-10-13",
       "commands": [
-        "# on the VM: Ctrl-b then c opens a second window (Ctrl-b then 0 / 1 switches back)",
-        "cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env",
-        "python -u -m src.model_a.label_audit --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet\" --matrix \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v13/provider_features_for_model.parquet\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --cia \"$MEDICAID_DATA_ROOT/preclean/cia/cia_list.csv\" --org-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/org_nodes.parquet\" --cutoff 2021-12 --out /home/ubuntu/LABEL_AUDIT_v13.md",
-        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/LABEL_AUDIT_v13.md C:\\Users\\treyr\\Downloads\\   then attach it in chat",
-        "python -m src.reminders --done-task label_audit_v13"
-      ]
-    },
-    {
-      "key": "label_expansion_tier0",
-      "what": "Tier 0 of docs/LABEL_EXPANSION_PLAN_2026-10.md, code only, no new data (Claude builds; the operator runs nothing until the bundle lands): L0.1 employer resolution for convicted individuals (post-cutoff hard-tier individuals -> the billing org whose claims carried their NPI in the 24 months before the exclusion, then PECOS reassignment, then NPPES employer / same address; basis affiliated_conviction, weight-budgeted); L0.2 the qui tam ruler (--ruler qui_tam: resolved cases flagged qui_tam = 1, reported beside the FCA ruler, pre-registered for v15 once counted); L0.3 self-disclosure settlements tagged and tiered weak, never a forward positive; L0.5 the undated rows named by source. Then v14's matrix re-graded under the new ruler as a sweep before anything ships. Waits on LABEL_AUDIT_v13.md (it decides L1.1 vs L1.3 next).",
-      "added": "2026-10-13",
-      "commands": [
-        "REM nothing to run yet: the Tier 0 code arrives in a bundle after the label audit is read"
+        "# on the VM, after bundle 307 is merged + pushed and pulled:",
+        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
+        "python -u -m src.model_a.label_expansion affiliated --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --spending \"$MEDICAID_DATA_ROOT/processed/spending_fact.parquet\" --out \"$MEDICAID_DATA_ROOT/processed/affiliated_convictions.parquet\"",
+        "python -u -m src.model_a.label_expansion cia --cia \"$MEDICAID_DATA_ROOT/preclean/cia/cia_list.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --out-cases \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\" --out-npis \"$MEDICAID_DATA_ROOT/processed/cia_defendant_npis.parquet\"",
+        "# the three rulers on v14's matrix, as a sweep (nothing ships): exclusion+case, +affiliated, qui tam only",
+        "python -u -m src.model_a.prospective_label --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --cutoff 2021-12 --fca-tier hard --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --affiliated \"$MEDICAID_DATA_ROOT/processed/affiliated_convictions.parquet\" --out \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14/future_bans_after_2021-12__aff36.csv\"",
+        "python -u -m src.model_a.prospective_label --exclusion-nodes \"$MEDICAID_DATA_ROOT/graph/nodes/exclusion_nodes.parquet\" --cutoff 2021-12 --fca-tier hard --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --fca-case-only --qui-tam-only --out \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14/future_bans_after_2021-12__quitam36.csv\"",
+        "cp \"$MEDICAID_DATA_ROOT/processed/affiliated_convictions.md\" \"$MEDICAID_DATA_ROOT/processed/CIA_RESOLUTION.md\" /home/ubuntu/ && tail -5 \"$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14/future_bans_after_2021-12__aff36.csv.TIERS.md\" > /dev/null; ls -la /home/ubuntu/*.md",
+        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/affiliated_convictions.md C:\\Users\\treyr\\Downloads\\   and the same for CIA_RESOLUTION.md; attach both + paste the two prospective_label summary lines",
+        "python -m src.reminders --done-task label_expansion_run"
       ]
     }
   ]

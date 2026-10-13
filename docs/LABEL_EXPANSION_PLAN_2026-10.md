@@ -65,3 +65,16 @@ Integrity rule for every lever: a positive needs (a) an official record of a res
 5. Every added positive carries provenance, tier, date and basis; every new source gets a 30-row verification sample before it trains; the strict FCA label export (the PurpleLab file) takes only `fca_civil`, `hcf_criminal`, `excl_statute` and the state-case tiers, as written.
 
 The claim to hold onto: the model's job is to rank; the label's job is to be right. Everything above grows the label only where an official record and a hard identifier already agree.
+
+## 5. The auditor's read-out (LABEL_AUDIT_v13.md, 2026-10-13) and what it changed
+
+| finding | number | consequence |
+|---|---|---|
+| Name-only rows | LEIE 66,081 of 71,558 (8 percent carry a valid NPI); SAM 102,232 of 120,313 (6 percent, 11,234 fail the Luhn check); state lists 3,795 of 4,666 (19 percent) | 172,172 exclusion records can never label a provider as they stand. LEIE rows before the NPI era are mostly beyond the billing window; the post-2015 name-only rows are the recoverable part, through NPPES name + state + specialty with the same ladder the defendant resolver uses. |
+| Reach | 13,141 distinct valid NPIs across the feeds; 1,125 (9 percent) in the scored universe; 2,902 NPIs with a hard-tier event | Confirms A1: the excluded are individuals who never billed under their own number. Employer resolution (L0.1) is the lever. |
+| The training label | 2,353 positives; DOJ 1,082 of them, and of those 959 by ORGANIZATION-BILLING BROADCAST (University of Miami 81 NPIs, Florida Cancer Specialists 64, AnMed 58, Abington 50 ...), 123 by resolved defendant, 2 by affiliation | 89 percent of the DOJ training positives are hospital and health-system settlements broadcast to every member NPI. The scorer learns institutional shapes from them; the per-case budget caps the weight but not the count. |
+| The case database | 16,911 usable cases; 0 carry an NPI in the source; 315 (2 percent) resolve to a scored NPI; 5,976 say qui tam; 2,681 near-duplicate pairs double-count $547B; $1.92T unresolved, of which pharma, DME, lab and telehealth defendants are unreachable by design | The qui tam flag is populated on 43 percent of cases: the ruler L0.2 has a base. The duplicate pairs need usable = 0 on the second row. |
+| CIA roster | 339 parties; 107 (32 percent) in the case DB; 93 (27 percent) resolve to a graph org by name; 232 missing from the harvest, listed with state and date | The parent-versus-subsidiary gap is exactly the ownership path L1.1 now takes. |
+| Identity collisions | 24 NPIs carry two unrelated names across exclusion records | Review before use; small. |
+
+Built the same day (bundle 307): `model_a/label_expansion.py` (`affiliated` and `cia` commands), the `self_disclosure` flag in the case database with the outcome rule setting those rows aside, the qui tam ruler in `prospective_label --qui-tam-only` and `accuracy_diagnostics --qui-tam-ruler`, and `prospective_label --affiliated` to fold the convicted-individual billers into the forward label. The run lines are in the reminder task `label_expansion_run`. Not yet built: name-only LEIE / SAM / state rows to NPIs (the resolver ladder applied to exclusion feeds), the duplicate-pair usable flag, the state AG / MFCU harvest for the ten largest Medicaid states, license-number joins.

@@ -242,11 +242,16 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     # (settlement / judgment / conviction / plea / CMP) is a positive. Docket rows
     # keep their allegation source and never flip the label anyway.
     from .fca_label_export import evidence_strength, outcome_tier
-    stats = {"no_outcome": 0, "weak_strength": 0}
+    stats = {"no_outcome": 0, "weak_strength": 0, "self_disclosure": 0}
 
     def _outcome(c) -> str:
         if _case_source(c) == "docket_case":
             return "docket"
+        sd = pd.to_numeric(pd.Series([c.get("self_disclosure")]), errors="coerce").iloc[0]
+        if pd.notna(sd) and int(sd) == 1:
+            # a voluntary self-disclosure settlement is never a positive (L0.3)
+            stats["self_disclosure"] += 1
+            return ""
         text = f"{c.get('title', '') or ''} {c.get('summary', '') or ''}"
         ct = str(c.get("case_type") or "").strip().lower()
         if ct in ("", "nan", "none"):
@@ -417,7 +422,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "case_fanout": int(g["case_fanout"].max()),
         })
     if stats["no_outcome"] or stats["weak_strength"]:
-        print(f"    [case_labels] outcome rule: {stats['no_outcome']:,} case rows without a resolved "
+        print(f"    [case_labels] outcome rule: {stats['self_disclosure']:,} self-disclosure rows set aside; "
+              f"{stats['no_outcome']:,} case rows without a resolved "
               f"outcome (charged / complaint only) and {stats['weak_strength']:,} weak-evidence "
               f"defendant rows kept OUT of the label")
     out = pd.DataFrame(out_rows, columns=cols)

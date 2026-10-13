@@ -1163,6 +1163,8 @@ def main() -> None:
     ap.add_argument("--cutoff", default=None, help="YYYY-MM (default: manifest asof_cutoff)")
     ap.add_argument("--case-db", default=None, help="enforcement/doj_cases_v3.csv: adds the FCA ruler + dollar recall")
     ap.add_argument("--graph-dir", default=None, help="FULL graph root (org_nodes + npi_to_org) for --case-db")
+    ap.add_argument("--qui-tam-ruler", action="store_true",
+                    help="with --case-db: add a third ruler of qui tam / whistleblower cases only (acc_*_qui_tam KPIs)")
     ap.add_argument("--defendant-npis", default=None)
     ap.add_argument("--score-source", default="priority_list+refit", choices=["priority_list", "refit", "priority_list+refit"],
                     help="priority_list = the shipped CSV order only; refit = rebuild the scorer OOF; "
@@ -1245,6 +1247,14 @@ def main() -> None:
         rulers["fca"] = fca[["npi", "event_date", "is_prospective_positive", "was_excluded_pre_cutoff",
                              "undated_exclusion", "fca_tier"]]
         print(f"[accuracy_diagnostics] FCA ruler: {int(fca['is_prospective_positive'].sum()):,} forward positives")
+        if a.qui_tam_ruler:
+            qt = build_forward_case_label(case_db, cutoff, org_nodes, npi_to_org, defendant_npis=dn,
+                                          horizon_months=a.horizon_months, qui_tam_only=True)
+            qt["event_date"] = pd.to_datetime(qt["first_excl_date"], errors="coerce")
+            rulers["qui_tam"] = qt[["npi", "event_date", "is_prospective_positive", "was_excluded_pre_cutoff",
+                                    "undated_exclusion", "fca_tier"]]
+            print(f"[accuracy_diagnostics] qui tam ruler: {int(qt['is_prospective_positive'].sum()):,} forward positives "
+                  "(relator-originated cases only)")
     if not rulers:
         ap.error("no ruler: pass --forward-label NAME=PATH or --case-db, or run prospective_label first")
     pl = load_priority_list(run_dir, a.list_name) if a.score_source != "refit" else None

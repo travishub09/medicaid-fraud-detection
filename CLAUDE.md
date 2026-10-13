@@ -1173,7 +1173,28 @@ first, then paste" above every move/done block.
   number joins for board actions, reading the unstated felonies. Integrity gate on
   every row: official resolved outcome or fraud-shaped statute, a hard identifier,
   a date, a tier + provenance; verification sample before any source trains.
-  `label_audit` runs on v13 on the VM (task label_audit_v13) before Tier 0 is built.
+  THE AUDITOR'S NUMBERS (LABEL_AUDIT_v13.md, 2026-10-13): LEIE 8 percent valid NPI
+  (66,081 name-only), SAM 6 percent (11,234 bad Luhn), state lists 19 percent;
+  13,141 valid NPIs across the feeds, 1,125 in the universe; DOJ training
+  positives 959 of 1,082 by org-billing broadcast (hospital settlements), 123
+  resolved defendants, 2 affiliated; 16,911 cases, 0 with an NPI in the source,
+  315 resolve to a scored NPI, 5,976 say qui tam, 2,681 duplicate pairs ($547B);
+  CIA 339 parties, 32 percent in the case DB, 27 percent resolve by name.
+  BUILT (bundle 307, `model_a/label_expansion.py`): `affiliated` = hard-tier
+  excluded individuals -> the biller whose claims carried them as RENDERING NPI in
+  the 24 months before the exclusion (one biller per individual, share >= 5
+  percent or $25k; the rest listed with drop_reason; `prospective_label
+  --affiliated` folds the kept billers in as positives dated by the exclusion,
+  excl_type affiliated:<statute>); `cia` = CIA parties -> enrolled providers by
+  EXACT name key to an org node or to a PECOS ORGANIZATION OWNER then every org it
+  owns (chains over 150 orgs listed, never broadcast; label_weight = budget / NPIs;
+  cia_cases.csv in the case-DB schema + cia_defendant_npis.parquet in the resolver
+  schema + CIA_RESOLUTION.md + cia_residue.csv); `case_db.is_self_disclosure` +
+  the `self_disclosure` column, set aside by case_labels' outcome rule; the QUI TAM
+  ruler (`build_forward_case_label(qui_tam_only=True)`, `prospective_label
+  --qui-tam-only`, `accuracy_diagnostics --qui-tam-ruler` -> rulers['qui_tam']).
+  No fuzzy matching anywhere in the chain. The three rulers run on v14's matrix as
+  a SWEEP (task label_expansion_run); v15 pre-registers the winner.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
