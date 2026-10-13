@@ -545,12 +545,13 @@
     },
     {
       "key": "pi_facts_deep:_after_merging_bundle",
-      "what": "pi_facts_deep: after merging bundle 157, rerun the three fact layers with --deep (reads the paid-claims fact: ramp month, top codes, rendering clinicians, implied hours/day) and upload PI_FACTS_NATIONAL.md / PI_FACTS_MIAMI.md / PI_FACTS_NYNJ.md + the .json twins 2026-10-12: --deep now ALSO writes PI_FACTS_<set>_WINDOWS.md + _windows.json (the WHEN sheet per practice: active years, ramp month, peak year, first / last billed) for Sage Intelligence's interview phase. Run it on the packet org list and send the three WINDOWS sheets to Brad for Sage.",
+      "what": "pi_facts --deep on the PI Packet v11 practices: the fact sheets (ramp month, top codes, rendering clinicians, implied hours/day) AND the WHEN sheets (PI_FACTS_<set>_WINDOWS.md + _windows.json: active years, ramp month, peak year, first / last billed per practice) for Sage's interview phase. 2026-10-13: the packet lists NPIs, not org ids, so pi_facts now resolves bare 10-digit lines through the run matrix (bundle 297). The 65 send-card NPIs from the packet PDF (Tiers 1, 2, 2b, 3, 4, 4b; the 27 do-not-send rows left out) are in the file pi_packet_v11_npis.txt sent in chat: save it under <data_root>\\enforcement\\pi_reports\\ (a target list, never in git). One run covers every card; upload PI_FACTS_PACKET_WINDOWS.md and PI_FACTS_PACKET.md.",
       "added": "2026-09-13",
       "commands": [
+        "REM save pi_packet_v11_npis.txt from the chat card to C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ first",
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --orgs-file <the packet org list csv> --deep --out-prefix pi_facts_nynj",
-        "REM repeat with the national and Miami org lists (out-prefix pi_facts_national / pi_facts_miami); upload the *_WINDOWS.md files",
+        "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --orgs-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\pi_packet_v11_npis.txt\" --deep --out-prefix pi_facts_packet",
+        "REM upload C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\\PI_FACTS_PACKET_WINDOWS.md and PI_FACTS_PACKET.md in chat",
         "python -m src.reminders --done-task pi_facts_deep:_after_merging_bundle"
       ]
     },
@@ -829,6 +830,20 @@
         "merge_bundle.bat C:\\Users\\treyr\\bundle296.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
         "python -m src.reminders --done-task merge_bundle296",
+        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
+      ]
+    },
+    {
+      "key": "merge_bundle297",
+      "what": "Merge bundle297 (cumulative, supersedes 239 to 296): pi_facts takes NPIs (the packet's own list) on top of 296's org_find. If 294 to 296 are NOT merged yet, merge 297 instead and close all four tasks. Then git pull on the VM.",
+      "added": "2026-10-13",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle297*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle297.bundle\"",
+        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle297.bundle",
+        "git push origin claude/happy-mccarthy-3skrn3",
+        "python -m src.reminders --done-task merge_bundle297",
         "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
       ]
     }

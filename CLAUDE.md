@@ -1076,7 +1076,10 @@ first, then paste" above every move/done block.
   sheet (`window_sheet` -> PI_FACTS_<set>_WINDOWS.md + _windows.json: active years =
   years with >= 25 percent of the peak year's dollars, ramp month, peak year, first /
   last billed, per practice, no person named) so interviews go to formers whose
-  tenure overlaps the active window. The investigator's titles list (same day) is
+  tenure overlaps the active window. `--orgs-file` / `--npis` accept bare NPIs
+  (resolved to org ids through the run matrix: the packet prints NPIs); the
+  packet's NPI list is a target list and stays under enforcement/pi_reports/,
+  never in git. The investigator's titles list (same day) is
   read by the ROLE RULE: billers / revenue-cycle / QA / compliance know whose NPI
   went on the claim, rendering clinicians know who saw the patient, HR / operations
   / service coordinators know the headcount (the innocent explanation on every

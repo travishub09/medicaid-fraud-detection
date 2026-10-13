@@ -496,6 +496,29 @@ def window_sheet(res: dict, active_share: float = 0.25) -> tuple[str, list[dict]
     return "\n".join(L) + "\n", rows
 
 
+def _is_npi(tok: str) -> bool:
+    return len(tok) == 10 and tok.isdigit()
+
+
+def resolve_npis_to_orgs(matrix: pd.DataFrame, npis: list[str]) -> tuple[list[str], list[str]]:
+    """NPIs -> the org_node_ids that carry them in the run matrix (first-seen
+    order, de-duplicated) + the NPIs the matrix does not hold. The PI packet
+    prints NPIs, pi_facts works per organization: this is the bridge."""
+    key = matrix["npi"].astype(str)
+    oid = matrix["org_node_id"].astype(str) if "org_node_id" in matrix.columns \
+        else pd.Series([""] * len(matrix), index=matrix.index)
+    lookup = dict(zip(key, oid))
+    out: list[str] = []
+    missing: list[str] = []
+    for n in npis:
+        o = lookup.get(str(n), "")
+        if not o or o in ("nan", "None"):
+            missing.append(str(n))
+        elif o not in out:
+            out.append(o)
+    return out, missing
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-dir", required=True,
@@ -504,7 +527,12 @@ def main() -> None:
                     help="semicolon-separated org_node_ids")
     ap.add_argument("--orgs-file", default=None,
                     help="file with one org_node_id per line (or a "
-                         "priority-list CSV: its org_id column is used)")
+                         "priority-list CSV: its org_id column is used). A line "
+                         "that is a bare 10-digit NPI is resolved to its org "
+                         "through the run matrix (the PI packet lists NPIs)")
+    ap.add_argument("--npis", default=None,
+                    help="semicolon-separated NPIs, resolved to their orgs "
+                         "through the run matrix")
     ap.add_argument("--top", type=int, default=None,
                     help="with a priority-list CSV in --orgs-file: only the "
                          "first N rows")
@@ -526,8 +554,11 @@ def main() -> None:
     run_dir = Path(resolve_run_dir(args.run_dir))
 
     org_ids: list[str] = []
+    npis: list[str] = []
     if args.orgs:
         org_ids += [o.strip() for o in args.orgs.split(";") if o.strip()]
+    if args.npis:
+        npis += [n.strip() for n in args.npis.split(";") if n.strip()]
     if args.orgs_file:
         p = Path(args.orgs_file)
         if p.suffix.lower() == ".csv":
@@ -536,12 +567,22 @@ def main() -> None:
             ids = df[col].dropna().tolist()
             org_ids += ids[:args.top] if args.top else ids
         else:
-            org_ids += [ln.strip() for ln in p.read_text().splitlines()
-                        if ln.strip()]
-    if not org_ids:
-        raise SystemExit("no orgs given — use --orgs or --orgs-file")
+            for ln in p.read_text().splitlines():
+                ln = ln.strip().split("#", 1)[0].strip()
+                if not ln:
+                    continue
+                (npis if _is_npi(ln) else org_ids).append(ln)
+    if not org_ids and not npis:
+        raise SystemExit("no orgs given — use --orgs, --npis or --orgs-file")
 
     matrix = pd.read_parquet(run_dir / "provider_features_for_model.parquet")
+    if npis:
+        resolved, missing = resolve_npis_to_orgs(matrix, npis)
+        print(f"[pi_facts] {len(npis)} NPIs -> {len(resolved)} orgs"
+              + (f"; {len(missing)} NPI(s) not in the matrix: "
+                 + ", ".join(missing[:20]) + (" ..." if len(missing) > 20 else "")
+                 if missing else ""))
+        org_ids += [o for o in resolved if o not in org_ids]
     res = extract(matrix, org_ids)
     if args.deep:
         import os

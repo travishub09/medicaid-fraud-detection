@@ -29,3 +29,15 @@ def test_window_sheet_names_the_active_years_and_no_person():
     assert "Bright Start PT" in md and "2020 to 2022" in md and "names no person" in md
     md0, rows0 = window_sheet({"org:b": {"error": "x"}})
     assert rows0 == [] and "run with --deep" in md0
+
+
+def test_resolve_npis_to_orgs_bridges_the_packet_list():
+    """2026-10-13: the PI packet prints NPIs, pi_facts works per org; a bare
+    10-digit line in --orgs-file (or --npis) resolves through the matrix."""
+    import pandas as pd
+    from src.model_a.pi_facts import resolve_npis_to_orgs, _is_npi
+    m = pd.DataFrame({"npi": ["1000000001", "1000000002", "1000000003"],
+                      "org_node_id": ["org:a", "org:a", "org:b"]})
+    orgs, missing = resolve_npis_to_orgs(m, ["1000000002", "1000000001", "1999999999", "1000000003"])
+    assert orgs == ["org:a", "org:b"] and missing == ["1999999999"]
+    assert _is_npi("1558452730") and not _is_npi("org:a") and not _is_npi("155845273")
