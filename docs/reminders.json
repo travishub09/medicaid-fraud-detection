@@ -917,16 +917,16 @@
       ]
     },
     {
-      "key": "merge_bundle317",
-      "what": "Merge bundle317 (cumulative, supersedes 239 to 316): charged-only case rows as charged_case positives + the outcome-refresh lane + the org-resolution fix for convictions without a dollar amount, on top of 310 (the label plan code: tier 0, CIA, names, Manus lanes, the exclusion-source audit, the charged tier). One merge closes every open merge task (the lines below). Then push, and git pull on the VM before task label_expansion_run. Bundle 317 adds `label_expansion names --leie preclean/Caught.csv` (the resolver off the raw LEIE: no graph rebuild needed; the VM probe confirmed the graph's exclusion nodes have no state column, 338,572 name-only rows) and the funnel diagnostic (the step read 0 rows: the VM graph's exclusion nodes predate the state column) on top of 315, which fixed the `label_expansion names` NameError seen on the VM (the __main__ guard sat above the later function definitions) and adds the CIA chain guard / component split / manufacturer classing after the first real run (26,536 NPIs, 11,217 of them Walgreens: not usable as a label) and carries the v14 read-out (HOLD on hits100, seven of eight checks pass) and closes the v14 post-run tasks.",
+      "key": "merge_bundle318",
+      "what": "Merge bundle318 (cumulative, supersedes 239 to 317): the v15 runner (merge-inputs step for the CIA cases + NPIs, the affiliated + qui tam rulers, the hard vs hard+charged A/B arm, the CIA summary fix) on top of 317. One merge closes every open merge task; push; then task v15_run.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
         "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle317*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle317.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle317.bundle",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle318*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle318.bundle\"",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle318.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle317",
+        "python -m src.reminders --done-task merge_bundle318",
         "python -m src.reminders --done-task merge_bundle294",
         "python -m src.reminders --done-task merge_bundle295",
         "python -m src.reminders --done-task merge_bundle296",
@@ -934,6 +934,23 @@
         "python -m src.reminders --done-task merge_bundle298",
         "python -m src.reminders --done-task merge_bundle309",
         "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
+      ]
+    },
+    {
+      "key": "v15_run",
+      "what": "v15 = the first run on the EXPANDED LABEL (2026-10-13): CIA parties (185, 2,497 NPIs), affiliated convictions (+55 forward), 843 name-resolved exclusions, 185 charged-only case rows as charged_case, on a REBUILT as-of graph (the 843 new exclusion nodes + the state / upin columns need it: pass --rebuild-graph). Train = hard under the v14 checks; the qui tam + affiliated rulers ride along as a sweep; ab_tier_charged/ is the hard vs hard+charged A/B (compare with ab_broadcast_weight/). Needs bundle 318 merged + pushed FIRST, then the VM started in the AWS console (Instances -> Instance state -> Start; the public IP may change: read it from the console and swap 3.17.37.139 below). The graph rebuild alone is hours (v12 took most of a night); run under tmux and come back. The runner prints DONE and the packet lines; then say 'v15 finished'.",
+      "added": "2026-10-13",
+      "commands": [
+        "# VM (ssh in with Termius or: ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@<IP>); one line at a time:",
+        "tmux new -s v15",
+        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1    # must print af6c6f1 or later",
+        "source .venv/bin/activate && source ~/.medicaid_env",
+        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v15 --goal \"the expanded label (CIA parties by exact name and component, affiliated convictions, name-resolved exclusions, charged-only case rows as charged_case) on a rebuilt as-of graph, trained hard; graded on the FCA ruler with the v14 checks; the qui tam and affiliated rulers as a sweep; the hard vs hard+charged refit as an A/B\" --expected \"large book hits@50 at least 2 with lower Wilson bound above random; pursuit book hits@100 at least 4 and hits@250 at least 6; lead-time share beyond the gap at least half; institutional share 0; top-50 Jaccard at least 0.6; train = hard; the charged arm read beside the weight arm\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+        "SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=dollar PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14 bash ops/vm/run_frozen_night.sh v15 2021-12 --rebuild-graph",
+        "# detach with Ctrl-b then d; re-attach later with: tmux attach -t v15",
+        "# when it prints [v15] DONE:",
+        "cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v15 && tar -czf /home/ubuntu/run_packet_v15.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v15",
+        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@<IP>:/home/ubuntu/run_packet_v15.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and say 'v15 finished'"
       ]
     }
   ]

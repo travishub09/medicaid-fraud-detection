@@ -1311,6 +1311,20 @@ first, then paste" above every move/done block.
   `names --leie preclean/Caught.csv` (bundle 317) builds the table from the raw
   LEIE through integrate.build_exclusions instead, and `name_resolve_funnel`
   prints the rows surviving each filter so an empty result names its stage.
+  Third run (--leie): 12,014 name-only hard-tier rows since 2015 -> 843 resolved,
+  610 ambiguous (the Manus residue), 10,560 with no NPPES record (aides, nurses,
+  clerks who never held an NPI: never a provider label).
+  V15 RUNNER (bundle 318): `label_expansion merge-inputs` writes
+  enforcement/doj_cases_v3_plus_cia.csv + processed/case_defendant_npis_plus_cia
+  .parquet (merge_case_files; resolved CIA rows concatenated with their
+  label_weight; the originals untouched) and run_frozen_night.sh step 0 builds
+  them; step 3 adds the affiliated (__aff36) and qui tam (__quitam36) rulers; step
+  7 passes --qui-tam-ruler; step 8 adds ab_tier_charged/ (refit, --label-tier
+  hard+charged, weight) beside ab_broadcast_weight/ (= the hard arm). cia_case_rows'
+  summary now states the settlement in the outcome rule's words (a bare 'Corporate
+  Integrity Agreement' read as no outcome and every CIA row was being dropped).
+  v15 passes --rebuild-graph (the 843 new exclusion nodes). Task v15_run carries
+  the pre-registration line (the v14 checks, train = hard).
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
