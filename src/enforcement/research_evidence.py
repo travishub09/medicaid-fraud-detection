@@ -159,6 +159,89 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
     return build_case_db(rows)
 
 
+_CIA_ENTITY_ALIASES = {
+    "party": ["party", "cia_party", "parent", "parent_name"],
+    "enrolled_entity_name": ["enrolled_entity_name", "entity_name", "entity", "subsidiary", "name"],
+    "city": ["city"], "state": ["state", "st"],
+    "npi": ["npi", "npi_number"],
+    "evidence_url": ["evidence_url", "source_url", "url", "source"],
+}
+_EXCL_NPI_ALIASES = {
+    "source_node_id": ["source_node_id", "node_id", "id"],
+    "entity_name": ["entity_name", "name"], "state": ["state", "st"],
+    "npi": ["npi"], "confidence": ["confidence", "conf"],
+    "employer_name": ["employer_name", "employer"], "employer_npi": ["employer_npi"],
+    "evidence_url": ["evidence_url", "source_url", "url", "source"],
+}
+
+
+def load_cia_entities(table: pd.DataFrame, case_ids: dict[str, str] | None = None) -> pd.DataFrame:
+    """A reviewed CIA-entity table (research answer CSV B) -> rows in the defendant-resolver
+    shape (case_id, defendant_name, npi, status, match_level) for ``cia_defendant_npis``.
+    Only Luhn-valid NPIs resolve (status resolved, match_level research_cia); a row without
+    one is kept with status research_no_npi so the review is visible, never a label."""
+    from src.attempt_2.clean_data import is_valid_npi
+    from src.enforcement.cia import normalize_cia  # noqa: F401  (schema owner)
+    if table is None or not len(table):
+        return pd.DataFrame(columns=["case_id", "defendant_name", "npi", "org_node_id", "status", "match_level",
+                                     "n_orgs_for_party", "label_weight", "enrolled_entity_name", "evidence_url"])
+    resolved = _resolve_columns(list(table.columns), _CIA_ENTITY_ALIASES)
+    d = table.rename(columns={v: k for k, v in resolved.items()}).copy()
+    rows = []
+    for r in d.to_dict("records"):
+        party = str(r.get("party") or "").strip()
+        key = norm_org_name(party).upper()
+        npi = str(r.get("npi") or "").strip()
+        ok = bool(npi) and is_valid_npi(npi)
+        rows.append({"case_id": (case_ids or {}).get(key) or f"cia:{key}", "defendant_name": party,
+                     "npi": npi if ok else "", "org_node_id": "",
+                     "status": "resolved" if ok else "research_no_npi", "match_level": "research_cia" if ok else "",
+                     "n_orgs_for_party": 1, "label_weight": 1.0,
+                     "enrolled_entity_name": str(r.get("enrolled_entity_name") or "").strip(),
+                     "evidence_url": str(r.get("evidence_url") or "").strip()})
+    out = pd.DataFrame(rows)
+    return out.drop_duplicates(["case_id", "npi", "enrolled_entity_name"]).reset_index(drop=True)
+
+
+def load_exclusion_npis(table: pd.DataFrame, residue: pd.DataFrame,
+                        min_confidence: str = "medium") -> pd.DataFrame:
+    """A reviewed excluded-names answer (research CSV) joined back to the residue rows by
+    source_node_id -> the exclusions schema (exclusions_name_resolved rows, match_level
+    research_<confidence>). Luhn-valid NPI and confidence >= ``min_confidence`` required;
+    the rest never leave the review file."""
+    from src.attempt_2.clean_data import is_valid_npi
+    rank = {"high": 3, "medium": 2, "low": 1}
+    need = rank.get(str(min_confidence).lower(), 2)
+    cols = EXCLUSION_COLS + ["match_level", "source_node_id", "employer_name", "employer_npi", "evidence_url"]
+    if table is None or not len(table) or residue is None or not len(residue):
+        return pd.DataFrame(columns=cols)
+    resolved = _resolve_columns(list(table.columns), _EXCL_NPI_ALIASES)
+    d = table.rename(columns={v: k for k, v in resolved.items()}).copy()
+    rs = residue.set_index(residue["source_node_id"].astype(str))
+    rows = []
+    for r in d.to_dict("records"):
+        sid = str(r.get("source_node_id") or "").strip()
+        npi = str(r.get("npi") or "").strip()
+        conf = str(r.get("confidence") or "").strip().lower()
+        if sid not in rs.index or not npi or not is_valid_npi(npi) or rank.get(conf, 0) < need:
+            continue
+        src = rs.loc[sid]
+        cands = str(src.get("candidate_npis") or "")
+        if cands and npi not in cands.split(";"):
+            continue                                        # the agent must choose among the records our index found
+        emp = str(r.get("employer_npi") or "").strip()
+        rows.append({"npi": npi, "entity_name": str(src.get("entity_name") or ""),
+                     "name_key": norm_org_name(str(src.get("entity_name") or "")),
+                     "excl_type": str(src.get("excl_type") or ""),
+                     "excl_date": pd.to_datetime(src.get("excl_date"), errors="coerce"),
+                     "reinstate_date": pd.NaT, "currently_active": 1,
+                     "match_level": f"research_{conf}", "source_node_id": sid,
+                     "employer_name": str(r.get("employer_name") or "").strip(),
+                     "employer_npi": emp if emp and is_valid_npi(emp) else "",
+                     "evidence_url": str(r.get("evidence_url") or "").strip()})
+    return pd.DataFrame(rows, columns=cols).drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)
+
+
 def merge_into_case_db(new_cases: pd.DataFrame, case_csv: str | Path) -> pd.DataFrame:
     """Union new cases into the case CSV, dedup by case_id (existing rows win —
     the DOJ feed's richer parses are never overwritten by a sweep row)."""
@@ -193,8 +276,47 @@ def main() -> None:
     mf.add_argument("--case-db", required=True,
                     help="cases csv to merge into (created if absent)")
 
+    ce = sub.add_parser("cia-entities", help="reviewed CIA entity table (research CSV B) -> cia_defendant_npis rows")
+    ce.add_argument("--in", dest="inp", required=True)
+    ce.add_argument("--cia-cases", default=None, help="enforcement/cia_cases.csv (maps party -> case_id)")
+    ce.add_argument("--out", required=True, help="processed/cia_defendant_npis.parquet (appended, de-duplicated)")
+
+    en = sub.add_parser("exclusion-npis", help="reviewed excluded-names answer -> exclusions_name_resolved rows")
+    en.add_argument("--in", dest="inp", required=True)
+    en.add_argument("--residue", required=True, help="processed/exclusion_name_residue.csv")
+    en.add_argument("--min-confidence", default="medium", choices=["high", "medium", "low"])
+    en.add_argument("--out", required=True, help="processed/exclusions_name_resolved.parquet (appended, de-duplicated)")
+
     args = ap.parse_args()
     table = _read_any(args.inp)
+    if args.cmd == "cia-entities":
+        case_ids = None
+        if args.cia_cases:
+            cc = pd.read_csv(args.cia_cases, dtype=str)
+            case_ids = dict(zip(cc["defendant_name_key"].astype(str).str.upper(), cc["case_id"].astype(str)))
+        rows = load_cia_entities(table, case_ids)
+        out = Path(args.out)
+        prev = pd.read_parquet(out) if out.exists() else None
+        allrows = pd.concat([prev, rows], ignore_index=True) if prev is not None and len(prev) else rows
+        allrows = allrows.drop_duplicates(["case_id", "npi"], keep="first")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        allrows.to_parquet(out, index=False)
+        print(f"[research_evidence] {int((rows['status'] == 'resolved').sum()):,} CIA entity rows resolved "
+              f"({int((rows['status'] != 'resolved').sum()):,} without an NPI, kept for review) -> {out} "
+              f"({len(allrows):,} rows)")
+        return
+    if args.cmd == "exclusion-npis":
+        residue = pd.read_csv(args.residue, dtype=str)
+        rows = load_exclusion_npis(table, residue, min_confidence=args.min_confidence)
+        out = Path(args.out)
+        prev = pd.read_parquet(out) if out.exists() else None
+        allrows = pd.concat([prev, rows], ignore_index=True) if prev is not None and len(prev) else rows
+        allrows = allrows.drop_duplicates(["npi", "excl_type", "excl_date"], keep="first")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        allrows.to_parquet(out, index=False)
+        print(f"[research_evidence] {len(rows):,} excluded names resolved at >= {args.min_confidence} -> {out} "
+              f"({len(allrows):,} rows); rebuild the graph to use them")
+        return
     if args.cmd == "state-exclusions":
         excl, quarantine = load_state_exclusions(table, args.state)
         out = Path(args.processed) / f"exclusions_state_{args.state.strip().lower()}.parquet"

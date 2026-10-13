@@ -88,3 +88,72 @@ def test_self_disclosure_flag_and_qui_tam_ruler():
     assert r["self_disclosure"] == 1
     r2 = parse_press_release("Acme agreed to pay $2 million to resolve a qui tam lawsuit.", "u2", "2024-01-01", "Acme")
     assert r2["self_disclosure"] == 0 and r2["qui_tam"] == 1
+
+
+def _dim():
+    return pd.DataFrame({
+        "npi": ["1000000001", "1000000002", "1000000003", "1000000004", "1000000005"],
+        "provider_name": ["DOE, JANE A", "DOE, JANE B", "ROE, RICK", "ACME HOME HEALTH LLC", "SMITH, ANN"],
+        "entity_type": ["1", "1", "1", "2", "1"],
+        "addr_state": ["FL", "FL", "GA", "FL", "FL"], "addr_city": ["MIAMI", "TAMPA", "ATLANTA", "MIAMI", "OCALA"],
+        "taxonomy_code": ["363L00000X", "207Q00000X", "207Q00000X", "251E00000X", "363L00000X"],
+        "name_key": ["", "", "", "ACME HOME HEALTH", ""]})
+
+
+def test_exclusion_name_resolve_unique_ambiguous_no_match_and_schema():
+    from src.model_a.label_expansion import exclusion_name_resolve, name_resolved_exclusions
+    nodes = pd.DataFrame({
+        "node_id": ["exclusion:1", "exclusion:2", "exclusion:3", "exclusion:4", "exclusion:5", "exclusion:6"],
+        "npi": ["", "", "", "", "1000000009", ""],
+        "entity_name": ["ROE, RICK", "DOE, JANE", "ACME HOME HEALTH LLC", "NOBODY, HERE", "SMITH, ANN", "SMITH, ANN"],
+        "state": ["GA", "FL", "FL", "FL", "FL", "FL"],
+        "excl_type": ["1128a1", "1128a1", "1128a1", "1128a1", "1128a1", "1128b4"],
+        "excl_date": ["2020-01-01", "2021-05-01", "2019-03-01", "2022-01-01", "2020-01-01", "2020-01-01"]})
+    res = exclusion_name_resolve(nodes, _dim(), tier="hard", year_min=2015)
+    r = res.set_index("source_node_id")
+    assert r.loc["exclusion:1", "status"] == "resolved" and r.loc["exclusion:1", "npi"] == "1000000003"
+    assert r.loc["exclusion:1", "match_level"] == "excl_name_state_unique"
+    assert r.loc["exclusion:2", "status"] == "ambiguous" and r.loc["exclusion:2", "n_candidates"] == 2
+    assert set(r.loc["exclusion:2", "candidate_npis"].split(";")) == {"1000000001", "1000000002"}
+    assert r.loc["exclusion:3", "status"] == "resolved" and r.loc["exclusion:3", "match_level"] == "excl_org_state_unique"
+    assert r.loc["exclusion:4", "status"] == "no_match"
+    assert "exclusion:5" not in r.index                      # already carries an NPI
+    assert "exclusion:6" not in r.index                      # weak tier (license) under tier=hard
+    ex = name_resolved_exclusions(res)
+    assert set(ex["npi"]) == {"1000000003", "1000000004"} and (ex["excl_type"] == "1128a1").all()
+    assert "match_level" in ex.columns and "source_node_id" in ex.columns
+
+
+def test_cia_and_exclusion_name_prompts_and_loaders(tmp_path):
+    from src.enforcement.case_harvest_prompts import cia_prompts, exclusion_name_prompts
+    from src.enforcement.research_evidence import load_cia_entities, load_exclusion_npis
+    from src.entity_graph.resolve_entities import norm_org_name
+    cia = pd.DataFrame({"entity_name": ["Harvested Corp", "Missing Health LLC", "Orphan Parent Inc"],
+                        "name_key": [norm_org_name(n) for n in ("Harvested Corp", "Missing Health LLC", "Orphan Parent Inc")],
+                        "cia_status": ["active"] * 3, "effective_date": ["2024-01-01"] * 3, "state": ["TX"] * 3, "source_url": [""] * 3})
+    case_db = pd.DataFrame({"defendant_name": ["Harvested Corp"], "defendant_name_key": [norm_org_name("Harvested Corp")]})
+    residue = pd.DataFrame({"case_id": ["cia:x"], "defendant_name": ["Orphan Parent Inc"],
+                            "name_key": [norm_org_name("Orphan Parent Inc")], "reason": ["no_exact_org_or_owner_match"], "n_orgs": [0]})
+    ps = cia_prompts(cia, case_db, residue, per_prompt=5)
+    assert len(ps) == 1 and ps[0]["set"] == "cia"
+    assert "Missing Health LLC" in ps[0]["prompt"] and "Orphan Parent Inc" in ps[0]["prompt"]
+    assert "Harvested Corp" not in ps[0]["prompt"]                 # already in the case DB
+    assert ps[0]["prompt"].count("Orphan Parent Inc") == 1         # sent once, not twice
+    ex_res = pd.DataFrame({"source_node_id": ["exclusion:2"], "entity_name": ["DOE, JANE"], "state": ["FL"],
+                           "excl_type": ["1128a1"], "excl_date": ["2021-05-01"], "candidate_npis": ["1000000004;1000000012"],
+                           "status": ["ambiguous"]})
+    eps = exclusion_name_prompts(ex_res, per_prompt=10)
+    assert len(eps) == 1 and "exclusion:2" in eps[0]["prompt"] and "1000000004;1000000012" in eps[0]["prompt"]
+    # loaders: CIA entity answer -> resolver rows; excluded-names answer -> exclusions rows
+    ans = pd.DataFrame({"party": ["Missing Health LLC", "Missing Health LLC"], "enrolled_entity_name": ["Missing Health of Dallas", "Missing Pharmacy"],
+                        "city": ["Dallas", "Dallas"], "state": ["TX", "TX"], "npi": ["1234567893", "123"], "evidence_url": ["u", "u"]})
+    rows = load_cia_entities(ans, {norm_org_name("Missing Health LLC").upper(): "cia:missing:2024-01-01"})
+    assert list(rows["status"]) == ["resolved", "research_no_npi"] and rows.iloc[0]["case_id"] == "cia:missing:2024-01-01"
+    assert rows.iloc[0]["match_level"] == "research_cia"
+    exans = pd.DataFrame({"source_node_id": ["exclusion:2", "exclusion:2", "exclusion:9"], "npi": ["1000000012", "1000000020", "1000000004"],
+                          "confidence": ["high", "high", "high"], "employer_name": ["X", "", ""], "employer_npi": ["", "", ""], "evidence_url": ["u"] * 3})
+    out = load_exclusion_npis(exans, ex_res, min_confidence="medium")
+    assert list(out["npi"]) == ["1000000012"]                      # 1000000020 is not among our candidates; exclusion:9 is not in the residue
+    assert out.iloc[0]["match_level"] == "research_high" and out.iloc[0]["excl_type"] == "1128a1"
+    low = pd.DataFrame({"source_node_id": ["exclusion:2"], "npi": ["1000000012"], "confidence": ["low"], "evidence_url": ["u"]})
+    assert len(load_exclusion_npis(low, ex_res)) == 0

@@ -337,7 +337,35 @@ def main() -> None:
     a2.add_argument("--budget", type=int, default=100)
     a2.add_argument("--out-cases", required=True, help="enforcement/cia_cases.csv (case-DB schema)")
     a2.add_argument("--out-npis", required=True, help="processed/cia_defendant_npis.parquet")
+    a3 = sub.add_parser("names", help="name-only exclusion rows -> NPIs, offline first (unique NPPES match in state)")
+    a3.add_argument("--exclusion-nodes", required=True)
+    a3.add_argument("--provider-dim", required=True, help="processed/provider_dim.parquet")
+    a3.add_argument("--tier", default="hard", choices=["all", "hard", "hard+weak"])
+    a3.add_argument("--year-min", type=int, default=2015)
+    a3.add_argument("--out", required=True, help="processed/exclusion_name_resolution.parquet (every row + status)")
+    a3.add_argument("--out-exclusions", default=None,
+                    help="processed/exclusions_name_resolved.parquet (resolved rows in the exclusions schema; "
+                         "the next graph build merges it)")
     a = ap.parse_args()
+
+    if a.cmd == "names":
+        nodes = pd.read_parquet(a.exclusion_nodes)
+        dim = pd.read_parquet(a.provider_dim)
+        res = exclusion_name_resolve(nodes, dim, tier=a.tier, year_min=a.year_min)
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        res.to_parquet(a.out, index=False)
+        amb = res[res["status"] == "ambiguous"] if len(res) else res
+        amb.to_csv(Path(a.out).with_name("exclusion_name_residue.csv"), index=False)
+        by = res["status"].value_counts().to_dict() if len(res) else {}
+        print(f"[label_expansion] name-only {a.tier}-tier exclusion rows since {a.year_min}: {len(res):,} -> "
+              + ", ".join(f"{k} {v:,}" for k, v in by.items()) + f" -> {a.out}; residue (ambiguous) -> "
+              f"{Path(a.out).with_name('exclusion_name_residue.csv')}")
+        if a.out_exclusions:
+            ex = name_resolved_exclusions(res)
+            ex.to_parquet(a.out_exclusions, index=False)
+            print(f"[label_expansion] {len(ex):,} resolved rows in the exclusions schema -> {a.out_exclusions} "
+                  "(rebuild the graph to use them)")
+        return
 
     if a.cmd == "affiliated":
         nodes = pd.read_parquet(a.exclusion_nodes)
@@ -396,3 +424,88 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ------------------------------------------------- name-only exclusion rows
+
+NAME_RES_COLS = ["source_node_id", "entity_name", "state", "excl_type", "excl_date", "fca_tier", "fca_basis",
+                 "kind", "person_key", "npi", "match_level", "n_candidates", "candidate_npis", "status"]
+
+
+def exclusion_name_resolve(exclusion_nodes: pd.DataFrame, provider_dim: pd.DataFrame,
+                           tier: str = "hard", year_min: int = 2015) -> pd.DataFrame:
+    """The audit's biggest identifier gap (LEIE 66,081 name-only rows, SAM 102,232,
+    state lists 3,795): a kept-tier exclusion record with NO NPI, a name and a
+    state, dated ``year_min`` or later, is resolved OFFLINE first against NPPES
+    (provider_dim) by the same key the defendant resolver uses: FIRST LAST for a
+    person, the normalized legal name for a business, within the record's state.
+    Exactly one NPPES record = resolved (``excl_name_state_unique`` /
+    ``excl_org_state_unique``); several = ``ambiguous`` (the Manus residue, with the
+    candidate NPIs listed so the agent settles it on specialty and address); none
+    = ``no_match``.  No fuzzy matching; a name alone never becomes a label here."""
+    from .fca_relevance import classify_series, tier_mask
+    from src.enforcement.defendant_resolver import _index_nppes, _nppes_person_key
+    e = exclusion_nodes.copy()
+    npi = e.get("npi").astype("string").fillna("").str.strip()
+    e = e[(npi == "") | (npi.str.lower() == "none")].copy()
+    e["entity_name"] = e.get("entity_name", "").fillna("").astype(str).str.strip()
+    e["state"] = e.get("state", pd.Series("", index=e.index)).fillna("").astype(str).str.upper().str.strip()
+    e["_dt"] = pd.to_datetime(e.get("excl_date"), errors="coerce")
+    e = e[(e["entity_name"] != "") & (e["state"] != "") & e["_dt"].notna() & (e["_dt"].dt.year >= int(year_min))].copy()
+    if not len(e):
+        return pd.DataFrame(columns=NAME_RES_COLS)
+    e["excl_type"] = e.get("excl_type", "").fillna("").astype(str)
+    tiers = classify_series(e["excl_type"])
+    e["fca_tier"] = tiers["fca_tier"].values
+    e["fca_basis"] = tiers["fca_basis"].values
+    e = e[tier_mask(e["fca_tier"], tier).values].copy()
+    if not len(e):
+        return pd.DataFrame(columns=NAME_RES_COLS)
+    is_person = e["entity_name"].str.contains(",")
+    e["kind"] = is_person.map({True: "person", False: "org"})
+    e["person_key"] = ""
+    e.loc[is_person, "person_key"] = _nppes_person_key(e.loc[is_person, "entity_name"]).values
+    e.loc[~is_person, "person_key"] = e.loc[~is_person, "entity_name"].map(norm_org_name).str.upper().values
+    pkeys = set(e.loc[is_person, "person_key"]) - {""}
+    okeys = set(e.loc[~is_person, "person_key"]) - {""}
+    states = set(e["state"]) - {""}
+    people, orgs, _ = _index_nppes(provider_dim, pkeys, okeys, states)
+    rows = []
+    for r in e.itertuples():
+        key = r.person_key
+        if not key:
+            rows.append({"npi": "", "match_level": "", "n_candidates": 0, "candidate_npis": "", "status": "no_key"})
+            continue
+        cands = (people if r.kind == "person" else orgs).get((key, r.state), [])
+        npis = sorted({c[0] for c in cands})
+        if len(npis) == 1:
+            rows.append({"npi": npis[0], "match_level": "excl_name_state_unique" if r.kind == "person" else "excl_org_state_unique",
+                         "n_candidates": 1, "candidate_npis": npis[0], "status": "resolved"})
+        elif len(npis) > 1:
+            rows.append({"npi": "", "match_level": "", "n_candidates": len(npis), "candidate_npis": ";".join(npis[:12]),
+                         "status": "ambiguous"})
+        else:
+            rows.append({"npi": "", "match_level": "", "n_candidates": 0, "candidate_npis": "", "status": "no_match"})
+    res = pd.DataFrame(rows, index=e.index)
+    out = pd.DataFrame({"source_node_id": e.get("node_id", pd.Series("", index=e.index)).astype(str),
+                        "entity_name": e["entity_name"], "state": e["state"], "excl_type": e["excl_type"],
+                        "excl_date": e["_dt"].dt.strftime("%Y-%m-%d"), "fca_tier": e["fca_tier"],
+                        "fca_basis": e["fca_basis"], "kind": e["kind"], "person_key": e["person_key"]})
+    out = pd.concat([out, res], axis=1)
+    return out[NAME_RES_COLS].reset_index(drop=True)
+
+
+def name_resolved_exclusions(res: pd.DataFrame) -> pd.DataFrame:
+    """The resolved rows in the exclusions schema (processed/exclusions_name_resolved.parquet):
+    the next graph build merges every processed/exclusions_*.parquet, so these rows become
+    exclusion nodes WITH an NPI, carrying their original statute (the tier survives)."""
+    from src.enforcement.opensanctions import EXCLUSION_COLS
+    k = res[res["status"] == "resolved"].copy() if len(res) else res
+    if not len(k):
+        return pd.DataFrame(columns=EXCLUSION_COLS + ["match_level", "source_node_id"])
+    out = pd.DataFrame({"npi": k["npi"].astype(str), "entity_name": k["entity_name"],
+                        "name_key": k["entity_name"].map(norm_org_name),
+                        "excl_type": k["excl_type"], "excl_date": pd.to_datetime(k["excl_date"], errors="coerce"),
+                        "reinstate_date": pd.NaT, "currently_active": 1,
+                        "match_level": k["match_level"], "source_node_id": k["source_node_id"]})
+    return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)

@@ -1195,6 +1195,19 @@ first, then paste" above every move/done block.
   --qui-tam-only`, `accuracy_diagnostics --qui-tam-ruler` -> rulers['qui_tam']).
   No fuzzy matching anywhere in the chain. The three rulers run on v14's matrix as
   a SWEEP (task label_expansion_run); v15 pre-registers the winner.
+  MANUS LANES (operator 2026-10-13, bundle 308, plan section 6): `label_expansion
+  names` resolves name-only hard-tier exclusion rows since 2015 OFFLINE first (the
+  defendant resolver's NPPES index: unique record in the state = resolved,
+  several = ambiguous residue with the candidate NPIs, none = no_match; resolved
+  rows -> exclusions_name_resolved.parquet in the exclusions schema, merged by
+  the next graph build); `case_harvest_prompts --sets cia` (CIA parties missing
+  from the case DB + the ownership resolver's residue, 5 per prompt: CSV A the
+  settlement release + qui tam / relator role, CSV B the enrolled entities with
+  NPIs) and `--sets exclusion_names` (ambiguous rows only, 10 per prompt, the
+  candidates listed); loaders `research_evidence cia-entities` (resolver rows,
+  resolved only on a Luhn-valid NPI) and `exclusion-npis` (valid NPI, confidence
+  >= medium, and the NPI must be one of the candidates we listed). Offline exact
+  first, Manus for the residue, a human gate on every answer.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
