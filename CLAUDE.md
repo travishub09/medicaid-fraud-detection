@@ -1114,6 +1114,26 @@ first, then paste" above every move/done block.
   light_walks_above=)` / `python -m src.entity_graph --light-walks-above N` (0 = never
   lighten); `ops/vm/run_frozen_night.sh` passes 0. The component cap (150k) and the
   mail-drop pruning (100 orgs per address) stay: those are signal rules, not memory.
+  V12 READ-OUT (2026-10-13, `docs/ACCURACY_READOUT_v12_2026-10-13.md`): the first
+  VM run (full embeddings, 10 seeds, train = hard, 40 sources, 22 schemes, 0 calc
+  FAILs). Pursuit book, FCA ruler: 1 / 1 / 4 / 7 at 16 / 50 / 100 / 250 (random 0.1
+  / 0.3 / 0.6 / 1.4; the best 250 of the series), lead 29 mo, inst share 0, NPI
+  top-1% lift 6.7. HOLD on the same three top-50 checks as v11 (hits50 1, prec50_lo
+  < base, Jaccard 0.62); 44 of the top 50 are capped_no_basis with 0 hits for the
+  third run. THE LARGE BOOK PASSED: 3 / 5 / 5 at 50 / 100 / 250 (p 0.004 at 50).
+  Order sweep split: basis-first 1/3/3/3 vs shipped 1/1/4/7 (sort stays; a MIXED
+  order is the v13 sweep row). Full embeddings: NO MEASURABLE SIGNAL (+0.007 AUC,
+  CI spans 0); ten seeds did not move Jaccard. The operator-book dossier named
+  Mayo Clinic Arizona / SSM Health / Sutter VNA / Assurex / Ameritox / Alere: the
+  entity_segment name cue needs a curated institutional list before v13's dossier.
+  Not dispatched. v13 = two graded books (pursuit at 100/250, large at 50), the
+  mixed-order sweep row, the institutional list, Jaccard bar 0.6 or at 100.
+  The VM packet is a tar (zip is not on the image; setup now installs it).
+  TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
+  TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
+  national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
+  100%-TMS entities (an ownership / coverage-date research question) and seven
+  individual NPIs carrying TMS alone (Rosa Bellota NV $1.0M the largest).
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
