@@ -54,7 +54,7 @@ def test_audit_exclusions_per_source_and_integrity():
     assert leie["rows"] == 5 and leie["name_only_rows"] == 1
     assert leie["luhn_fail_rows"] == 1 and leie["bad_npi_rows"] == 1
     assert leie["future_dated"] == 1 and leie["unmapped_rows"] == 1
-    assert leie["hard"] == 2 and leie["excluded"] == 1     # 1128a1 x2 (one bad NPI), b14
+    assert leie["hard"] == 3 and leie["excluded"] == 1     # 1128a1 x2 (one bad NPI) + b8 (the billing vehicle, hard since 2026-10-13), b14
     assert leie["in_universe"] == 1 and leie["billing_seen"] == 1
     assert leie["post_cutoff_rows"] == 2                    # 2022-03 + 2099
     assert ps.loc["sam", "dated_share"] == 0.0

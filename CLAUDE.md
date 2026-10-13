@@ -1226,6 +1226,18 @@ first, then paste" above every move/done block.
   TRAINING-only source tag `hcf_commercial` admitted on a conviction or judgment,
   switched on by a label ablation on the FCA ruler, never a forward positive and
   never in the strict PurpleLab label. Follow-ups in task label_sources_followups.
+  THE CHARGED TIER (operator 2026-10-13: 'the biggest possible label, every provider
+  in it with a strong signal they likely committed fraud in any way'; an indictment
+  is a strong signal): `fca_relevance.TIERS` = hard / charged / weak / excluded;
+  a fraud indictment or charge with no outcome = `charged` (a federal HCF charge
+  converts about nine times in ten), trainable under `--label-tier hard+charged`
+  (`tier_mask`; accepted by pursuit_dossier / accuracy_diagnostics / learning_loop /
+  consensus / label_expansion), REFUSED by prospective_label (the forward ruler
+  grades on outcomes only). 1128(b)(8) / (b)(15) are hard (the billing vehicle and
+  its operator). A credible-allegation payment suspension stays weak (a referral,
+  not a charge). v15 = the A/B hard vs hard+charged on one matrix before the
+  runner default moves. Queued: the 452 charged-only case rows as `charged`
+  positives, and an outcome-refresh harvest that converts them to hard.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

@@ -1169,7 +1169,7 @@ def main() -> None:
     ap.add_argument("--score-source", default="priority_list+refit", choices=["priority_list", "refit", "priority_list+refit"],
                     help="priority_list = the shipped CSV order only; refit = rebuild the scorer OOF; "
                          "priority_list+refit = shipped org order plus refit NPI tables (default)")
-    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+weak"])
+    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+charged", "hard+weak"])
     ap.add_argument("--exclusion-nodes", default=None, help="for --label-tier (the full graph's exclusion nodes)")
     ap.add_argument("--budgets-org", default="16,50,100,250")
     ap.add_argument("--budgets-npi", default="16,50,250,1000")

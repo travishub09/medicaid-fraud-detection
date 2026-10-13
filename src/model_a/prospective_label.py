@@ -286,6 +286,8 @@ def main() -> None:
     from .fca_relevance import tier_report
 
     nodes = _load(args.exclusion_nodes)
+    if str(args.fca_tier).lower().replace("_", "+") == "hard+charged":
+        ap.error("--fca-tier hard+charged is a TRAINING policy; the forward ruler grades on outcomes (use hard)")
     label = build_prospective_label(nodes, args.cutoff, fca_tier=args.fca_tier)
     if args.horizon_months:
         end = _cutoff_ts(args.cutoff) + pd.DateOffset(months=int(args.horizon_months))

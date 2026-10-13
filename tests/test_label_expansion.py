@@ -181,4 +181,23 @@ def test_state_termination_allegations_are_weak():
     from src.model_a.fca_relevance import classify_series
     t = classify_series(pd.Series(["state_term:FL:indicted for medicaid fraud", "state_term:FL:payment suspension credible allegation of fraud",
                                    "state_term:FL:convicted of medicaid fraud"]))
-    assert list(t["fca_tier"]) == ["weak", "weak", "hard"]
+    assert list(t["fca_tier"]) == ["charged", "weak", "hard"]   # a fraud indictment = charged (trains under hard+charged)
+
+
+def test_charged_tier_and_billing_vehicle_statutes():
+    """Operator 2026-10-13: the label wants every provider who likely committed fraud; an
+    indictment is a strong signal but not an outcome -> its own tier, trainable under
+    hard+charged, never a forward positive. (b)(8) / (b)(15) = the billing vehicle: hard."""
+    import pandas as pd
+    from src.model_a.fca_relevance import fca_tier, tier_mask, TIERS
+    assert "charged" in TIERS
+    assert fca_tier("1128b8")[0] == "hard" and fca_tier("1128b15")[0] == "hard"
+    assert fca_tier("state_term:FL:indicted for medicaid fraud")[0] == "charged"
+    assert fca_tier("state_term:FL:charged with health care fraud")[0] == "charged"
+    assert fca_tier("state_term:FL:indicted")[0] == "weak"                       # charge of unstated kind
+    assert fca_tier("state_term:TN:credible allegation of fraud")[0] == "weak"   # a referral, not a charge
+    assert fca_tier("state_term:FL:convicted of medicaid fraud")[0] == "hard"
+    t = pd.Series(["hard", "charged", "weak", "excluded"])
+    assert list(tier_mask(t, "hard")) == [True, False, False, False]
+    assert list(tier_mask(t, "hard+charged")) == [True, True, False, False]
+    assert list(tier_mask(t, "hard+weak")) == [True, True, True, False]

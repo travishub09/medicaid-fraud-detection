@@ -485,7 +485,7 @@ def main() -> None:
     ap.add_argument("--top-frac", type=float, default=0.01)
     ap.add_argument("--queue-size", type=int, default=60)
     ap.add_argument("--sample", type=int, default=100_000, help="rows sampled from each matrix for drift")
-    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+weak"])
+    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+charged", "hard+weak"])
     ap.add_argument("--exclusion-nodes", default=None)
     ap.add_argument("--tag", default=None)
     a = ap.parse_args()

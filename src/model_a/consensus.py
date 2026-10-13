@@ -495,7 +495,7 @@ def main() -> None:
                          "NPI Registry (network)")
     ap.add_argument("--no-cache", action="store_true",
                     help="rescore every run even when <out>/_run_cache/<run>__<tier>.parquet exists")
-    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+weak"],
+    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+charged", "hard+weak"],
                     help="train every run's scorer on this FCA tier (rebuilt from "
                          "each run's own as-of exclusion nodes) before merging: "
                          "'hard' = a fraud-shaped consensus; 'all' = the in-matrix "

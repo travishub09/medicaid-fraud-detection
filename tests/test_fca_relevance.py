@@ -19,7 +19,7 @@ from src.model_a.label_variants import collect, to_markdown
 @pytest.mark.parametrize("excl_type, tier", [
     ("1128a1", "hard"), ("1128(a)(3)", "hard"), ("1128 B7", "hard"),
     ("BRCH CIA", "hard"), ("BRCH SA", "hard"), ("1128b16", "hard"),
-    ("1128b4", "weak"), ("1128a2", "weak"), ("1128b8", "weak"), ("1156", "weak"),
+    ("1128b4", "weak"), ("1128a2", "weak"), ("1128b8", "hard"), ("1156", "weak"),   # b8 = the billing vehicle (hard since 2026-10-13)
     ("1128b14", "excluded"), ("1128b9", "excluded"), ("1128b13", "excluded"),
     ("1128Aa", "hard"), ("1128(c)(3)(g)(i)", "weak"), ("1128(c)(3)(g)(ii)", "weak"),
     ("1160", "weak"),                                      # the audit's unmapped codes
@@ -50,7 +50,7 @@ def test_1128b1_not_swallowed_by_1128b16_prefix():
     # key prefix matching must not let '1128b1' shadow '1128b16' or vice versa
     assert fca_tier("1128b16")[0] == "hard"
     assert fca_tier("1128b1")[0] == "hard"
-    assert fca_tier("1128b15")[0] == "weak"
+    assert fca_tier("1128b15")[0] == "hard"      # the operator of the vehicle (hard since 2026-10-13)
     assert fca_tier("1128b14")[0] == "excluded"
 
 

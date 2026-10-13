@@ -328,7 +328,7 @@ def main() -> None:
     a1.add_argument("--min-share", type=float, default=0.05)
     a1.add_argument("--min-dollars", type=float, default=25_000.0)
     a1.add_argument("--max-orgs", type=int, default=1)
-    a1.add_argument("--tier", default="hard", choices=["all", "hard", "hard+weak"])
+    a1.add_argument("--tier", default="hard", choices=["all", "hard", "hard+charged", "hard+weak"])
     a1.add_argument("--out", required=True, help="processed/affiliated_convictions.parquet")
     a2 = sub.add_parser("cia", help="CIA parties -> enrolled providers through exact name and ownership")
     a2.add_argument("--cia", required=True, help="preclean/cia/cia_list.csv")
@@ -340,7 +340,7 @@ def main() -> None:
     a3 = sub.add_parser("names", help="name-only exclusion rows -> NPIs, offline first (unique NPPES match in state)")
     a3.add_argument("--exclusion-nodes", required=True)
     a3.add_argument("--provider-dim", required=True, help="processed/provider_dim.parquet")
-    a3.add_argument("--tier", default="hard", choices=["all", "hard", "hard+weak"])
+    a3.add_argument("--tier", default="hard", choices=["all", "hard", "hard+charged", "hard+weak"])
     a3.add_argument("--year-min", type=int, default=2015)
     a3.add_argument("--other-ids", default=None,
                     help="processed/nppes_other_ids.parquet (ccn_npi_crosswalk --other-ids-out): UPIN joins first")

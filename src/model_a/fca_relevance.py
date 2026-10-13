@@ -18,6 +18,12 @@ statute or reason code (already carried in ``excl_type``):
             corporate integrity or settlement agreement (a CIA IS an FCA
             settlement), abuse/misuse of billing privileges, false or
             misleading enrollment information.
+  charged   a fraud INDICTMENT or charge with no resolved outcome yet (the
+            operator's bar 2026-10-13: "every provider in the label should
+            have a strong signal that they likely committed fraud"; a federal
+            health-care-fraud charge ends in a conviction or plea about nine
+            times in ten). Trains under the 'hard+charged' policy; NEVER a
+            forward-ruler positive (a run is graded on outcomes).
   weak      real misconduct signal that is not FCA on its face: license
             revocations of unstated basis, patient abuse, controlled-
             substance offenses, derivative exclusions (owned/controlled by
@@ -40,7 +46,7 @@ import re
 
 import pandas as pd
 
-TIERS = ("hard", "weak", "excluded")
+TIERS = ("hard", "charged", "weak", "excluded")
 
 # OIG LEIE EXCLTYPE codes -> (tier, plain-English basis)
 LEIE_STATUTES: dict[str, tuple[str, str]] = {
@@ -61,8 +67,11 @@ LEIE_STATUTES: dict[str, tuple[str, str]] = {
     "1128b3": ("weak", "conviction: misdemeanor controlled substance"),
     "1128b4": ("weak", "license revocation or surrender (basis unstated)"),
     "1128b5": ("weak", "excluded or suspended by another federal/state program"),
-    "1128b8": ("weak", "entity controlled by a sanctioned individual"),
-    "1128b15": ("weak", "owner/officer of an excluded entity"),
+    # (b)(8) / (b)(15): the entity a sanctioned individual controls, and the owner of a
+    # sanctioned entity, are the BILLING VEHICLE and its operator (operator policy
+    # 2026-09-29 for criminal cases, extended to the statute 2026-10-13): hard
+    "1128b8": ("hard", "entity controlled by a sanctioned individual (the billing vehicle)"),
+    "1128b15": ("hard", "owner/officer of an excluded entity (the operator of the vehicle)"),
     "1128c3gii": ("weak", "conviction-based exclusion (derivative)"),
     "1156": ("weak", "QIO sanction: substandard or unnecessary care"),
     "1128b9": ("excluded", "failure to disclose required information"),
@@ -127,8 +136,14 @@ STATE_TERM_RULES = [
     # an indictment, a charge or a payment suspension on a credible allegation of fraud
     # is an ALLEGATION, not an outcome (exclusion-source audit 2026-10-13): weak, so it
     # never trains or grades as an FCA-shaped event while staying a graph node
+    # an INDICTMENT or a charge for fraud = 'charged' (trains under hard+charged, never
+    # grades); a payment suspension on a credible allegation (42 CFR 455.23) is a
+    # referral, not a charge: weak
+    (r"(indict|charged|pending charges).*(fraud|false claim|kickback|medicaid|medicare|health ?care)|"
+     r"(fraud|false claim|kickback|medicaid|medicare|health ?care).*(indict|charged|pending charges)", "charged",
+     "state termination on a fraud indictment or charge (no resolved outcome yet)"),
     (r"indict|charged|pending (charges|investigation)|credible allegation|payment suspension", "weak",
-     "state termination on an allegation or charge (no resolved outcome)"),
+     "state termination on an allegation or charge of unstated kind (no resolved outcome)"),
     (r"fraud|false claim|kickback|anti-?kickback|bribe|program integrity|"
      r"mfcu|medicaid fraud control|convict|felony|guilty|plea|theft|embezzl|forg|"
      r"misrepresent|abuse of billing|billing (abuse|irregularit|fraud)|overbill|upcod|"
@@ -302,15 +317,21 @@ def classify_series(excl_type: pd.Series) -> pd.DataFrame:
     }, index=excl_type.index)
 
 
+TIER_POLICIES = ("all", "hard", "hard+charged", "hard+weak")
+
+
 def tier_mask(tiers: pd.Series, keep: str) -> pd.Series:
-    """Boolean mask for a --fca-tier policy: 'all' | 'hard' | 'hard+weak'."""
+    """Boolean mask for a --fca-tier / --label-tier policy:
+    'all' | 'hard' | 'hard+charged' (training only) | 'hard+weak'."""
     keep = (keep or "all").lower()
     if keep == "all":
         return pd.Series(True, index=tiers.index)
     if keep == "hard":
         return tiers == "hard"
+    if keep in ("hard+charged", "hardcharged", "hard_charged"):
+        return tiers.isin(["hard", "charged"])
     if keep in ("hard+weak", "hardweak", "hard_weak"):
-        return tiers.isin(["hard", "weak"])
+        return tiers.isin(["hard", "charged", "weak"])
     raise ValueError(f"unknown --fca-tier policy {keep!r}")
 
 

@@ -57,3 +57,18 @@ Yes, with the boundary drawn in the right place.
 2. The big-state lists with license and Medicaid-id aliases, and the type-05 join (adapter work, with the downloads).
 3. OpenSanctions as a crosswalk (code against the FtM schema; data gated on the license).
 4. The `hcf_commercial` training source as a label ablation after the CIA lane returns.
+
+## 7. The operator's decision (2026-10-13) and what it changed
+
+The bar, in the operator's words: the biggest possible label, where every provider in it carries a strong signal that they likely committed fraud in any way. That is the right bar for the TRAINING label and a different bar from the grading ruler, which has to stay on resolved outcomes so a run is graded on the business target. The two are now separated by tier:
+
+| tier | what it holds | trains | grades |
+|---|---|---|---|
+| hard | convictions, pleas, settlements, fraud statutes, CIA, abuse of billing privileges, and now 1128(b)(8) / (b)(15) (the entity a sanctioned person controls, the owner of a sanctioned entity: the billing vehicle and its operator) | yes | yes |
+| **charged** (new) | a fraud INDICTMENT or charge with no resolved outcome yet (a federal health-care-fraud charge ends in a conviction or plea about nine times in ten) | under `hard+charged` | never |
+| weak | license actions, patient abuse, controlled substances, derivative exclusions, allegations of unstated kind, credible-allegation payment suspensions (a referral, not a charge) | no | no |
+| excluded | paperwork, loan default, not operational, SAM without a health-care cause | no | no |
+
+`--label-tier hard+charged` is accepted by the training-side tools (pursuit_dossier, accuracy_diagnostics, learning_loop, consensus, label_expansion); `prospective_label` refuses it, so the forward ruler cannot drift onto allegations. The registry records `train = hard+charged` as its own policy; v15 runs the A/B (hard versus hard+charged on the same matrix, graded on the FCA ruler) before it becomes the default. (a)(4) controlled-substance convictions stay weak pending the pill-mill ablation. Commercial-plan convictions enter as the training-only source `hcf_commercial` once harvested, under the same ablation discipline.
+
+Two follow-ups make the charged tier much larger than the state lists alone: the case database holds 452 "charged only" rows that today never label (case_labels' outcome rule), which should become `charged` positives under the same policy, and an OUTCOME REFRESH harvest (for each charged case, the later plea or sentencing release by defendant and district) converts them to hard as the cases resolve. Both are queued.
