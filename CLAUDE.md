@@ -1280,6 +1280,25 @@ first, then paste" above every move/done block.
   mask 0/1/1/3: weight stays. v15 = full VM run on the expanded label (bundles
   307 to 312) under the v14 checks + the hard vs hard+charged A/B + the three-
   ruler sweep; 100 bar stays at 4.
+  LABEL EXPANSION, FIRST REAL RUN (2026-10-13, VM on v14's inputs): affiliated
+  convictions = 238 individuals with a rendering history under another biller,
+  168 kept biller rows (80 at share > 0.5), +55 forward positives (3,049 to
+  3,106); the qui tam ruler = 1,372 of the 1,801 resolved FCA cases in the
+  horizon; 185 charged-only case rows carry charged_case. CIA: 80 of 339 parties
+  resolved by exact name, but 26,536 NPIs, 11,217 of them Walgreen Co (one org
+  node), CVS 1,401, Lincare 710: the exact-org path had NO chain guard (only the
+  owner path did). FIXED (bundle 314): `cia_resolve(max_npis=150)` lists any
+  party reaching more than 150 NPIs as `chain_org` (never labelled, the same
+  rule case_labels applies to a settled org); `party_components` splits a
+  compound party line ("X, P.A. and John Doe, M.D.; d.b.a. Z") on and / & / ; /
+  d.b.a. with credential tails stripped, and each component tries both exact
+  paths (`cia_component`); `is_manufacturer_name` classes drug / device makers
+  in the residue as `manufacturer_not_enrolled` (cia_prompts never sends them, nor
+  chains); `evidence_strength` rates cia_* / research_cia moderate (they used to
+  fall to weak and be dropped by case_labels); case_labels honours a resolver
+  row's own `label_weight` as a cap on the direct tier (the per-party budget).
+  The operator re-runs the cia line after merging 314 (the first output is not
+  usable as a label: the chains must be listed, not labelled).
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

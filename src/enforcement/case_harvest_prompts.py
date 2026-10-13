@@ -168,16 +168,24 @@ def cia_prompts(cia_norm: pd.DataFrame, case_db: pd.DataFrame | None = None,
     """One prompt per ``per_prompt`` CIA parties: the parties MISSING from the case DB
     (the settlement release) plus the parties the ownership resolver could not place
     (the subsidiary crosswalk).  A party in both lists is sent once."""
+    from src.model_a.label_expansion import is_manufacturer_name
     miss = _cia_missing(cia_norm, case_db)
     want = {}
     for r in miss.itertuples():
+        if is_manufacturer_name(str(r.name_key)):
+            continue                      # a drug / device maker is never an enrolled provider
         want[str(r.name_key).upper()] = (str(r.entity_name), str(getattr(r, "state", "") or ""),
                                          str(getattr(r, "effective_date", "") or "")[:10], "missing_from_case_db")
     if residue is not None and len(residue):
         for r in residue.itertuples():
             k = str(getattr(r, "name_key", "") or "").upper()
+            reason = str(getattr(r, "reason", "") or "")
+            # a manufacturer is never an enrolled provider and a chain is never
+            # broadcast: neither is a research question
+            if reason in ("manufacturer_not_enrolled", "chain_org", "chain_owner"):
+                continue
             if k and k not in want:
-                want[k] = (str(r.defendant_name), "", "", f"unresolved:{getattr(r, 'reason', '')}")
+                want[k] = (str(r.defendant_name), "", "", f"unresolved:{reason}")
     items = list(want.items())
     out = []
     for i in range(0, len(items), max(1, int(per_prompt))):

@@ -391,10 +391,15 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                 stats["weak_strength"] += 1
                 continue
             scheme, sector, start, end, amt = _case_fields(c)
+            # a resolver row may carry its own per-party budget (label_expansion cia:
+            # budget / NPIs of the party); honoured below as a CAP on the row's weight
+            pw = pd.to_numeric(pd.Series([getattr(r, "label_weight", None)]), errors="coerce").iloc[0] \
+                if "label_weight" in ok.columns else float("nan")
             rows.append({"npi": str(r.npi), "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt, "label_basis": "resolved_defendant",
-                         "label_source": _case_source(c, otier), **_extra(c, otier)})
+                         "label_source": _case_source(c, otier), "provided_weight": pw,
+                         **_extra(c, otier)})
     for s in settled.itertuples():
         cid = str(s.matched_case_id)
         if cid not in cases.index:
@@ -466,6 +471,14 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     if max_case_npis and max_case_npis > 0 and bc.any():
         df.loc[bc, "label_weight"] = np.minimum(
             1.0, float(max_case_npis) / df.loc[bc, "case_fanout"].clip(lower=1).astype(float))
+    # a resolver row's own budget (a CIA party spread over its enrolled NPIs) caps
+    # the direct-tier weight: 100 NPIs of one settlement are one settlement's mass
+    if "provided_weight" in df.columns:
+        pw = pd.to_numeric(df["provided_weight"], errors="coerce")
+        has = pw.notna()
+        if has.any():
+            df.loc[has, "label_weight"] = np.minimum(df.loc[has, "label_weight"], pw[has].clip(0.0, 1.0))
+        df = df.drop(columns=["provided_weight"])
 
     _BASIS_RANK = {"named_npi": 0, "resolved_defendant": 1, "org_billing": 2,
                    "affiliated_individual": 3}

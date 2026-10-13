@@ -137,6 +137,12 @@ def evidence_strength(basis: str, match_level: str, role_agree: str = "", nation
         return "moderate" if ml.endswith("_verified") else "weak"
     if basis == "name_match":
         return "moderate"
+    if ml.startswith("cia_") or ml == "research_cia":
+        # a CIA party resolved by EXACT enrolled name / PECOS owner / a component of
+        # the party line, or an enrolled entity the research answer named with its
+        # NPI: an official roster entry joined without name logic (moderate, the
+        # same rung as a unique business match)
+        return "moderate"
     if ml == "research_high" or ml.startswith("name_city_state") or ml.endswith("_middle"):
         return "strong"
     if ml == "research_medium":

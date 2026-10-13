@@ -42,6 +42,7 @@ review, never accusations: a positive is a public record, not a finding.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -208,10 +209,51 @@ def _owner_name_index(owner_nodes: pd.DataFrame) -> dict[str, list[str]]:
     return idx
 
 
+_PARTY_SPLIT_RE = re.compile(r"\s*;\s*|\s+and\s+|\s*&\s*|\s+d\.?b\.?a\.?\s+|\s+d/b/a\s+|\s+doing\s+business\s+as\s+|\s*/\s*",
+                             re.I)
+_PERSON_TAIL_RE = re.compile(r"\b(?:M\.?D\.?|D\.?O\.?|D\.?C\.?|D\.?P\.?M\.?|R\.?P\.?H\.?|D\.?D\.?S\.?|P\.?A\.?-?C|N\.?P\.?|"
+                             r"Ph\.?D\.?|Dr\.?)\b\.?", re.I)
+_MANUFACTURER_TOKENS = ("PHARMACEUTICAL", "PHARMACEUTICALS", "THERAPEUTICS", "BIOSCIENCES", "BIOPHARMA", "BIOTECH",
+                        "IMPLANT", "DEVICES", "MEDICAL SYSTEMS", "LABORATORIES INC", "GENETICS INC")
+_MANUFACTURER_NAMES = ("NOVARTIS", "SANOFI", "AVENTIS", "INDIVIOR", "INSYS", "EXACTECH", "AESCULAP", "EYEPOINT",
+                       "VELOXIS", "DUSA", "MERIT MEDICAL", "SUN PHARMACEUTICAL", "PFIZER", "ABBVIE", "ABBOTT",
+                       "MEDTRONIC", "BOSTON SCIENTIFIC", "STRYKER", "ZIMMER", "BIOMET", "SMITH NEPHEW", "DEPUY",
+                       "JOHNSON JOHNSON", "AMGEN", "GILEAD", "BIOGEN", "TEVA", "MALLINCKRODT", "PURDUE", "ASTRAZENECA",
+                       "GLAXO", "MERCK", "LILLY", "BRISTOL", "GENENTECH", "ROCHE", "BAYER", "TAKEDA", "OLYMPUS")
+
+
+def party_components(name: str) -> list[str]:
+    """The separately enrolled names a compound CIA party line carries: 'Acme Clinic,
+    P.A. and John Doe, M.D.; d.b.a. Acme Pain' -> ['Acme Clinic, P.A.', 'John Doe',
+    'Acme Pain']. Splits on ';', 'and', '&', '/', d.b.a. phrases; strips credential
+    tails (M.D., D.C., RPH, Dr.) so a person's own billing entity can still match by
+    exact name. Components under two characters are dropped; order is kept; the
+    whole line is NOT a component (the caller tries it first)."""
+    parts = [p.strip(" ,.") for p in _PARTY_SPLIT_RE.split(str(name or "")) if p and p.strip(" ,.")]
+    out: list[str] = []
+    for p in parts:
+        p = _PERSON_TAIL_RE.sub("", p).strip(" ,.")
+        p = re.sub(r"\s{2,}", " ", p)
+        if len(p) >= 2 and p not in out:
+            out.append(p)
+    return out
+
+
+def is_manufacturer_name(name_key: str) -> bool:
+    """A drug or device manufacturer: a CIA party that is never an enrolled provider
+    (its settlement is a kickback / off-label matter; the residue says so instead of
+    sending it to research)."""
+    k = str(name_key or "").upper()
+    if not k:
+        return False
+    return any(t in k for t in _MANUFACTURER_TOKENS) or any(k.startswith(n) or f" {n}" in f" {k}" for n in _MANUFACTURER_NAMES)
+
+
 def cia_resolve(cia_norm: pd.DataFrame, org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame | None,
                 owned_by_edges: pd.DataFrame | None, npi_to_org: pd.DataFrame,
                 max_owned: int = 150, budget: int = 100,
-                case_ids: dict[str, str] | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+                case_ids: dict[str, str] | None = None,
+                max_npis: int = 150) -> tuple[pd.DataFrame, pd.DataFrame]:
     """CIA parties -> NPIs.  Returns (resolved rows in the defendant-resolver
     shape, the residue).  Two exact paths, no fuzzy matching:
 
@@ -220,9 +262,19 @@ def cia_resolve(cia_norm: pd.DataFrame, org_nodes: pd.DataFrame, owner_nodes: pd
                        name; every org that owner owns resolves (an owner of more
                        than ``max_owned`` orgs is a chain: listed in the residue
                        as ``chain_owner``, never broadcast)
+      cia_component    (2026-10-13) the whole line matched nothing, but one of its
+                       COMPONENTS did (``party_components``: 'X and Y; d.b.a. Z'):
+                       each matching component resolves by either exact path
+
+    CHAIN GUARD on every path (2026-10-13, the first real run: Walgreen Co matched
+    one org node with 11,217 member NPIs): a party reaching more than ``max_npis``
+    NPIs is listed as ``chain_org`` and never labelled (the same 150-NPI rule
+    case_labels applies to a settled org). A drug / device manufacturer in the
+    residue is ``manufacturer_not_enrolled`` (never a provider; not for research).
 
     ``label_weight`` = min(1, budget / NPIs for the party), the same per-case
-    budget case_labels applies to broadcast rows."""
+    budget case_labels applies to broadcast rows (case_labels honours it on the
+    resolved rows)."""
     id_col = next((k for k in ("org_node_id", "node_id") if k in org_nodes.columns), None)
     if id_col is None:
         raise ValueError("org_nodes: no org_node_id / node_id column")
@@ -246,32 +298,65 @@ def cia_resolve(cia_norm: pd.DataFrame, org_nodes: pd.DataFrame, owner_nodes: pd
     for r in npi_to_org.itertuples():
         members.setdefault(str(r.org_node_id), []).append(str(r.npi))
 
+    def _lookup(k: str) -> tuple[list[str], str]:
+        """(org ids, match level) for one exact key, or ([], 'chain_owner') when the
+        owner path reaches a chain, or ([], '') when nothing matches."""
+        if k and k in org_by_key:
+            return list(org_by_key[k]), "cia_exact_org"
+        if k and k in owner_idx:
+            o: list[str] = []
+            for oid in owner_idx[k]:
+                o += owned.get(oid, [])
+            o = sorted(set(o))
+            if len(o) > int(max_owned):
+                return o, "chain_owner"       # the orgs come back for the count; never labelled
+            return o, "cia_owner"
+        return [], ""
+
     rows, residue = [], []
     for r in cia_norm.itertuples():
         key = str(getattr(r, "name_key", "") or "").upper()
         name = str(getattr(r, "entity_name", "") or "")
         case_id = (case_ids or {}).get(key) or f"cia:{key}"
-        orgs: list[str] = []
-        level = ""
-        if key and key in org_by_key:
-            orgs, level = org_by_key[key], "cia_exact_org"
-        elif key and key in owner_idx:
-            for oid in owner_idx[key]:
-                orgs += owned.get(oid, [])
-            orgs = sorted(set(orgs))
-            level = "cia_owner"
-            if len(orgs) > int(max_owned):
+        orgs, level = _lookup(key)
+        if level == "chain_owner":
+            residue.append({"case_id": case_id, "defendant_name": name, "name_key": key,
+                            "reason": "chain_owner", "n_orgs": len(orgs)})
+            continue
+        if not orgs:
+            # the compound line: try each component on its own (exact paths only)
+            comps = party_components(name)
+            hit_orgs: list[str] = []
+            chain_n = 0
+            for comp in comps:
+                ck = norm_org_name(comp).upper()
+                if not ck or ck == key:
+                    continue
+                o, lvl = _lookup(ck)
+                if lvl == "chain_owner":
+                    chain_n = max(chain_n, len(o))
+                    continue
+                hit_orgs += o
+            orgs = sorted(set(hit_orgs))
+            if orgs:
+                level = "cia_component"
+            elif chain_n:
                 residue.append({"case_id": case_id, "defendant_name": name, "name_key": key,
-                                "reason": "chain_owner", "n_orgs": len(orgs)})
+                                "reason": "chain_owner", "n_orgs": chain_n})
                 continue
         if not orgs:
             residue.append({"case_id": case_id, "defendant_name": name, "name_key": key,
-                            "reason": "no_exact_org_or_owner_match", "n_orgs": 0})
+                            "reason": ("manufacturer_not_enrolled" if is_manufacturer_name(key)
+                                       else "no_exact_org_or_owner_match"), "n_orgs": 0})
             continue
         npis = sorted({n for o in orgs for n in members.get(o, [])})
         if not npis:
             residue.append({"case_id": case_id, "defendant_name": name, "name_key": key,
                             "reason": "org_without_member_npis", "n_orgs": len(orgs)})
+            continue
+        if len(npis) > int(max_npis):
+            residue.append({"case_id": case_id, "defendant_name": name, "name_key": key,
+                            "reason": "chain_org", "n_orgs": len(orgs), "n_npis": len(npis)})
             continue
         w = min(1.0, float(budget) / len(npis))
         org_of = {n: o for o in orgs for n in members.get(o, [])}
@@ -280,7 +365,7 @@ def cia_resolve(cia_norm: pd.DataFrame, org_nodes: pd.DataFrame, owner_nodes: pd
                          "status": "resolved", "match_level": level, "n_orgs_for_party": len(orgs),
                          "label_weight": w})
     res = pd.DataFrame(rows, columns=CIA_NPI_COLS)
-    rsd = pd.DataFrame(residue, columns=["case_id", "defendant_name", "name_key", "reason", "n_orgs"])
+    rsd = pd.DataFrame(residue, columns=["case_id", "defendant_name", "name_key", "reason", "n_orgs", "n_npis"])
     return res, rsd
 
 

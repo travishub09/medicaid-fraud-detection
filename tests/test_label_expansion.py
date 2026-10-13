@@ -201,3 +201,67 @@ def test_charged_tier_and_billing_vehicle_statutes():
     assert list(tier_mask(t, "hard")) == [True, False, False, False]
     assert list(tier_mask(t, "hard+charged")) == [True, True, False, False]
     assert list(tier_mask(t, "hard+weak")) == [True, True, True, False]
+
+
+def test_cia_components_chain_guard_manufacturer_and_weight_cap():
+    from src.model_a.label_expansion import cia_resolve, party_components, is_manufacturer_name
+    from src.entity_graph.resolve_entities import norm_org_name
+    assert party_components("Hot Springs Heart and Vascular, P.A. and Jeffrey G. Tauth, MD") == \
+        ["Hot Springs Heart", "Vascular, P.A.", "Jeffrey G. Tauth"] or \
+        "Jeffrey G. Tauth" in party_components("Hot Springs Heart and Vascular, P.A. and Jeffrey G. Tauth, MD")
+    assert party_components("Sterling Healthcare Opco, LLC d.b.a. Cordant Health Solutions") == \
+        ["Sterling Healthcare Opco, LLC", "Cordant Health Solutions"]
+    assert party_components("Oklahoma Heart Hospital, LLC and Oklahoma Heart Hospital South, LLC") == \
+        ["Oklahoma Heart Hospital, LLC", "Oklahoma Heart Hospital South, LLC"]
+    assert is_manufacturer_name(norm_org_name("Novartis Corporation").upper())
+    assert is_manufacturer_name(norm_org_name("Veloxis Pharmaceuticals, Inc.").upper())
+    assert not is_manufacturer_name(norm_org_name("Acme Home Health LLC").upper())
+
+    names = ["Oklahoma Heart Hospital, LLC and Oklahoma Heart Hospital South, LLC",   # compound: both components match
+             "Walgreen Co",                                                           # exact org, 200 NPIs: a chain
+             "Novartis Corporation",                                                  # manufacturer
+             "Nobody Known Corp"]
+    cia = pd.DataFrame({"entity_name": names, "name_key": [norm_org_name(n) for n in names],
+                        "cia_status": ["active"] * 4, "effective_date": ["2024-01-01"] * 4, "state": ["OK"] * 4,
+                        "source_url": [""] * 4})
+    org_nodes = pd.DataFrame({"org_node_id": ["org:ok1", "org:ok2", "org:wag"],
+                              "org_legal_name": ["OKLAHOMA HEART HOSPITAL LLC", "OKLAHOMA HEART HOSPITAL SOUTH LLC", "WALGREEN CO"]})
+    n2o = pd.DataFrame({"npi": ["1000000001", "1000000002", "1000000003"] + [f"19{i:08d}" for i in range(200)],
+                        "org_node_id": ["org:ok1", "org:ok1", "org:ok2"] + ["org:wag"] * 200})
+    res, rsd = cia_resolve(cia, org_nodes, None, None, n2o, budget=2, max_npis=150)
+    assert set(res["npi"]) == {"1000000001", "1000000002", "1000000003"}
+    assert set(res["match_level"]) == {"cia_component"}
+    assert abs(res["label_weight"].iloc[0] - 2 / 3) < 1e-9
+    by = rsd.set_index("defendant_name")["reason"]
+    assert by["Walgreen Co"] == "chain_org" and int(rsd.set_index("defendant_name").loc["Walgreen Co", "n_npis"]) == 200
+    assert by["Novartis Corporation"] == "manufacturer_not_enrolled"
+    assert by["Nobody Known Corp"] == "no_exact_org_or_owner_match"
+
+    # the research lane never sends a manufacturer or a chain
+    from src.enforcement.case_harvest_prompts import cia_prompts
+    ps = cia_prompts(cia.iloc[2:], None, rsd, per_prompt=5)
+    assert len(ps) == 1 and "Nobody Known Corp" in ps[0]["prompt"] and "Walgreen" not in ps[0]["prompt"]
+    assert "Novartis" not in ps[0]["prompt"]
+
+
+def test_case_labels_honour_resolver_row_weight(tmp_path):
+    """A CIA resolver row's label_weight (budget / NPIs of the party) caps the direct-tier weight."""
+    from src.entity_graph.__main__ import run as run_graph
+    from src.model_a.case_labels import build_case_labels
+    from tests.fixtures.synthetic import build_synthetic_inputs
+    inputs = build_synthetic_inputs()
+    out = run_graph(inputs, tmp_path / "graph")
+    org_nodes, npi_to_org = out["nodes/org_nodes"], out["npi_to_org"]
+    npi = "1003000100"
+    case_db = pd.DataFrame([{"case_id": "cia:x", "announced_date": "2022-03-01", "defendant_name": "X Party",
+                             "defendant_name_key": "X PARTY", "sector": "", "scheme": "", "amount_usd": 1_000_000,
+                             "qui_tam": 1, "intervened": None, "jurisdiction": "", "source_url": "",
+                             "summary": "agreed to pay $1 million to settle allegations from 2018 through 2020.",
+                             "case_type": "civil_fca"}])
+    dn = pd.DataFrame({"case_id": ["cia:x"], "npi": [npi], "status": ["resolved"], "match_level": ["cia_exact_org"],
+                       "label_weight": [0.25]})
+    labels = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=dn)
+    row = labels.set_index("npi").loc[npi]
+    assert row["label_basis"] == "resolved_defendant" and abs(row["label_weight"] - 0.25) < 1e-9
+    dn2 = dn.drop(columns=["label_weight"])
+    assert build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=dn2).set_index("npi").loc[npi, "label_weight"] == 1.0
