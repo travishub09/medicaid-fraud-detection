@@ -29,6 +29,13 @@ human review, never accusations: a share is a question for the field.
     python -m src.model_a.org_find --run-dir @champion --name "learning to achieve"
     python -m src.model_a.org_find --run-dir @champion --name "learning to achieve" --codes 90867,90868,90869
     python -m src.model_a.org_find --codes 90867,90868,90869 --top 50 --out tms_concentration.md
+    python -m src.model_a.org_find --npi 1962055764,1720792757 --out staff_profile.md
+
+  3. WHOSE NUMBER WENT ON THEIR WORK.  --npi <list>: for each NPI the dollars
+     billed under its own number and the dollars where it is the rendering
+     clinician on another billing NPI's claim, with the billers it rendered
+     under.  The question the NPPES registry cannot answer about a staff NPI a
+     PI found at a card's address.
 """
 
 from __future__ import annotations
@@ -233,6 +240,78 @@ def code_concentration(spending: Path, codes: list[str], con=None, top: int = 50
     return df
 
 
+# ------------------------------------------------------- servicing profile
+
+def servicing_profile(spending: Path, npis: list[str], con=None, top_billers: int = 8,
+                      provider_dim: Path | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """For each NPI: dollars billed under its OWN number (as billing_npi) and
+    dollars where it is the RENDERING clinician on someone else's claim (as
+    servicing_npi), with the top billing NPIs it rendered under (name, entity
+    type, dollars, months, first / last).  The question the registry cannot
+    answer: whose number went on this person's work.  Returns (summary, under)."""
+    con = con or _duck_connect()
+    cols = _cols(con, spending)
+    p = _sql_str(spending)
+    if "servicing_npi" not in cols:
+        raise ValueError(f"{spending}: no servicing_npi column; the fact has no rendering grain")
+    con.execute("CREATE OR REPLACE TEMP TABLE want_p(npi VARCHAR)")
+    con.executemany("INSERT INTO want_p VALUES (?)", [(str(n),) for n in npis])
+    own = con.execute(f"""
+        SELECT CAST(billing_npi AS VARCHAR) AS npi, SUM(CAST(total_paid AS DOUBLE)) AS paid_as_biller,
+               COUNT(DISTINCT substr(CAST(service_month AS VARCHAR), 1, 7)) AS months_as_biller,
+               MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) AS first_as_biller,
+               MAX(substr(CAST(service_month AS VARCHAR), 1, 7)) AS last_as_biller
+        FROM read_parquet('{p}')
+        WHERE CAST(billing_npi AS VARCHAR) IN (SELECT npi FROM want_p) GROUP BY 1""").df()
+    under = con.execute(f"""
+        SELECT CAST(servicing_npi AS VARCHAR) AS npi, CAST(billing_npi AS VARCHAR) AS billing_npi,
+               SUM(CAST(total_paid AS DOUBLE)) AS paid,
+               COUNT(DISTINCT substr(CAST(service_month AS VARCHAR), 1, 7)) AS months,
+               MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) AS first_month,
+               MAX(substr(CAST(service_month AS VARCHAR), 1, 7)) AS last_month
+        FROM read_parquet('{p}')
+        WHERE CAST(servicing_npi AS VARCHAR) IN (SELECT npi FROM want_p)
+          AND CAST(servicing_npi AS VARCHAR) <> CAST(billing_npi AS VARCHAR)
+        GROUP BY 1, 2 ORDER BY 1, paid DESC""").df()
+    if len(under):
+        under["rank"] = under.groupby("npi").cumcount() + 1
+        under = under[under["rank"] <= top_billers].drop(columns="rank")
+    rendered = under.groupby("npi")["paid"].sum().rename("paid_as_renderer_for_others") \
+        if len(under) else pd.Series(dtype=float, name="paid_as_renderer_for_others")
+    n_bill = under.groupby("npi")["billing_npi"].nunique().rename("n_billers_rendered_for") \
+        if len(under) else pd.Series(dtype=int, name="n_billers_rendered_for")
+    summ = pd.DataFrame({"npi": [str(n) for n in npis]})
+    summ = summ.merge(own, on="npi", how="left").merge(rendered, on="npi", how="left") \
+               .merge(n_bill, on="npi", how="left")
+    summ["paid_as_biller"] = summ["paid_as_biller"].fillna(0.0)
+    summ["paid_as_renderer_for_others"] = summ["paid_as_renderer_for_others"].fillna(0.0)
+    summ["n_billers_rendered_for"] = summ["n_billers_rendered_for"].fillna(0).astype(int)
+    summ["shape"] = [
+        "absent_from_fact" if b == 0 and r == 0
+        else "bills_own_number_only" if r == 0
+        else "renders_under_others_only" if b == 0
+        else "both"
+        for b, r in zip(summ["paid_as_biller"], summ["paid_as_renderer_for_others"])]
+    if provider_dim is not None and Path(provider_dim).exists():
+        ids = sorted(set(summ["npi"]) | set(under["billing_npi"].astype(str)) if len(under) else set(summ["npi"]))
+        con.execute("CREATE OR REPLACE TEMP TABLE hit2(npi VARCHAR)")
+        con.executemany("INSERT INTO hit2 VALUES (?)", [(n,) for n in ids])
+        pc = _cols(con, Path(provider_dim))
+        name = " || ' ' || ".join(f"COALESCE(CAST({c} AS VARCHAR), '')"
+                                  for c in ("org_legal_name", "provider_name") if c in pc) or "''"
+        et = "CAST(entity_type AS VARCHAR)" if "entity_type" in pc else "NULL"
+        dim = con.execute(f"""
+            SELECT CAST(npi AS VARCHAR) AS npi, TRIM({name}) AS name, {et} AS entity_type
+            FROM read_parquet('{_sql_str(provider_dim)}')
+            WHERE CAST(npi AS VARCHAR) IN (SELECT npi FROM hit2)""").df()
+        summ = summ.merge(dim, on="npi", how="left")
+        if len(under):
+            under = under.merge(dim.rename(columns={"npi": "billing_npi", "name": "billing_name",
+                                                    "entity_type": "billing_entity_type"}),
+                                on="billing_npi", how="left")
+    return summ, under
+
+
 # -------------------------------------------------------------------- report
 
 def _money(x) -> str:
@@ -263,7 +342,8 @@ def _md_table(df: pd.DataFrame, cols: list[str], fmt: dict | None = None, max_ro
 def report(name: str | None, dim_hits: pd.DataFrame | None, mat_hits: pd.DataFrame | None,
            list_hits: pd.DataFrame | None, codes: list[str],
            conc_named: pd.DataFrame | None, conc_national: pd.DataFrame | None,
-           sources: dict) -> str:
+           sources: dict, npi_summary: pd.DataFrame | None = None,
+           npi_under: pd.DataFrame | None = None) -> str:
     L = ["# org_find", "",
          "_Leads for human review, never accusations. A share or a count is a question for "
          "the field; the innocent explanations (supervised services billed under the "
@@ -300,8 +380,31 @@ def report(name: str | None, dim_hits: pd.DataFrame | None, mat_hits: pd.DataFra
                 L.append("\nFact sheet for the field (the WHEN sheet and implied hours):\n")
                 L.append("```\npython -m src.model_a.pi_facts --run-dir <run> --deep --orgs \""
                          + ";".join(oids) + "\" --out-prefix pi_facts_lookup\n```\n")
+    sec = 1 + (name is not None)
+    if npi_summary is not None:
+        L.append(f"## {sec}. Whose number went on their work ({len(npi_summary)} NPIs)\n")
+        L.append("`paid_as_biller` = dollars under the NPI's own number; "
+                 "`paid_as_renderer_for_others` = dollars where this NPI is the rendering "
+                 "clinician on another billing NPI's claim. A clinician who renders only "
+                 "under one physician's number, at that physician's address, is the card's "
+                 "rendering-provider question; a clinician who bills under their own number "
+                 "too is the ordinary shape.\n")
+        L.append(_md_table(npi_summary, ["npi", "name", "entity_type", "paid_as_biller",
+                                         "months_as_biller", "first_as_biller", "last_as_biller",
+                                         "paid_as_renderer_for_others", "n_billers_rendered_for",
+                                         "shape"],
+                           {"paid_as_biller": _money, "paid_as_renderer_for_others": _money}))
+        if npi_under is not None and len(npi_under):
+            L.append("\n**Billing NPIs each one rendered under (top 8 by dollars):**\n")
+            L.append(_md_table(npi_under, ["npi", "billing_npi", "billing_name",
+                                           "billing_entity_type", "paid", "months",
+                                           "first_month", "last_month"],
+                               {"paid": _money}, max_rows=200))
+        else:
+            L.append("\n_None of these NPIs appears as a rendering clinician on another "
+                     "billing NPI's claims in the fact._\n")
+        sec += 1
     if codes:
-        sec = 2 if name is not None else 1
         L.append(f"## {sec}. Code concentration: {', '.join(codes)}\n")
         if conc_named is not None:
             L.append(f"**The matched NPIs on these codes ({len(conc_named)} with any dollars):**\n")
@@ -339,10 +442,13 @@ def main() -> None:
     ap.add_argument("--top", type=int, default=50, help="national rows for --codes")
     ap.add_argument("--no-national", action="store_true",
                     help="with --name and --codes: skip the national table")
+    ap.add_argument("--npi", default=None,
+                    help="comma-separated NPIs: whose number went on their work "
+                         "(own billing vs rendering under other billing NPIs)")
     ap.add_argument("--out", default=None, help="write the Markdown here (default stdout)")
     a = ap.parse_args()
-    if not a.name and not a.codes:
-        ap.error("give --name and/or --codes")
+    if not a.name and not a.codes and not a.npi:
+        ap.error("give --name, --npi and/or --codes")
     root = _data_root(a.data_root)
     dim = Path(a.provider_dim) if a.provider_dim else root / "processed" / "provider_dim.parquet"
     spend = Path(a.spending) if a.spending else root / "processed" / "spending_fact.parquet"
@@ -382,7 +488,19 @@ def main() -> None:
                                                provider_dim=dim if dim.exists() else None)
     elif codes:
         print(f"[org_find] spending fact missing: {spend}")
-    md = report(a.name, dim_hits, mat_hits, list_hits, codes, conc_named, conc_national, sources)
+    npi_summary = npi_under = None
+    want_npis = _codes(a.npi) if a.npi else []
+    if want_npis and spend.exists():
+        npi_summary, npi_under = servicing_profile(spend, want_npis, con=con,
+                                                   provider_dim=dim if dim.exists() else None)
+        if codes:
+            extra = code_concentration(spend, codes, con=con, npis=want_npis,
+                                       provider_dim=dim if dim.exists() else None)
+            conc_named = extra if conc_named is None else pd.concat([conc_named, extra], ignore_index=True)
+    elif want_npis:
+        print(f"[org_find] spending fact missing: {spend}")
+    md = report(a.name, dim_hits, mat_hits, list_hits, codes, conc_named, conc_national, sources,
+                npi_summary=npi_summary, npi_under=npi_under)
     if a.out:
         Path(a.out).write_text(md, encoding="utf-8")
         print(f"[org_find] wrote {a.out}")

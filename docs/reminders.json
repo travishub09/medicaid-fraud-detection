@@ -544,18 +544,6 @@
       ]
     },
     {
-      "key": "pi_facts_deep:_after_merging_bundle",
-      "what": "pi_facts --deep on the PI Packet v11 practices: the fact sheets (ramp month, top codes, rendering clinicians, implied hours/day) AND the WHEN sheets (PI_FACTS_<set>_WINDOWS.md + _windows.json: active years, ramp month, peak year, first / last billed per practice) for Sage's interview phase. 2026-10-13: the packet lists NPIs, not org ids, so pi_facts now resolves bare 10-digit lines through the run matrix (bundle 297). The 65 send-card NPIs from the packet PDF (Tiers 1, 2, 2b, 3, 4, 4b; the 27 do-not-send rows left out) are in the file pi_packet_v11_npis.txt sent in chat: save it under <data_root>\\enforcement\\pi_reports\\ (a target list, never in git). One run covers every card; upload PI_FACTS_PACKET_WINDOWS.md and PI_FACTS_PACKET.md.",
-      "added": "2026-09-13",
-      "commands": [
-        "REM save pi_packet_v11_npis.txt from the chat card to C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ first",
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --orgs-file \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\pi_packet_v11_npis.txt\" --deep --out-prefix pi_facts_packet",
-        "REM upload C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\\PI_FACTS_PACKET_WINDOWS.md and PI_FACTS_PACKET.md in chat",
-        "python -m src.reminders --done-task pi_facts_deep:_after_merging_bundle"
-      ]
-    },
-    {
       "key": "run_packet__frozen_2021-12_v7",
       "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
       "added": "2026-09-14",
@@ -770,11 +758,13 @@
     },
     {
       "key": "sage_followups_2026_10",
-      "what": "Follow-ups from the card-by-card check of Sage's first report against PI Packet v11 (PI_FEEDBACK_CROSSREF_2026-10-12.md) and from the titles PDF Sage sent the same day (PI_ROLES_READOUT_2026-10-12.md: the first-call list by role and tenure, no names; both kept with the PI report under <data_root>\\enforcement\\pi_reports\\, never in git). TITLES RECEIVED for the NE and FL cards (Tiers 1, 2, 2b, Special Homes); the role rule: billers / revenue-cycle / QA / compliance know whose NPI went on the claim, rendering clinicians know who saw the patient, HR / operations know the headcount (the innocent explanation). First calls: Zagelbaum's rendering PA (2016 to 2019); Ayala's SLP assistant (2023 to 2024, bills only under a supervisor); Garden State's SLP-supervisor; CFAR's HR manager (headcount) and MFT supervisor; Familicare's fourteen-year therapist; Bright Start's QA coordinator (fourteen formers and no therapist: the roles say early-intervention agency, the innocent explanation); the Chang/Xie biller; CBS's QA analyst. OURS: (1) NPPES lookups (npiregistry.cms.hhs.gov) for the six staff NPIs Sage tied to the three Chinatown cards, the two at 61st Street in Brooklyn first (1962055764, 1720792757); (2) Special Homes of NJ billed residential days against 76 licensed places; (3) tell Brad the Infinity PACER first-to-file check is time-sensitive; (4) the WHEN sheets (pi_facts_deep task). SAGE, still open: titles for the Tier 4 cards (Brar, CTW / 212 Therapy, Clubhouse for Kids, Infinity, Perspectives: the PDF stops at Special Homes); which practice the two Chang/Xie formers worked at; a second patient-flow window at 2 Mott St plus the Brooklyn office; EEG equipment / technologist at 139 Centre St; exam lanes at 217 Grand St; the Brooklyn route; 2024 to 2026 departures for Queens Optometric and CTW; Infinity, Perspectives, Jacoby, Special Homes on hold until counsel says go. Close when the Tier 4 titles are in, the first-call list is with Sage, and the three desk checks are done.",
+      "what": "Sage follow-ups after the first report, the titles PDF and the WHEN sheets (PI_FEEDBACK_CROSSREF_2026-10-12.md, PI_ROLES_READOUT_2026-10-12.md, PI_WHEN_READOUT_2026-10-13.md: all kept with the PI report under <data_root>\\enforcement\\pi_reports\\, never in git). DONE 2026-10-13: the seven NPPES lookups (the 61st Street pair are two different buildings, no group, 139 Centre St on neither; the two NPs share 2 Mott St Rm 204 and one phone, the FNP is NYU Langone and not at Mott St; the two optometrists share 217 Grand St Ste 302 and one phone) and the WHEN sheets (PI_FACTS_PACKET_WINDOWS.md, 63 practices; send it to Sage as is, it names no person). OURS, still open: (1) org_find --npi on the seven staff NPIs: Lau's claims carry 3 rendering NPIs, Chang's and Xie's carry ONE, so the fact says whether the NPs / optometrists / PA bill under their own numbers or render under the physician's (the command block below; laptop is fine, it is a WHERE IN); (2) Special Homes of NJ: the packet has no NPI for it, run pi_facts on the org id (block below) and then the capacity ratio against 76 licensed places; (3) tell Brad the Infinity PACER first-to-file check is time-sensitive. SAGE: the first-call list (PI_WHEN_READOUT section 2, the order after the WHEN sheet); titles for the Tier 4 cards (Brar, CTW / 212 Therapy, Clubhouse for Kids, Infinity, Perspectives); which practice the two Chang/Xie formers worked at; a second patient-flow window at 2 Mott St plus the Brooklyn office; EEG equipment / technologist at 139 Centre St; exam lanes at 217 Grand St; the Brooklyn route; 2024 to 2026 departures for Queens Optometric and CTW; Infinity, Perspectives, Jacoby, Special Homes on hold until counsel says go. Close when the Tier 4 titles are in, the first-call list and WINDOWS sheet are with Sage, and (1) to (3) are done.",
       "added": "2026-10-12",
       "commands": [
-        "REM desk check 1: open https://npiregistry.cms.hhs.gov and enter each NPI; note practice locations and any group",
-        "REM send Sage the first-call list (section 3 of PI_ROLES_READOUT_2026-10-12.md) and ask for the Tier 4 titles; say 'Sage first-call list sent' in chat"
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --npi 1962055764,1720792757,1952985301,1124638242,1013428564,1740686583,1861913527 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\staff_npi_profile.md\"",
+        "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --orgs \"org:name:SPECIAL HOMES OF NEW JERSEY\" --deep --out-prefix pi_facts_special_homes",
+        "REM upload staff_npi_profile.md and PI_FACTS_SPECIAL_HOMES.md in chat; say 'Sage first-call list sent' when the email goes"
       ]
     },
     {
@@ -844,6 +834,20 @@
         "merge_bundle.bat C:\\Users\\treyr\\bundle297.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
         "python -m src.reminders --done-task merge_bundle297",
+        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
+      ]
+    },
+    {
+      "key": "merge_bundle298",
+      "what": "Merge bundle298 (cumulative, supersedes 239 to 297): org_find --npi (whose number went on a staff NPI's work) + the reminder closures (WHEN sheets done, NPPES lookups done). If 294 to 297 are NOT merged yet, merge 298 instead and close all five tasks. Then git pull on the VM.",
+      "added": "2026-10-13",
+      "commands": [
+        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle298*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle298.bundle\"",
+        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle298.bundle",
+        "git push origin claude/happy-mccarthy-3skrn3",
+        "python -m src.reminders --done-task merge_bundle298",
         "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
       ]
     }

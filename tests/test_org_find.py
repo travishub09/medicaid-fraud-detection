@@ -123,3 +123,34 @@ def test_cli_end_to_end(fx):
     bad = subprocess.run([sys.executable, "-m", "src.model_a.org_find", "--data-root", str(tmp)],
                          capture_output=True, text=True)
     assert bad.returncode != 0
+
+
+def test_servicing_profile_says_whose_number(fx):
+    """2026-10-13: a PI finds staff NPIs at a card's address; the registry says where
+    they practise, the fact says whose number their work went out under."""
+    from src.model_a.org_find import servicing_profile
+    _, proc, _ = fx
+    summ, under = servicing_profile(proc / "spending_fact.parquet",
+                                    ["1000000005", "1000000002", "1000000008", "1999999999"],
+                                    provider_dim=proc / "provider_dim.parquet")
+    s = summ.set_index("npi")
+    assert s.loc["1000000005", "shape"] == "renders_under_others_only"
+    assert s.loc["1000000005", "paid_as_renderer_for_others"] == 200.0
+    assert s.loc["1000000005", "n_billers_rendered_for"] == 1
+    assert s.loc["1000000002", "shape"] == "bills_own_number_only" and s.loc["1000000002", "paid_as_biller"] == 1050.0
+    assert s.loc["1000000008", "paid_as_renderer_for_others"] == 1000.0
+    assert s.loc["1999999999", "shape"] == "absent_from_fact"
+    u = under.set_index(["npi", "billing_npi"])
+    assert u.loc[("1000000005", "1000000001"), "billing_name"].startswith("LEARNING TO ACHIEVE")
+    assert u.loc[("1000000005", "1000000001"), "billing_entity_type"] == "2"
+
+
+def test_cli_npi_mode(fx):
+    tmp, proc, run = fx
+    out = tmp / "npi.md"
+    res = subprocess.run([sys.executable, "-m", "src.model_a.org_find", "--npi", "1000000005,1000000002",
+                          "--data-root", str(tmp), "--out", str(out)], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
+    md = out.read_text(encoding="utf-8")
+    assert "Whose number went on their work (2 NPIs)" in md
+    assert "renders_under_others_only" in md and "bills_own_number_only" in md

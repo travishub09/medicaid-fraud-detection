@@ -1096,8 +1096,12 @@ first, then paste" above every move/done block.
   the codes and the NATIONAL top-N billing NPIs on them with distinct rendering
   clinicians and the entity type, classed by shape (an individual's NPI with one
   or no renderer on the codes = one person's number; an org NPI over many
-  renderers = the agency shape). All DuckDB; the fact never enters pandas. A tip
-  from outside the model is answered from the operator's files, never from memory.
+  renderers = the agency shape); `--npi <list>` = whose number went on their work
+  (dollars under the NPI's own number vs as the rendering clinician on other
+  billing NPIs' claims, with the billers it rendered under: the question NPPES
+  cannot answer about a staff NPI a PI found at a card's address). All DuckDB;
+  the fact never enters pandas. A tip from outside the model is answered from
+  the operator's files, never from memory.
   EMBEDDINGS BACK ON IN FULL (operator, 2026-10-12): the node cap was already liftable
   (`--max-embed-nodes 0`, the VM runner's setting); the walk lightening above one
   million connected nodes (4 walks of 12, window 3 instead of 10 of 20, window 5) was
