@@ -819,21 +819,22 @@
       ]
     },
     {
-      "key": "merge_bundle303",
-      "what": "Merge bundle303 (cumulative, supersedes 239 to 302): the v13 code (national-name list in the dossier, the basis50 pursuit order + sweep row, large-book registry aliases, PURSUIT_ORDER in the VM runner) on top of 302's v12 read-out. Built on the commit the laptop has (8e85f3c), merges clean after 'git merge --abort'. Close the 294 to 302 merge tasks with it.",
+      "key": "merge_bundle305",
+      "what": "Merge bundle305 (cumulative, supersedes 239 to 304): the v13 read-out (HOLD, cause = the national-name list in the graded book), the fix (list out of the book, into the dossier's PI pick, flag column), ops/vm/regrade_from.sh, the v14 task. Close the 294 to 304 merge tasks with it.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
         "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle303*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle303.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle303.bundle",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle305*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle305.bundle\"",
+        "merge_bundle.bat C:\\Users\\treyr\\bundle305.bundle",
         "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle303",
+        "python -m src.reminders --done-task merge_bundle305",
         "python -m src.reminders --done-task merge_bundle298",
         "python -m src.reminders --done-task merge_bundle297",
         "python -m src.reminders --done-task merge_bundle296",
         "python -m src.reminders --done-task merge_bundle295",
-        "python -m src.reminders --done-task merge_bundle294"
+        "python -m src.reminders --done-task merge_bundle294",
+        "python -m src.reminders --done-task merge_bundle304"
       ]
     },
     {
@@ -848,42 +849,20 @@
       ]
     },
     {
-      "key": "run_packet__frozen_2021-12_v13",
-      "what": "v13 finished on the VM 2026-10-13 08:22 (two graded books, dollar order, hard tier; the ledger says 8 FAIL / 75 WARN). Tar the packet ON THE VM, sync the reports up, scp the tar to the laptop, attach it in chat, then STOP the VM. Not closed until the tar is in chat and Claude has graded it.",
+      "key": "v14_regrade_and_run",
+      "what": "v13 = HOLD, cause = the v13 CODE, not the model (docs/ACCURACY_READOUT_v13_2026-10-13.md): the national-name list was wired into entity_segment, so 43 orgs left the graded pursuit book and 5 of v12's 8 FCA hits went with them (national home-health / DME / lab chains that settled qui tam cases: a case, just not a PI visit). Pursuit 0/0/1/2, large 0/1/2/2 on a 3-hit and 2-hit pool; same ruler (509), same scorer (NPI lift 6.3). The dossier STILL named Mayo / SSM / Sutter / Assurex / Ameritox / Alere because the operator-book target pick has its own mask. Bundle 305 fixes both placements (list OUT of the graded book, written as a national_chain flag column; list IN the dossier's PI target pick) and adds ops/vm/regrade_from.sh: v14 = v13's matrix re-graded under the restored book, no retrain, about an hour on the VM. ORDER: (1) merge + push bundle 305 on the laptop; (2) start the VM, pull (expect the bundle-305 commit), pre-register v14 with the v13 checks, run the re-grade under tmux; (3) say 'v14 finished', tar, sync up, scp, attach, STOP the VM. Expected: v12's numbers back (pursuit 1/1/4/7, large 3/5/5) and the first dossier with no institution in it. No Manus dispatch unless the verdict is not HOLD. The v13 dossier was NOT dispatched.",
       "added": "2026-10-13",
       "commands": [
-        "# on the VM (bash):",
-        "cd /data/medicaid/model_a/frozen_2021-12_v13 && tar -czf /home/ubuntu/run_packet_v13.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v13",
-        "REM on the laptop (cmd):",
-        "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v13.tar.gz C:\\Users\\treyr\\Downloads\\",
-        "REM attach C:\\Users\\treyr\\Downloads\\run_packet_v13.tar.gz in chat, then STOP the instance (EC2 > Instances > Instance state > Stop)",
-        "python -m src.reminders --done-task run_packet__frozen_2021-12_v13"
+        "# on the VM (bash), after bundle 305 is merged and pushed:",
+        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1 && source .venv/bin/activate && source ~/.medicaid_env",
+        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v14 --goal \"v13's matrix re-graded with the pursuit and large books restored (national chains stay in the graded books, leave only the PI target pick): two books on the FCA ruler under the hard training label\" --expected \"large book hits@50 at least 2 with lower Wilson bound above random; pursuit book hits@100 at least 4 and hits@250 at least 6; lead-time share beyond the gap at least half; institutional share 0; top-50 Jaccard at least 0.6; train = hard; the dossier names no institution or national chain\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+        "tmux new -s night",
+        "bash ~/medicaid-fraud-detection/ops/vm/regrade_from.sh v14 v13 2021-12",
+        "# detach with Ctrl-b then d; when it prints [v14] DONE say 'v14 finished', then:",
+        "cd /data/medicaid/model_a/frozen_2021-12_v14 && tar -czf /home/ubuntu/run_packet_v14.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v14",
+        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v14.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and STOP the VM",
+        "python -m src.reminders --done-task v14_regrade_and_run"
       ]
-    },
-    {
-      "key": "pursuit_dossier__frozen_2021-12_v13",
-      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v13 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v13\" --dispatch",
-        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v13"
-      ]
-    },
-    {
-      "key": "dossier_poll__frozen_2021-12_v13",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v13 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v13\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v13"
-      ]
-    },
-    {
-      "key": "registry_verdict__frozen_2021-12_v13",
-      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v13 \u2014 close only when you have them",
-      "added": "2026-10-13"
     }
   ]
 }

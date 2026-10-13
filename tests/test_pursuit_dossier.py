@@ -428,6 +428,12 @@ def test_national_names_are_institutional_and_pursuit_order_basis50():
         assert is_national_name(n), n
     for n in ("INTERIM HEALTHCARE OF WESTERN PENNSYLVANIA INC", "MOORE ENTERPRISES", "BRIGHT START PT & PTA PLLC"):
         assert not is_national_name(n), n
+    # the list is a PI-send filter, never a filter on the graded book: a chain that
+    # settles a qui tam case is a case (v13 lost 5 of 8 FCA hits to this rule)
+    import inspect
+    from src.model_a import pursuit_dossier as pdm
+    src_build = inspect.getsource(pdm.build_priority_list)
+    assert "national_chain" in src_build and "map(is_national_name)\n" not in src_build.split("inst = (")[1].split("seg[inst]")[0]
     n = 120
     book = pd.DataFrame({"org_id": [f"org:{i}" for i in range(n)],
                          "score_dollar_weighted": np.linspace(1.0, 0.0, n),

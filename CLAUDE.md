@@ -1141,6 +1141,20 @@ first, then paste" above every move/done block.
   loses 100, ties 16 and 250): not a win across budgets, so the pursuit sort
   STAYS dollar and the 50 budget is graded on the large book. v13 runs with
   PURSUIT_ORDER=dollar.
+  V13 READ-OUT (2026-10-13, `docs/ACCURACY_READOUT_v13_2026-10-13.md`): HOLD, cause =
+  the v13 CODE. The national-name list in `entity_segment` moved 43 orgs out of the
+  graded pursuit book and FIVE OF v12's EIGHT FCA hits with them: the forward hits
+  were national home-health / DME / lab chains that settled qui tam cases. 'Do not
+  send a PI' is not 'not a case'. Same ruler (509), same scorer (NPI lift 6.3):
+  pursuit 0/0/1/2 on a 3-hit pool, large 0/1/2/2 on 2. Inside the owner-run class
+  the model is near chance; its demonstrated precision lives in chains and large
+  billers (label recall on owner-run operators is the lever). The dossier still
+  named Mayo / SSM / Sutter / Assurex / Ameritox / Alere (the operator-book pick in
+  `build()` has its own mask). FIXED: the list is OUT of entity_segment (written as
+  a `national_chain` flag column) and IN the dossier's operator-book target pick;
+  `ops/vm/regrade_from.sh <new> <src> <cut>` re-grades an existing matrix under a
+  new list definition as a new tag (steps 6 to 12 only, no retrain). v14 = v13's
+  matrix re-graded, pre-registered under the v13 checks. Not dispatched.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

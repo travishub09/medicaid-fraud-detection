@@ -477,8 +477,12 @@ _INSTITUTIONAL_RE = (r"\b(?:HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|"
 # Arizona, SSM Health, Sutter VNA, Assurex, Ameritox and Alere): hospital systems,
 # national labs and national chains whose subsidiaries carry ONE billing NPI and
 # no cue word, so neither the 25-provider rule nor _INSTITUTIONAL_RE catches
-# them. Curated, not inferred; a name here is the do-not-send class (the
-# consensus-book read of 2026-09-16), never a signal about the organization.
+# them. Curated, not inferred; a name here is the do-not-send-a-PI class (the
+# consensus-book read of 2026-09-16), never a signal about the organization and
+# NEVER a filter on the graded book: these chains settle qui tam cases (an
+# employee relator), so they stay in the pursuit book and its grade; the list
+# only keeps them out of the dossier's PI target pick (and flags them as
+# ``national_chain`` on the priority list).
 _NATIONAL_NAMES = (
     "MAYO CLINIC", "SSM HEALTH", "SUTTER", "KAISER", "CLEVELAND CLINIC", "GEISINGER",
     "INTERMOUNTAIN", "ASCENSION", "HCA HEALTHCARE", "TENET", "COMMONSPIRIT", "DIGNITY HEALTH",
@@ -598,6 +602,7 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         # no 25+ provider orgs, no government entities, no solo individuals.
         names = orgs["org_name"].astype(str)
         inst = (names.map(lambda s: bool(re.search(_INSTITUTIONAL_RE, s)))
+                | names.map(is_national_name)        # v13: Mayo / SSM / Sutter / Assurex / Ameritox / Alere
                 | (pd.to_numeric(orgs["n_providers"], errors="coerce").fillna(1) >= 25))
         gov = government_mask(names)
         solo = pd.Series(False, index=orgs.index)
@@ -611,7 +616,7 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         n_before = len(orgs)
         orgs = orgs[~inst & ~gov & ~solo & ~person & ~unnamed]
         print(f"[pursuit_dossier] operator book: {len(orgs):,} of {n_before:,} orgs kept "
-              f"(institutional / government / solo-individual / person-named / unnamed rows set aside)")
+              f"(institutional / national-chain / government / solo-individual / person-named / unnamed rows set aside)")
     if min_damages is not None:
         # recovery-space selection under the universal rule (operator
         # decision 2026-08-04): SIGNAL SORTS, EVERYTHING ELSE FILTERS.
@@ -792,19 +797,25 @@ def build_priority_list(run_dir: str | Path,
                        & (matrix["entity_type"].astype(str) == "1"),
                        "org_node_id"].astype(str))
     seg = pd.Series("operator", index=out.index)
+    # NOTE (v13, 2026-10-13): the curated national-name list is NOT applied here.
+    # It moved 43 orgs out of the graded pursuit book and five of v12's eight FCA
+    # hits with them: national home-health / DME / lab chains ARE qui tam
+    # defendants (an employee relator, a settlement), they are only not a PI
+    # visit. The list filters the dossier's PI target pick (below) and is
+    # written here as a flag column so the reader can see it.
     inst = (out["org_name"].astype(str).str.contains(_INSTITUTIONAL_RE, na=False)
-            | out["org_name"].astype(str).map(is_national_name)
             | (pd.to_numeric(out["n_providers"], errors="coerce")
                .fillna(1) >= 25)
             | (out["screening_cautions"].astype(str).str.len() > 0))
     seg[inst] = "institutional"
     seg[out["org_id"].astype(str).isin(solo_person)] = "individual"
     out["entity_segment"] = seg
+    out["national_chain"] = out["org_name"].astype(str).map(is_national_name)
 
     out = out.sort_values(["score_dollar_weighted", "score_max"],
                           ascending=False).reset_index(drop=True)
     out.insert(0, "priority_rank", out.index + 1)
-    cols = [c for c in ("priority_rank", "org_name", "entity_segment",
+    cols = [c for c in ("priority_rank", "org_name", "entity_segment", "national_chain",
                         "org_id", "member_npis",
                         "states", "cities",
                         "n_providers", "score_dollar_weighted", "score_max",
