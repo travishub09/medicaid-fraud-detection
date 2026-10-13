@@ -1325,6 +1325,13 @@ first, then paste" above every move/done block.
   Integrity Agreement' read as no outcome and every CIA row was being dropped).
   v15 passes --rebuild-graph (the 843 new exclusion nodes). Task v15_run carries
   the pre-registration line (the v14 checks, train = hard).
+  LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
+  its first letters every time ("'t' is not recognized"): a git child of the batch
+  file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push
+  .bat N` is the ONE-LINE merge from bundle 320 on (copy from Downloads, fetch,
+  ff-only merge, push, close the task; every child reads NUL). Chat instructions:
+  merge and push on ONE line (`call merge_bundle.bat ... && git push ...`), never
+  a separate push line after a batch file.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

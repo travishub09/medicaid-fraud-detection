@@ -917,23 +917,21 @@
       ]
     },
     {
-      "key": "merge_bundle318",
-      "what": "Merge bundle318 (cumulative, supersedes 239 to 317): the v15 runner (merge-inputs step for the CIA cases + NPIs, the affiliated + qui tam rulers, the hard vs hard+charged A/B arm, the CIA summary fix) on top of 317. One merge closes every open merge task; push; then task v15_run.",
+      "key": "merge_bundle319",
+      "what": "Merge bundle319 (cumulative, supersedes 239 to 318): the v15 runner + ops/laptop/merge_push.bat, the ONE-LINE merge for every bundle from now on (the pasted `git push` line kept losing its first letters because merge_bundle.bat's git child read the queued keystrokes; the new .bat feeds every child NUL and pushes itself). THIS merge is the last one by hand: ONE line, merge and push together; afterwards `merge_push.bat 320` is the whole thing. Then task v15_run.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle318*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle318.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle318.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle318",
-        "python -m src.reminders --done-task merge_bundle294",
-        "python -m src.reminders --done-task merge_bundle295",
-        "python -m src.reminders --done-task merge_bundle296",
-        "python -m src.reminders --done-task merge_bundle297",
-        "python -m src.reminders --done-task merge_bundle298",
+        "for %f in (\"%USERPROFILE%\\Downloads\\bundle319*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle319.bundle\"",
+        "call merge_bundle.bat C:\\Users\\treyr\\bundle319.bundle && git push origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
+        "python -m src.reminders --done-task merge_bundle319",
         "python -m src.reminders --done-task merge_bundle309",
-        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
+        "python -m src.reminders --done-task merge_bundle298",
+        "python -m src.reminders --done-task merge_bundle297",
+        "python -m src.reminders --done-task merge_bundle296",
+        "python -m src.reminders --done-task merge_bundle295",
+        "python -m src.reminders --done-task merge_bundle294",
+        "REM from the next bundle on, the whole merge is: ops\\laptop\\merge_push.bat 320"
       ]
     },
     {
