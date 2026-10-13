@@ -407,25 +407,34 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         # only named-NPI and org-billing bases are prosecution-grade evidence.
         # docket-only cases (an unsealed FCA complaint with no known outcome) are
         # recorded as a WEAK source and never flip the hard label
-        docket_npis = set(cl.loc[cl.get("label_source", pd.Series("doj_case", index=cl.index)) == "docket_case", "npi"]) \
-            if "label_source" in cl.columns else set()
+        # charged-only cases (an indictment / a government complaint, no outcome yet)
+        # are recorded as source charged_case: trainable under --label-tier
+        # hard+charged (company_list.tier_label), never the hard label, never graded
+        src_col = cl["label_source"] if "label_source" in cl.columns else pd.Series("doj_case", index=cl.index)
+        docket_npis = set(cl.loc[src_col == "docket_case", "npi"])
+        charged_npis = set(cl.loc[src_col == "charged_case", "npi"]) - docket_npis
+        soft_npis = docket_npis | charged_npis
         if "label_basis" in cl.columns:
             hard_npis = set(cl.loc[cl["label_basis"] != "affiliated_individual",
-                                   "npi"]) - docket_npis
+                                   "npi"]) - soft_npis
         else:
-            hard_npis = set(cl["npi"]) - docket_npis
+            hard_npis = set(cl["npi"]) - soft_npis
         hit = m["npi"].isin(hard_npis)
-        if docket_npis:
-            dhit = m["npi"].isin(docket_npis)
+        for tag, npis, what in (("docket_case", docket_npis, "docket-only (allegation)"),
+                                ("charged_case", charged_npis, "charged-only (indictment / government complaint)")):
+            if not npis:
+                continue
+            dhit = m["npi"].isin(npis)
             if "exclusion_label_sources" not in m.columns:
                 m["exclusion_label_sources"] = ""
             m.loc[dhit, "exclusion_label_sources"] = (
                 m.loc[dhit, "exclusion_label_sources"].fillna("").astype(str)
-                 .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["docket_case"])))))
+                 .str.split(";").apply(lambda xs, tag=tag: ";".join(sorted(set([x for x in xs if x] + [tag])))))
             # build_provider_matrix has no audit logger in scope (it is main()'s local);
             # a plain print keeps the line in the console log instead of a NameError
-            print(f"    [doj_case] {len(docket_npis):,} NPIs carry docket-only (allegation) labels: "
-                  "source docket_case, hard label NOT flipped")
+            print(f"    [doj_case] {len(npis):,} NPIs carry {what} labels: "
+                  f"source {tag}, hard label NOT flipped"
+                  + (" (trains under --label-tier hard+charged)" if tag == "charged_case" else ""))
         if "provider_on_exclusion" not in m.columns:
             m["provider_on_exclusion"] = 0
         m["provider_on_exclusion"] = (m["provider_on_exclusion"].fillna(0).astype(int)

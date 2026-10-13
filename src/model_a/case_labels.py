@@ -97,6 +97,59 @@ def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
     return pd.DataFrame(rows, columns=cols)
 
 
+CHARGED_TIER = "charged"
+CHARGED_SOURCE = "charged_case"
+# a government civil complaint (the United States intervened / filed) is the civil
+# counterpart of an indictment: the government investigated and joined. A relator's
+# own complaint is a docket row and stays an allegation.
+_GOV_COMPLAINT_RE = re.compile(r"\bintervene[sd]?\b|\bfiled\s+(?:a\s+|an\s+)?(?:civil\s+|amended\s+)?complaint\b|"
+                               r"\bcomplaint\s+(?:was\s+)?filed\b|\bcomplaint[- ]in[- ]intervention\b", re.I)
+
+
+def charged_outcome(case_type: str, text: str) -> bool:
+    """True when the case row is a CHARGE with no resolved outcome: a criminal
+    health-care-fraud indictment / charge / arrest, or a civil FCA row where the
+    government filed or intervened in the complaint. The caller has already
+    established that ``outcome_tier`` found no resolved outcome."""
+    from .fca_label_export import _CHARGED_ONLY, _CIVIL_OUTCOME, _CRIMINAL_OUTCOME
+    ct = str(case_type or "").strip().lower()
+    t = str(text or "")
+    if ct == "criminal_hcf":
+        return bool(_CHARGED_ONLY.search(t)) and not _CRIMINAL_OUTCOME.search(t)
+    if ct == "civil_fca":
+        return bool(_GOV_COMPLAINT_RE.search(t)) and not _CIVIL_OUTCOME.search(t)
+    return False
+
+
+def charged_only_cases(case_db: pd.DataFrame) -> pd.DataFrame:
+    """The case rows that are charged-only today (the outcome-refresh harvest list):
+    usable rows whose text carries a charge and no resolved outcome. Columns:
+    case_id, announced_date, defendant_name, jurisdiction, case_type, source_url,
+    summary (truncated)."""
+    from .fca_label_export import outcome_tier
+    cols = ["case_id", "announced_date", "defendant_name", "jurisdiction", "case_type", "source_url", "summary"]
+    if case_db is None or not len(case_db):
+        return pd.DataFrame(columns=cols)
+    d = case_db.copy()
+    if "usable" in d.columns:
+        d = d[pd.to_numeric(d["usable"], errors="coerce").fillna(1) == 1]
+    out = []
+    for c in d.to_dict("records"):
+        ct = str(c.get("case_type") or "").strip().lower()
+        if ct in ("", "nan", "none") or ct.startswith("docket"):
+            continue
+        text = f"{c.get('title', '') or ''} {c.get('summary', '') or ''}"
+        if outcome_tier(ct, text, c.get("amount_usd"))[0]:
+            continue
+        if charged_outcome(ct, text):
+            out.append({k: c.get(k, "") for k in cols})
+    df = pd.DataFrame(out, columns=cols)
+    if len(df):
+        df["summary"] = df["summary"].fillna("").astype(str).str.slice(0, 300)
+        df = df.drop_duplicates("case_id")
+    return df
+
+
 def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       npi_to_org: pd.DataFrame,
                       fuzzy_threshold: float | None = 0.92,
@@ -184,7 +237,19 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         case_db = case_db[text.str.contains("medicaid", case=False)]
         if not len(case_db):
             return pd.DataFrame(columns=cols)
-    settled = resolve_settled_orgs(org_nodes, case_db)        # org_node_id, matched_case_id, …
+    # exact-name org resolution in TWO passes (2026-10-13): the OUTCOME rule below is
+    # the gate, not a stated recovery (a conviction release rarely prints a dollar
+    # amount; a charged row never does), so resolve_settled_orgs runs without its
+    # amount filter. Resolved rows go first so a case's outcome release owns the
+    # org's name key ahead of the same case's earlier charge (one case per key).
+    charged_ids = set(charged_only_cases(case_db)["case_id"].astype(str))
+    is_charged = case_db["case_id"].astype(str).isin(charged_ids)
+    settled = resolve_settled_orgs(org_nodes, case_db[~is_charged], require_recovery=False)
+    if is_charged.any():
+        extra = resolve_settled_orgs(org_nodes, case_db[is_charged], require_recovery=False)
+        if len(extra):
+            settled = (pd.concat([settled, extra], ignore_index=True)
+                       .drop_duplicates(["org_node_id", "matched_case_id"]))
     if fuzzy_threshold is not None:
         extra = _fuzzy_settled(org_nodes, case_db,
                                set(settled["matched_case_id"].astype(str))
@@ -223,9 +288,11 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
               f"fan-outs suppressed (> {max_org_members} members — "
               f"institutional, not individual, evidence)")
 
-    def _case_source(c) -> str:
+    def _case_source(c, otier: str | None = None) -> str:
         ct = str(c.get("case_type") or "") if hasattr(c, "get") else ""
-        return "docket_case" if ct.startswith("docket") else "doj_case"
+        if ct.startswith("docket"):
+            return "docket_case"
+        return CHARGED_SOURCE if otier == CHARGED_TIER else "doj_case"
 
     def _case_fields(c):
         scheme = str(c.get("scheme") or "unknown")
@@ -242,7 +309,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     # (settlement / judgment / conviction / plea / CMP) is a positive. Docket rows
     # keep their allegation source and never flip the label anyway.
     from .fca_label_export import evidence_strength, outcome_tier
-    stats = {"no_outcome": 0, "weak_strength": 0, "self_disclosure": 0}
+    stats = {"no_outcome": 0, "weak_strength": 0, "self_disclosure": 0, "charged": 0}
 
     def _outcome(c) -> str:
         if _case_source(c) == "docket_case":
@@ -263,6 +330,13 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                 return "fca_civil"
             return ""
         tier, _ = outcome_tier(ct, text, c.get("amount_usd"))
+        if not tier and charged_outcome(ct, text):
+            # the CHARGED tier (operator 2026-10-13): a fraud indictment / charge, or a
+            # government civil complaint, with no resolved outcome yet. Source
+            # charged_case: trains under hard+charged, never flips the hard label,
+            # never grades. Converts to doj_case when the outcome release lands.
+            stats["charged"] += 1
+            return CHARGED_TIER
         return tier
 
     def _flag(v):
@@ -294,7 +368,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                          "case_sector": sector, "conduct_start": start,
                          "conduct_end": end, "case_ids": str(r.case_id),
                          "amount_usd": amt, "label_basis": "named_npi",
-                         "label_source": _case_source(c), **_extra(c, otier)})
+                         "label_source": _case_source(c, otier), **_extra(c, otier)})
     # tier 1b: defendants resolved to a unique NPPES record by the resolver
     if defendant_npis is not None and len(defendant_npis):
         ok = defendant_npis[(defendant_npis.get("status", "resolved") == "resolved")
@@ -320,7 +394,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             rows.append({"npi": str(r.npi), "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt, "label_basis": "resolved_defendant",
-                         "label_source": _case_source(c), **_extra(c, otier)})
+                         "label_source": _case_source(c, otier), **_extra(c, otier)})
     for s in settled.itertuples():
         cid = str(s.matched_case_id)
         if cid not in cases.index:
@@ -340,13 +414,15 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt, "label_basis": "org_billing",
-                         "label_source": _case_source(c), **_extra(c, otier)})
+                         "label_source": _case_source(c, otier), **_extra(c, otier)})
+        if otier == CHARGED_TIER:
+            continue                                          # "worked at a CHARGED org" is no signal
         for npi in org_to_individuals.get(oid, []):           # tier 3
             rows.append({"npi": npi, "fraud_scheme": scheme, "case_sector": sector,
                          "conduct_start": start, "conduct_end": end, "case_ids": cid,
                          "amount_usd": amt,
                          "label_basis": "affiliated_individual",
-                         "label_source": _case_source(c), **_extra(c, otier)})
+                         "label_source": _case_source(c, otier), **_extra(c, otier)})
     if n_guarded_org:
         print(f"    [case_labels] {n_guarded_org:,} settled-org billing broadcasts suppressed "
               f"(> {max_org_members} billing NPIs — a chain, not individual evidence)")
@@ -408,8 +484,11 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "conduct_end": int(ends.max()) if len(ends) else None,
             "case_ids": ";".join(sorted(set(g["case_ids"]))),
             "amount_usd": float(dedup["amount_usd"].sum()),
-            # a prosecuted outcome (doj_case) outranks an allegation (docket_case)
-            "label_source": "doj_case" if (g["label_source"] == "doj_case").any() else "docket_case",
+            # a prosecuted outcome (doj_case) outranks a charge (charged_case), which
+            # outranks a relator's allegation (docket_case)
+            "label_source": ("doj_case" if (g["label_source"] == "doj_case").any()
+                             else CHARGED_SOURCE if (g["label_source"] == CHARGED_SOURCE).any()
+                             else "docket_case"),
             "label_basis": min(g["label_basis"],
                                key=lambda b: _BASIS_RANK.get(b, 9)),
             "fca_strict_tier": _tag_union(g.get("fca_strict_tier", pd.Series(dtype=str))),
@@ -421,11 +500,12 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "label_weight": float(g["label_weight"].max()),
             "case_fanout": int(g["case_fanout"].max()),
         })
-    if stats["no_outcome"] or stats["weak_strength"]:
+    if stats["no_outcome"] or stats["weak_strength"] or stats["charged"]:
         print(f"    [case_labels] outcome rule: {stats['self_disclosure']:,} self-disclosure rows set aside; "
               f"{stats['no_outcome']:,} case rows without a resolved "
-              f"outcome (charged / complaint only) and {stats['weak_strength']:,} weak-evidence "
-              f"defendant rows kept OUT of the label")
+              f"outcome (bare announcements) and {stats['weak_strength']:,} weak-evidence "
+              f"defendant rows kept OUT of the label; {stats['charged']:,} charged-only rows "
+              f"carry source {CHARGED_SOURCE} (trains under hard+charged, never grades)")
     out = pd.DataFrame(out_rows, columns=cols)
     conc = case_concentration(out, top=5)
     if len(conc) and conc["n_cases"].iat[0] > 5:

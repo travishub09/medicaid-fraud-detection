@@ -175,6 +175,112 @@ _EXCL_NPI_ALIASES = {
 }
 
 
+_OUTCOME_ALIASES = {
+    "case_id": ["case_id", "our_case_id", "id"],
+    "defendant_name": ["defendant_name", "defendant", "name"],
+    "outcome": ["outcome", "result", "disposition"],
+    "outcome_date": ["outcome_date", "date", "resolved_date", "sentencing_date", "plea_date"],
+    "amount_usd": ["amount_usd", "amount", "restitution", "settlement_amount"],
+    "jurisdiction": ["jurisdiction", "district", "court"],
+    "evidence_url": ["evidence_url", "source_url", "url", "source", "link"],
+    "outcome_summary": ["outcome_summary", "summary", "description", "notes"],
+}
+# the answer vocabulary -> (case_type of the NEW case row, the outcome words the
+# case-label outcome rule recognises). Dismissed / acquitted CLEAR the charge.
+_OUTCOME_WORDS = {
+    "pleaded_guilty": ("criminal_hcf", "pleaded guilty"),
+    "pled_guilty": ("criminal_hcf", "pleaded guilty"),
+    "guilty_plea": ("criminal_hcf", "pleaded guilty"),
+    "convicted": ("criminal_hcf", "convicted"),
+    "sentenced": ("criminal_hcf", "sentenced"),
+    "settled": ("civil_fca", "agreed to pay a settlement"),
+    "settlement": ("civil_fca", "agreed to pay a settlement"),
+    "judgment": ("civil_fca", "judgment"),
+}
+_OUTCOME_CLEARED = {"dismissed", "acquitted", "not_guilty", "acquittal", "dismissal"}
+
+
+def load_outcome_refresh(table: pd.DataFrame, case_db: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, int]:
+    """A reviewed outcome-refresh answer (case_harvest_prompts --sets outcome_refresh)
+    -> (new case rows, cleared charges, n_pending).
+
+    A RESOLVED outcome (plea / conviction / sentencing / settlement / judgment) becomes
+    its OWN case row in the case-DB schema (the outcome release, dated by the outcome,
+    keyed by its evidence URL, summary in words the outcome rule reads), so the next
+    label build labels the defendant as a doj_case positive and the charged row
+    converts by precedence. A dismissal or acquittal is returned as a CLEARED row
+    (case_id, outcome, outcome_date, evidence_url): the CLI marks the charged row
+    usable=0 so it never labels again. Rows answered 'pending' / 'unknown' are
+    counted, never loaded. A case_id not in the case DB is ignored (the answer must
+    be about a case we asked about); an outcome without an evidence URL is ignored
+    (no record, no label)."""
+    empty = pd.DataFrame(columns=CASE_COLUMNS)
+    cleared_cols = ["case_id", "outcome", "outcome_date", "evidence_url"]
+    if table is None or not len(table) or case_db is None or not len(case_db):
+        return empty, pd.DataFrame(columns=cleared_cols), 0
+    resolved = _resolve_columns(list(table.columns), _OUTCOME_ALIASES)
+    d = table.rename(columns={v: k for k, v in resolved.items()}).copy()
+    if "case_id" not in d.columns or "outcome" not in d.columns:
+        return empty, pd.DataFrame(columns=cleared_cols), 0
+    known = case_db.drop_duplicates("case_id").set_index(case_db.drop_duplicates("case_id")["case_id"].astype(str))
+    rows, cleared, pending = [], [], 0
+    for r in d.to_dict("records"):
+        cid = str(r.get("case_id") or "").strip()
+        if cid not in known.index:
+            continue
+        orig = known.loc[cid]
+        oc = str(r.get("outcome") or "").strip().lower().replace(" ", "_")
+        url = str(r.get("evidence_url") or "").strip()
+        date = str(r.get("outcome_date") or "").strip()[:10]
+        if oc in _OUTCOME_CLEARED:
+            if url:
+                cleared.append({"case_id": cid, "outcome": oc, "outcome_date": date, "evidence_url": url})
+            continue
+        if oc not in _OUTCOME_WORDS:
+            pending += 1
+            continue
+        if not url:
+            continue
+        ctype, words = _OUTCOME_WORDS[oc]
+        defendant = str(r.get("defendant_name") or "").strip() or str(orig.get("defendant_name") or "")
+        juris = str(r.get("jurisdiction") or "").strip() or str(orig.get("jurisdiction") or "")
+        note = str(r.get("outcome_summary") or "").strip()
+        summary = (f"{defendant} {words} ({date or 'date not stated'}); outcome of the charge announced "
+                   f"{str(orig.get('announced_date') or '')[:10]} [{cid}]. {note}").strip()
+        rows.append({
+            "case_id": url, "announced_date": date, "defendant_name": defendant,
+            "sector": str(orig.get("sector") or ""), "scheme": str(orig.get("scheme") or ""),
+            "amount_usd": pd.to_numeric(str(r.get("amount_usd") or "").replace("$", "").replace(",", ""),
+                                        errors="coerce"),
+            "qui_tam": pd.NA, "intervened": pd.NA, "jurisdiction": juris,
+            "source_url": url, "summary": summary[:1500], "case_type": ctype,
+        })
+    new = build_case_db(rows) if rows else empty          # case_type passes through as given
+    return new, pd.DataFrame(cleared, columns=cleared_cols), pending
+
+
+def clear_charged_rows(case_csv: str | Path, cleared: pd.DataFrame) -> int:
+    """Mark the charged case rows a dismissal / acquittal cleared as usable=0 (with a
+    qc_note) in the case CSV: quarantine, never delete. Returns the rows changed."""
+    if cleared is None or not len(cleared):
+        return 0
+    p = Path(case_csv)
+    if not p.exists():
+        return 0
+    db = read_csv_text(str(p), dtype=str)
+    if "usable" not in db.columns:
+        db["usable"] = "1"
+    if "qc_note" not in db.columns:
+        db["qc_note"] = ""
+    note = {str(r.case_id): f"cleared: {r.outcome} {r.outcome_date} {r.evidence_url}".strip()
+            for r in cleared.itertuples()}
+    hit = db["case_id"].astype(str).isin(note)
+    db.loc[hit, "usable"] = "0"
+    db.loc[hit, "qc_note"] = db.loc[hit, "case_id"].astype(str).map(note)
+    db.to_csv(p, index=False)
+    return int(hit.sum())
+
+
 def load_cia_entities(table: pd.DataFrame, case_ids: dict[str, str] | None = None) -> pd.DataFrame:
     """A reviewed CIA-entity table (research answer CSV B) -> rows in the defendant-resolver
     shape (case_id, defendant_name, npi, status, match_level) for ``cia_defendant_npis``.
@@ -287,8 +393,23 @@ def main() -> None:
     en.add_argument("--min-confidence", default="medium", choices=["high", "medium", "low"])
     en.add_argument("--out", required=True, help="processed/exclusions_name_resolved.parquet (appended, de-duplicated)")
 
+    orf = sub.add_parser("outcome-refresh", help="reviewed outcome-refresh answer -> outcome case rows merged "
+                                                 "into the case DB; dismissals / acquittals clear the charged row")
+    orf.add_argument("--in", dest="inp", required=True)
+    orf.add_argument("--case-db", required=True, help="enforcement/doj_cases_v3.csv (merged in place)")
+
     args = ap.parse_args()
     table = _read_any(args.inp)
+    if args.cmd == "outcome-refresh":
+        cdb = read_csv_text(args.case_db, dtype=str)
+        new, cleared, pending = load_outcome_refresh(table, cdb)
+        merged = merge_into_case_db(new, args.case_db) if len(new) else cdb
+        n_clear = clear_charged_rows(args.case_db, cleared)
+        print(f"[research_evidence] outcome refresh: {len(new):,} resolved-outcome case rows merged "
+              f"({len(merged):,} rows in {args.case_db}); {n_clear:,} charged rows cleared (usable=0: "
+              f"dismissal / acquittal); {pending:,} still pending / unknown. Rebuild the case labels "
+              "(the next export) so the converted charges train as doj_case.")
+        return
     if args.cmd == "cia-entities":
         case_ids = None
         if args.cia_cases:

@@ -32,12 +32,16 @@ MAX_NAMED = 3
 
 
 def resolve_settled_orgs(org_nodes: pd.DataFrame,
-                         case_db: pd.DataFrame) -> pd.DataFrame:
+                         case_db: pd.DataFrame,
+                         require_recovery: bool = True) -> pd.DataFrame:
     """Which org nodes appear as settled defendants in the case DB.
 
     Matches on the shared name key (org_name + aliases vs defendant_name_key),
     keeping only rows with a real recovery (amount_usd > 0) or an intervention —
     the exemplar set is *successful* enforcement, not every filing.
+    ``require_recovery=False`` matches every row the caller passes (case_labels
+    passes rows its own OUTCOME rule has already admitted: a criminal conviction
+    release rarely states a dollar amount, and a charged row never does).
     Returns org_node_id, org_name, matched_case_id, amount_usd.
     """
     if case_db is None or not len(case_db) or not len(org_nodes):
@@ -46,7 +50,8 @@ def resolve_settled_orgs(org_nodes: pd.DataFrame,
     cdb = case_db.copy()
     cdb["amount_usd"] = pd.to_numeric(cdb.get("amount_usd"), errors="coerce")
     intervened = pd.to_numeric(cdb.get("intervened"), errors="coerce")
-    settled = cdb[(cdb["amount_usd"].fillna(0) > 0) | (intervened == 1)].copy()
+    settled = (cdb[(cdb["amount_usd"].fillna(0) > 0) | (intervened == 1)].copy()
+               if require_recovery else cdb)
     key_to_case = {}
     for r in settled.itertuples():
         k = str(getattr(r, "defendant_name_key", "") or "")

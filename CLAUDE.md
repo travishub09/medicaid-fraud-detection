@@ -1238,6 +1238,35 @@ first, then paste" above every move/done block.
   not a charge). v15 = the A/B hard vs hard+charged on one matrix before the
   runner default moves. Queued: the 452 charged-only case rows as `charged`
   positives, and an outcome-refresh harvest that converts them to hard.
+  CHARGED CASES IN THE LABEL (2026-10-13, built while v14 ran): `case_labels`
+  no longer drops a charged-only case row. `charged_outcome(case_type, text)` =
+  a criminal_hcf indictment / charge / arrest with no plea, verdict or sentence, or a
+  civil_fca row where the government filed or intervened in the complaint with no
+  settlement or judgment (a relator's own complaint stays a docket row); such rows
+  carry `label_source = charged_case`, `fca_strict_tier = charged`, direct and
+  org_billing bases only (a charge never broadcasts to affiliated staff), and the
+  export records the source WITHOUT flipping `provider_on_exclusion` (same
+  mechanism as docket_case). `company_list.tier_label` ORs charged_case rows in
+  only when the policy keeps the charged tier (hard+charged, hard+weak);
+  `set_label_policy` now accepts every `fca_relevance.TIER_POLICIES` entry (it
+  used to raise on hard+charged while the CLIs offered it); the summary carries
+  `n_charged_positives` and the registry reads it as `train_charged`. Precedence
+  per NPI: doj_case > charged_case > docket_case, so an outcome release converts
+  the charge by itself. ORG RESOLUTION FIX: `resolve_settled_orgs(require_recovery=
+  False)` in case_labels (two passes, resolved rows first so an outcome owns the
+  org's name key ahead of its own earlier charge): the amount>0-or-intervened
+  filter had kept every criminal conviction release without a stated dollar
+  amount, and every charge, off the org_billing tier; the outcome rule is the
+  gate now (v15 semantics). OUTCOME REFRESH LANE: `charged_only_cases(case_db)`
+  lists the charged rows; `case_harvest_prompts --sets outcome_refresh --case-db
+  [--since]` writes Manus prompts (10 per prompt: plea / verdict / sentencing /
+  settlement / dismissal / acquittal with the evidence URL); `research_evidence
+  outcome-refresh --in <csv> --case-db` turns each resolved answer into its OWN
+  case row (keyed by the evidence URL, dated by the outcome, summary in the
+  outcome rule's words, case_type from the answer) merged into the case DB, and
+  marks a dismissed / acquitted charge `usable=0` with a `qc_note` (quarantine,
+  never delete). v15 = the A/B hard vs hard+charged on one matrix (two
+  accuracy_diagnostics refits) before the runner default moves.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer

@@ -95,6 +95,19 @@ EXCL_NAME_PROMPT = (
     "employer_npi (from NPPES, blank if unsure), evidence_url. Rows: {rows}. " + _RULES)
 
 
+OUTCOME_REFRESH_PROMPT = (
+    "Public-records research task. Each row below is a health-care-fraud case where our record holds only the "
+    "CHARGE (an indictment, a criminal complaint, an arrest, or a government civil complaint) and no outcome. For "
+    "EACH row, find the later public record of how the case ended: a plea, a verdict, a sentencing, a civil "
+    "settlement or judgment, a dismissal or an acquittal (DOJ or U.S. Attorney press releases, PACER / "
+    "CourtListener docket entries, the court's opinion). Return CSV columns: case_id (copy ours exactly), "
+    "defendant_name, outcome (one of: pleaded_guilty / convicted / sentenced / settled / judgment / dismissed / "
+    "acquitted / pending / unknown), outcome_date (YYYY-MM-DD), amount_usd (restitution, forfeiture or settlement "
+    "if stated), jurisdiction, evidence_url (the release or docket page that states the outcome), "
+    "outcome_summary (one sentence in the source's own words). A row whose case is still open is 'pending' "
+    "with the docket URL. Rows: {rows}. " + _RULES)
+
+
 def _oid(kind: str, key: str) -> str:
     return f"harv:{kind}:{hashlib.md5(key.encode()).hexdigest()[:10]}"
 
@@ -194,6 +207,34 @@ def exclusion_name_prompts(residue: pd.DataFrame, per_prompt: int = 10) -> list[
     return out
 
 
+def outcome_refresh_prompts(case_db: pd.DataFrame, per_prompt: int = 10,
+                            since: str | None = None) -> list[dict]:
+    """One prompt per ``per_prompt`` charged-only case rows (case_labels.charged_only_cases):
+    the OUTCOME REFRESH that converts a `charged` positive to hard (plea / verdict /
+    settlement) or clears it (dismissal / acquittal). ``since`` (YYYY-MM-DD) keeps
+    charges announced on or after that date (older charges have usually resolved
+    and are the ones most worth asking first, so the default sends every row)."""
+    from src.model_a.case_labels import charged_only_cases
+    ch = charged_only_cases(case_db)
+    if since and len(ch):
+        ann = pd.to_datetime(ch["announced_date"], errors="coerce")
+        ch = ch[ann.isna() | (ann >= pd.Timestamp(since))]
+    if not len(ch):
+        return []
+    rows = ch.to_dict("records")
+    out = []
+    for i in range(0, len(rows), max(1, int(per_prompt))):
+        chunk = rows[i:i + per_prompt]
+        txt = " | ".join(f"[{r.get('case_id', '')}] {r.get('defendant_name', '')}; {r.get('jurisdiction', '')}; "
+                         f"charged {str(r.get('announced_date', ''))[:10]}; {r.get('source_url', '')}; "
+                         f"{str(r.get('summary', ''))[:200]}" for r in chunk)
+        out.append({"org_id": _oid("outcome", "|".join(str(r.get("case_id", "")) for r in chunk)),
+                    "org_name": f"Outcome refresh batch {i // per_prompt + 1}", "set": "outcome_refresh",
+                    "year": "", "state": "", "case_ids": [str(r.get("case_id", "")) for r in chunk],
+                    "prompt": OUTCOME_REFRESH_PROMPT.format(rows=txt)})
+    return out
+
+
 def write_prompts(prompts: list[dict], out_dir: Path) -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     pj = out_dir / "case_harvest_prompts.jsonl"
@@ -225,7 +266,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--sets", default="mfcu,takedown,yir,hcfac,oig_sar",
-                    help="also: cia (needs --cia [--case-db] [--cia-residue]) and exclusion_names (needs --exclusion-residue)")
+                    help="also: cia (needs --cia [--case-db] [--cia-residue]), exclusion_names (needs "
+                         "--exclusion-residue) and outcome_refresh (needs --case-db; the charged-only rows)")
+    ap.add_argument("--since", default=None, help="outcome_refresh: charges announced on/after YYYY-MM-DD only")
     ap.add_argument("--cia", default=None, help="preclean/cia/cia_list.csv")
     ap.add_argument("--case-db", default=None, help="enforcement/doj_cases_v3.csv (parties already harvested are skipped)")
     ap.add_argument("--cia-residue", default=None, help="processed/cia_residue.csv from label_expansion cia")
@@ -266,8 +309,13 @@ def main() -> None:
         return
     y0, y1 = (int(x) for x in a.years.split("-"))
     sets = [s.strip() for s in a.sets.split(",") if s.strip()]
-    ps = build_prompts([s for s in sets if s not in ("cia", "exclusion_names")], list(range(y0, y1 + 1)),
-                       [s.strip() for s in a.states.split(",") if s.strip()])
+    ps = build_prompts([s for s in sets if s not in ("cia", "exclusion_names", "outcome_refresh")],
+                       list(range(y0, y1 + 1)), [s.strip() for s in a.states.split(",") if s.strip()])
+    if "outcome_refresh" in sets:
+        if not a.case_db:
+            ap.error("--sets outcome_refresh needs --case-db <doj_cases_v3.csv>")
+        cdb = pd.read_csv(a.case_db, dtype=str) if str(a.case_db).endswith(".csv") else pd.read_parquet(a.case_db)
+        ps += outcome_refresh_prompts(cdb, per_prompt=a.per_prompt or 10, since=a.since)
     if "cia" in sets:
         if not a.cia:
             ap.error("--sets cia needs --cia <cia_list.csv>")

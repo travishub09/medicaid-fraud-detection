@@ -50,9 +50,10 @@ _LABEL_POLICY: dict = {"tier": "all", "exclusion_nodes": None, "cutoff": None}
 
 def set_label_policy(tier: str = "all", exclusion_nodes: str | Path | None = None,
                      cutoff: str | None = None) -> None:
-    tier = (tier or "all").lower()
-    if tier not in ("all", "hard", "hard+weak"):
-        raise ValueError(f"unknown label tier {tier!r}")
+    tier = (tier or "all").lower().replace("_", "+")
+    from .fca_relevance import TIER_POLICIES
+    if tier not in TIER_POLICIES:
+        raise ValueError(f"unknown label tier {tier!r} (one of {TIER_POLICIES})")
     _LABEL_POLICY.update(tier=tier, exclusion_nodes=exclusion_nodes, cutoff=cutoff)
 
 
@@ -101,7 +102,7 @@ def broadcast_only_mask(matrix: pd.DataFrame) -> np.ndarray:
     bc = matrix["label_basis"].fillna("").astype(str).isin(BROADCAST_BASES)
     src = (matrix["exclusion_label_sources"] if "exclusion_label_sources" in matrix.columns
            else pd.Series("", index=matrix.index)).fillna("").astype(str)
-    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case"})
+    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case", "charged_case"})
     return (bc & only_doj).to_numpy(dtype=bool)
 
 
@@ -189,14 +190,16 @@ def training_label_summary(matrix: pd.DataFrame, label_col: str = "provider_on_e
         raise ValueError(f"label policy '{pol['tier']}' needs exclusion nodes (none set)")
     else:
         y = tier_label(matrix, pol["exclusion_nodes"], keep=pol["tier"], cutoff=pol.get("cutoff"))
-    n_doj = 0
+    n_doj = n_charged = 0
     if "exclusion_label_sources" in matrix.columns:
         prov = matrix["exclusion_label_sources"].fillna("").astype(str)
         n_doj = int((prov.str.split(";").apply(lambda xs: "doj_case" in xs) & (np.asarray(y) > 0)).sum())
+        n_charged = int((prov.str.split(";").apply(lambda xs: "charged_case" in xs) & (np.asarray(y) > 0)).sum())
     return {"label_tier": pol["tier"],
             "exclusion_nodes": str(pol["exclusion_nodes"]) if pol.get("exclusion_nodes") else None,
             "cutoff": pol.get("cutoff"), "label_col": label_col,
             "n_positives": int(np.asarray(y).sum()), "n_doj_positives": n_doj,
+            "n_charged_positives": n_charged,
             "n_in_matrix_label": int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0}
 
 
@@ -230,6 +233,12 @@ def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
         prov = matrix["exclusion_label_sources"].fillna("").astype(str)
         doj = prov.str.split(";").apply(lambda xs: "doj_case" in xs).to_numpy()
         y = y | doj
+        # charged-only cases (source charged_case: an indictment or a government
+        # complaint, no outcome yet) train only under a policy that keeps the
+        # 'charged' tier (hard+charged, hard+weak); the hard policy never sees them
+        if tier_mask(pd.Series(["charged"]), keep).iloc[0]:
+            charged = prov.str.split(";").apply(lambda xs: "charged_case" in xs).to_numpy()
+            y = y | charged
     return y.astype(int)
 
 
