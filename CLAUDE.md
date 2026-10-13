@@ -1297,8 +1297,13 @@ first, then paste" above every move/done block.
   chains); `evidence_strength` rates cia_* / research_cia moderate (they used to
   fall to weak and be dropped by case_labels); case_labels honours a resolver
   row's own `label_weight` as a cap on the direct tier (the per-party budget).
-  The operator re-runs the cia line after merging 315 (the first output is not
-  usable as a label: the chains must be listed, not labelled). The `names` step
+  SECOND CIA RUN (bundle 315 on the VM): 185 of 339 parties resolved (component
+  110, exact org 70, owner 5), 2,497 NPIs (largest party 150), residue 154 (126
+  no exact match, 17 manufacturers, 11 chains): usable. The no-match residue is
+  the Manus cia lane (task label_manus_lanes) plus a future person-component
+  path ("Clinic, P.A. and Dr. X": the person resolves like a defendant, by
+  name in state). Lundbeck / Astellas / ResMed / Innovasis joined the
+  manufacturer list. The `names` step
   had NEVER run: the module's `__main__` guard sat above `exclusion_name_resolve`
   so the CLI raised NameError (guard moved to the end; a subprocess test pins it).
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid

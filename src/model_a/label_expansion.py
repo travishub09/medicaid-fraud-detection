@@ -213,13 +213,15 @@ _PARTY_SPLIT_RE = re.compile(r"\s*;\s*|\s+and\s+|\s*&\s*|\s+d\.?b\.?a\.?\s+|\s+d
                              re.I)
 _PERSON_TAIL_RE = re.compile(r"\b(?:M\.?D\.?|D\.?O\.?|D\.?C\.?|D\.?P\.?M\.?|R\.?P\.?H\.?|D\.?D\.?S\.?|P\.?A\.?-?C|N\.?P\.?|"
                              r"Ph\.?D\.?|Dr\.?)\b\.?", re.I)
-_MANUFACTURER_TOKENS = ("PHARMACEUTICAL", "PHARMACEUTICALS", "THERAPEUTICS", "BIOSCIENCES", "BIOPHARMA", "BIOTECH",
-                        "IMPLANT", "DEVICES", "MEDICAL SYSTEMS", "LABORATORIES INC", "GENETICS INC")
+_MANUFACTURER_TOKENS = ("PHARMACEUTICAL", "PHARMACEUTICALS", "PHARMA ", "PHARMA PLC", "THERAPEUTICS", "BIOSCIENCES",
+                        "BIOPHARMA", "BIOTECH", "IMPLANT", "DEVICES", "MEDICAL SYSTEMS", "LABORATORIES INC", "GENETICS INC")
 _MANUFACTURER_NAMES = ("NOVARTIS", "SANOFI", "AVENTIS", "INDIVIOR", "INSYS", "EXACTECH", "AESCULAP", "EYEPOINT",
                        "VELOXIS", "DUSA", "MERIT MEDICAL", "SUN PHARMACEUTICAL", "PFIZER", "ABBVIE", "ABBOTT",
                        "MEDTRONIC", "BOSTON SCIENTIFIC", "STRYKER", "ZIMMER", "BIOMET", "SMITH NEPHEW", "DEPUY",
                        "JOHNSON JOHNSON", "AMGEN", "GILEAD", "BIOGEN", "TEVA", "MALLINCKRODT", "PURDUE", "ASTRAZENECA",
-                       "GLAXO", "MERCK", "LILLY", "BRISTOL", "GENENTECH", "ROCHE", "BAYER", "TAKEDA", "OLYMPUS")
+                       "GLAXO", "MERCK", "LILLY", "BRISTOL", "GENENTECH", "ROCHE", "BAYER", "TAKEDA", "OLYMPUS",
+                       "LUNDBECK", "ASTELLAS", "RESMED", "INNOVASIS", "JAZZ PHARMACEUTICALS", "AVANIR", "NUVASIVE",
+                       "ORTHOFIX", "ARTHREX", "GLOBUS", "ALERE", "ABIOMED", "PHILIPS", "SIEMENS", "GE HEALTHCARE")
 
 
 def party_components(name: str) -> list[str]:
