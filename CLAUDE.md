@@ -1155,6 +1155,25 @@ first, then paste" above every move/done block.
   `ops/vm/regrade_from.sh <new> <src> <cut>` re-grades an existing matrix under a
   new list definition as a new tag (steps 6 to 12 only, no retrain). v14 = v13's
   matrix re-graded, pre-registered under the v13 checks. Not dispatched.
+  LABEL AUDIT + EXPANSION PLAN (2026-10-13, operator: 'a full audit on our label and
+  a plan to expand it without compromising integrity; the goal is FCA qui tam
+  cases'; `docs/LABEL_EXPANSION_PLAN_2026-10.md`): from the packets: 3,049 forward
+  positives on paper, 509 in the universe (83 percent never join: convicted
+  INDIVIDUALS who never billed under their own NPI), 24,774 undated exclusion rows,
+  872 felony-unstated + 839 license-unstated + 705 not-operational rows hidden in
+  the weak tier, 130 post-cutoff cases resolvable to the universe, a $4M hospital
+  VOLUNTARY self-disclosure as the largest training case (241 NPIs), the qui_tam
+  flag present on every case row and absent from the ruler. Plan: Tier 0 (no new
+  data) = employer resolution for convicted individuals (basis
+  affiliated_conviction), a qui tam ruler, self-disclosures out, a second freeze
+  (2020-12) + 48-month horizon, date the undated; Tier 1 (official records with
+  identifiers) = the OIG CIA roster as the recall ruler + exact-name positives,
+  unsealed qui tam dockets with outcome entries, state AG / MFCU resolutions in the
+  ten largest Medicaid states, big-state sanction lists with reasons, license-
+  number joins for board actions, reading the unstated felonies. Integrity gate on
+  every row: official resolved outcome or fraud-shaped statute, a hard identifier,
+  a date, a tier + provenance; verification sample before any source trains.
+  `label_audit` runs on v13 on the VM (task label_audit_v13) before Tier 0 is built.
   TMS TIP (2026-10-13): Learning to Achieve Wellness (Brandon FL) has zero Medicaid
   TMS dollars (Medicare / commercial, or the psychiatrist's individual NPI); the
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
