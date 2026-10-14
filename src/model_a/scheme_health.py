@@ -71,11 +71,51 @@ def _label_auc(y: np.ndarray, s: np.ndarray) -> tuple[float, int]:
     return float((ranks[y == 1].sum() - n1 * (n1 + 1) / 2) / (n1 * n0)), n1
 
 
+FCA_SIGNAL_AUC = 0.58          # the band the operator's question table called "real signal"
+FCA_MIN_POS = 20
+
+
+def forward_label_vector(matrix: pd.DataFrame, forward: pd.DataFrame | None
+                         ) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """(y, keep) for a prospective_label / forward-ruler CSV against the matrix:
+    y = 1 for is_prospective_positive rows, keep = False for providers already
+    known at the freeze (was_excluded_pre_cutoff), which the ruler never scores.
+    Both None when no usable forward file is given."""
+    if forward is None or not len(forward) or "npi" not in forward.columns \
+            or "is_prospective_positive" not in forward.columns:
+        return None, None
+    fl = forward.copy()
+    fl["npi"] = fl["npi"].astype(str)
+    pos = set(fl.loc[pd.to_numeric(fl["is_prospective_positive"], errors="coerce").fillna(0) == 1, "npi"])
+    drop = set()
+    if "was_excluded_pre_cutoff" in fl.columns:
+        drop = set(fl.loc[pd.to_numeric(fl["was_excluded_pre_cutoff"], errors="coerce").fillna(0) == 1, "npi"])
+    npi = matrix["npi"].astype(str)
+    return npi.isin(pos).to_numpy().astype(int), (~npi.isin(drop)).to_numpy()
+
+
+def fca_verdict(auc, n_pos) -> str:
+    if auc is None or n_pos is None or n_pos < FCA_MIN_POS:
+        return "thin"
+    if auc >= FCA_SIGNAL_AUC:
+        return "signal"
+    if auc < 0.42:
+        return "inverted"
+    return "coin-flip"
+
+
 def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
-                        weights: dict | None = None) -> pd.DataFrame:
+                        weights: dict | None = None,
+                        forward: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Per-scheme calc integrity + separation. ``forward`` (a prospective_label /
+    FCA-ruler CSV) adds ``fca_auc`` / ``n_fca_pos`` / ``fca_verdict``: the per-scheme
+    AUC on the FORWARD FCA ruler, the label the business is graded on (2026-10-14,
+    docs/MODEL_QUESTIONS §1: the exclusion-label AUC alone cannot say whether a scheme
+    is noise or whether the exclusion label is blind to it)."""
     weights = weights or DEFAULT_SCHEME_WEIGHTS
     cols = set(matrix.columns)
     n = len(matrix)
+    y_fca, keep_fca = forward_label_vector(matrix, forward)
     # optional empirical direction check: a scheme's subscore should point the
     # SAME way as fraud. If it fires on the clean (AUC well below 0.5 on enough
     # known positives), that is either a direction bug OR the label being blind
@@ -100,6 +140,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
         sub = f"subscore_{scheme}"
         cov, constant, tie_flood = None, None, None
         label_auc, n_pos, direction = None, None, ""
+        fca_auc, n_fca_pos = None, None
         if sub in cols:
             s = pd.to_numeric(matrix[sub], errors="coerce")
             covered = s.dropna()
@@ -119,6 +160,11 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
                             direction = "INVERTED?"
                         elif auc < 0.48:
                             direction = "weak/inverse"
+            if y_fca is not None and not constant:
+                sv = s.to_numpy(float)[keep_fca]
+                fauc, fpos = _label_auc(y_fca[keep_fca], sv)
+                n_fca_pos = int(fpos)
+                fca_auc = None if np.isnan(fauc) else round(fauc, 3)
         # status
         if sub not in cols or not present_inputs:
             status = "DORMANT"
@@ -142,6 +188,10 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
             "label_auc": label_auc,
             "n_label_pos": n_pos,
             "direction": direction,
+            "fca_auc": fca_auc,
+            "n_fca_pos": n_fca_pos,
+            "fca_verdict": (fca_verdict(fca_auc, n_fca_pos) if y_fca is not None
+                            and sub in cols and not constant else ""),
         })
     order = {"BROKEN": 0, "CHECK_DIRECTION": 1, "DEGRADED": 2, "DORMANT": 3,
              "HEALTHY": 4}
@@ -202,24 +252,44 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
         L.append("\n_A regression usually means a source file was renamed, "
                  "swapped, or dropped between runs. Check the SOURCES_REPORT for "
                  "that scheme's inputs before trusting this matrix._")
+    has_fca = "fca_auc" in df.columns and df["fca_auc"].notna().any()
     L.append("")
-    L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | missing inputs |")
-    L.append("|---|---|--:|--:|--:|--:|:-:|---|")
+    if has_fca:
+        L.append(f"_FCA AUC = the subscore's separation on the FORWARD FCA ruler (cases announced "
+                 f"after the freeze; providers known at the freeze dropped), the label the "
+                 f"business is graded on. verdict: signal >= {FCA_SIGNAL_AUC}, coin-flip, inverted "
+                 f"< 0.42, thin < {FCA_MIN_POS} covered positives. A scheme that is coin-flip on "
+                 "BOTH labels with 20+ positives on each is a prune candidate for the next "
+                 "pre-registration; a scheme thin on the FCA ruler is unjudged, not noise._")
+        L.append("")
+        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | missing inputs |")
+        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|---|")
+    else:
+        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | missing inputs |")
+        L.append("|---|---|--:|--:|--:|--:|:-:|---|")
     for r in df.itertuples():
         la = getattr(r, "label_auc", None)
-        L.append(f"| {r.scheme} | {r.status} | {r.weight_present:.0%} | "
-                 f"{r.n_inputs_present}/{r.n_inputs_total} | "
-                 f"{('%.1f%%' % (100*r.subscore_coverage)) if r.subscore_coverage is not None else '-'} | "
-                 f"{la if la is not None else '-'} | "
-                 f"{getattr(r, 'direction', '') or ''} | {r.missing_inputs} |")
+        line = (f"| {r.scheme} | {r.status} | {r.weight_present:.0%} | "
+                f"{r.n_inputs_present}/{r.n_inputs_total} | "
+                f"{('%.1f%%' % (100*r.subscore_coverage)) if r.subscore_coverage is not None else '-'} | "
+                f"{la if la is not None else '-'} | "
+                f"{getattr(r, 'direction', '') or ''} | ")
+        if has_fca:
+            fa = getattr(r, "fca_auc", None)
+            fp = getattr(r, "n_fca_pos", None)
+            line += (f"{fa if fa is not None and fa == fa else '-'} | "
+                     f"{int(fp) if fp is not None and fp == fp else '-'} | "
+                     f"{getattr(r, 'fca_verdict', '') or ''} | ")
+        L.append(line + f"{r.missing_inputs} |")
     return "\n".join(L)
 
 
 def write_health(matrix: pd.DataFrame, manifest: dict, out_dir: Path,
-                 baseline_path: Path | None = None) -> dict:
+                 baseline_path: Path | None = None,
+                 forward: pd.DataFrame | None = None) -> dict:
     """Write SCHEME_HEALTH.md + scheme_health.json; return a summary dict with
     any regressions. The json becomes the next run's baseline."""
-    df = audit_scheme_health(matrix, manifest)
+    df = audit_scheme_health(matrix, manifest, forward=forward)
     baseline = None
     bp = baseline_path or (out_dir / "scheme_health.json")
     if bp.exists():
@@ -248,17 +318,30 @@ def main() -> None:
     ap.add_argument("--baseline", default=None,
                     help="prior scheme_health.json for the regression alarm")
     ap.add_argument("--out", default="SCHEME_HEALTH.md")
+    ap.add_argument("--future-label", default=None,
+                    help="the forward ruler CSV (future_bans_after_<cut>__fca36.csv): adds the "
+                         "per-scheme AUC on the FCA ruler + a verdict column")
+    ap.add_argument("--json-out", default=None,
+                    help="also write the table as json (the runner's scheme_health.json refresh)")
     args = ap.parse_args()
     m = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
-    df = audit_scheme_health(m, manifest)
+    fl = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
+    df = audit_scheme_health(m, manifest, forward=fl)
     baseline = None
     if args.baseline and Path(args.baseline).exists():
         baseline = pd.DataFrame(json.loads(Path(args.baseline).read_text())["schemes"])
     reg = compare_to_baseline(df, baseline)
     report = to_markdown(df, reg)
     Path(args.out).write_text(report, encoding="utf-8")
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps({
+            "schemes": df.to_dict("records"), "regressions": reg,
+        }, indent=2, default=str), encoding="utf-8")
     print(report)
+    if fl is not None and "fca_verdict" in df.columns:
+        vc = df["fca_verdict"].value_counts()
+        print("\nFCA-ruler verdicts: " + ", ".join(f"{k} {v}" for k, v in vc.items()))
     if reg:
         print(f"\n*** {len(reg)} REGRESSION(S) vs baseline — verify before the next run. ***")
 

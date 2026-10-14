@@ -105,11 +105,14 @@ python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book --labe
 step 10/12 "register the run against the locked pre-registration"
 python -u -m src.model_a.run_registry --data-root "$DATA" --run-dir "$RUN" || fail 10
 
-step 11/12 "learning loop"
+step 11/13 "learning loop"
 python -u -m src.model_a.learning_loop --run-dir "$RUN" --data-root "$DATA" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" --prev-run-dir "$PREV" || fail 11
 
-step 12/12 "the run issue ledger"
-python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-run-dir "$PREV" || fail 12
+step 12/13 "measurement (scheme AUC on the FCA ruler, signal ranking, label enrichment, ablations; MEASURE_ABLATION=0 skips the retrains)"
+MEASURE_ABLATION="${MEASURE_ABLATION:-1}" bash "$REPO/ops/vm/measure_run.sh" "$NEW" "$CUT" || fail 12
+
+step 13/13 "the run issue ledger"
+python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-run-dir "$PREV" || fail 13
 
 echo
 echo "[$NEW] DONE $(date '+%F %T')  -- tell Claude '$NEW finished'; then the packet:"

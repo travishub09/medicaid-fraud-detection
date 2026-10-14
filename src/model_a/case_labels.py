@@ -99,6 +99,17 @@ def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
 
 CHARGED_TIER = "charged"
 CHARGED_SOURCE = "charged_case"
+# COMMERCIAL-PLAN FRAUD (operator 2026-10-14; docs/EXCLUSION_SOURCES_AUDIT §commercial):
+# a provider convicted of billing a commercial health plan falsely has the same hands,
+# codes and staff on its Medicaid claims. case_type ``hcf_commercial`` (state AG /
+# insurance-department / state-court convictions and judgments, loaded through
+# research_evidence commercial-cases) is a TRAINING-only source: it trains under
+# --label-tier hard+commercial, never flips the hard label, is never a forward
+# positive (the ruler stays on the federal business outcome) and never enters the
+# strict PurpleLab label. Admitted on a conviction, plea or judgment only.
+COMMERCIAL_TIER = "hcf_commercial"
+COMMERCIAL_SOURCE = "hcf_commercial"
+COMMERCIAL_CASE_TYPE = "hcf_commercial"
 # a government civil complaint (the United States intervened / filed) is the civil
 # counterpart of an indictment: the government investigated and joined. A relator's
 # own complaint is a docket row and stays an allegation.
@@ -292,6 +303,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         ct = str(c.get("case_type") or "") if hasattr(c, "get") else ""
         if ct.startswith("docket"):
             return "docket_case"
+        if ct.strip().lower() == COMMERCIAL_CASE_TYPE:
+            return COMMERCIAL_SOURCE
         return CHARGED_SOURCE if otier == CHARGED_TIER else "doj_case"
 
     def _case_fields(c):
@@ -309,7 +322,8 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     # (settlement / judgment / conviction / plea / CMP) is a positive. Docket rows
     # keep their allegation source and never flip the label anyway.
     from .fca_label_export import evidence_strength, outcome_tier
-    stats = {"no_outcome": 0, "weak_strength": 0, "self_disclosure": 0, "charged": 0}
+    stats = {"no_outcome": 0, "weak_strength": 0, "self_disclosure": 0, "charged": 0,
+             "commercial": 0}
 
     def _outcome(c) -> str:
         if _case_source(c) == "docket_case":
@@ -321,6 +335,15 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             return ""
         text = f"{c.get('title', '') or ''} {c.get('summary', '') or ''}"
         ct = str(c.get("case_type") or "").strip().lower()
+        if ct == COMMERCIAL_CASE_TYPE:
+            # a commercial-plan fraud row trains only on a conviction / plea / judgment
+            # (the loader already requires one; the rule is enforced here too)
+            from .fca_label_export import _CIVIL_OUTCOME, _CRIMINAL_OUTCOME
+            if _CRIMINAL_OUTCOME.search(text) or re.search(r"\bjudgment\b", text, re.I) \
+                    or _CIVIL_OUTCOME.search(text):
+                stats["commercial"] += 1
+                return COMMERCIAL_TIER
+            return ""
         if ct in ("", "nan", "none"):
             # an UNTYPED case row (the pre-2026-09 harvest never typed its rows):
             # a stated dollar amount or a civil-outcome phrase is the resolved
@@ -501,6 +524,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             # outranks a relator's allegation (docket_case)
             "label_source": ("doj_case" if (g["label_source"] == "doj_case").any()
                              else CHARGED_SOURCE if (g["label_source"] == CHARGED_SOURCE).any()
+                             else COMMERCIAL_SOURCE if (g["label_source"] == COMMERCIAL_SOURCE).any()
                              else "docket_case"),
             "label_basis": min(g["label_basis"],
                                key=lambda b: _BASIS_RANK.get(b, 9)),
@@ -513,12 +537,14 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "label_weight": float(g["label_weight"].max()),
             "case_fanout": int(g["case_fanout"].max()),
         })
-    if stats["no_outcome"] or stats["weak_strength"] or stats["charged"]:
+    if stats["no_outcome"] or stats["weak_strength"] or stats["charged"] or stats["commercial"]:
         print(f"    [case_labels] outcome rule: {stats['self_disclosure']:,} self-disclosure rows set aside; "
               f"{stats['no_outcome']:,} case rows without a resolved "
               f"outcome (bare announcements) and {stats['weak_strength']:,} weak-evidence "
               f"defendant rows kept OUT of the label; {stats['charged']:,} charged-only rows "
-              f"carry source {CHARGED_SOURCE} (trains under hard+charged, never grades)")
+              f"carry source {CHARGED_SOURCE} (trains under hard+charged, never grades); "
+              f"{stats['commercial']:,} commercial-plan conviction rows carry source "
+              f"{COMMERCIAL_SOURCE} (trains under hard+commercial, never grades)")
     out = pd.DataFrame(out_rows, columns=cols)
     conc = case_concentration(out, top=5)
     if len(conc) and conc["n_cases"].iat[0] > 5:

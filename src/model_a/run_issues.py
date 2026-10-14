@@ -162,6 +162,22 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
                                      f"label AUC {auc} on {npos} positives while inputs are healthy",
                                      "the scheme's inputs do not separate this label; check the label's scheme mix "
                                      "before redesigning", "SCHEME_HEALTH.md"))
+            # the FCA-ruler verdict (scheme_health --future-label, 2026-10-14): a scheme
+            # that is coin-flip on BOTH labels with 20+ positives on each is a prune
+            # candidate; the next pre-registration decides, never this ledger
+            fv, fauc, fpos = s.get("fca_verdict"), s.get("fca_auc"), s.get("n_fca_pos")
+            if fv in ("coin-flip", "inverted") and auc is not None and npos and float(npos) >= 20 \
+                    and float(auc) < 0.58 and st in ("HEALTHY", "DEGRADED"):
+                issues.append(_issue("scheme", name, "prune_candidate", "WARN",
+                                     f"FCA-ruler AUC {fauc} on {fpos} forward positives ({fv}); exclusion-label "
+                                     f"AUC {auc} on {npos}: no separation on either label",
+                                     "drop the scheme family in the next pre-registration if SOURCE_ABLATION's "
+                                     "leave-one-out delta is also ~0; a scheme whose INPUTS are missing is "
+                                     "re-judged once they land", "SCHEME_HEALTH.md"))
+            elif fv == "inverted":
+                issues.append(_issue("scheme", name, "fca_inverted", "WARN",
+                                     f"FCA-ruler AUC {fauc} on {fpos} forward positives: fires on the clean side",
+                                     "check the direction of its inputs against the forward cases", "SCHEME_HEALTH.md"))
         for r in sh.get("regressions") or []:
             issues.append(_issue("scheme", str(r.get("scheme", r)), "regression", "WARN",
                                  json.dumps(r, default=str)[:200], "compare with the previous run's inputs",

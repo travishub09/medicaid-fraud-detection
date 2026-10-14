@@ -94,6 +94,21 @@ aws s3 sync /data/medicaid s3://medicaid-fraud-data-<initials>/data --storage-cl
 
 Rebuilding a VM disk from S3 takes minutes; from OneDrive, hours. Re-run the sync after each procurement session.
 
+## 5b. The freeze tag: a version to go back to
+
+`freeze-v16-2026-10-14` (and the branch `freeze/v16-2026-10-14`) marks the code
+that ran v16 and v17, before the 2026-10-14 build-out (as-of v3 scores, the
+measurement block, label enrichment, hcf_commercial). The merge script pushes the
+tag with the bundle that carries it. To run the VM from the frozen code:
+
+```bash
+cd ~/medicaid-fraud-detection && git fetch origin --tags && git checkout freeze-v16-2026-10-14
+# ... run as usual; to come back to the dev branch:
+git checkout claude/happy-mccarthy-3skrn3 && git pull --ff-only origin claude/happy-mccarthy-3skrn3
+```
+
+A later freeze gets a NEW dated tag; a tag is never moved.
+
 ## 6. What the VM changes and what it does not
 
 It changes completeness: every source present, the embeddings uncapped, the motif columns real, repeats and seeds affordable. It does not change the label, the ruler or the checks, so a VM run is graded exactly like a laptop run and is a new pre-registration like any other. The laptop remains the operator's seat: merges, pushes, Manus, reading.

@@ -32,6 +32,7 @@ NPI nor a usable name are quarantined to a side table, never silently dropped.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -157,6 +158,66 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=CASE_COLUMNS)
     return build_case_db(rows)
+
+
+_COMMERCIAL_ALIASES = dict(_MFCU_ALIASES, **{
+    "outcome": ["outcome", "disposition", "result"],
+    "payer_type": ["payer_type", "payer", "plan type"],
+    "npi": ["npi", "npi number"],
+    "outcome_date": ["outcome_date", "disposition date"],
+})
+
+
+def load_commercial_cases(table: pd.DataFrame, state: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """A reviewed commercial-plan fraud table (the `commercial` harvest set) -> case-DB
+    rows with ``case_type = hcf_commercial`` (case_labels.COMMERCIAL_CASE_TYPE): the
+    TRAINING-only source for fraud against private plans. Returns (cases, quarantine):
+    a row is admitted only when its outcome column or summary states a conviction,
+    plea, judgment or settlement; charged-only rows are quarantined with the reason.
+    Never a forward positive, never the strict label (both enforced downstream)."""
+    from src.model_a.fca_label_export import _CIVIL_OUTCOME, _CRIMINAL_OUTCOME
+    st = str(state).strip().upper()
+    empty = pd.DataFrame(columns=CASE_COLUMNS)
+    if table is None or not len(table):
+        return empty, pd.DataFrame()
+    resolved = _resolve_columns(list(table.columns), _COMMERCIAL_ALIASES)
+    d = table.rename(columns={v: k for k, v in resolved.items()}).copy()
+    rows, bad = [], []
+    for r in d.to_dict("records"):
+        defendant = str(r.get("defendant_name") or "").strip()
+        summary = str(r.get("summary") or "").strip()
+        outcome = str(r.get("outcome") or "").strip()
+        if not defendant:
+            continue
+        text = f"{outcome}. {summary}"
+        ok = bool(_CRIMINAL_OUTCOME.search(text) or _CIVIL_OUTCOME.search(text)
+                  or re.search(r"\b(?:judgment|convict\w*|plea\w*|sentenc\w*|settle\w*)\b", text, re.I))
+        if not ok:
+            bad.append({**r, "drop_reason": "no resolved outcome (charge / arrest / pending)"})
+            continue
+        url = str(r.get("source_url") or "").strip()
+        date = str(r.get("outcome_date") or r.get("announced_date") or "").strip()
+        cid = url or f"commercial:{st.lower()}:{abs(hash((st, defendant, date))) & 0xFFFFFFFF:x}"
+        npi = str(r.get("npi") or "").strip()
+        rows.append({
+            "case_id": cid, "announced_date": date, "defendant_name": defendant,
+            "sector": _classify(f"{defendant}. {summary}", _SECTOR_KEYWORDS),
+            "scheme": _classify_all(f"{defendant}. {summary}", _SCHEME_KEYWORDS),
+            "amount_usd": pd.to_numeric(str(r.get("amount_usd") or "").replace("$", "").replace(",", ""),
+                                        errors="coerce"),
+            "qui_tam": pd.NA, "intervened": pd.NA,
+            "jurisdiction": f"{st} commercial-plan ({str(r.get('payer_type') or 'commercial').strip()})",
+            "source_url": url,
+            "summary": (f"{outcome}. " if outcome else "") + summary[:480],
+            "case_type": "hcf_commercial",
+            "npi_in_source": npi if re.fullmatch(r"\d{10}", npi) else "",
+        })
+    cases = build_case_db(rows) if rows else empty
+    if len(cases):
+        cases["case_type"] = "hcf_commercial"
+        if "npi_in_source" not in cases.columns:
+            cases["npi_in_source"] = [r["npi_in_source"] for r in rows]
+    return cases, pd.DataFrame(bad)
 
 
 _CIA_ENTITY_ALIASES = {
@@ -382,6 +443,13 @@ def main() -> None:
     mf.add_argument("--case-db", required=True,
                     help="cases csv to merge into (created if absent)")
 
+    cm = sub.add_parser("commercial-cases",
+                        help="reviewed commercial-plan fraud convictions -> case DB rows typed hcf_commercial "
+                             "(training-only source; never the forward ruler or the strict label)")
+    cm.add_argument("--in", dest="inp", required=True)
+    cm.add_argument("--state", required=True)
+    cm.add_argument("--case-db", required=True, help="cases csv to merge into (created if absent)")
+
     ce = sub.add_parser("cia-entities", help="reviewed CIA entity table (research CSV B) -> cia_defendant_npis rows")
     ce.add_argument("--in", dest="inp", required=True)
     ce.add_argument("--cia-cases", default=None, help="enforcement/cia_cases.csv (maps party -> case_id)")
@@ -400,6 +468,20 @@ def main() -> None:
 
     args = ap.parse_args()
     table = _read_any(args.inp)
+    if args.cmd == "commercial-cases":
+        cases, quarantine = load_commercial_cases(table, args.state)
+        merged = merge_into_case_db(cases, args.case_db) if len(cases) else None
+        print(f"[research_evidence] {len(cases):,} {args.state.upper()} commercial-plan fraud rows "
+              f"(case_type hcf_commercial) -> {args.case_db}"
+              + (f" (case DB now {len(merged):,} rows)" if merged is not None else "")
+              + f"; {len(quarantine):,} rows without a resolved outcome quarantined")
+        if len(quarantine):
+            qp = Path(args.inp).with_name(Path(args.inp).stem + "_quarantine.csv")
+            quarantine.to_csv(qp, index=False)
+            print(f"[research_evidence] quarantine -> {qp}")
+        print("Trains under --label-tier hard+commercial (an A/B refit first: accuracy_diagnostics "
+              "--score-source refit --label-tier hard+commercial); never a forward positive.")
+        return
     if args.cmd == "outcome-refresh":
         cdb = read_csv_text(args.case_db, dtype=str)
         new, cleared, pending = load_outcome_refresh(table, cdb)

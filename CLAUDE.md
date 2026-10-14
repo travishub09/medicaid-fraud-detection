@@ -1388,6 +1388,57 @@ first, then paste" above every move/done block.
   (personal)", first `sync_data.sh` pull running under tmux `sync`.
   Full suite: `pytest tests/` (1,069 tests + 2 skipped). Dead columns are left OUT OF THE
   TRAINABLE LISTS but KEPT in the parquet (case_size reads billing_residual by name).
+  FREEZE POINT (2026-10-14, operator: "freeze a version of the current code that
+  we can go back to"): tag `freeze-v16-2026-10-14` + branch `freeze/v16-2026-10-14`
+  at 868e951 (the v16/v17 code: the questions doc is the last commit). Return with
+  `git checkout freeze-v16-2026-10-14` (or run the VM from it: `git checkout
+  freeze/v16-2026-10-14` in ~/medicaid-fraud-detection). merge_push.bat fetches and
+  pushes `refs/tags/freeze-*` from every bundle; every later freeze gets a NEW dated
+  tag, never a moved one.
+  BUILD-OUT 2026-10-14 (the questions doc's §7 order, built in one day, v18
+  semantics = new pre-registration): (1) AS-OF V3 SCORES (`model_a/asof_v3.py`):
+  concentration / payment_intensity / service_intensity / specialty_mismatch /
+  temporal recomputed from the as-of spending fact with the EXACT v3 formulas
+  (`features.rate_features` at billing-NPI grain, the temporal maturity window
+  measured from the last pre-cutoff month, `rare_share_te` at taxonomy x entity,
+  `refine_layer2_v3.score_concepts`); `_apply_asof_freeze(with_v3=True)` restores
+  the five scores + log_max_single_month + n_concept_signals after dropping the
+  full-history columns (export `--no-asof-v3` = the v6..v17 behaviour); the runner
+  stops when the "[asof_v3] restored" line is missing. Planted test: a twin that
+  differs only after the cutoff gets identical scores. (2) FROZEN_SKIP: the VM
+  runner passes `--skip-sources facility,pos` (PBJ is inside facility) on frozen
+  runs until the pre-cutoff editions exist (`FROZEN_SKIP=""` re-admits). (3)
+  MEASUREMENT IN THE RUNNER (`ops/vm/measure_run.sh`, step 12 of 13 in
+  run_frozen_night.sh and regrade_from.sh, before the ledger): scheme_health
+  `--future-label` adds `fca_auc` / `n_fca_pos` / `fca_verdict` (signal >= 0.58,
+  coin-flip, inverted < 0.42, thin < 20 forward positives; known-at-freeze rows
+  dropped) and `--json-out` refreshes scheme_health.json; signal_ranking.csv;
+  LABEL_ENRICHMENT; label_ablation + source_ablation --oof --per-group on the FCA
+  ruler (`MEASURE_ABLATION=0` skips the two retrains). run_issues raises
+  `prune_candidate` WARN for a scheme coin-flip on BOTH labels (20+ positives on
+  each) and `fca_inverted`; a prune is a new pre-registration, never the ledger.
+  (4) LABEL ENRICHMENT (`model_a/label_enrichment.py`, `--run-dir`): for every
+  value of taxonomy / state / entity type / billing-size band / tenure / distinct-
+  code band / active months / org size / each scheme's top decile / HCPCS codes
+  billed (>= 1 percent of gross, DuckDB over the as-of fact) / dominant code /
+  dominant-code share, the share among forward positives vs the universe, lift,
+  and the hypergeometric tail; rows under 5 positives listed but unsupported ->
+  LABEL_ENRICHMENT.md + .csv + .json. The design brief for schemes nobody wrote.
+  (5) hcf_commercial (`case_labels.COMMERCIAL_SOURCE`, case_type
+  `hcf_commercial`): commercial-plan fraud convictions as a TRAINING-only source.
+  Harvest set `commercial` (`case_harvest_prompts --sets commercial`, one prompt
+  per state-year, resolved outcomes only) -> `research_evidence commercial-cases
+  --in --state --case-db` (admits conviction / plea / judgment / settlement text,
+  quarantines charges, keeps a 10-digit NPI as npi_in_source) -> case rows ->
+  case_labels tier `hcf_commercial` (direct / org_billing bases; precedence
+  doj_case > charged_case > hcf_commercial > docket_case) -> the export records the
+  source without flipping the hard label -> `company_list.tier_label` ORs it in
+  under `hard+commercial` / `hard+charged+commercial` (`fca_relevance.
+  TIER_POLICIES`, `_policy_tiers`); `prospective_label` never takes it
+  (label_source doj_case only), `fca_label_export.outcome_tier` returns '' for it,
+  the registry reads `train_commercial`; the runner adds `ab_tier_commercial/`
+  when the merged case file carries such rows. Tests: test_asof_v3,
+  test_hcf_commercial, test_label_enrichment_and_fca_health (1,111 pass).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

@@ -317,22 +317,35 @@ def classify_series(excl_type: pd.Series) -> pd.DataFrame:
     }, index=excl_type.index)
 
 
-TIER_POLICIES = ("all", "hard", "hard+charged", "hard+weak")
+# hard+commercial / hard+charged+commercial (2026-10-14): the commercial-plan fraud
+# case source (case_labels.COMMERCIAL_SOURCE) joins the TRAINING label; no exclusion
+# node ever carries the 'commercial' tier, so on the exclusion side these read as
+# 'hard' / 'hard+charged'. Training-only policies: prospective_label refuses them.
+TIER_POLICIES = ("all", "hard", "hard+charged", "hard+weak", "hard+commercial",
+                 "hard+charged+commercial")
+
+
+def _policy_tiers(keep: str) -> set[str] | None:
+    keep = (keep or "all").lower().replace("_", "+").replace("hardcharged", "hard+charged") \
+        .replace("hardweak", "hard+weak")
+    if keep == "all":
+        return None
+    parts = {p for p in keep.split("+") if p}
+    if not parts or "hard" not in parts or not parts <= {"hard", "charged", "weak", "commercial"}:
+        raise ValueError(f"unknown --fca-tier policy {keep!r}")
+    if "weak" in parts:
+        parts |= {"charged"}
+    return parts
 
 
 def tier_mask(tiers: pd.Series, keep: str) -> pd.Series:
     """Boolean mask for a --fca-tier / --label-tier policy:
-    'all' | 'hard' | 'hard+charged' (training only) | 'hard+weak'."""
-    keep = (keep or "all").lower()
-    if keep == "all":
+    'all' | 'hard' | 'hard+charged' (training only) | 'hard+weak' |
+    'hard+commercial' / 'hard+charged+commercial' (training only)."""
+    parts = _policy_tiers(keep)
+    if parts is None:
         return pd.Series(True, index=tiers.index)
-    if keep == "hard":
-        return tiers == "hard"
-    if keep in ("hard+charged", "hardcharged", "hard_charged"):
-        return tiers.isin(["hard", "charged"])
-    if keep in ("hard+weak", "hardweak", "hard_weak"):
-        return tiers.isin(["hard", "charged", "weak"])
-    raise ValueError(f"unknown --fca-tier policy {keep!r}")
+    return tiers.isin(sorted(parts))
 
 
 def tier_report(df: pd.DataFrame, positive_col: str = "is_prospective_positive") -> str:

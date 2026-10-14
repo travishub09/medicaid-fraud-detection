@@ -106,6 +106,10 @@ def outcome_tier(case_type: str, text: str, amount) -> tuple[str, str]:
         return "", "CMP settlement without fraud-shaped conduct"
     if ct.startswith("docket"):
         return "", "docket (allegation)"
+    if ct == "hcf_commercial":
+        # a commercial-plan fraud conviction is a TRAINING source (case_labels
+        # COMMERCIAL_SOURCE), never a strict-label row: the PurpleLab label is FCA-shaped
+        return "", "commercial-plan fraud conviction: training source only, never the strict label"
     # a state AG / MFCU / research-loaded case with no case_type: fraud-shaped words + an outcome
     if not ct and _STATE_FRAUD.search(t) and (_CRIMINAL_OUTCOME.search(t) or _CIVIL_OUTCOME.search(t)
                                               or (pd.notna(amt) and float(amt) > 0)):

@@ -102,7 +102,7 @@ def broadcast_only_mask(matrix: pd.DataFrame) -> np.ndarray:
     bc = matrix["label_basis"].fillna("").astype(str).isin(BROADCAST_BASES)
     src = (matrix["exclusion_label_sources"] if "exclusion_label_sources" in matrix.columns
            else pd.Series("", index=matrix.index)).fillna("").astype(str)
-    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case", "charged_case"})
+    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case", "charged_case", "hcf_commercial"})
     return (bc & only_doj).to_numpy(dtype=bool)
 
 
@@ -190,16 +190,17 @@ def training_label_summary(matrix: pd.DataFrame, label_col: str = "provider_on_e
         raise ValueError(f"label policy '{pol['tier']}' needs exclusion nodes (none set)")
     else:
         y = tier_label(matrix, pol["exclusion_nodes"], keep=pol["tier"], cutoff=pol.get("cutoff"))
-    n_doj = n_charged = 0
+    n_doj = n_charged = n_comm = 0
     if "exclusion_label_sources" in matrix.columns:
         prov = matrix["exclusion_label_sources"].fillna("").astype(str)
         n_doj = int((prov.str.split(";").apply(lambda xs: "doj_case" in xs) & (np.asarray(y) > 0)).sum())
         n_charged = int((prov.str.split(";").apply(lambda xs: "charged_case" in xs) & (np.asarray(y) > 0)).sum())
+        n_comm = int((prov.str.split(";").apply(lambda xs: "hcf_commercial" in xs) & (np.asarray(y) > 0)).sum())
     return {"label_tier": pol["tier"],
             "exclusion_nodes": str(pol["exclusion_nodes"]) if pol.get("exclusion_nodes") else None,
             "cutoff": pol.get("cutoff"), "label_col": label_col,
             "n_positives": int(np.asarray(y).sum()), "n_doj_positives": n_doj,
-            "n_charged_positives": n_charged,
+            "n_charged_positives": n_charged, "n_commercial_positives": n_comm,
             "n_in_matrix_label": int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0}
 
 
@@ -239,6 +240,11 @@ def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,
         if tier_mask(pd.Series(["charged"]), keep).iloc[0]:
             charged = prov.str.split(";").apply(lambda xs: "charged_case" in xs).to_numpy()
             y = y | charged
+        # commercial-plan fraud convictions (source hcf_commercial, 2026-10-14): a
+        # TRAINING-only source under hard+commercial; never the forward ruler
+        if tier_mask(pd.Series(["commercial"]), keep).iloc[0]:
+            comm = prov.str.split(";").apply(lambda xs: "hcf_commercial" in xs).to_numpy()
+            y = y | comm
     return y.astype(int)
 
 

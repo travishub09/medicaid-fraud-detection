@@ -88,3 +88,18 @@ The HOLD rule (no credits on a HOLD run) was about the pursuit dossier, where re
 3. The label-conditioned enrichment report (what the forward cases light up) and the near-miss feature requests turned into features (code adoption age, servicing spread).
 4. The Manus label lanes dispatched, CIA and names first; `hcf_commercial` harvested and ablated.
 5. Then v18, pre-registered on the surviving scheme set, the label the lanes return, and the same bars. The bar moves only if that run reads 3 at 100 again with 7 at 250.
+
+## 8. Built the same day (2026-10-14, bundle 323)
+
+The operator asked for all of it in one day and a version to go back to. The freeze point is the tag `freeze-v16-2026-10-14` (branch `freeze/v16-2026-10-14`) at the commit of this document's first version; everything below is after it.
+
+| item | what exists now | where it runs |
+|---|---|---|
+| §1 measurement | `scheme_health --future-label` grades every scheme on the FCA ruler (`fca_auc`, `fca_verdict`); `signal_ranking`; `label_ablation` and `source_ablation --oof --per-group` on the forward ruler; `run_issues` raises `prune_candidate` for a scheme that is coin-flip on both labels | `ops/vm/measure_run.sh`, step 12 of the night runner and the re-grade script |
+| §2 as-of v3 scores | `model_a/asof_v3.py`: the five concept percentiles recomputed from the as-of fact with the exact v3 formulas; the export restores them in the frozen base frame; the runner refuses a run without the restore line | export step 2 (`--no-asof-v3` = the old behaviour) |
+| §2 post-cutoff editions | frozen runs skip `facility` (Care Compare + PBJ) and `pos` until the pre-cutoff editions exist | `FROZEN_SKIP` in the runner |
+| §3 enrichment | `model_a/label_enrichment.py`: codes, dominant code, taxonomy, state, size, tenure, scheme top-deciles among the forward positives vs the universe, with lift and a tail probability | measure step 3 |
+| §5 commercial fraud | source `hcf_commercial`: harvest set `commercial`, loader `research_evidence commercial-cases`, policy `hard+commercial`, never a forward positive, never the strict label; an A/B refit in the runner once rows exist | reminders task `commercial_harvest` |
+| §6 Manus | the dispatch lines for every lane are in the reminders (`label_manus_lanes`, `commercial_harvest`) | the operator's laptop (Manus key) |
+
+v18 = the first run on this code: v17's inputs, the as-of scores in, facility / POS out, the measurement block, under the v17 checks (the 100-budget rule from v16 applies if v17 reads 3). The scheme set changes only after the measurement block has run once.

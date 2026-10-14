@@ -175,6 +175,7 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             # charged-only case positives (source charged_case) that the policy admitted:
             # 0 under 'hard', the A/B's count under 'hard+charged'
             row["train_charged"] = tj.get("n_charged_positives")
+            row["train_commercial"] = tj.get("n_commercial_positives")
         except Exception:
             pass
 
@@ -388,6 +389,7 @@ CHECK_ALIASES = {
     "frozen": "substrate_frozen", "policy": "label_policy",
     "train": "train_policy", "train_positives": "train_positives",
     "train_charged": "train_charged",
+    "train_commercial": "train_commercial",
     "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
     # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)

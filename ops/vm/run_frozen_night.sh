@@ -32,6 +32,12 @@ GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
 # call below carries it; the registry records it as train_policy ("train = hard").
 TRAIN_TIER="${TRAIN_TIER:-hard}"
 PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"   # v13: dollar (shipped) or basis50 (ship only when the v12 sweep says it wins)
+# 2026-10-14 (docs/MODEL_QUESTIONS §2): the facility (Care Compare + PBJ, one source) and
+# POS files on the data root are 2023 editions, information from AFTER a 2021-12 freeze;
+# eight runs carried them as a ledger FAIL. Frozen runs exclude them until the pre-cutoff
+# editions are downloaded (FROZEN_SKIP="" re-admits them; the vintage audit still grades).
+FROZEN_SKIP="${FROZEN_SKIP-facility,pos}"
+MEASURE_ABLATION="${MEASURE_ABLATION:-1}"   # measure_run.sh: 0 skips the slow label/source ablations
 EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
 NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"
 # v15 (2026-10-13): the case DB plus the CIA case rows, the resolver NPIs plus the CIA
@@ -65,11 +71,11 @@ if [ "$FREEGB" -lt 24 ]; then echo "[$TAG] REFUSING TO START: only ${FREEGB} GB 
 [ -f "$AFFILIATED" ] || echo "[$TAG]   note: no $AFFILIATED (label_expansion affiliated not run): the affiliated ruler is skipped"
 [ -f "$DATA/processed/exclusions_name_resolved.parquet" ] || echo "[$TAG]   note: no exclusions_name_resolved.parquet (label_expansion names not run)"
 
-step 0/12 "the merged label inputs (case DB + CIA cases; resolver NPIs + CIA party NPIs)"
+step 0/13 "the merged label inputs (case DB + CIA cases; resolver NPIs + CIA party NPIs)"
 python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
     --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0
 
-step 1/12 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (rebuilt into $GRAPH_ASOF unless present)"
+step 1/13 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (rebuilt into $GRAPH_ASOF unless present)"
 if [ -f "$GRAPH_ASOF/nodes/exclusion_nodes.parquet" ] && [ -z "$REBUILD" ]; then
   echo "[$TAG]   reusing $GRAPH_ASOF  (pass --rebuild-graph when processed/exclusions_*.parquet changed: v15 did)"
 else
@@ -78,19 +84,20 @@ else
       --max-embed-nodes 0 --light-walks-above 0 || fail 1
 fi
 
-step 2/12 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS)"
+step 2/13 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS, as-of v3 scores, skip=${FROZEN_SKIP:-none})"
 python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH_ASOF" --asof-cutoff "$CUT" --with-analytics \
     --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
     --group-policy case_cluster --leads "$DATA/detection/fraud_leads_v3.parquet" --preclean "$DATA/preclean" \
-    --processed "$DATA/processed" --out "$RUN" || fail 2
+    --processed "$DATA/processed" --out "$RUN" ${FROZEN_SKIP:+--skip-sources "$FROZEN_SKIP"} || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }
+grep -q "\[asof_v3\] restored" "$RUN/night_run.log" || { echo "[$TAG] the as-of v3 scores were NOT restored (no '[asof_v3] restored' line) -- stop"; fail 2; }
 for s in servicing mue sector_schemes medicaid_enrollment billing_lm graph_embeddings; do
   if grep -E "^\| \`$s\` \| .*skipped" "$RUN/SOURCES_REPORT.md" >/dev/null; then
     echo "[$TAG] source $s was SKIPPED -- not a full-feature run; stop and paste its SOURCES_REPORT line"; fail 2
   fi
 done
 
-step 3/12 "forward labels (exclusion ruler, hard tier; FCA case ruler, 36 months)"
+step 3/13 "forward labels (exclusion ruler, hard tier; FCA case ruler, 36 months)"
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --out "$RUN/future_bans_after_${CUT}.csv" || fail 3
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
@@ -105,21 +112,21 @@ python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/
     --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --fca-case-only --qui-tam-only \
     --out "$RUN/future_bans_after_${CUT}__quitam36.csv" || fail 3
 
-step 4/12 "network A/B (size-matched) on the forward label"
+step 4/13 "network A/B (size-matched) on the forward label"
 python -u -m src.model_a.network_ab --matrix "$RUN/provider_features_for_model.parquet" --manifest "$RUN/feature_manifest.json" \
     --future-label "$RUN/future_bans_after_${CUT}.csv" --cutoff "$CUT" --out "$RUN/NETWORK_AB_REPORT.md" || fail 4
 
-step 5/12 "scheme triage"
+step 5/13 "scheme triage"
 python -u -m src.model_a.scheme_triage --run-dir "$RUN" || fail 5
 
-step 6/12 "priority list + pursuit book + large-biller book"
+step 6/13 "priority list + pursuit book + large-biller book"
 python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
 
-step 7/12 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
+step 7/13 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
-step 8/12 "the large-biller book, and the broadcast A/B (weight vs mask, refit on the same matrix)"
+step 8/13 "the large-biller book, and the broadcast A/B (weight vs mask, refit on the same matrix)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months 36 --list-name provider_priority_list_large.csv || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
@@ -129,21 +136,32 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES
 # v15: the charged tier A/B (the hard arm is ab_broadcast_weight above: same matrix, same seeds, tier hard)
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier hard+charged --exclusion-nodes "$EXCL" \
     --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md" || fail 8
+# 2026-10-14: the commercial-plan fraud A/B (source hcf_commercial, training only), run only
+# once the case DB carries such rows (research_evidence commercial-cases)
+if grep -q "hcf_commercial" "$CASES" 2>/dev/null; then
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier hard+commercial --exclusion-nodes "$EXCL" \
+      --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_commercial/ACCURACY_DIAGNOSTICS.md" || fail 8
+else
+  echo "[$TAG]   no hcf_commercial rows in $CASES: the commercial A/B is skipped (harvest set 'commercial', loader research_evidence commercial-cases)"
+fi
 
-step 9/12 "results digest + pursuit dossier (operator book; no Manus dispatch here)"
+step 9/13 "results digest + pursuit dossier (operator book; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
 python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 9
 
-step 10/12 "register the run against the locked pre-registration"
+step 10/13 "register the run against the locked pre-registration"
 python -u -m src.model_a.run_registry --data-root "$DATA" --run-dir "$RUN" || fail 10
 
-step 11/12 "learning loop"
+step 11/13 "learning loop"
 python -u -m src.model_a.learning_loop --run-dir "$RUN" --data-root "$DATA" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" ${PREV:+--prev-run-dir "$PREV"} || fail 11
 
-step 12/12 "the run issue ledger"
-python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:+--prev-run-dir "$PREV"} || fail 12
+step 12/13 "measurement: scheme AUC on the FCA ruler, signal ranking, label enrichment, label + source ablations (ops/vm/measure_run.sh)"
+MEASURE_ABLATION="$MEASURE_ABLATION" bash "$REPO/ops/vm/measure_run.sh" "$TAG" "$CUT" || fail 12
+
+step 13/13 "the run issue ledger"
+python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:+--prev-run-dir "$PREV"} || fail 13
 
 echo
 echo "[$TAG] DONE $(date '+%F %T')  -- tell Claude '$TAG finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged)   # tar is always installed; zip is not"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask ab_tier_charged $(ls -d ab_tier_commercial 2>/dev/null))   # tar is always installed; zip is not"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${TAG}     # reports back to OneDrive"

@@ -42,6 +42,10 @@ if errorlevel 1 (
   echo push failed: paste this window to Claude
   exit /b 1
 )
+REM freeze tags (2026-10-14): a bundle may carry refs/tags/freeze-* (a code snapshot to
+REM return to). Fetching them is harmless when the bundle has none; the push is best-effort.
+git fetch "%BUNDLE%" "refs/tags/freeze-*:refs/tags/freeze-*" >nul 2>&1
+git push origin "refs/tags/freeze-*:refs/tags/freeze-*" >nul 2>&1
 python -m src.reminders --done-task merge_bundle%N%
 git log --oneline -1
 echo DONE: bundle %N% merged and pushed. Next: the VM pull line.

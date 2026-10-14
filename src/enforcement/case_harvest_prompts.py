@@ -108,6 +108,18 @@ OUTCOME_REFRESH_PROMPT = (
     "with the docket URL. Rows: {rows}. " + _RULES)
 
 
+COMMERCIAL_PROMPT = (
+    "Public-records research task. Build a CSV of health-care providers (people and businesses) in {state} "
+    "who were CONVICTED, pleaded guilty, or had a civil judgment or settlement entered against them during "
+    "calendar year {year} for fraudulent billing of COMMERCIAL health plans (private insurers, employer plans, "
+    "workers' compensation carriers, auto medical benefits) rather than, or in addition to, Medicare or "
+    "Medicaid. Sources: the state attorney general's press releases, the state insurance department or "
+    "insurance-fraud bureau's enforcement news, the state medical / dental / pharmacy board orders that cite "
+    "insurance billing fraud, state court dockets, and insurer-announced judgments. Columns: " + CSV_SCHEMA
+    + ", payer_type (commercial / workers_comp / auto / mixed), outcome_date (YYYY-MM-DD). ONLY rows with a "
+    "resolved outcome (conviction, plea, judgment, settlement); a charge or an arrest is not a row. " + _RULES)
+
+
 def _oid(kind: str, key: str) -> str:
     return f"harv:{kind}:{hashlib.md5(key.encode()).hexdigest()[:10]}"
 
@@ -121,6 +133,14 @@ def build_prompts(sets: list[str], years: list[int] | None = None, states: list[
         for p in mfcu_sweep_prompts(states, years):
             out.append({"org_id": _oid("mfcu", f"{p['state']}{p['year']}"), "org_name": f"MFCU sweep {p['state']} {p['year']}",
                         "set": "mfcu", "year": p["year"], "state": p["state"], "prompt": p["prompt"]})
+    if "commercial" in sets:
+        # the hcf_commercial TRAINING source (2026-10-14): one prompt per state-year;
+        # answers load through research_evidence commercial-cases (the human gate)
+        for st in states:
+            for y in years:
+                out.append({"org_id": _oid("commercial", f"{st}{y}"), "org_name": f"Commercial-plan fraud {st} {y}",
+                            "set": "commercial", "year": y, "state": st,
+                            "prompt": COMMERCIAL_PROMPT.format(state=st, year=y)})
     if "takedown" in sets:
         for y in years:
             out.append({"org_id": _oid("takedown", str(y)), "org_name": f"Takedown {y}", "set": "takedown", "year": y,
@@ -275,7 +295,9 @@ def main() -> None:
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--sets", default="mfcu,takedown,yir,hcfac,oig_sar",
                     help="also: cia (needs --cia [--case-db] [--cia-residue]), exclusion_names (needs "
-                         "--exclusion-residue) and outcome_refresh (needs --case-db; the charged-only rows)")
+                         "--exclusion-residue), outcome_refresh (needs --case-db; the charged-only rows) and "
+                         "commercial (state-year sweeps of commercial-plan fraud convictions: the hcf_commercial "
+                         "training source, loaded with research_evidence commercial-cases)")
     ap.add_argument("--since", default=None, help="outcome_refresh: charges announced on/after YYYY-MM-DD only")
     ap.add_argument("--cia", default=None, help="preclean/cia/cia_list.csv")
     ap.add_argument("--case-db", default=None, help="enforcement/doj_cases_v3.csv (parties already harvested are skipped)")

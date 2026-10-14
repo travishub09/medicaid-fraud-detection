@@ -413,7 +413,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         src_col = cl["label_source"] if "label_source" in cl.columns else pd.Series("doj_case", index=cl.index)
         docket_npis = set(cl.loc[src_col == "docket_case", "npi"])
         charged_npis = set(cl.loc[src_col == "charged_case", "npi"]) - docket_npis
-        soft_npis = docket_npis | charged_npis
+        # commercial-plan fraud convictions (2026-10-14): source hcf_commercial,
+        # trainable under --label-tier hard+commercial, never the hard label
+        commercial_npis = set(cl.loc[src_col == "hcf_commercial", "npi"]) - docket_npis - charged_npis
+        soft_npis = docket_npis | charged_npis | commercial_npis
         if "label_basis" in cl.columns:
             hard_npis = set(cl.loc[cl["label_basis"] != "affiliated_individual",
                                    "npi"]) - soft_npis
@@ -421,7 +424,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             hard_npis = set(cl["npi"]) - soft_npis
         hit = m["npi"].isin(hard_npis)
         for tag, npis, what in (("docket_case", docket_npis, "docket-only (allegation)"),
-                                ("charged_case", charged_npis, "charged-only (indictment / government complaint)")):
+                                ("charged_case", charged_npis, "charged-only (indictment / government complaint)"),
+                                ("hcf_commercial", commercial_npis, "commercial-plan fraud conviction (training-only source)")):
             if not npis:
                 continue
             dhit = m["npi"].isin(npis)
@@ -434,7 +438,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             # a plain print keeps the line in the console log instead of a NameError
             print(f"    [doj_case] {len(npis):,} NPIs carry {what} labels: "
                   f"source {tag}, hard label NOT flipped"
-                  + (" (trains under --label-tier hard+charged)" if tag == "charged_case" else ""))
+                  + (" (trains under --label-tier hard+charged)" if tag == "charged_case" else "")
+                  + (" (trains under --label-tier hard+commercial)" if tag == "hcf_commercial" else ""))
         if "provider_on_exclusion" not in m.columns:
             m["provider_on_exclusion"] = 0
         m["provider_on_exclusion"] = (m["provider_on_exclusion"].fillna(0).astype(int)
@@ -1016,7 +1021,7 @@ _ASOF_UNCOMPUTABLE = ["concentration", "payment_intensity", "service_intensity",
 
 
 def _apply_asof_freeze(leads: pd.DataFrame, asof_spend_p: Path, cutoff: str,
-                       log) -> pd.DataFrame:
+                       log, with_v3: bool = True) -> pd.DataFrame:
     """Make the BASE leads frame point-in-time correct for a feature-freeze run.
 
     The as-of filter on the spending fact only freezes the enrichment adapters;
@@ -1043,7 +1048,24 @@ def _apply_asof_freeze(leads: pd.DataFrame, asof_spend_p: Path, cutoff: str,
     out = out.drop(columns=dropped, errors="ignore")
     log(f"  [asof] base features frozen: PROVIDER_STATS recomputed pre-cutoff for "
         f"{len(pit):,} NPIs (replaced {replaced}); dropped full-history columns "
-        f"{dropped} (cannot be recomputed point-in-time — absent beats leaked)")
+        f"{dropped} (the v3 concept scores are recomputed as-of below; the rest "
+        f"cannot be recomputed point-in-time — absent beats leaked)")
+    # THE AS-OF V3 SCORES (2026-10-14, docs/MODEL_QUESTIONS §2): the five billing-
+    # pattern concept percentiles are recomputed from the as-of fact with the exact
+    # v3 formulas (asof_v3.py), so a frozen run trains WITH concentration /
+    # payment_intensity / service_intensity / specialty_mismatch / temporal instead
+    # of without them (11 schemes were DEGRADED by their absence in v6..v17).
+    if with_v3:
+        from .asof_v3 import V3_SCORE_COLS, asof_v3_scores
+        dim_cols = ["npi"] + [c for c in ("primary_taxonomy", "entity_type") if c in out.columns]
+        v3 = asof_v3_scores(str(asof_spend_p), cutoff, out[dim_cols], log=log)
+        keep_v3 = ["npi"] + V3_SCORE_COLS + ["log_max_single_month", "n_concept_signals"]
+        n0 = len(out)
+        out = out.merge(v3[keep_v3].drop_duplicates("npi"), on="npi", how="left")
+        assert len(out) == n0, "as-of v3 join fanned out"
+        out["n_concept_signals"] = out["n_concept_signals"].fillna(0).astype(int)
+        cov = {c: float(out[c].notna().mean()) for c in V3_SCORE_COLS}
+        log("  [asof_v3] restored " + ", ".join(f"{c} ({v:.0%} covered)" for c, v in cov.items()))
     return out
 
 
@@ -2334,6 +2356,9 @@ def main() -> None:
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
                          "the v8 behaviour")
+    ap.add_argument("--no-asof-v3", action="store_true",
+                    help="frozen runs: do NOT recompute the five v3 concept scores as-of "
+                         "(the v6..v17 behaviour: the scores are dropped as uncomputable)")
     ap.add_argument("--skip-sources", default=None,
                     help="comma-separated source names to skip (e.g. "
                          "'kickback,billing_lm') — a safety valve for a memory-heavy "
@@ -2526,7 +2551,14 @@ def main() -> None:
                           f"see {kept:,} pre-cutoff rows ({dropped:,} dropped)")
                 # CRITICAL: freeze the BASE frame too, not just the adapters — the
                 # leads file carries full-history stats + concept percentiles.
-                leads = _apply_asof_freeze(leads, asof_spend_p, args.asof_cutoff, print)
+                leads = _apply_asof_freeze(leads, asof_spend_p, args.asof_cutoff, print,
+                                           with_v3=not args.no_asof_v3)
+                if not args.no_asof_v3:
+                    audit(f"    [asof_v3] the five v3 concept scores recomputed as-of "
+                          f"{args.asof_cutoff} from {asof_spend_p.name} (asof_v3.py)")
+                else:
+                    audit("    [asof_v3] skipped: --no-asof-v3 (the frozen matrix trains "
+                          "without the v3 billing-pattern scores)")
             else:
                 print("  [asof] skipped: no processed/spending_fact.parquet")
         else:
