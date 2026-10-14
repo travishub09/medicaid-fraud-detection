@@ -1345,6 +1345,16 @@ first, then paste" above every move/done block.
   2021-12` (merge-inputs + the three rulers rebuilt, v15's matrix re-graded; no
   retrain): the post-freeze CIA parties land on the FORWARD ruler. Aurora Health
   Care joined _NATIONAL_NAMES (the v15 dossier named it). Not dispatched.
+  V16 READ-OUT (2026-10-14, `docs/ACCURACY_READOUT_v16_2026-10-14.md`): v15's
+  matrix re-graded with the CIA parties on the rulers. The FCA ruler grew from
+  509 to 583 in-universe positives (2,044 on paper; 166 resolvable cases; 284
+  pre-freeze CIA parties moved to known-at-freeze = v17 training positives) and
+  the shipped list held: pursuit 1 / 2 / 3 / 7 (random 0.1 / 0.4 / 0.7 / 1.8),
+  large 1 / 2 / 5 / 6, Jaccard 0.64. HOLD on hits100 >= 4 (3) for the THIRD
+  consecutive grade with 7 at 250 each time; the sweep offers no order that
+  reads 4 at 100. RULE: if v17 (retrain on the CIA training rows) still reads
+  3 at 100, v18's pre-registration grades the 100 budget on the large book (5
+  here) and keeps the pursuit bars at 50 and 250. Not dispatched.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push
