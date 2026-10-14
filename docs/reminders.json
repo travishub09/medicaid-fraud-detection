@@ -405,7 +405,7 @@
       "where": "preclean/nppes/pl_pfile_<dates>.csv",
       "url": "https://download.cms.gov/nppes/NPI_Files.html",
       "every_months": 1,
-      "last_done": "2026-09-16",
+      "last_done": "2026-10-14",
       "steps": [
         "Open https://download.cms.gov/nppes/NPI_Files.html and download the 'NPPES Data Dissemination' monthly zip (the full file, ~1 GB zipped) if you do not already have this month's",
         "Extract ONLY the practice-location file from the zip with the first command below (the zip is huge; do not unzip everything)",
@@ -776,99 +776,6 @@
       ]
     },
     {
-      "key": "merge_bundle294",
-      "what": "Merge bundle294 (cumulative, supersedes 239 to 293): full-density graph embeddings on the VM (the walk lightening is now a flag, the VM runner passes --light-walks-above 0). Merge, push, then git pull on the VM BEFORE pre-registering v12.",
-      "added": "2026-10-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle294*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle294.bundle\"",
-        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle294.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle294",
-        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
-      ]
-    },
-    {
-      "key": "merge_bundle295",
-      "what": "Merge bundle295 (cumulative, supersedes 239 to 294): the Sage titles read-out folded into the reminders (first-call list by role, Tier 4 titles owed) on top of 294's full-density embeddings. If 294 is NOT merged yet, merge 295 instead and close both tasks. Then git pull on the VM before pre-registering v12.",
-      "added": "2026-10-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle295*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle295.bundle\"",
-        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle295.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle295",
-        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
-      ]
-    },
-    {
-      "key": "merge_bundle296",
-      "what": "Merge bundle296 (cumulative, supersedes 239 to 295): org_find (the name lookup + TMS code-concentration table for Brad's tip) on top of 295. If 294 / 295 are NOT merged yet, merge 296 instead and close all three tasks. Then git pull on the VM.",
-      "added": "2026-10-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle296*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle296.bundle\"",
-        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle296.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle296",
-        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
-      ]
-    },
-    {
-      "key": "merge_bundle297",
-      "what": "Merge bundle297 (cumulative, supersedes 239 to 296): pi_facts takes NPIs (the packet's own list) on top of 296's org_find. If 294 to 296 are NOT merged yet, merge 297 instead and close all four tasks. Then git pull on the VM.",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle297*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle297.bundle\"",
-        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle297.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle297",
-        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
-      ]
-    },
-    {
-      "key": "merge_bundle298",
-      "what": "Merge bundle298 (cumulative, supersedes 239 to 297): org_find --npi (whose number went on a staff NPI's work) + the reminder closures (WHEN sheets done, NPPES lookups done). If 294 to 297 are NOT merged yet, merge 298 instead and close all five tasks. Then git pull on the VM.",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle298*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle298.bundle\"",
-        "git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle298.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle298",
-        "REM on the VM: cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1"
-      ]
-    },
-    {
-      "key": "merge_bundle309",
-      "what": "Merge bundle309 (cumulative, supersedes 239 to 308): the exclusion-source audit (LEIE identifier aids carried, UPIN / Medicaid-id extractor from NPPES, allegations demoted in the state rules, the commercial-plan answer) on top of 308. Close the 294 to 308 merge tasks with it.",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "git merge --abort",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle309*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle309.bundle\"",
-        "merge_bundle.bat C:\\Users\\treyr\\bundle309.bundle",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle309",
-        "python -m src.reminders --done-task merge_bundle298",
-        "python -m src.reminders --done-task merge_bundle297",
-        "python -m src.reminders --done-task merge_bundle296",
-        "python -m src.reminders --done-task merge_bundle295",
-        "python -m src.reminders --done-task merge_bundle294",
-        "python -m src.reminders --done-task merge_bundle304",
-        "python -m src.reminders --done-task merge_bundle305",
-        "python -m src.reminders --done-task merge_bundle306",
-        "python -m src.reminders --done-task merge_bundle307",
-        "python -m src.reminders --done-task merge_bundle308"
-      ]
-    },
-    {
       "key": "tms_nevada_followup",
       "what": "Brad's TMS tip, answered 2026-10-13 (TMS_LOOKUP_READOUT_2026-10-13.md with the PI reports): Learning to Achieve Wellness (Brandon FL, org NPI 1033849575) has ZERO Medicaid dollars on 90867/90868/90869 and no rank anywhere; its TMS is Medicare / commercial or billed under the psychiatrist's individual NPI. ASK BRAD for the psychiatrist's name or NPI and the payer mix, then run the line below. The 'others' list: seven individual NPIs carrying TMS with one renderer (Rosa Bellota NV $1.0M the largest) and a NEVADA CLUSTER of 20+ short-lived single-renderer TMS entities at 100 percent TMS share (Salvi, Nula, Sunrise Health Solutions, Cerebral Medical Center, DC Medical, Evolutionary Beginnings, Mana, TM Services, Vitalmind ...): an ownership / address / rendering-psychiatrist research question; check Nevada Medicaid's TMS coverage date first (the innocent explanation).",
       "added": "2026-10-13",
@@ -877,34 +784,6 @@
         "python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npi <psychiatrist NPI from Brad> --codes 90867,90868,90869 --no-national --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ltaw_psychiatrist.md\"",
         "REM Nevada cluster owners / addresses (pi_facts on the org ids from the lookup table, --deep):",
         "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npis \"1578258281;1740998202;1871372003;1841928397;1962094714;1255000386;1780428698;1336988831;1467287391;1811280183\" --deep --out-prefix pi_facts_nv_tms"
-      ]
-    },
-    {
-      "key": "v14_regrade_and_run",
-      "what": "v13 = HOLD, cause = the v13 CODE, not the model (docs/ACCURACY_READOUT_v13_2026-10-13.md): the national-name list was wired into entity_segment, so 43 orgs left the graded pursuit book and 5 of v12's 8 FCA hits went with them (national home-health / DME / lab chains that settled qui tam cases: a case, just not a PI visit). Pursuit 0/0/1/2, large 0/1/2/2 on a 3-hit and 2-hit pool; same ruler (509), same scorer (NPI lift 6.3). The dossier STILL named Mayo / SSM / Sutter / Assurex / Ameritox / Alere because the operator-book target pick has its own mask. Bundle 305 fixes both placements (list OUT of the graded book, written as a national_chain flag column; list IN the dossier's PI target pick) and adds ops/vm/regrade_from.sh: v14 = v13's matrix re-graded under the restored book, no retrain, about an hour on the VM. ORDER: (1) merge + push bundle 305 on the laptop; (2) start the VM, pull (expect the bundle-305 commit), pre-register v14 with the v13 checks, run the re-grade under tmux; (3) say 'v14 finished', tar, sync up, scp, attach, STOP the VM. Expected: v12's numbers back (pursuit 1/1/4/7, large 3/5/5) and the first dossier with no institution in it. No Manus dispatch unless the verdict is not HOLD. The v13 dossier was NOT dispatched.",
-      "added": "2026-10-13",
-      "commands": [
-        "# on the VM (bash), after bundle 305 is merged and pushed:",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1 && source .venv/bin/activate && source ~/.medicaid_env",
-        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v14 --goal \"v13's matrix re-graded with the pursuit and large books restored (national chains stay in the graded books, leave only the PI target pick): two books on the FCA ruler under the hard training label\" --expected \"large book hits@50 at least 2 with lower Wilson bound above random; pursuit book hits@100 at least 4 and hits@250 at least 6; lead-time share beyond the gap at least half; institutional share 0; top-50 Jaccard at least 0.6; train = hard; the dossier names no institution or national chain\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-        "tmux new -s night",
-        "bash ~/medicaid-fraud-detection/ops/vm/regrade_from.sh v14 v13 2021-12",
-        "# detach with Ctrl-b then d; when it prints [v14] DONE say 'v14 finished', then:",
-        "cd /data/medicaid/model_a/frozen_2021-12_v14 && tar -czf /home/ubuntu/run_packet_v14.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v14",
-        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v14.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and STOP the VM",
-        "python -m src.reminders --done-task v14_regrade_and_run"
-      ]
-    },
-    {
-      "key": "label_expansion_run",
-      "what": "CONFIRMED 2026-10-13: the VM graph's exclusion nodes carry no state / upin column (built before bundle 309), 338,572 of 388,634 rows name-only. Bundle 317 adds --leie: the names step builds its table from the raw LEIE, no graph rebuild. RUN after bundle 317 is merged + pushed + pulled: the names line below (expect minutes; paste its funnel + summary lines), then scp exclusion_name_residue.csv's row count is in the summary. CIA is DONE (185 parties, 2,497 NPIs). SECOND RUN 2026-10-13 (bundle 315 on the VM): CIA = 185 of 339 parties resolved, 2,497 NPIs, 154 residue (chains out, components in: usable). NAMES = 0 rows: the VM's current-day graph/ was built before the exclusion nodes carried state / upin (bundle 309), so every name-only row fails the state filter; the fix is integrate + a graph rebuild on the VM (the v15 runner's as-of graph rebuild does it for the frozen graph; the current-day graph/ needs its own rebuild). Bundle 316 prints the funnel so the empty stage is named. STILL TO DO: scp + attach the new CIA_RESOLUTION.md; after bundle 316, re-run the names line once and paste its funnel line (confirms the diagnosis); the names resolution itself waits for the graph rebuild. FIRST RUN DONE 2026-10-13 (affiliated +55 forward positives, qui tam ruler 1,372, 185 charged rows live). TWO STEPS STILL OPEN: (1) the `names` step crashed with NameError on every run so far (the CLI guard sat above the function; fixed in bundle 315); (2) the CIA output is NOT usable as a label (Walgreens 11,217 NPIs, CVS 1,401, Lincare 710 through the exact-org path, which had no chain guard): merge bundle 315, pull on the VM, re-run the cia line, then scp the new CIA_RESOLUTION.md. Tier 0 + L1.1 of the label plan are BUILT (bundle 307; docs/LABEL_EXPANSION_PLAN_2026-10.md section 5 has the audit read-out): (1) `label_expansion affiliated` = convicted / excluded individuals -> the biller whose claims carried them as the rendering provider in the 24 months before the exclusion (basis affiliated_conviction, one biller per individual, share >= 5 percent or $25k; the rest listed); (2) `label_expansion cia` = the 339 OIG CIA parties -> enrolled providers by EXACT name or by PECOS organization OWNER (every org the owner owns, chains over 150 orgs listed not broadcast), written as cia_cases.csv (case-DB schema) + cia_defendant_npis.parquet (resolver schema) + CIA_RESOLUTION.md + cia_residue.csv (the research list); (3) self-disclosure settlements flagged in the case DB and never a positive; (4) the qui tam ruler (prospective_label --qui-tam-only; accuracy_diagnostics --qui-tam-ruler). RUN on the VM after v14 (the affiliated step reads the full spending fact: minutes on the VM) and attach the three reports; the counts decide the v15 pre-registration (qui tam ruler + the two new sources as a sweep, never a silent swap). Re-harvest the CIA residue list next (the research queue). ALSO (bundle 308): `label_expansion names` resolves the name-only hard-tier exclusion rows since 2015 OFFLINE (unique NPPES record in the state = resolved; several = the Manus residue exclusion_name_residue.csv); paste its summary line too. Bundle 309 (the exclusion-source audit, docs/EXCLUSION_SOURCES_AUDIT_2026-10.md): the UPIN join (NPPES Other Provider Identifier type 02) runs before the name match, so the crosswalk line with --other-ids-out comes first; the exclusion nodes now carry upin / zip / specialty / dob, which needs integrate + the graph rebuilt before the names step sees them (the as-of graph for v15 does that).",
-      "added": "2026-10-13",
-      "commands": [
-        "# on the VM, after bundle 317 is merged + pushed on the laptop:",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
-        "source .venv/bin/activate && source ~/.medicaid_env",
-        "python -u -m src.model_a.label_expansion names --leie \"$MEDICAID_DATA_ROOT/preclean/Caught.csv\" --provider-dim \"$MEDICAID_DATA_ROOT/processed/provider_dim.parquet\" --other-ids \"$MEDICAID_DATA_ROOT/processed/nppes_other_ids.parquet\" --out \"$MEDICAID_DATA_ROOT/processed/exclusion_name_resolution.parquet\" --out-exclusions \"$MEDICAID_DATA_ROOT/processed/exclusions_name_resolved.parquet\"",
-        "REM paste the funnel line + the two summary lines; then on the laptop: python -m src.reminders --done-task label_expansion_run"
       ]
     },
     {
@@ -923,18 +802,6 @@
         "grep -h \"hits@\" \"$RUN\"/ab_tier_hard/ACCURACY_DIAGNOSTICS.md \"$RUN\"/ab_tier_charged/ACCURACY_DIAGNOSTICS.md | head -20",
         "# when a reviewed outcome_refresh answer CSV is on the laptop:",
         "python -m src.enforcement.research_evidence outcome-refresh --in \"%USERPROFILE%\\Downloads\\outcome_refresh_answers.csv\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\""
-      ]
-    },
-    {
-      "key": "merge_bundle322",
-      "what": "Merge bundle322 (cumulative, supersedes 239 to 321): the v16 read-out, the merge script rewritten without inline redirections (bundle 321's copy stopped after the merge and never pushed), the v17 task. The laptop still holds the 321 script, so THIS merge is: discard the local reminders file, run the script (it merges, then wrongly reports 'fetch failed'), then push by hand. From 323 on, `ops\\laptop\\merge_push.bat N` alone is the whole merge.",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "git checkout -- docs/reminders.json",
-        "ops\\laptop\\merge_push.bat 322",
-        "git push origin claude/happy-mccarthy-3skrn3",
-        "python -m src.reminders --done-task merge_bundle322"
       ]
     },
     {
