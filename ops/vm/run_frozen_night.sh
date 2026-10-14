@@ -34,9 +34,11 @@ TRAIN_TIER="${TRAIN_TIER:-hard}"
 PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"   # v13: dollar (shipped) or basis50 (ship only when the v12 sweep says it wins)
 # 2026-10-14 (docs/MODEL_QUESTIONS §2): the facility (Care Compare + PBJ, one source) and
 # POS files on the data root are 2023 editions, information from AFTER a 2021-12 freeze;
-# eight runs carried them as a ledger FAIL. Frozen runs exclude them until the pre-cutoff
-# editions are downloaded (FROZEN_SKIP="" re-admits them; the vintage audit still grades).
-FROZEN_SKIP="${FROZEN_SKIP-facility,pos}"
+# eight runs carried them as a ledger FAIL. Bundle 324: the PBJ / POS / NH blocks now read
+# ONLY editions dated on/before the freeze (none on disk = the block reads nothing and
+# says so), so the forced skip is off by default; FROZEN_SKIP=facility,pos still forces it.
+# The 2021 editions are the reminder pre_cutoff_editions_2021.
+FROZEN_SKIP="${FROZEN_SKIP-}"
 MEASURE_ABLATION="${MEASURE_ABLATION:-1}"   # measure_run.sh: 0 skips the slow label/source ablations
 EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
 NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"

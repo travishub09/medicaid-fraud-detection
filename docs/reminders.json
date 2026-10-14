@@ -510,6 +510,33 @@
     "preclean/fda_ndc/product.txt",
     "preclean/fda_ndc/*.zip"
    ]
+  },
+  {
+   "key": "pre_cutoff_editions_2021",
+   "what": "The 2021 editions that the 2021-12 freeze needs (one-time). Eight runs read 2023 snapshots (PBJ 2023Q4, POS Q4 2023, Care Compare NH Nov2023, Order & Referring 2023-12) inside a 2021-12 freeze; bundle 324 makes the export read only editions on/before the freeze, so until these land the facility / PBJ / POS features are simply absent on frozen runs (FROZEN_SKIP=facility,pos in the runner, which you set to FROZEN_SKIP=\"\" once the files exist). Keep the 2023 files; the picker chooses by the date in the name. Also: no All-Owners edition on/before 2021-12 exists for any dataset family, so ownership_turnover is empty on every frozen run; the CMS data.cms.gov pages keep historical versions under 'Data > Historical / Versions'.",
+   "where": "preclean/pos/<CMS name>_Q4_2021.csv; preclean/facility/pbj_daily_staffing_2021Q4.csv (+2021Q3); preclean/facility/NH_Ownership_Dec2021.csv, NH_Penalties_Dec2021.csv, NH_HealthCitations_Dec2021.csv; preclean/order_referring/order_referring_2021-12.csv; preclean/nadac/nadac_2021.csv; preclean/owners_prior/<Dataset>_All_Owners_2021.12.01.csv",
+   "url": "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities",
+   "every_months": 120,
+   "last_done": null,
+   "steps": [
+    "POS (three files, Q4 2021): https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities -> 'Historical' / version list -> the 2021 Q4 (December 2021) version -> Download CSV; same for the CLIA file (provider-of-services-file-clinical-laboratories) and the iQIES HHA/ASC/Hospice file (provider-of-services-file-internet-quality-improvement-and-evaluation-system-home-health-agency-ambulatory-surgical-center-and-hospice-providers). Rename each download so the name carries Q4_2021 (e.g. POS_File_CLIA_Q4_2021.csv) and save under preclean\\pos\\",
+    "PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> version list -> 2021 Q4 (and Q3) -> Download CSV; save as preclean\\facility\\pbj_daily_staffing_2021Q4.csv (and _2021Q3.csv)",
+    "Care Compare nursing homes, December 2021 archive: https://data.cms.gov/provider-data/archived-data/nursing-homes -> the 12_2021 (or 11_2021) monthly zip -> extract -> copy NH_Ownership_*.csv, NH_Penalties_*.csv, NH_HealthCitations_*.csv into preclean\\facility\\ with Dec2021 in the name (the zip's own names carry the month; keep them)",
+    "Order & Referring, December 2021: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment/order-and-referring -> version list -> the December 2021 version -> Download; save as preclean\\order_referring\\order_referring_2021-12.csv",
+    "NADAC 2021: https://data.medicaid.gov/dataset/dfa2ab14-06c2-457a-9e36-5cb6d80f8d93 (NADAC 2021; or search data.medicaid.gov for 'NADAC (National Average Drug Acquisition Cost) 2021') -> Download CSV; save as preclean\\nadac\\nadac_2021.csv (un-gates drug prices on the freeze; the 2026 file stays as the name lookup)",
+    "All Owners, 2021 editions (one per dataset family: SNF, HHA, Hospice, Hospital, FQHC, RHC): each data.cms.gov 'All Owners' page (e.g. https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/skilled-nursing-facility-all-owners) -> version list -> a 2021 version (two per family if offered, e.g. June and December 2021) -> Download CSV; name them like the existing owners_prior files with the version date (e.g. SNF_All_Owners_2021.12.01.csv) and save under preclean\\owners_prior\\",
+    "Then paste the commands below (the vintage inspector settles every file's period and writes the rename plan; the next frozen run sets FROZEN_SKIP=\"\")"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\\*2021*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\NH_*2021*.csv\"",
+    "python -m src.vintage_inspect --data-root \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\"",
+    "python -m src.reminders --done pre_cutoff_editions_2021"
+   ],
+   "proof": [
+    "preclean/pos/*2021*.csv",
+    "preclean/facility/pbj_daily_staffing_2021*.csv"
+   ]
   }
  ],
  "tasks": [
@@ -946,12 +973,12 @@
    ]
   },
   {
-   "key": "merge_bundle323",
+   "key": "merge_bundle324",
    "added": "2026-10-14",
-   "what": "Merge bundle323 (cumulative, supersedes 239 to 322): the FREEZE TAG freeze-v16-2026-10-14 (the v16/v17 code to go back to) plus the 2026-10-14 build-out: as-of v3 billing scores in every frozen run, facility/POS excluded from frozen runs, the measurement block (scheme AUC on the FCA ruler, signal ranking, label enrichment, label + source ablations) as step 12 of the night runner, the hcf_commercial training-only label source, run_issues prune candidates. One command; the script now also fetches and pushes the freeze tag. Then the VM pull line (only when v17 is not mid-run on the same checkout: a git pull during a run is safe for the files already loaded, but wait for '[v17] DONE' to be certain).",
+   "what": "Merge bundle324 (cumulative, supersedes 239 to 323; 323 was sent minutes earlier and is superseded, merge 324 only): the FREEZE TAG freeze-v16-2026-10-14 (the v16/v17 code to go back to) plus the 2026-10-14 build-out: as-of v3 billing scores in every frozen run, facility/POS excluded from frozen runs, the measurement block (scheme AUC on the FCA ruler, signal ranking, label enrichment, label + source ablations) as step 12 of the night runner, the hcf_commercial training-only label source, run_issues prune candidates. One command; the script now also fetches and pushes the freeze tag. Then the VM pull line (only when v17 is not mid-run on the same checkout: a git pull during a run is safe for the files already loaded, but wait for '[v17] DONE' to be certain). Bundle 324 also makes the PBJ / POS / NH Care Compare blocks read only editions dated on/before the freeze and adds the pre_cutoff_editions_2021 download reminder.",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "ops\\laptop\\merge_push.bat 323",
+    "ops\\laptop\\merge_push.bat 324",
     "git tag -l freeze-*     REM must print freeze-v16-2026-10-14",
     "REM VM, after '[v17] DONE' (or in a second ssh window if v17 is still running; the running process keeps its loaded code):",
     "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git fetch origin --tags && git log --oneline -1 && git tag -l 'freeze-*'\""

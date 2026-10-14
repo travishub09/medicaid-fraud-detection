@@ -71,3 +71,28 @@ def test_fallbacks(tmp_path):
     assert _asof_pick(d2, "nadac.csv").name == "nadac_thru2026.csv"
     # missing folder
     assert _asof_pick(tmp_path / "nope", "nadac.csv") is None
+
+
+def test_asof_files_keeps_pre_cutoff_quarters_only(tmp_path):
+    """PBJ / POS / NH editions: a frozen run reads the editions on/before the freeze
+    and names the ones it skipped; with none on disk it reads nothing (2026-10-14)."""
+    from src.model_a.provider_features_export import _asof_files, _asof_newest
+    d = tmp_path / "facility"
+    d.mkdir()
+    for n in ("pbj_daily_staffing_2021Q3.csv", "pbj_daily_staffing_2021Q4.csv",
+              "pbj_daily_staffing_2023Q4.csv", "NH_Ownership_Dec2021.csv", "NH_Ownership_Nov2023.csv"):
+        (d / n).write_text("x")
+    msgs = []
+    files = sorted(d.glob("pbj*.csv"))
+    kept = _asof_files(files, "2021-12", msgs.append, "pbj")
+    assert [p.name for p in kept] == ["pbj_daily_staffing_2021Q3.csv", "pbj_daily_staffing_2021Q4.csv"]
+    assert any("2023Q4" in m for m in msgs)
+    assert _asof_files(files, None) == files                       # current-day: everything
+    assert _asof_files(files, "2020-12", msgs.append, "pbj") == []  # nothing pre-cutoff: skip
+    assert "procure" in msgs[-1]
+    assert _asof_newest(d, ("NH_Ownership*.csv",), "2021-12").name == "NH_Ownership_Dec2021.csv"
+    assert _asof_newest(d, ("NH_Ownership*.csv",), "2024-12").name == "NH_Ownership_Nov2023.csv"
+    assert _asof_newest(d, ("NH_Ownership*.csv",), "2020-12") is None
+    # an undated file is the fallback when no dated edition qualifies
+    (d / "deficiencies.csv").write_text("x")
+    assert _asof_newest(d, ("deficiencies.csv", "NH_HealthCitations*.csv"), "2020-12").name == "deficiencies.csv"

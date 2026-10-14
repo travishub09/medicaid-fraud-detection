@@ -1295,6 +1295,58 @@ def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
     return _first_existing(base, exact, pattern)
 
 
+def _asof_files(files: list, asof_cutoff: str | None, log=None, label: str = "") -> list:
+    """Vintage-aware filter for MULTI-FILE snapshot sources (PBJ quarters, POS
+    quarters, Care Compare NH editions) that used to read and pool EVERY file on
+    disk, so a 2023 edition sat inside a 2021-12 freeze for eight runs (the ledger
+    FAIL on facility / pbj / pos). With a cutoff: the dated files on/before it
+    (every eligible quarter, pooled as before); else the undated files (the
+    vintage audit flags them); else nothing, and the post-cutoff editions are
+    named in the log. Without a cutoff: every file, unchanged."""
+    files = list(files)
+    if not asof_cutoff or not files:
+        return files
+    cut = str(asof_cutoff)[:7]
+    if len(cut) == 4:
+        cut += "-12"
+    dated = [(p, _file_period(Path(p).name)) for p in files]
+    elig = [p for p, d in dated if d and d <= cut]
+    undated = [p for p, d in dated if not d]
+    post = [Path(p).name for p, d in dated if d and d > cut]
+    if elig:
+        if post and log:
+            log(f"    [{label or 'asof'}] editions after {cut} skipped: {', '.join(post)}")
+        return elig
+    if undated:
+        if log:
+            log(f"    [{label or 'asof'}] no dated edition on/before {cut}; reading the undated "
+                f"file(s) {', '.join(Path(p).name for p in undated)} (vintage unverified)"
+                + (f"; post-cutoff editions skipped: {', '.join(post)}" if post else ""))
+        return undated
+    if log:
+        log(f"    [{label or 'asof'}] skipped: every edition on disk is after the freeze {cut} "
+            f"({', '.join(post)}); procure the pre-cutoff edition (reminder pre_cutoff_editions_2021)")
+    return []
+
+
+def _asof_newest(base: Path, patterns: tuple, asof_cutoff: str | None, log=None,
+                 label: str = "") -> Path | None:
+    """The newest eligible edition among several glob patterns (the NH Care Compare
+    files): ``_asof_files`` then the latest period; the first match without a cutoff."""
+    hits: list[Path] = []
+    for pat in patterns:
+        hits += [q for q in (sorted(base.glob(pat)) if base.is_dir() else []) if q.is_file()]
+    hits = sorted(set(hits))
+    if not hits:
+        return None
+    if not asof_cutoff:
+        return hits[0]
+    elig = _asof_files(hits, asof_cutoff, log, label)
+    if not elig:
+        return None
+    return max(elig, key=lambda p: _file_period(p.name) or "")
+
+
 def _first_existing(base: Path, *names: str) -> Path | None:
     for n in names:
         # a glob pattern (e.g. "*.csv") globs the base folder itself — so a
@@ -2142,7 +2194,8 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     # PBJ) must not take hospice + deficiencies down with it.
     ccn_feats = []
     try:
-        pbj_files = sorted((pc / "facility").glob("pbj*.csv"))
+        pbj_files = _asof_files(sorted((pc / "facility").glob("pbj*.csv")), asof_cutoff,
+                                log, "facility/pbj")
         if pbj_files:
             parts = []
             for pf in pbj_files:            # multi-quarter: read them all, concat
@@ -2192,8 +2245,8 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     except Exception as e:
         log(f"    [facility/hospice] skipped: {e}")
     try:
-        own_p = _first_existing(pc / "facility", "NH_Ownership*.csv",
-                                "*Ownership*.csv")
+        own_p = _asof_newest(pc / "facility", ("NH_Ownership*.csv", "*Ownership*.csv"),
+                             asof_cutoff, log, "facility/nh_ownership")
         if own_p:
             m = fac.compute_nh_ownership(_read_any(own_p))
             log(f"    [facility/nh_ownership] {own_p.name}: {len(m):,} CCNs")
@@ -2202,8 +2255,8 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     except Exception as e:
         log(f"    [facility/nh_ownership] skipped: {e}")
     try:
-        pen_p = _first_existing(pc / "facility", "NH_Penalties*.csv",
-                                "*Penalt*.csv")
+        pen_p = _asof_newest(pc / "facility", ("NH_Penalties*.csv", "*Penalt*.csv"),
+                             asof_cutoff, log, "facility/nh_penalties")
         if pen_p:
             m = fac.compute_nh_penalties(_read_any(pen_p),
                                          asof_cutoff=asof_cutoff)
@@ -2214,9 +2267,10 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     except Exception as e:
         log(f"    [facility/nh_penalties] skipped: {e}")
     try:
-        defp = _first_existing(pc / "facility", "deficiencies.csv",
-                               "*deficienc*.csv", "NH_HealthCitations*.csv",
-                               "*Citations*.csv", "*citation*.csv")
+        defp = _asof_newest(pc / "facility", ("deficiencies.csv", "*deficienc*.csv",
+                                              "NH_HealthCitations*.csv", "*Citations*.csv",
+                                              "*citation*.csv"),
+                            asof_cutoff, log, "facility/deficiencies")
         if defp:
             m, _ = fac.compute_deficiency_counts(_read_any(defp),
                                                  asof_cutoff=asof_cutoff)
@@ -2257,7 +2311,7 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
         # rglob, not glob: the CMS zips extract into their own subfolders
         # ("Provider of Services File - .../*.csv") — top-level-only matching
         # would silently skip them.
-        pos_files = sorted((pc / "pos").rglob("*.csv"))
+        pos_files = _asof_files(sorted((pc / "pos").rglob("*.csv")), asof_cutoff, log, "pos")
         if pos_files:
             caps = []
             for pf in pos_files:

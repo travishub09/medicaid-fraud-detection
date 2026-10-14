@@ -1405,9 +1405,17 @@ first, then paste" above every move/done block.
   the five scores + log_max_single_month + n_concept_signals after dropping the
   full-history columns (export `--no-asof-v3` = the v6..v17 behaviour); the runner
   stops when the "[asof_v3] restored" line is missing. Planted test: a twin that
-  differs only after the cutoff gets identical scores. (2) FROZEN_SKIP: the VM
-  runner passes `--skip-sources facility,pos` (PBJ is inside facility) on frozen
-  runs until the pre-cutoff editions exist (`FROZEN_SKIP=""` re-admits). (3)
+  differs only after the cutoff gets identical scores. (2) POST-CUTOFF EDITIONS
+  (bundle 324): `_asof_files` / `_asof_newest` make the multi-file snapshot
+  blocks (PBJ quarters, POS quarters, NH Care Compare ownership / penalties /
+  citations) read ONLY editions dated on/before the freeze (the dated-eligible
+  set, else the undated file with a flag, else nothing with the post-cutoff
+  names logged); they used to pool every file on disk, which is why 2023
+  editions sat inside the 2021-12 freeze for eight runs. The runner's
+  FROZEN_SKIP is empty by default (set `facility,pos` to force a skip); the
+  2021 editions to download are reminder `pre_cutoff_editions_2021` (POS Q4
+  2021, PBJ 2021Q3/Q4, NH Dec-2021 archive, Order & Referring 2021-12, NADAC
+  2021, All-Owners 2021 editions for ownership_turnover). (3)
   MEASUREMENT IN THE RUNNER (`ops/vm/measure_run.sh`, step 12 of 13 in
   run_frozen_night.sh and regrade_from.sh, before the ledger): scheme_health
   `--future-label` adds `fca_auc` / `n_fca_pos` / `fca_verdict` (signal >= 0.58,
