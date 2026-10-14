@@ -23,7 +23,9 @@ if not exist "%BUNDLE%" (
   exit /b 1
 )
 git merge --abort <nul >nul 2>&1
-git checkout -- docs/OPERATOR_REMINDERS.md <nul >nul 2>&1
+REM the bundle carries the reminder state; local --done-task edits are re-applied by the
+REM close-out lines after the merge (a dirty reminders.json made the ff-merge abort, bundle 320)
+git checkout -- docs/reminders.json docs/OPERATOR_REMINDERS.md <nul >nul 2>&1
 git fetch "%BUNDLE%" %BRANCH% <nul || (echo fetch from the bundle failed: paste this window to Claude & exit /b 1)
 git merge --ff-only FETCH_HEAD <nul || (echo merge failed ^(not a fast-forward^): paste this window to Claude & exit /b 1)
 git push origin %BRANCH% <nul || (echo push failed: paste this window to Claude & exit /b 1)

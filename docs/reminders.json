@@ -917,12 +917,13 @@
       ]
     },
     {
-      "key": "merge_bundle320",
-      "what": "Merge bundle320 (cumulative, supersedes 239 to 319): the v15 read-out, the CIA outcome-rule guard in merge-inputs, REBUILD_RULERS for the re-grade runner, Aurora / CareDx on the national-name list. From this bundle on the whole merge is ONE command (ops\\laptop\\merge_push.bat 320): it copies the bundle from Downloads, merges, pushes and closes this task. Then task v16_regrade.",
+      "key": "merge_bundle321",
+      "what": "Merge bundle321 (cumulative, supersedes 239 to 320): the v15 read-out, the CIA outcome-rule guard in merge-inputs, REBUILD_RULERS for the re-grade runner, Aurora / CareDx on the national-name list. From this bundle on the whole merge is ONE command (ops\\laptop\\merge_push.bat 321): it copies the bundle from Downloads, merges, pushes and closes this task. Then task v16_regrade. This one time, discard the laptop's local reminders.json first (the --done-task lines edit it and the ff-merge refused); from 322 on the .bat does that itself.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "ops\\laptop\\merge_push.bat 320"
+        "git checkout -- docs/reminders.json",
+        "ops\\laptop\\merge_push.bat 321"
       ]
     },
     {
