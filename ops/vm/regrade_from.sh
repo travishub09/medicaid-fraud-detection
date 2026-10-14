@@ -24,8 +24,16 @@ SRC_RUN="$DATA/model_a/frozen_${CUT}_${SRC}"
 PREV="$SRC_RUN"
 GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
 EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
-CASES="$DATA/enforcement/doj_cases_v3.csv"
-DEFENDANTS="$DATA/processed/case_defendant_npis.parquet"
+# the merged label inputs (run_frozen_night.sh step 0 writes them; REBUILD_RULERS=1 below
+# rebuilds them here too, then the three rulers, so a corrected case file re-grades a run)
+CASES_BASE="$DATA/enforcement/doj_cases_v3.csv"
+DEFENDANTS_BASE="$DATA/processed/case_defendant_npis.parquet"
+CIA_CASES="$DATA/enforcement/cia_cases.csv"
+CIA_NPIS="$DATA/processed/cia_defendant_npis.parquet"
+AFFILIATED="$DATA/processed/affiliated_convictions.parquet"
+CASES="$DATA/enforcement/doj_cases_v3_plus_cia.csv"
+DEFENDANTS="$DATA/processed/case_defendant_npis_plus_cia.parquet"
+REBUILD_RULERS="${REBUILD_RULERS:-}"
 TRAIN_TIER="${TRAIN_TIER:-hard}"
 PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"
 export MEDICAID_DUCKDB_TMP="${MEDICAID_DUCKDB_TMP:-$DATA/interim/duckdb_tmp}"
@@ -55,12 +63,32 @@ for f in provider_features_for_model.parquet feature_manifest.json provider_oof_
 done
 ls -la "$RUN" | head -30
 
+if [ -n "$REBUILD_RULERS" ]; then
+  step 0b/7 "merged label inputs + the forward rulers REBUILT (REBUILD_RULERS=1: the case file changed since $SRC)"
+  python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
+      --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0
+  python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 \
+      --out "$RUN/future_bans_after_${CUT}__fca36.csv" || fail 0
+  if [ -f "$AFFILIATED" ]; then
+    python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+        --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --affiliated "$AFFILIATED" \
+        --out "$RUN/future_bans_after_${CUT}__aff36.csv" || fail 0
+  fi
+  python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --fca-case-only --qui-tam-only \
+      --out "$RUN/future_bans_after_${CUT}__quitam36.csv" || fail 0
+else
+  [ -f "$CASES" ] || CASES="$CASES_BASE"
+  [ -f "$DEFENDANTS" ] || DEFENDANTS="$DEFENDANTS_BASE"
+fi
+
 step 6/12 "priority list + pursuit book + large-biller book (the restored book definition)"
 python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
 
 step 7/12 "accuracy diagnostics on the PURSUIT book"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --repeats 3 --list-name provider_priority_list_pursuit.csv || fail 7
+    --horizon-months 36 --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/12 "the large-biller book, and the broadcast A/B"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
@@ -85,5 +113,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-
 
 echo
 echo "[$NEW] DONE $(date '+%F %T')  -- tell Claude '$NEW finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask)"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask)   # tar; zip is not installed"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${NEW}"

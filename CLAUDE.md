@@ -1325,6 +1325,26 @@ first, then paste" above every move/done block.
   Integrity Agreement' read as no outcome and every CIA row was being dropped).
   v15 passes --rebuild-graph (the 843 new exclusion nodes). Task v15_run carries
   the pre-registration line (the v14 checks, train = hard).
+  V15 READ-OUT (2026-10-14, `docs/ACCURACY_READOUT_v15_2026-10-14.md`): HOLD on
+  hits100 >= 4 (3) for the third run; the other seven pass, and the pursuit book
+  passes the 50 budget for the first time since v10 (1 / 2 / 3 / 6, p 0.031;
+  large 1 / 2 / 4 / 5; Jaccard 0.64). PIPELINE FINDING: the CIA parties never
+  reached the label. The merged inputs were used (4,066 resolved defendant NPIs),
+  but the VM's cia_cases.csv was written by bundle 315, BEFORE the summary fix in
+  318, so case_labels' outcome rule dropped every CIA row ("2,633 case rows
+  without a resolved outcome" vs 325 in v14); the ruler stayed at 509 and the
+  training label grew by 53 (26 name-resolved exclusions in the universe, 27
+  DOJ-case rows from the require_recovery=False org resolution). RULE: an input
+  file produced by an earlier bundle is re-run after the bundle that changes its
+  format; `merge_label_inputs` now counts the CIA rows that pass the outcome
+  rule and WARNS at zero. Charged A/B: identical to hard at every budget (1/1/1/3;
+  68 charged positives): policy stays hard. Qui tam ruler (351 in universe):
+  0/1/2/5, p 0.001 at 250. Order sweep: basis50 = shipped (1/2/3/6): sort stays
+  dollar. Broadcast: weight 1/1/1/3, mask 0/0/3/3: weight stays. v16 = re-run
+  `label_expansion cia`, then `REBUILD_RULERS=1 ops/vm/regrade_from.sh v16 v15
+  2021-12` (merge-inputs + the three rulers rebuilt, v15's matrix re-graded; no
+  retrain): the post-freeze CIA parties land on the FORWARD ruler. Aurora Health
+  Care joined _NATIONAL_NAMES (the v15 dossier named it). Not dispatched.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

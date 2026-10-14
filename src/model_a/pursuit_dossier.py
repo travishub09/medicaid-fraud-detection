@@ -501,6 +501,8 @@ _NATIONAL_NAMES = (
     "MEDNAX", "PEDIATRIX", "TEAM HEALTH", "TEAMHEALTH", "ENVISION HEALTHCARE",
     "SOUND PHYSICIANS", "US ANESTHESIA PARTNERS", "ASPEN DENTAL", "SMILE BRANDS",
     "VISITING NURSE ASSOCIATION", "VISITING NURSE SERVICE", "VNA OF", "PLANNED PARENTHOOD",
+    # v15 dossier (2026-10-14): a Wisconsin hospital system and a national transplant-testing lab
+    "AURORA HEALTH CARE", "ADVOCATE AURORA", "CAREDX",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 

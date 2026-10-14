@@ -384,10 +384,26 @@ def merge_label_inputs(case_db_path: str | Path, cia_cases_path: str | Path | No
     from src.attempt_2.clean_data import read_csv_text
     from src.enforcement.case_db import merge_case_files
     base = read_csv_text(str(case_db_path), dtype=str)
-    info = {"cases_base": int(len(base)), "cases_cia": 0, "npis_base": 0, "npis_cia": 0}
+    info = {"cases_base": int(len(base)), "cases_cia": 0, "npis_base": 0, "npis_cia": 0,
+            "cia_rows_with_outcome": 0}
     cases = base
     if cia_cases_path and Path(cia_cases_path).exists():
         cia = read_csv_text(str(cia_cases_path), dtype=str)
+        # the outcome rule gate (v15, 2026-10-14): a CIA file written before bundle 318
+        # carried a bare "Corporate Integrity Agreement" summary that case_labels read
+        # as NO outcome, so every CIA row was dropped and the ruler never saw them.
+        # Count the rows the rule admits and say so; zero means re-run `cia`.
+        from .fca_label_export import outcome_tier
+        ok = 0
+        for r in cia.to_dict("records"):
+            text = f"{r.get('title', '') or ''} {r.get('summary', '') or ''}"
+            if outcome_tier(str(r.get("case_type") or ""), text, r.get("amount_usd"))[0]:
+                ok += 1
+        info["cia_rows_with_outcome"] = int(ok)
+        if len(cia) and ok == 0:
+            print(f"[label_expansion] WARNING: none of the {len(cia):,} CIA case rows passes the outcome rule "
+                  f"(a pre-bundle-318 cia_cases.csv): re-run `label_expansion cia` so the summaries state the "
+                  f"settlement, or every CIA party is dropped from the label and the rulers")
         cases = merge_case_files(base, cia)
         info["cases_cia"] = int(len(cases) - len(base))
     npis = pd.read_parquet(defendant_npis_path)
@@ -485,9 +501,9 @@ def main() -> None:
         Path(a.out_npis).parent.mkdir(parents=True, exist_ok=True)
         cases.to_csv(a.out_cases, index=False)
         npis.to_parquet(a.out_npis, index=False)
-        print(f"[label_expansion] merged inputs: cases {info['cases_base']:,} + CIA {info['cases_cia']:,} new -> "
-              f"{len(cases):,} ({a.out_cases}); defendant NPIs {info['npis_base']:,} + CIA {info['npis_cia']:,} new -> "
-              f"{len(npis):,} ({a.out_npis})")
+        print(f"[label_expansion] merged inputs: cases {info['cases_base']:,} + CIA {info['cases_cia']:,} new "
+              f"({info['cia_rows_with_outcome']:,} CIA rows pass the outcome rule) -> {len(cases):,} ({a.out_cases}); "
+              f"defendant NPIs {info['npis_base']:,} + CIA {info['npis_cia']:,} new -> {len(npis):,} ({a.out_npis})")
         return
 
     if a.cmd == "names":

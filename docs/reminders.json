@@ -917,75 +917,31 @@
       ]
     },
     {
-      "key": "merge_bundle319",
-      "what": "Merge bundle319 (cumulative, supersedes 239 to 318): the v15 runner + ops/laptop/merge_push.bat, the ONE-LINE merge for every bundle from now on (the pasted `git push` line kept losing its first letters because merge_bundle.bat's git child read the queued keystrokes; the new .bat feeds every child NUL and pushes itself). THIS merge is the last one by hand: ONE line, merge and push together; afterwards `merge_push.bat 320` is the whole thing. Then task v15_run.",
+      "key": "merge_bundle320",
+      "what": "Merge bundle320 (cumulative, supersedes 239 to 319): the v15 read-out, the CIA outcome-rule guard in merge-inputs, REBUILD_RULERS for the re-grade runner, Aurora / CareDx on the national-name list. From this bundle on the whole merge is ONE command (ops\\laptop\\merge_push.bat 320): it copies the bundle from Downloads, merges, pushes and closes this task. Then task v16_regrade.",
       "added": "2026-10-13",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "for %f in (\"%USERPROFILE%\\Downloads\\bundle319*.bundle\") do copy /y \"%f\" \"C:\\Users\\treyr\\bundle319.bundle\"",
-        "call merge_bundle.bat C:\\Users\\treyr\\bundle319.bundle && git push origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
-        "python -m src.reminders --done-task merge_bundle319",
-        "python -m src.reminders --done-task merge_bundle309",
-        "python -m src.reminders --done-task merge_bundle298",
-        "python -m src.reminders --done-task merge_bundle297",
-        "python -m src.reminders --done-task merge_bundle296",
-        "python -m src.reminders --done-task merge_bundle295",
-        "python -m src.reminders --done-task merge_bundle294",
-        "REM from the next bundle on, the whole merge is: ops\\laptop\\merge_push.bat 320"
+        "ops\\laptop\\merge_push.bat 320"
       ]
     },
     {
-      "key": "v15_run",
-      "what": "v15 = the first run on the EXPANDED LABEL (2026-10-13): CIA parties (185, 2,497 NPIs), affiliated convictions (+55 forward), 843 name-resolved exclusions, 185 charged-only case rows as charged_case, on a REBUILT as-of graph (the 843 new exclusion nodes + the state / upin columns need it: pass --rebuild-graph). Train = hard under the v14 checks; the qui tam + affiliated rulers ride along as a sweep; ab_tier_charged/ is the hard vs hard+charged A/B (compare with ab_broadcast_weight/). Needs bundle 318 merged + pushed FIRST, then the VM started in the AWS console (Instances -> Instance state -> Start; the public IP may change: read it from the console and swap 3.17.37.139 below). The graph rebuild alone is hours (v12 took most of a night); run under tmux and come back. The runner prints DONE and the packet lines; then say 'v15 finished'.",
-      "added": "2026-10-13",
+      "key": "v16_regrade",
+      "what": "v16 = v15's matrix re-graded with the CIA parties actually on the rulers. v15 FINDING: the VM's cia_cases.csv was written by bundle 315, before the summary fix (318), so case_labels dropped every CIA row as 'no outcome' (2,633 such rows vs 325) and the ruler stayed at 509. Steps: merge bundle 320 on the laptop (one command), start the VM, pull, RE-RUN the cia line (new summaries), pre-register v16, run regrade_from.sh with REBUILD_RULERS=1 (merge-inputs + the three rulers rebuilt, then steps 6 to 12; about an hour, no retrain). The merge-inputs line must print a NON-ZERO 'CIA rows pass the outcome rule' count. Then the packet, and say 'v16 finished'.",
+      "added": "2026-10-14",
       "commands": [
-        "# VM (ssh in with Termius or: ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@<IP>); one line at a time:",
-        "tmux new -s v15",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1    # must print af6c6f1 or later",
+        "# VM, one line at a time (start it in the AWS console first; swap the IP if it changed):",
+        "tmux new -s v16",
+        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
         "source .venv/bin/activate && source ~/.medicaid_env",
-        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v15 --goal \"the expanded label (CIA parties by exact name and component, affiliated convictions, name-resolved exclusions, charged-only case rows as charged_case) on a rebuilt as-of graph, trained hard; graded on the FCA ruler with the v14 checks; the qui tam and affiliated rulers as a sweep; the hard vs hard+charged refit as an A/B\" --expected \"large book hits@50 at least 2 with lower Wilson bound above random; pursuit book hits@100 at least 4 and hits@250 at least 6; lead-time share beyond the gap at least half; institutional share 0; top-50 Jaccard at least 0.6; train = hard; the charged arm read beside the weight arm\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-        "SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=dollar PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v14 bash ops/vm/run_frozen_night.sh v15 2021-12 --rebuild-graph",
-        "# detach with Ctrl-b then d; re-attach later with: tmux attach -t v15",
-        "# when it prints [v15] DONE:",
-        "cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v15 && tar -czf /home/ubuntu/run_packet_v15.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v15",
-        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@<IP>:/home/ubuntu/run_packet_v15.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and say 'v15 finished'"
+        "python -u -m src.model_a.label_expansion cia --cia \"$MEDICAID_DATA_ROOT/preclean/cia/cia_list.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --out-cases \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\" --out-npis \"$MEDICAID_DATA_ROOT/processed/cia_defendant_npis.parquet\"",
+        "grep -c \"agreed to pay\" \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\"    # must be about 339, not 0",
+        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v16 --goal \"v15 matrix re-graded with the CIA parties ON the rulers (the cia_cases.csv on the VM predated the summary fix, so the outcome rule dropped every CIA row in v15): merged inputs and the three rulers rebuilt, no retrain; the v15 checks\" --expected \"the FCA ruler grows past 509 in-universe positives with the CIA agreements effective after the freeze; large book hits@50 at least 2; pursuit hits@100 at least 4 and hits@250 at least 6; Jaccard at least 0.6; train = hard\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+        "REBUILD_RULERS=1 TRAIN_TIER=hard PURSUIT_ORDER=dollar bash ops/vm/regrade_from.sh v16 v15 2021-12",
+        "# detach: Ctrl-b then d; re-attach: tmux attach -t v16. When it prints [v16] DONE:",
+        "cd $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v16 && tar -czf /home/ubuntu/run_packet_v16.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask && bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v16",
+        "REM laptop: scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v16.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and say 'v16 finished'"
       ]
-    },
-    {
-      "key": "run_packet__frozen_2021-12_v15",
-      "what": "Send the run packet for frozen_2021-12_v15 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-      "added": "2026-10-14",
-      "commands": [
-        "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v15",
-        "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-        "REM then upload run_packet.zip to the chat",
-        "python -m src.reminders --done-task run_packet__frozen_2021-12_v15"
-      ]
-    },
-    {
-      "key": "pursuit_dossier__frozen_2021-12_v15",
-      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v15 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-      "added": "2026-10-14",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v15\" --dispatch",
-        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v15"
-      ]
-    },
-    {
-      "key": "dossier_poll__frozen_2021-12_v15",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v15 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-10-14",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v15\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v15"
-      ]
-    },
-    {
-      "key": "registry_verdict__frozen_2021-12_v15",
-      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v15 \u2014 close only when you have them",
-      "added": "2026-10-14"
     }
   ]
 }

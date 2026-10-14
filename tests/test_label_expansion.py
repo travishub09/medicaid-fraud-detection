@@ -348,3 +348,26 @@ def test_merge_label_inputs_and_cia_rows_pass_the_outcome_rule(tmp_path):
     # without the CIA files the inputs pass through unchanged
     cases2, npis2, info2 = merge_label_inputs(cases_p, None, dn_p, None)
     assert len(cases2) == 1 and len(npis2) == 1 and info2["cases_cia"] == 0
+
+
+def test_merge_inputs_counts_cia_rows_the_outcome_rule_admits(tmp_path, capsys):
+    """v15 (2026-10-14): a CIA file written before the summary fix was dropped whole by
+    the outcome rule; merge_label_inputs counts the rows the rule admits and warns at 0."""
+    from src.model_a.label_expansion import merge_label_inputs
+    base = pd.DataFrame([{"case_id": "https://doj/1", "announced_date": "2022-01-01", "defendant_name": "Acme",
+                          "defendant_name_key": "ACME", "sector": "", "scheme": "", "amount_usd": "100", "qui_tam": "1",
+                          "self_disclosure": "0", "intervened": "", "jurisdiction": "", "source_url": "https://doj/1",
+                          "summary": "agreed to pay", "case_type": "civil_fca", "duplicate_of": ""}])
+    old = pd.DataFrame([{"case_id": "cia:BETA:2023-02-01", "announced_date": "2023-02-01", "defendant_name": "Beta",
+                         "defendant_name_key": "BETA", "sector": "", "scheme": "", "amount_usd": "", "qui_tam": "",
+                         "self_disclosure": "", "intervened": "1", "jurisdiction": "", "source_url": "",
+                         "summary": "OIG Corporate Integrity Agreement (active)", "case_type": "civil_fca", "duplicate_of": ""}])
+    cases_p, cia_p, dn_p = tmp_path / "c.csv", tmp_path / "cia.csv", tmp_path / "dn.parquet"
+    base.to_csv(cases_p, index=False); old.to_csv(cia_p, index=False)
+    pd.DataFrame({"case_id": ["https://doj/1"], "npi": ["1000000004"], "status": ["resolved"], "match_level": ["name_state"]}).to_parquet(dn_p, index=False)
+    _, _, info = merge_label_inputs(cases_p, cia_p, dn_p, None)
+    assert info["cia_rows_with_outcome"] == 0 and "WARNING" in capsys.readouterr().out
+    new = old.copy(); new["summary"] = "OIG Corporate Integrity Agreement (active): the party agreed to pay a False Claims Act settlement."
+    new.to_csv(cia_p, index=False)
+    _, _, info2 = merge_label_inputs(cases_p, cia_p, dn_p, None)
+    assert info2["cia_rows_with_outcome"] == 1
