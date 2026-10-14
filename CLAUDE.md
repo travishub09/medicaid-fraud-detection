@@ -1355,6 +1355,20 @@ first, then paste" above every move/done block.
   reads 4 at 100. RULE: if v17 (retrain on the CIA training rows) still reads
   3 at 100, v18's pre-registration grades the 100 budget on the large book (5
   here) and keeps the pursuit bars at 50 and 250. Not dispatched.
+  THE OPERATOR'S QUESTIONS (2026-10-14, `docs/MODEL_QUESTIONS_2026-10-14.md`, read
+  before planning v18): 16 of 22 schemes grade at coin-flip AUC on the label and
+  only worthless_services / single_service_mill validate on DOJ cases; the 11
+  DEGRADED schemes are missing INPUTS, the largest being the five v3 billing
+  scores no frozen run can compute (an as-of version is the wiring gap); the
+  facility / PBJ / POS 2023 editions leak into the 2021-12 freeze (8 runs, never
+  fixed: exclude them until the pre-cutoff editions exist); 804 of 881 forward
+  positives rank outside the top 1 percent and fall short on
+  clinical_implausibility / new_code_burst / tenure / servicing spread (the
+  owner-run shape); source_ablation and signal_ranking are BUILT but not in the
+  VM runner; every Manus label lane is written and none dispatched. Order before
+  any bar moves: measurement in the runner, the as-of v3 scores + the vintage
+  exclusion, a label-conditioned enrichment report, the Manus label lanes (CIA
+  and names first) + hcf_commercial, then v18 on the surviving scheme set.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push
