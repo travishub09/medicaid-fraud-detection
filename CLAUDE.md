@@ -1447,6 +1447,36 @@ first, then paste" above every move/done block.
   the registry reads `train_commercial`; the runner adds `ab_tier_commercial/`
   when the merged case file carries such rows. Tests: test_asof_v3,
   test_hcf_commercial, test_label_enrichment_and_fca_health (1,111 pass).
+  (6) THE RESEARCH LANES UNATTENDED (`model_a/manus_lanes.py` + `ops/vm/
+  manus_lanes.sh <tag>`; operator: "you have my Manus key, build everything"):
+  one command on the VM (the key lives in ~/.medicaid_env) refreshes the CIA +
+  names residues, BUILDS every lane's prompts (cia / names / outcome_refresh /
+  label_verification / commercial / defendant_research / label_review from the
+  run folder) under processed/manus_lanes/<lane>/, DISPATCHES under a budget
+  (MANUS_MAX_NEW per lane, MANUS_TOTAL across lanes; the dossier's registry +
+  lock, re-attach for free), POLLS for MANUS_WAIT_MINUTES, LOADS every answer
+  through the lane's own loader (`tables_from_answer` reads CSV attachments,
+  fenced csv blocks and pipe tables; the gates: Luhn NPI, confidence >= medium,
+  the NPI among OUR candidates, a resolved outcome, charged rows quarantined;
+  `_harvest_cases_from_table` types CIA CSV-A rows civil_fca / criminal_hcf),
+  re-runs merge-inputs and writes MANUS_LANES.md + manus_lanes.json (prompts /
+  dispatched / completed / loaded / quarantined per lane). Loading is idempotent
+  (dedup on the files' keys) so a fresh `label_expansion cia` never loses the
+  research rows. The human review is the report + <lane>_quarantine.csv; label
+  verification / review stay evidence. (7) THE CHECKS THAT ANSWER THE QUESTIONS
+  ARE WIRED (operator: "if you need to run audits, wire those checks"):
+  `model_a/data_refresh.py` (DATA_REFRESH.md: every source's file, inferred
+  edition, verdict vs the freeze = POST-CUTOFF / MIXED / UNDATED / DERIVED /
+  SKIPPED, the action and the reminder key; the downloads due from
+  docs/reminders.json; the vintage inspector's re-download list),
+  `model_a/questions_readout.py` (QUESTIONS_READOUT.md: the six standing
+  questions answered from scheme_health / sources_audit / LABEL_ENRICHMENT /
+  learning_loop / run_issues / label_audit / training_label_policy / the
+  rulers / manus_lanes.json, a missing artifact named, never guessed),
+  `label_audit` now in measure_run.sh (step 3b) with data_refresh (3c) and the
+  readout (5b), and the vintage inspector as runner step 0a (weekly, VINTAGE_
+  MAX_AGE_DAYS, VINTAGE_INSPECT=0 skips). Tests: test_manus_lanes (a fake
+  service answers every lane), test_data_refresh_and_questions.
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

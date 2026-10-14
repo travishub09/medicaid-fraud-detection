@@ -49,6 +49,18 @@ python -u -m src.model_a.signal_ranking --matrix "$MATRIX" --manifest "$MANIFEST
 m 3/5 "label enrichment (what the forward cases light up)"
 python -u -m src.model_a.label_enrichment --run-dir "$RUN" --future-label "$FCA" --spending "$SPEND" || mfail 3
 
+GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
+EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
+[ -f "$EXCL" ] || EXCL="$DATA/graph/nodes/exclusion_nodes.parquet"
+CASES="$DATA/enforcement/doj_cases_v3_plus_cia.csv"
+[ -f "$CASES" ] || CASES="$DATA/enforcement/doj_cases_v3.csv"
+m 3b/5 "label audit (every label source graded: identifier, date, FCA relevance, reach; the case DB and the CIA roster)"
+python -u -m src.model_a.label_audit --exclusion-nodes "$EXCL" --matrix "$MATRIX" --case-db "$CASES" \
+    $( [ -f "$DATA/preclean/cia/cia_list.csv" ] && echo --cia "$DATA/preclean/cia/cia_list.csv" ) \
+    --org-nodes "$DATA/graph/nodes/org_nodes.parquet" --cutoff "$CUT" --out "$RUN/LABEL_AUDIT.md" || mfail 3b
+m 3c/5 "data refresh (what to download, what cannot be dated) + the standing questions readout"
+python -u -m src.model_a.data_refresh --run-dir "$RUN" --data-root "$DATA" --reminders "$REPO/docs/reminders.json" || mfail 3c
+
 if [ "$MEASURE_ABLATION" = "1" ]; then
   m 4/5 "label ablation (one label source removed at a time, forward delta + CI)"
   python -u -m src.model_a.label_ablation --matrix "$MATRIX" --manifest "$MANIFEST" --future-label "$FCA" \
@@ -59,4 +71,6 @@ if [ "$MEASURE_ABLATION" = "1" ]; then
 else
   echo "[$TAG] measure 4/5 + 5/5 skipped (MEASURE_ABLATION=0)"
 fi
+m 5b/5 "QUESTIONS_READOUT (schemes / wiring / enrichment / data / label / research lanes, from the artifacts)"
+python -u -m src.model_a.questions_readout --run-dir "$RUN" --data-root "$DATA" || mfail 5b
 echo "[$TAG] measure DONE $(date '+%F %T')"

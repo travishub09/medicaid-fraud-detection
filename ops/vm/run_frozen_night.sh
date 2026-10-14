@@ -73,6 +73,19 @@ if [ "$FREEGB" -lt 24 ]; then echo "[$TAG] REFUSING TO START: only ${FREEGB} GB 
 [ -f "$AFFILIATED" ] || echo "[$TAG]   note: no $AFFILIATED (label_expansion affiliated not run): the affiliated ruler is skipped"
 [ -f "$DATA/processed/exclusions_name_resolved.parquet" ] || echo "[$TAG]   note: no exclusions_name_resolved.parquet (label_expansion names not run)"
 
+# 2026-10-14: the vintage inspector dates every preclean file from its contents (the
+# TRUE re-download list, EDITIONS.csv auto-fill). It streams the whole data root, so it
+# runs when its report is older than VINTAGE_MAX_AGE_DAYS (7) or absent; VINTAGE_INSPECT=0 skips.
+VI="$DATA/preclean/VINTAGE_INSPECT.md"
+if [ "${VINTAGE_INSPECT:-1}" = "1" ]; then
+  if [ ! -f "$VI" ] || [ -n "$(find "$VI" -mtime +"${VINTAGE_MAX_AGE_DAYS:-7}" 2>/dev/null)" ]; then
+    step 0a/13 "vintage inspector (dates every preclean file from its contents; weekly)"
+    python -u -m src.vintage_inspect --data-root "$DATA" || echo "[$TAG]   vintage inspector failed; DATA_REFRESH will say so"
+  else
+    echo "[$TAG]   vintage inspector report is current ($VI)"
+  fi
+fi
+
 step 0/13 "the merged label inputs (case DB + CIA cases; resolver NPIs + CIA party NPIs)"
 python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
     --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0

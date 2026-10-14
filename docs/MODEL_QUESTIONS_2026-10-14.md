@@ -100,6 +100,7 @@ The operator asked for all of it in one day and a version to go back to. The fre
 | §2 post-cutoff editions | frozen runs skip `facility` (Care Compare + PBJ) and `pos` until the pre-cutoff editions exist | `FROZEN_SKIP` in the runner |
 | §3 enrichment | `model_a/label_enrichment.py`: codes, dominant code, taxonomy, state, size, tenure, scheme top-deciles among the forward positives vs the universe, with lift and a tail probability | measure step 3 |
 | §5 commercial fraud | source `hcf_commercial`: harvest set `commercial`, loader `research_evidence commercial-cases`, policy `hard+commercial`, never a forward positive, never the strict label; an A/B refit in the runner once rows exist | reminders task `commercial_harvest` |
-| §6 Manus | the dispatch lines for every lane are in the reminders (`label_manus_lanes`, `commercial_harvest`) | the operator's laptop (Manus key) |
+| §6 Manus | `ops/vm/manus_lanes.sh`: every lane built, dispatched under a budget, polled, loaded through the machine gates, reported (MANUS_LANES.md); the human review is the report and the quarantine files | the VM (the key in ~/.medicaid_env), reminder `manus_lanes_run` |
+| the checks behind the answers | `data_refresh` (DATA_REFRESH.md: editions vs the freeze, downloads due), `questions_readout` (QUESTIONS_READOUT.md: this document's six questions answered from the artifacts), `label_audit` in the measure step, the vintage inspector weekly in the runner | measure step 3b / 3c / 5b, runner step 0a |
 
 v18 = the first run on this code: v17's inputs, the as-of scores in, facility / POS out, the measurement block, under the v17 checks (the 100-budget rule from v16 applies if v17 reads 3). The scheme set changes only after the measurement block has run once.

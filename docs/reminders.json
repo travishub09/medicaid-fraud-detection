@@ -908,24 +908,6 @@
    ]
   },
   {
-   "key": "label_manus_lanes",
-   "what": "Manus lanes for label expansion (docs/LABEL_EXPANSION_PLAN_2026-10.md section 6; bundle 308). After label_expansion_run has produced cia_residue.csv and exclusion_name_residue.csv: build the prompt files, dispatch the CIA lane FIRST (the 232 missing CIA settlers + the unplaced parties, five per prompt: about 50 tasks), then the excluded-names lane (ambiguous rows only, ten per prompt), then the big-state MFCU sweeps. Poll, review each CSV, load through research_evidence (cia-entities / exclusion-npis / mfcu-cases: the human gate), rerun `label_expansion cia` with the new case rows, rebuild the graph, then the v15 pre-registration. Credits: the CIA lane is the cheapest and highest-value batch; do not dispatch the excluded-names lane until its residue count is known.",
-   "added": "2026-10-13",
-   "commands": [
-    "# on the laptop (Manus key in the env) or the VM, after bundle 308 and label_expansion_run:",
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_cia\" --sets cia --cia \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\\cia_list.csv\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --cia-residue \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\cia_residue.csv\"",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_cia\" --dispatch",
-    "REM about 30 minutes later:",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_cia\" --poll",
-    "REM review each results\\*.md; for an accepted CSV A: python -m src.enforcement.research_evidence mfcu-cases --in <csvA> --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
-    "REM for an accepted CSV B: python -m src.enforcement.research_evidence cia-entities --in <csvB> --cia-cases \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\cia_cases.csv\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\cia_defendant_npis.parquet\"",
-    "REM excluded names (after reading the residue count): python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_names\" --sets exclusion_names --exclusion-residue \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\exclusion_name_residue.csv\"   then --dispatch / --poll; load with: research_evidence exclusion-npis --in <csv> --residue <residue csv> --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\exclusions_name_resolved.parquet\"",
-    "REM big states: python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_bigstates\" --sets mfcu --states CA,NY,TX,FL,IL,PA,OH,MI,NJ,GA --years 2020-2025   then --dispatch / --poll / mfcu-cases",
-    "python -m src.reminders --done-task label_manus_lanes"
-   ]
-  },
-  {
    "key": "label_sources_followups",
    "what": "Operator decision 2026-10-13 (docs/EXCLUSION_SOURCES_AUDIT_2026-10.md section 7): the training label takes every provider with a strong fraud signal; the grading ruler stays on outcomes. BUILT: the 'charged' tier (bundle 309) and, in bundle 311, (1) charged-only case rows as `charged_case` positives (case_labels: criminal indictment / charge or a government civil complaint with no outcome; direct + org_billing bases; trains only under --label-tier hard+charged) and (2) the OUTCOME REFRESH lane (prompts + loader; a plea / verdict / settlement becomes its own case row, a dismissal / acquittal quarantines the charge). ALSO FIXED on the way: criminal conviction releases without a stated dollar amount never reached the org_billing tier (the resolver's amount filter); they do now (v15 semantics). RUN after bundle 311 is merged: the v15 A/B on v14's matrix (two refits, hard vs hard+charged, graded on the FCA ruler: the lines below), and write the outcome_refresh prompt batch (review the CSV, then --dispatch when Manus credits are available). STILL QUEUED: (3) big-state exclusion lists with license_number / medicaid_id aliases + the NPPES type-05 join; (4) OpenSanctions as an identifier crosswalk (license gate, Brad); (5) the 1128(a)(4) pill-mill ablation; (6) the case date over the exclusion date when an NPI resolves to a DOJ case; (7) `hcf_commercial` (state AG / insurance-department fraud convictions) as a training-only source under ablation.",
    "added": "2026-10-13",
@@ -973,44 +955,44 @@
    ]
   },
   {
-   "key": "merge_bundle324",
-   "added": "2026-10-14",
-   "what": "Merge bundle324 (cumulative, supersedes 239 to 323; 323 was sent minutes earlier and is superseded, merge 324 only): the FREEZE TAG freeze-v16-2026-10-14 (the v16/v17 code to go back to) plus the 2026-10-14 build-out: as-of v3 billing scores in every frozen run, facility/POS excluded from frozen runs, the measurement block (scheme AUC on the FCA ruler, signal ranking, label enrichment, label + source ablations) as step 12 of the night runner, the hcf_commercial training-only label source, run_issues prune candidates. One command; the script now also fetches and pushes the freeze tag. Then the VM pull line (only when v17 is not mid-run on the same checkout: a git pull during a run is safe for the files already loaded, but wait for '[v17] DONE' to be certain). Bundle 324 also makes the PBJ / POS / NH Care Compare blocks read only editions dated on/before the freeze and adds the pre_cutoff_editions_2021 download reminder.",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "ops\\laptop\\merge_push.bat 324",
-    "git tag -l freeze-*     REM must print freeze-v16-2026-10-14",
-    "REM VM, after '[v17] DONE' (or in a second ssh window if v17 is still running; the running process keeps its loaded code):",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git fetch origin --tags && git log --oneline -1 && git tag -l 'freeze-*'\""
-   ]
-  },
-  {
    "key": "v18_run",
    "added": "2026-10-14",
-   "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. Pre-register under the v17 checks; if v17 read 3 at 100, apply the v16 rule (the 100-budget check moves to the large book: large_hits100 >= 4 in place of hits100 >= 4). After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration.",
+   "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. Pre-register under the v17 checks; if v17 read 3 at 100, apply the v16 rule (the 100-budget check moves to the large book: large_hits100 >= 4 in place of hits100 >= 4). After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. Run manus_lanes_run FIRST so v18 trains on the loaded research rows (then --rebuild-graph).",
    "commands": [
     "# VM (tmux so the run survives the laptop closing):",
     "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
     "source .venv/bin/activate && source ~/.medicaid_env",
     "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v18 --goal \"first run with the as-of v3 billing scores restored, the 2023 facility/POS editions excluded from the freeze, and the measurement block (scheme AUC on the FCA ruler, label enrichment, source + label ablations); v17's label inputs; ten seeds, train = hard\" --expected \"pursuit hits@250 at least 6 and large book hits@50 at least 2 under the FCA ruler; Jaccard at least 0.6; the 100 budget per the v16 rule; every scheme carries an FCA-ruler AUC and the ablation names the families to prune for v19\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
     "# if v17 read 3 at 100: replace \"hits100 >= 4\" above with \"large_hits100 >= 4\" (the v16 rule) before pre-registering",
-    "tmux new -s v18 -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v18 2021-12'",
+    "tmux new -s v18 -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v18 2021-12 --rebuild-graph'",
     "tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v18/night_run.log",
     "# when it prints '[v18] DONE': tell Claude 'v18 finished', then the packet lines the log prints (tar + sync up + scp)"
    ]
   },
   {
-   "key": "commercial_harvest",
+   "key": "merge_bundle325",
    "added": "2026-10-14",
-   "what": "hcf_commercial: the commercial-plan fraud TRAINING source (operator 2026-10-14: a provider convicted of billing a private plan falsely has the same hands on its Medicaid claims). Build the Manus prompt set (one per state-year, resolved outcomes only), dispatch, poll, REVIEW each CSV (the human gate), load with research_evidence commercial-cases (charges are quarantined automatically), then the next full run carries ab_tier_commercial/ (the hard vs hard+commercial A/B refit on the same matrix). Never a forward positive, never the PurpleLab label: training only, switched on by that A/B. Start with the Southeast states + the ten largest Medicaid states (CA NY TX FL PA IL OH MI NC GA) for 2019-2025: about 100 prompts; dispatch in two batches.",
+   "what": "Merge bundle325 (cumulative, supersedes 239 to 324; merge 325 only): the freeze tag freeze-v16-2026-10-14, the 2026-10-14 build-out (as-of v3 scores, pre-cutoff edition picker, measurement block, label enrichment, hcf_commercial) PLUS the unattended research-lane cycle (ops/vm/manus_lanes.sh: every Manus lane built, dispatched under a budget, polled, loaded through the machine gates, reported), the label audit + data-refresh + questions readouts in the measure step, and the weekly vintage inspector in the runner. One command; the script pushes the freeze tag too.",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_commercial\" --sets commercial --states FL,GA,AL,MS,TN,NC,SC,LA,KY,CA,NY,TX,PA,IL,OH,MI --years 2019-2025",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_commercial\" --dispatch --max-new 50",
-    "REM about 30 minutes later (repeat --dispatch --max-new 50 for the second batch once the first has answered):",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest_commercial\" --poll",
-    "REM review each results\\*.md; for an accepted CSV (one state):  python -m src.enforcement.research_evidence commercial-cases --in <csv> --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
-    "REM then: label_expansion merge-inputs runs inside the next night runner and the A/B lands in ab_tier_commercial/"
+    "ops\\laptop\\merge_push.bat 325",
+    "git tag -l freeze-*     REM must print freeze-v16-2026-10-14",
+    "REM VM (a second ssh window is fine while v17 runs; the running process keeps its loaded code):",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git fetch origin --tags && git log --oneline -1\""
+   ]
+  },
+  {
+   "key": "manus_lanes_run",
+   "added": "2026-10-14",
+   "what": "THE RESEARCH LANES, UNATTENDED (operator 2026-10-14: 'you have my Manus key; build everything in the plan'). ops/vm/manus_lanes.sh runs every lane from one command on the VM where MANUS_API_KEY lives (~/.medicaid_env): refreshes the CIA + names residues, builds the prompts for cia / names / outcome_refresh / label_verification / commercial / defendant_research / label_review, dispatches under a budget (MANUS_MAX_NEW=40 per lane, MANUS_TOTAL=250 across lanes: raise them if credits allow), polls for up to 4 hours, loads every answer through the lane's loader (Luhn NPI, confidence >= medium, NPI among our candidates, resolved outcomes only; the rest in <lane>_quarantine.csv), rebuilds the merged label inputs and writes processed/manus_lanes/MANUS_LANES.md. Needs bundle 325 merged + pulled. Run it under tmux so it survives the laptop closing; tasks still running answer on a later --poll --load (free). After it: --rebuild-graph on the next frozen run (the names rows become exclusion nodes). The human review is the report + the quarantine files, not a gate in front of the keyboard.",
+   "commands": [
+    "# VM, one line at a time:",
+    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
+    "source .venv/bin/activate && source ~/.medicaid_env && echo \"key set: ${MANUS_API_KEY:+yes}\"",
+    "tmux new -s lanes -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && MANUS_MAX_NEW=40 MANUS_TOTAL=250 bash ops/vm/manus_lanes.sh v17'",
+    "tail -5 $MEDICAID_DATA_ROOT/processed/manus_lanes/lanes_run.log",
+    "# when it prints '[lanes] DONE': cat $MEDICAID_DATA_ROOT/processed/manus_lanes/MANUS_LANES.md   (paste it to Claude)",
+    "# later, free (re-attaches by task id):  python -m src.model_a.manus_lanes --data-root \"$MEDICAID_DATA_ROOT\" --poll --load"
    ]
   }
  ]
