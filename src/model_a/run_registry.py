@@ -266,6 +266,18 @@ def parse_run_dir(run_dir: str | Path) -> dict:
                     row["acc_large_" + k[4:]] = v
         except Exception:
             pass
+    # THE PMAX BOOK (v18, 2026-10-20): the v17 sweep's winning order graded as a third
+    # book; acc_pmax_* so a pre-registration can hold it (`pmax_hits50 >= 3`) before
+    # the shipped sort ever moves.
+    acc_p = d / "accuracy_diagnostics__pmax.json"
+    if acc_p.exists():
+        try:
+            pj = json.loads(_read(acc_p))
+            for k, v in (pj.get("kpis") or {}).items():
+                if k.startswith("acc_"):
+                    row["acc_pmax_" + k[4:]] = v
+        except Exception:
+            pass
 
     try:
         row["git_commit"] = subprocess.run(
@@ -411,6 +423,10 @@ CHECK_ALIASES = {
     "large_hits100": "acc_large_org_hits100", "large_hits250": "acc_large_org_hits250",
     "large_prec50_lo": "acc_large_org_prec50_lo", "large_base50": "acc_large_base50",
     "large_p50_vs_random": "acc_large_org_p50_vs_random",
+    # the pmax book (accuracy_diagnostics__pmax.json), v18 candidate order
+    "pmax_hits16": "acc_pmax_org_hits16", "pmax_hits50": "acc_pmax_org_hits50",
+    "pmax_hits100": "acc_pmax_org_hits100", "pmax_hits250": "acc_pmax_org_hits250",
+    "pmax_prec50_lo": "acc_pmax_org_prec50_lo", "pmax_base50": "acc_pmax_base50",
     "list_order": "acc_list_order",
 }
 _CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"

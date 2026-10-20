@@ -619,6 +619,8 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         orgs = orgs[~inst & ~gov & ~solo & ~person & ~unnamed]
         print(f"[pursuit_dossier] operator book: {len(orgs):,} of {n_before:,} orgs kept "
               f"(institutional / national-chain / government / solo-individual / person-named / unnamed rows set aside)")
+        # and the case-size bar the pursuit book already applied (v17: sub-$1M targets)
+        orgs = restrict_to_pursuit_book(orgs, d)
     if min_damages is not None:
         # recovery-space selection under the universal rule (operator
         # decision 2026-08-04): SIGNAL SORTS, EVERYTHING ELSE FILTERS.
@@ -673,35 +675,79 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
 
 
 LARGE_LIST_NAME = "provider_priority_list_large.csv"
+PMAX_LIST_NAME = "provider_priority_list_pmax.csv"
 
 
 BASIS_HEAD = 50
-PURSUIT_ORDERS = ("dollar", "basis50")
+PURSUIT_ORDERS = ("dollar", "basis50", "pmax", "pmax_basis50")
 
 
 def pursuit_order(book: pd.DataFrame, order: str = "dollar", head: int = BASIS_HEAD) -> pd.DataFrame:
     """The pursuit book's sort, ONE definition shared by the ship and the sweep.
 
-    dollar    score_dollar_weighted desc, score_max tiebreak (the v7-settled order).
-    basis50   the MIXED order (v13 sweep row): the basis-backed rows (case_size_capped
-              false) fill the first ``head`` slots in dollar-weighted order, then
-              everything else in dollar-weighted order. v10-v12: 44 of the top 50 were
-              cap-pinned rows with zero hits in three runs while the full basis-first
-              block won the 50 budget and lost 100 / 250; this promotes basis rows
-              only as far as one review round reaches and leaves the deep budgets to
-              the shipped order. Pre-registered as a sweep row; shipped only when it
-              beats the dollar order across budgets."""
+    dollar        score_dollar_weighted desc, score_max tiebreak (the v7-settled order).
+    basis50       the MIXED order (v13 sweep row): the basis-backed rows (case_size_capped
+                  false) fill the first ``head`` slots in dollar-weighted order, then
+                  everything else in dollar-weighted order. v10-v12: 44 of the top 50 were
+                  cap-pinned rows with zero hits in three runs while the full basis-first
+                  block won the 50 budget and lost 100 / 250; this promotes basis rows
+                  only as far as one review round reaches and leaves the deep budgets to
+                  the shipped order. Pre-registered as a sweep row; shipped only when it
+                  beats the dollar order across budgets.
+    pmax          score_p_max desc (the calibrated max member probability), dollar tiebreak.
+    pmax_basis50  pmax with the basis-backed rows filling the first ``head`` slots. The
+                  v17 sweep (2026-10-20) read this row 2 / 3 / 5 / 9 against the shipped
+                  1 / 2 / 5 / 7: the first probability order to beat the dollar order at
+                  every budget since the v7 sweep retired P(any). Graded as a THIRD book
+                  (PMAX_LIST_NAME) from v18; shipped only if it holds on a second matrix.
+    A book without score_p_max falls back to the dollar order for the pmax variants."""
     if order not in PURSUIT_ORDERS:
         raise ValueError(f"pursuit order {order!r}: choose from {PURSUIT_ORDERS}")
-    keys = ["score_dollar_weighted"] + (["score_max"] if "score_max" in book.columns else [])
-    ranked = book.sort_values(keys, ascending=False, kind="mergesort")
-    if order == "dollar" or "case_size_capped" not in ranked.columns:
+    if order.startswith("pmax") and "score_p_max" in book.columns \
+            and pd.to_numeric(book["score_p_max"], errors="coerce").notna().any():
+        keys = ["score_p_max", "score_dollar_weighted"] + (["score_max"] if "score_max" in book.columns else [])
+        work = book.copy()
+        work["score_p_max"] = pd.to_numeric(work["score_p_max"], errors="coerce").fillna(-1.0)
+        ranked = work.sort_values(keys, ascending=False, kind="mergesort")
+        ranked["score_p_max"] = book.loc[ranked.index, "score_p_max"]
+        basis_first = order == "pmax_basis50"
+    else:
+        keys = ["score_dollar_weighted"] + (["score_max"] if "score_max" in book.columns else [])
+        ranked = book.sort_values(keys, ascending=False, kind="mergesort")
+        basis_first = order in ("basis50", "pmax_basis50")
+    if not basis_first or "case_size_capped" not in ranked.columns:
         return ranked
     capped = ranked["case_size_capped"].astype(str).str.lower().isin(["true", "1"])
     basis = ranked[~capped]
     top = basis.head(head)
     rest = ranked.drop(top.index)
     return pd.concat([top, rest])
+
+
+def restrict_to_pursuit_book(orgs: pd.DataFrame, run_dir: Path, log=print) -> pd.DataFrame:
+    """The dossier's operator-book targets come from the PURSUIT BOOK's rows (the
+    orgs that passed the ~$10M/yr scheme-aware case-size bar), in the book's order.
+    v17's dossier (2026-10-20) named six California nursing homes billing $250k to
+    $1.2M in the window because ``build()`` ranked the whole rollup and only set the
+    institutional / government / solo rows aside; the pursuit book sat beside it,
+    unread. Without a pursuit book on disk the frame is returned unchanged."""
+    p = Path(run_dir) / "provider_priority_list_pursuit.csv"
+    if not p.exists() or "org_id" not in orgs.columns:
+        return orgs
+    book = pd.read_csv(p, dtype=str)
+    id_col = next((c for c in ("org_id", "org_node_id") if c in book.columns), None)
+    if id_col is None:
+        return orgs
+    rank_col = "pursuit_rank" if "pursuit_rank" in book.columns else None
+    order = {str(i): (int(float(r)) if rank_col else n)
+             for n, (i, r) in enumerate(zip(book[id_col], book[rank_col] if rank_col else book[id_col]))}
+    keep = orgs["org_id"].astype(str).isin(order)
+    out = orgs[keep].copy()
+    out["_book_rank"] = out["org_id"].astype(str).map(order)
+    out = out.sort_values("_book_rank").drop(columns="_book_rank")
+    log(f"[pursuit_dossier] operator book restricted to the pursuit book: {len(out):,} of {len(orgs):,} "
+        f"orgs (the case-size bar the book carries), in the book's order")
+    return out
 
 
 def build_priority_list(run_dir: str | Path,
@@ -872,6 +918,18 @@ def build_priority_list(run_dir: str | Path,
     print(f"[priority_list] large-biller book: {len(large):,} operator orgs billed >= "
           f"${large_min_billed:,.0f} -> {d / LARGE_LIST_NAME}")
 
+    # THE PMAX BOOK (2026-10-20, from the v17 order sweep): the same operator pool
+    # under the pmax_basis50 order, written as its own file so the diagnostics grade
+    # it beside the pursuit and large books (--list-name provider_priority_list_pmax.csv,
+    # outputs __pmax, registry acc_pmax_*). A graded candidate, never the shipped order
+    # until a second matrix confirms the v17 sweep.
+    pmax = pursuit_order(pursuit.drop(columns=["pursuit_rank"]), order="pmax_basis50").reset_index(drop=True)
+    pmax.insert(0, "pmax_rank", pmax.index + 1)
+    pmax_cols = ["pmax_rank"] + [c for c in pursuit_cols if c in pmax.columns and c != "pursuit_rank"]
+    pmax[pmax_cols].to_csv(d / PMAX_LIST_NAME, index=False)
+    print(f"[priority_list] pmax book: {len(pmax):,} operator orgs under the pmax_basis50 order "
+          f"(a graded candidate, not the shipped sort) -> {d / PMAX_LIST_NAME}")
+
     md = d / "PRIORITY_LIST.md"
     md.write_text("\n".join([
         f"# PROVIDER PRIORITY LIST — run {d.name}", "", DISCLAIMER, "",
@@ -896,7 +954,9 @@ def build_priority_list(run_dir: str | Path,
         f"- Companion books, same order: `provider_priority_list_pursuit.csv` "
         f"({len(pursuit):,} operator orgs) and `{LARGE_LIST_NAME}` "
         f"({len(large):,} of them billed >= ${large_min_billed:,.0f} in the matrix window, "
-        "the band where the v7 and v11 size tables found precision highest). Filters, never sorts.",
+        "the band where the v7 and v11 size tables found precision highest). Filters, never sorts. "
+        f"`{PMAX_LIST_NAME}` = the pursuit pool under the pmax_basis50 order (the v17 sweep's "
+        "winning row), graded as a candidate, not the shipped sort.",
         "", "Columns: priority_rank; org_name; entity_segment "
         "(institutional / operator / individual); member_npis (full roster); "
         "states; cities; n_providers; "

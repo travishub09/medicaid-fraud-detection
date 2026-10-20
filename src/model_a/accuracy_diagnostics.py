@@ -337,8 +337,12 @@ def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") 
               "score_max", "n_excluded_members"):
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
-    if "pursuit_rank" in df.columns:                     # the pursuit book: its own order is the rank
-        df["priority_rank"] = pd.to_numeric(df["pursuit_rank"], errors="coerce")
+    # a companion book's own rank column is its order: pmax_rank (the pmax book carries
+    # no pursuit_rank), large_rank / pursuit_rank (the large book keeps the pursuit order)
+    for rc in ("pmax_rank", "pursuit_rank", "large_rank"):
+        if rc in df.columns:
+            df["priority_rank"] = pd.to_numeric(df[rc], errors="coerce")
+            break
     if "priority_rank" not in df.columns:
         df.insert(0, "priority_rank", np.arange(1, len(df) + 1))
     df["member_npis"] = df.get("member_npis", pd.Series("", index=df.index)).fillna("").astype(str)

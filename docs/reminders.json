@@ -805,73 +805,19 @@
    ]
   },
   {
-   "key": "v17_run",
-   "what": "v17 = the retrain on the corrected inputs: v16 put the CIA parties on the rulers (583 in-universe positives) but a re-grade cannot train on the 284 pre-freeze parties; v17 does. Full runner (run_frozen_night.sh, step 0 merges the corrected cia_cases.csv; the as-of graph is reused, no --rebuild-graph; about 6 to 8 hours on the VM). Needs bundle 322 merged + pushed, the VM started, pull, pre-register, run under tmux, then the packet. If hits@100 reads 3 again, the v18 pre-registration moves the 100-budget check to the large book.",
-   "added": "2026-10-14",
-   "commands": [
-    "# VM, one line at a time (start it in the AWS console: EC2 > Instances, NOT 'Launch an instance'; swap the IP if it changed):",
-    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
-    "source .venv/bin/activate && source ~/.medicaid_env",
-    "grep -c \"agreed to pay\" \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\"    # must be about 339 (the corrected file from v16)",
-    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v17 --goal \"retrain on the expanded label with the CIA parties IN training (284 pre-freeze parties) and ON the rulers (74 post-freeze positives), the 843 name-resolved exclusions already in the as-of graph; ten seeds, train = hard; the v16 checks\" --expected \"pursuit hits@100 at least 4 and hits@250 at least 6 under the 583-positive FCA ruler; large book hits@50 at least 2; Jaccard at least 0.6; train = hard; if hits@100 still reads 3, v18 grades the 100 budget on the large book\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-    "tmux new -d -s v17 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=dollar PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v16 bash ops/vm/run_frozen_night.sh v17 2021-12\"",
-    "# that starts the run in the background; check with: tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17/night_run.log   (or from the laptop: ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/model_a/frozen_2021-12_v17/night_run.log\")",
-    "# when it prints [v17] DONE, from the laptop:",
-    "REM ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v17 && tar -czf /home/ubuntu/run_packet_v17.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v17\"",
-    "REM scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v17.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and say 'v17 finished'"
-   ]
-  },
-  {
    "key": "v18_run",
    "added": "2026-10-14",
-   "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. Pre-register under the v17 checks; if v17 read 3 at 100, apply the v16 rule (the 100-budget check moves to the large book: large_hits100 >= 4 in place of hits100 >= 4). After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. Run manus_lanes_run FIRST so v18 trains on the loaded research rows (then --rebuild-graph).",
+   "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. v17 GRADED 2026-10-20 (docs/ACCURACY_READOUT_v17_2026-10-20.md): hits@100 = 5 (PASS for the first time), large book 4 at 50, HOLD on top-50 Jaccard 0.575 (bar 0.6) only. v18 keeps hits100 >= 4 and top50_jaccard >= 0.6; the pmax order (the first sweep row to beat the shipped order: 2/3/5/9 vs 1/2/5/7) is graded as a third book, never shipped yet. After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. Run manus_lanes_run FIRST so v18 trains on the loaded research rows (then --rebuild-graph).",
    "commands": [
     "# VM (tmux so the run survives the laptop closing):",
     "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
     "source .venv/bin/activate && source ~/.medicaid_env",
-    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v18 --goal \"first run with the as-of v3 billing scores restored, the 2023 facility/POS editions excluded from the freeze, and the measurement block (scheme AUC on the FCA ruler, label enrichment, source + label ablations); v17's label inputs; ten seeds, train = hard\" --expected \"pursuit hits@250 at least 6 and large book hits@50 at least 2 under the FCA ruler; Jaccard at least 0.6; the 100 budget per the v16 rule; every scheme carries an FCA-ruler AUC and the ablation names the families to prune for v19\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-    "# if v17 read 3 at 100: replace \"hits100 >= 4\" above with \"large_hits100 >= 4\" (the v16 rule) before pre-registering",
+    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v18 --goal \"first run with the as-of v3 billing scores restored, the 2023 facility/POS editions excluded from the freeze, the measurement block (scheme AUC on the FCA ruler, label enrichment, source + label ablations), the research-lane rows in the label, and the pmax order graded as a third book; v17's label inputs plus the lane rows; ten seeds, train = hard\" --expected \"pursuit hits@250 at least 6 and large book hits@50 at least 2 under the FCA ruler; Jaccard at least 0.6; the 100 budget per the v16 rule; every scheme carries an FCA-ruler AUC and the ablation names the families to prune for v19\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+    "# v17 passed hits100 (5): the line above stands as written",
     "tmux new -s v18 -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v18 2021-12 --rebuild-graph'",
     "tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v18/night_run.log",
     "# when it prints '[v18] DONE': tell Claude 'v18 finished', then the packet lines the log prints (tar + sync up + scp)"
    ]
-  },
-  {
-   "key": "run_packet__frozen_2021-12_v17",
-   "what": "Send the run packet for frozen_2021-12_v17 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-   "added": "2026-10-20",
-   "commands": [
-    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
-    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-    "REM then upload run_packet.zip to the chat",
-    "python -m src.reminders --done-task run_packet__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__frozen_2021-12_v17",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v17 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-   "added": "2026-10-20",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v17",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v17 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-10-20",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17\" --poll",
-    "python -m src.reminders --done-task dossier_poll__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
-   ]
-  },
-  {
-   "key": "registry_verdict__frozen_2021-12_v17",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v17 \u2014 close only when you have them",
-   "added": "2026-10-20",
-   "commands": []
   },
   {
    "key": "merge_bundle326",

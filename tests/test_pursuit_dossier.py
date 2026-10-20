@@ -454,3 +454,39 @@ def test_national_names_are_institutional_and_pursuit_order_basis50():
     assert len(b) == n and b["org_id"].is_unique
     with pytest.raises(ValueError):
         pursuit_order(book, "random")
+
+
+def test_pmax_orders_and_the_operator_book_bar(tmp_path):
+    """2026-10-20 (v17 read-out): the v17 sweep's winning row, pmax with basis-backed
+    rows first in the top 50, is a graded candidate order; the dossier's operator-book
+    targets come from the pursuit book's rows (v17 named six sub-$1M nursing homes)."""
+    from src.model_a.pursuit_dossier import (PMAX_LIST_NAME, PURSUIT_ORDERS, pursuit_order,
+                                             restrict_to_pursuit_book)
+    from src.model_a.accuracy_diagnostics import load_priority_list
+    assert "pmax" in PURSUIT_ORDERS and "pmax_basis50" in PURSUIT_ORDERS
+    n = 100
+    book = pd.DataFrame({"org_id": [f"org:{i}" for i in range(n)],
+                         "score_dollar_weighted": np.linspace(1.0, 0.0, n),
+                         "score_max": np.linspace(1.0, 0.0, n),
+                         "score_p_max": np.linspace(0.0, 1.0, n),          # the reverse of the dollar order
+                         "case_size_capped": [i % 2 == 0 for i in range(n)]})
+    p = pursuit_order(book, "pmax")
+    assert list(p["org_id"].head(2)) == ["org:99", "org:98"]
+    pb = pursuit_order(book, "pmax_basis50")
+    assert not pb.head(50)["case_size_capped"].any() and list(pb["org_id"].head(2)) == ["org:99", "org:97"]
+    assert pb["org_id"].is_unique and len(pb) == n
+    # no probability column: the pmax variants fall back to the dollar order
+    assert list(pursuit_order(book.drop(columns=["score_p_max"]), "pmax")["org_id"].head(2)) == ["org:0", "org:1"]
+    # the diagnostics read a pmax book by its own rank, not by a pursuit rank
+    pm = pb.reset_index(drop=True)
+    pm.insert(0, "pmax_rank", pm.index + 1)
+    pm.to_csv(tmp_path / PMAX_LIST_NAME, index=False)
+    lp = load_priority_list(tmp_path, PMAX_LIST_NAME)
+    assert list(lp["org_id"].head(2)) == ["org:99", "org:97"] and lp.attrs["sort_key"] is None
+    # the operator-book bar: only pursuit-book orgs survive, in the book's order
+    pd.DataFrame({"pursuit_rank": [1, 2], "org_id": ["org:7", "org:3"]}).to_csv(
+        tmp_path / "provider_priority_list_pursuit.csv", index=False)
+    orgs = pd.DataFrame({"org_id": ["org:3", "org:5", "org:7"], "total_billed": [9e6, 2.5e5, 3e7]})
+    r = restrict_to_pursuit_book(orgs, tmp_path, log=lambda *_: None)
+    assert list(r["org_id"]) == ["org:7", "org:3"]
+    assert len(restrict_to_pursuit_book(orgs, tmp_path / "nowhere", log=lambda *_: None)) == 3

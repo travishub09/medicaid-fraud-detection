@@ -1477,6 +1477,48 @@ first, then paste" above every move/done block.
   readout (5b), and the vintage inspector as runner step 0a (weekly, VINTAGE_
   MAX_AGE_DAYS, VINTAGE_INSPECT=0 skips). Tests: test_manus_lanes (a fake
   service answers every lane), test_data_refresh_and_questions.
+  FIRST LIVE LANE CYCLE (2026-10-14, graded 2026-10-20): 212 tasks dispatched
+  under the 40-per-lane / 250 budget, 180 answered with real CSV attachments
+  (one CIA answer: 9 settlements + 125 enrolled entities, 57 with NPIs), 32
+  errored at the service; the loader crashed on the FIRST lane (nine CSV-A
+  defendants shared five release URLs, build_case_db de-duplicated on case_id,
+  the positional case_type assignment raised) and run_cycle stopped, so every
+  lane stayed unloaded and MANUS_LANES.md read all zeros. FIXED (bundle 326):
+  one case row per defendant (`url#<name key>`, the DOJ feed's convention) in
+  `_harvest_cases_from_table` and `load_commercial_cases`, fields aligned by
+  case_id, and a per-lane try/except (a LOAD FAILED note in the report, the
+  other lanes continue). Re-loading is free: the answers and their signed links
+  (valid to 2026-11-01) are on the VM; `manus_lanes --poll --load` (task
+  lanes_reload). `org_find` creates its --out folder and survives an empty
+  NPPES match (the AIS Healthcare lookup, 2026-10-20: the company is enrolled
+  as BOND PHARMACY INC d/b/a Advanced Infusion Solutions, Ridgeland MS +
+  Dallas, and 1ST AMERICA INFUSION SERVICES LLC, Valdosta GA; $29M Medicaid
+  2018-2024, cap-pinned subscores, no list rank, no per-se fact; the relator's
+  Medicare theory is a claims-level test for the PurpleLab POC).
+  V17 READ-OUT (2026-10-20, `docs/ACCURACY_READOUT_v17_2026-10-20.md`; the run
+  finished 2026-10-14 18:14 on the freeze-point code): the retrain with the 284
+  pre-freeze CIA parties (training label 1,545, 1,396 DOJ-case). Pursuit book,
+  FCA ruler: 1 / 2 / 5 / 7 at 16 / 50 / 100 / 250 (random 0.1 / 0.4 / 0.7 /
+  1.8; p 0.047 / 0.000 / 0.000): hits@100 PASSES for the first time after
+  three runs at 3. Large book 1 / 4 / 4 / 6 (p 0.000 at 50, the best 50 of the
+  series). Lead 25.5 mo, inst share 0, NPI top-1% lift 9.0 (best yet). HOLD on
+  ONE check: top-50 Jaccard 0.575 (bar 0.6; 27 orgs in every draw). Charged and
+  broadcast A/Bs identical to the hard arm. THE ORDER SWEEP: `score_p_max`
+  with basis-backed rows first in the top 50 read 2 / 3 / 5 / 9 against the
+  shipped 1 / 2 / 5 / 7, the first probability order to beat the dollar order
+  at every budget since v7 retired P(any). Built: `pursuit_order` takes `pmax`
+  / `pmax_basis50`, `build_priority_list` writes `provider_priority_list_pmax.csv`
+  (PMAX_LIST_NAME, its own `pmax_rank`; the diagnostics loader reads pmax_rank /
+  pursuit_rank / large_rank as the book's order), both runners grade it as a
+  THIRD book (`__pmax`), the registry reads `acc_pmax_*` (aliases pmax_hits16
+  / 50 / 100 / 250, pmax_prec50_lo, pmax_base50). The shipped sort stays dollar
+  until the pmax book holds on a second matrix. DOSSIER FIX: the operator-book
+  pick in `build()` ranked the whole rollup and named six California nursing
+  homes billing $250k to $1.2M (Royal Palms, Sharon Care, Heritage Manor,
+  Norwalk, Downey, Ensign San Dimas); `restrict_to_pursuit_book` keeps only
+  the pursuit book's rows (the ~$10M/yr case-size bar), in the book's order.
+  Not dispatched (HOLD). v18 keeps `hits100 >= 4` (it passed) and
+  `top50_jaccard >= 0.6` (the open check).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
