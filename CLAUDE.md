@@ -1519,6 +1519,21 @@ first, then paste" above every move/done block.
   the pursuit book's rows (the ~$10M/yr case-size bar), in the book's order.
   Not dispatched (HOLD). v18 keeps `hits100 >= 4` (it passed) and
   `top50_jaccard >= 0.6` (the open check).
+  LANES LOADED (2026-10-20 21:11 UTC, `--poll --load` only, nothing sent): cia 910
+  rows / 254 quarantined, names 22 / 236 (graph rebuild needed: they become exclusion
+  nodes), outcome_refresh 208 (8 charged rows cleared by dismissal / acquittal, 398
+  charged rows still pending), commercial 76 / 3 (5 answers without a table),
+  defendant_research 26 folded / 14 no_npi, label_verification 110 verdicts
+  (confirmed 96 of 104 decided = 92 percent, wrong_npi 5, wrong_person 3: the written
+  rule says TIGHTEN on the wrong_npi count; the 8 rows are the operator's read, task
+  lanes_review). RULES: `--poll` and `--load` are free and read-only at the service;
+  `--dispatch` spends credits and runs only on the operator's explicit go (task
+  lanes_dispatch_2 is gated, never a nag). VM ssh one-liners from the laptop need
+  `source .venv/bin/activate` (the runners activate it themselves; a bare ssh shell
+  has no `python`). A VM ssh timeout with the instance Running on the same IP is the
+  security group's /32 SSH rule pinned to an old home IP (task vm_ssh_rule). v18 =
+  bundle 327 merged + pulled, pre-register, `--rebuild-graph` (the name-resolved
+  exclusions), ten seeds, three books graded (task v18_run carries the ssh lines).
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
