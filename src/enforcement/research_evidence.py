@@ -197,7 +197,11 @@ def load_commercial_cases(table: pd.DataFrame, state: str) -> tuple[pd.DataFrame
             continue
         url = str(r.get("source_url") or "").strip()
         date = str(r.get("outcome_date") or r.get("announced_date") or "").strip()
-        cid = url or f"commercial:{st.lower()}:{abs(hash((st, defendant, date))) & 0xFFFFFFFF:x}"
+        # one case row per defendant even when several share a release URL (url#<name key>,
+        # the DOJ feed's convention; build_case_db de-duplicates on case_id)
+        key = norm_org_name(defendant).upper().replace(" ", "_")
+        cid = (f"{url}#{key}" if url else
+               f"commercial:{st.lower()}:{abs(hash((st, defendant, date))) & 0xFFFFFFFF:x}")
         npi = str(r.get("npi") or "").strip()
         rows.append({
             "case_id": cid, "announced_date": date, "defendant_name": defendant,
@@ -215,8 +219,8 @@ def load_commercial_cases(table: pd.DataFrame, state: str) -> tuple[pd.DataFrame
     cases = build_case_db(rows) if rows else empty
     if len(cases):
         cases["case_type"] = "hcf_commercial"
-        if "npi_in_source" not in cases.columns:
-            cases["npi_in_source"] = [r["npi_in_source"] for r in rows]
+        by_id = {r["case_id"]: r["npi_in_source"] for r in rows}
+        cases["npi_in_source"] = cases["case_id"].map(lambda c: by_id.get(c, ""))
     return cases, pd.DataFrame(bad)
 
 

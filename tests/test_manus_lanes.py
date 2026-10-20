@@ -125,7 +125,8 @@ def test_cia_lane_loads_settlement_rows_and_entities(tmp_path):
     ml.poll_lane("cia", root, transport=svc, log=lambda *_: None)
     t = ml.load_lane("cia", root, fetch=lambda u: "", log=lambda *_: None)
     cdb = pd.read_csv(root / "enforcement" / "doj_cases_v3.csv", dtype=str)
-    row = cdb.set_index("case_id").loc["https://justice.gov/biglab"]
+    row = cdb.set_index("defendant_name").loc["Big Lab Holdings"]
+    assert row["case_id"].startswith("https://justice.gov/biglab#")       # url#<name key>: one row per defendant
     assert row["case_type"] == "civil_fca" and row["qui_tam"] == "1" and "civil settlement" in row["summary"]
     assert "Charged Clinic" not in set(cdb["defendant_name"])          # charged-only rows never become cases
     ents = pd.read_parquet(root / "processed" / "cia_defendant_npis.parquet")
@@ -140,3 +141,58 @@ def test_budget_caps_dispatch_across_lanes(tmp_path):
                        total_budget=3, wait_minutes=0, poll_every=1, transport=svc, sleep=lambda s: None,
                        log=lambda *_: None, states=["FL", "GA"], years=[2020, 2021, 2022])
     assert res["dispatched"] == 3 and ml.lane_status("commercial", root)["prompts"] == 6
+
+
+def test_several_defendants_on_one_release_keep_their_own_rows():
+    """The 2026-10-14 lane run: nine CSV-A defendants shared five URLs, build_case_db
+    collapsed them, and the positional case_type assignment crashed (every lane
+    stayed unloaded). One row per defendant now (url#<name key>), fields by case_id."""
+    t = pd.DataFrame([
+        {"defendant_name": "Alpha Home Health Inc", "announced_date": "2022-01-01", "state": "FL", "npi": NPI_A,
+         "outcome": "civil settlement", "source_url": "https://justice.gov/one", "amount_usd": "100000"},
+        {"defendant_name": "Beta Nursing LLC", "announced_date": "2022-01-01", "state": "FL", "npi": "",
+         "outcome": "civil settlement", "source_url": "https://justice.gov/one", "amount_usd": "100000"},
+        {"defendant_name": "Gamma Labs", "announced_date": "2022-02-02", "state": "GA", "npi": NPI_B,
+         "outcome": "pleaded guilty", "source_url": "https://justice.gov/two", "amount_usd": ""},
+    ])
+    cases, bad = ml._harvest_cases_from_table(t)
+    assert len(cases) == 3 and bad.empty
+    assert cases["case_id"].str.startswith("https://justice.gov/one#").sum() == 2
+    c = cases.set_index("defendant_name")
+    assert c.loc["Alpha Home Health Inc", "npi_in_source"] == NPI_A and c.loc["Beta Nursing LLC", "npi_in_source"] == ""
+    assert c.loc["Gamma Labs", "case_type"] == "criminal_hcf" and c.loc["Alpha Home Health Inc", "case_type"] == "civil_fca"
+    # the commercial loader has the same rule
+    from src.enforcement.research_evidence import load_commercial_cases
+    cc, q = load_commercial_cases(pd.DataFrame([
+        {"defendant": "One Clinic", "date": "2021-05-05", "outcome": "pleaded guilty", "summary": "x", "url": "https://ag/x", "npi": NPI_A},
+        {"defendant": "Two Clinic", "date": "2021-05-05", "outcome": "pleaded guilty", "summary": "x", "url": "https://ag/x", "npi": ""},
+    ]), "FL")
+    assert len(cc) == 2 and list(cc["npi_in_source"]) == [NPI_A, ""]
+
+
+def test_one_lane_load_failure_does_not_stop_the_others(tmp_path, monkeypatch):
+    root = _data_root(tmp_path)
+    svc = FakeService()
+    ml.run_cycle(root, ["cia", "names"], None, build=False, dispatch=False, poll=False, load=False, max_new=None,
+                 total_budget=None, wait_minutes=0, poll_every=1, transport=svc, sleep=lambda s: None, log=lambda *_: None)
+    files = ml.lane_files(root, "cia")
+    ml._write_jsonl([{"org_id": "harv:cia:1", "org_name": "b1", "set": "cia",
+                      "prompt": "Each party below signed an OIG Corporate Integrity Agreement ..."}], files["prompts"])
+    ml.build_lane("names", root, log=lambda *_: None)
+    for lane in ("cia", "names"):
+        ml.dispatch_lane(lane, root, transport=svc, log=lambda *_: None)
+        ml.poll_lane(lane, root, transport=svc, log=lambda *_: None)
+    real = ml.load_lane
+
+    def boom(lane, *a, **k):
+        if lane == "cia":
+            raise ValueError("Length of values (9) does not match length of index (5)")
+        return real(lane, *a, **k)
+    monkeypatch.setattr(ml, "load_lane", boom)
+    res = ml.run_cycle(root, ["cia", "names"], None, build=False, dispatch=False, poll=False, load=True, max_new=None,
+                       total_budget=None, wait_minutes=0, poll_every=1, transport=svc, fetch=lambda u: "",
+                       sleep=lambda s: None, log=lambda *_: None)
+    assert "LOAD FAILED" in res["tallies"]["cia"]["notes"][0]
+    assert res["tallies"]["names"]["loaded"] == 1
+    rep = (root / "processed" / "manus_lanes" / "MANUS_LANES.md").read_text(encoding="utf-8")
+    assert "LOAD FAILED" in rep and "| names | 1 | 1 | 1 | 0 | 1 |" in rep

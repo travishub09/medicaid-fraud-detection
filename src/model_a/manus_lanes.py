@@ -323,7 +323,14 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
         st = str(r.get("state") or "").strip().upper()
         npi = re.sub(r"\D", "", str(r.get("npi") or ""))
         qt = str(r.get("qui_tam") or "").strip().lower()
-        rows.append({"case_id": url or f"harvest:{st.lower()}:{abs(hash((name, str(r.get('announced_date') or '')))) & 0xFFFFFFFF:x}",
+        # several defendants of ONE release share a URL: the DOJ feed's convention is
+        # url#<name key>, one case row per defendant (build_case_db de-duplicates on
+        # case_id, so a bare URL collapsed nine defendants into five rows and the
+        # case_type assignment crashed on the length mismatch: the 2026-10-14 lane run)
+        from src.entity_graph.resolve_entities import norm_org_name
+        key = norm_org_name(name).upper().replace(" ", "_")
+        rows.append({"case_id": (f"{url}#{key}" if url else
+                                 f"harvest:{st.lower()}:{abs(hash((name, str(r.get('announced_date') or '')))) & 0xFFFFFFFF:x}"),
                      "announced_date": str(r.get("announced_date") or "").strip(), "defendant_name": name,
                      "sector": _classify(f"{name}. {summary}", _SECTOR_KEYWORDS),
                      "scheme": _classify_all(f"{name}. {summary}", _SCHEME_KEYWORDS),
@@ -333,9 +340,9 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
                      "case_type": ct, "npi_in_source": npi if len(npi) == 10 else ""})
     cases = build_case_db(rows) if rows else pd.DataFrame()
     if len(cases):
-        cases["case_type"] = [r["case_type"] for r in rows]
-        if "npi_in_source" not in cases.columns:
-            cases["npi_in_source"] = [r["npi_in_source"] for r in rows]
+        by_id = {r["case_id"]: r for r in rows}          # aligned by case_id, never by position
+        cases["case_type"] = cases["case_id"].map(lambda c: by_id.get(c, {}).get("case_type", ""))
+        cases["npi_in_source"] = cases["case_id"].map(lambda c: by_id.get(c, {}).get("npi_in_source", ""))
     return cases, pd.DataFrame(bad)
 
 
@@ -589,7 +596,18 @@ def run_cycle(data_root: Path, lanes, run_dir: Path | None, build: bool, dispatc
     tallies = {}
     if load:
         for lane in lanes:
-            tallies[lane] = load_lane(lane, data_root, run_dir, fetch=fetch, log=log)
+            try:
+                tallies[lane] = load_lane(lane, data_root, run_dir, fetch=fetch, log=log)
+            except Exception as e:  # noqa: BLE001
+                # one lane's loader must never stop the others (2026-10-14: a crash in
+                # the cia loader left every lane unloaded and the report all zeros)
+                import traceback
+                files = lane_files(data_root, lane)
+                tally = {"lane": lane, "answers": 0, "loaded": 0, "quarantined": 0, "no_table": 0,
+                         "files": [], "notes": [f"LOAD FAILED: {type(e).__name__}: {str(e)[:160]}"]}
+                files["loaded"].write_text(json.dumps(tally, indent=1), encoding="utf-8")
+                tallies[lane] = tally
+                log(f"[manus_lanes:{lane}] LOAD FAILED: {e}\n{traceback.format_exc()}")
     rep = write_report(data_root, lanes)
     log(f"[manus_lanes] report -> {rep}")
     return {"dispatched": spent, "tallies": tallies, "report": str(rep)}

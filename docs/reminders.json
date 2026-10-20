@@ -1,891 +1,898 @@
 {
-  "data_root": "C:/Users/treyr/OneDrive/Desktop/data",
-  "cadence": [
-    {
-      "key": "leie",
-      "what": "OIG LEIE exclusion list (THE label source \u2014 new bans are training labels)",
-      "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
-      "url": "https://oig.hhs.gov/exclusions/exclusions_list.asp",
-      "every_months": 1,
-      "last_done": "2026-09-16",
-      "steps": [
-        "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
-        "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
-        "Then paste the commands below (they back up the old file, then swap in the new one)"
-      ],
-      "commands": [
-        "copy \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_%date:~10,4%%date:~4,2%.csv.bak\"",
-        "move \"%USERPROFILE%\\Downloads\\UPDATED.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\"",
-        "python -m src.reminders --done leie"
-      ],
-      "proof": [
-        "preclean/caught.csv"
-      ],
-      "proof_recent_days": 45
-    },
-    {
-      "key": "nppes_deactivation",
-      "what": "CMS Deactivated NPI Report (invalid_identity scheme)",
-      "where": "preclean/nppes_deactivation/ (keep as the .zip; loader unzips)",
-      "url": "https://download.cms.gov/nppes/NPI_Files.html",
-      "every_months": 1,
-      "last_done": "2026-10-07",
-      "steps": [
-        "Open https://download.cms.gov/nppes/NPI_Files.html",
-        "Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)"
-      ],
-      "commands": [
-        "move \"%USERPROFILE%\\Downloads\\NPPES_Deactivated_*.zip\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes_deactivation\\\"",
-        "python -m src.reminders --done nppes_deactivation"
-      ],
-      "proof": [
-        "preclean/nppes_deactivation/*.zip",
-        "preclean/nppes_deactivation/*.xlsx"
-      ],
-      "proof_recent_days": 45
-    },
-    {
-      "key": "sam_exclusions",
-      "what": "SAM.gov exclusions extract (widens the PU label)",
-      "where": "preclean/sam/",
-      "url": "https://sam.gov/data-services",
-      "every_months": 1,
-      "last_done": "2026-10-09",
-      "steps": [
-        "Open https://sam.gov/data-services and pick 'Exclusions' -> 'Public V2' current extract (CSV); no login needed",
-        "Save it as sam_exclusions_<yyyymm>.csv under preclean\\sam\\ (replace <yyyymm> in the move line)",
-        "Then the load line below (seconds); the next graph build merges it into the exclusion nodes + the PU label"
-      ],
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "move \"%USERPROFILE%\\Downloads\\SAM_Exclusions_Public_Extract*.CSV\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_<yyyymm>.csv\"",
-        "python -m src.enforcement.sam_api --from-csv \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\"",
-        "python -m src.reminders --done sam_exclusions"
-      ],
-      "proof": [
-        "preclean/sam/*.csv"
-      ],
-      "proof_recent_days": 45,
-      "note": "Bundle 250: the public extract is now the SAM source (enforcement/sam_api.py --from-csv): it writes processed/exclusions_sam.parquet in the exclusions schema with the NPI the extract carries and the agency in excl_type (HHS debarments tier weak). Run the load line after each download; the graph rebuild (part of every frozen run) merges it. The older undated sam_exclusions.CSV can be deleted. FIRST LOAD 2026-10-09: 168,445 exclusions, 19,357 with an NPI, 69,978 placed by HHS, all active -> processed/exclusions_sam.parquet (the paged-API parquet is superseded)."
-    },
-    {
-      "key": "owner_snapshot",
-      "what": "make owner-snapshot (no download \u2014 archives owner edges; ownership_turnover needs 2+ months)",
-      "where": "run from repo: make owner-snapshot",
-      "url": "",
-      "every_months": 1,
-      "last_done": "2026-10-07",
-      "steps": [
-        "Nothing to download \u2014 paste the commands below"
-      ],
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.entity_graph.ownership_snapshot --owned-by \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\edges\\owned_by_edges.parquet\" --snapshots-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\owner_snapshots\"",
-        "python -m src.reminders --done owner_snapshot"
-      ]
-    },
-    {
-      "key": "warn_notices",
-      "what": "WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.",
-      "where": "preclean/warn/",
-      "url": "",
-      "every_months": 1,
-      "last_done": "2026-10-09",
-      "steps": [
-        "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"  (the --done line also refuses until files are there)",
-        "2026-10-09: CA, TX, NC and RI postings downloaded (three .xlsx, one .csv); the copy lines below file them as warn_<ST>_<yyyymm>.<ext>; the monitor (bundle 247) reads the whole folder, Excel included, and takes the state from the filename. FL did not download (a 37 KB 'Unconfirmed ...crdownload' in Downloads is the failed attempt): retry FloridaJobs WARN notices and save it as warn_FL_<yyyymm>.csv or .xlsx",
-        "Each month: Google '<state> WARN notices' (RI, NC, FL, TX, CA first); each state DOL posts a table; export the current year as CSV or XLSX; save as warn_<ST>_<yyyymm>.<ext> under preclean\\warn\\"
-      ],
-      "proof": [
-        "preclean/warn/warn_*.csv",
-        "preclean/warn/warn_*.xlsx"
-      ],
-      "commands": [
-        "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"",
-        "python -m src.sourcing.warn_monitor --warn \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\" --summary",
-        "for %f in (\"%USERPROFILE%\\Downloads\\California warn_report*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_CA_202610.xlsx\"",
-        "for %f in (\"%USERPROFILE%\\Downloads\\texas warn-act-listings*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_TX_202610.xlsx\"",
-        "for %f in (\"%USERPROFILE%\\Downloads\\north carolina warn summary report*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_NC_202610.csv\"",
-        "for %f in (\"%USERPROFILE%\\Downloads\\rhode island Warn Report*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_RI_202610.xlsx\"",
-        "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"",
-        "python -m src.reminders --done warn_notices"
-      ],
-      "note": "2026-10-09: CA, TX, NC, RI filed under preclean/warn/ (guard accepted); FL still to retry"
-    },
-    {
-      "key": "mue",
-      "what": "CMS MUE quarterly files (practitioner + facility)",
-      "where": "preclean/mue/",
-      "url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open the MUE page (url above); download BOTH quarterly zips: 'Practitioner Services MUE Table' + 'Facility Outpatient Hospital Services MUE Table'",
-        "Extract each zip; take the DATA sheet (the AMA-copyright cover sheet is the known trap)",
-        "Save as \"...preclean\\mue\\mue_practitioner_<yyyyQq>.csv\" and \"...preclean\\mue\\mue_facility_<yyyyQq>.csv\""
-      ],
-      "proof": [
-        "preclean/mue/*.csv",
-        "preclean/mue/*.xlsx"
-      ],
-      "proof_recent_days": 120
-    },
-    {
-      "key": "pos",
-      "what": "Provider of Services file (quarterly)",
-      "where": "preclean/pos/ (current editions to pos_current_hold/ while frozen builds run)",
-      "url": "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open the POS page (url above) \u2192 newest quarter \u2192 download the CSV set",
-        "Keep the quarter in every filename (e.g. pos_other_<yyyyQq>.csv)",
-        "IMPORTANT: while the 2023-12 frozen builds are the working runs, save CURRENT editions to preclean\\pos_current_hold\\ so they never leak into a frozen build"
-      ],
-      "proof": [
-        "preclean/pos_current_hold/*.csv",
-        "preclean/pos/*.csv"
-      ],
-      "proof_recent_days": 120
-    },
-    {
-      "key": "pbj",
-      "what": "PBJ Daily Nurse Staffing (quarterly)",
-      "where": "preclean/facility/ (current to facility_current_hold/)",
-      "url": "https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open the PBJ page (url above) \u2192 newest quarter \u2192 download the Nurse Staffing CSV (the one WITH Hrs_RN columns \u2014 the 'non-nurse' file is the known trap)",
-        "Save as \"...preclean\\facility_current_hold\\pbj_daily_staffing_<yyyyQq>.csv\" while frozen builds are the working runs (the frozen 2023Q4 edition stays in facility\\)"
-      ],
-      "proof": [
-        "preclean/facility_current_hold/pbj_daily_staffing_*.csv",
-        "preclean/facility/pbj_daily_staffing_*.csv"
-      ],
-      "proof_recent_days": 120
-    },
-    {
-      "key": "care_compare",
-      "what": "Care Compare provider-data archives (hospice measures, NH citations/ownership/penalties)",
-      "where": "preclean/facility/ (current to facility_current_hold/)",
-      "url": "https://data.cms.gov/provider-data/archived-data",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open https://data.cms.gov/provider-data/archived-data \u2192 'Hospice care' + 'Nursing homes' \u2192 newest month's zip",
-        "From the hospice zip keep Hospice_Provider; from the NH zip keep HealthCitations, Ownership, Penalties, SurveyDates",
-        "Rename each with the month (e.g. Hospice_Provider_<Mon><yyyy>.csv) and save to preclean\\facility_current_hold\\ (frozen Nov2023 editions stay in facility\\)"
-      ],
-      "proof": [
-        "preclean/facility_current_hold/*.csv",
-        "preclean/facility/Hospice_Provider_*.csv"
-      ],
-      "proof_recent_days": 120
-    },
-    {
-      "key": "nadac",
-      "what": "NADAC drug pricing (drug_spread_anomaly)",
-      "where": "preclean/nadac/",
-      "url": "https://data.medicaid.gov/datasets",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open https://data.medicaid.gov/datasets and search 'NADAC (National Average Drug Acquisition Cost)'",
-        "Download the current full CSV",
-        "Save as \"...preclean\\nadac\\nadac_<yyyymm>.csv\""
-      ],
-      "proof": [
-        "preclean/nadac/*.csv"
-      ],
-      "proof_recent_days": 120
-    },
-    {
-      "key": "work_plan",
-      "what": "OIG Work Plan curated table refresh (government_interest overlay)",
-      "where": "src/model_a/government_interest.py (Claude updates the code table)",
-      "url": "https://oig.hhs.gov/reports-and-publications/workplan/",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Nothing to download \u2014 just tell Claude: 'work plan refresh is due'",
-        "Claude re-reads the OIG Work Plan active items and updates the curated table in code"
-      ]
-    },
-    {
-      "key": "hrsa_340b",
-      "what": "340B OPAIS Covered Entity Daily Report (contract_pharmacy)",
-      "where": "preclean/hrsa_340b/ (3-worksheet .xlsx)",
-      "url": "https://340bopais.hrsa.gov/reports",
-      "every_months": 3,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open https://340bopais.hrsa.gov/reports \u2192 'Covered Entity Daily Report' \u2192 Excel export (must be the 3-worksheet .xlsx with Contract Pharmacies)",
-        "Save as \"...preclean\\hrsa_340b\\opais_covered_entity_<yyyymmdd>.xlsx\""
-      ],
-      "proof": [
-        "preclean/hrsa_340b/*.xlsx",
-        "preclean/hrsa_340b/*.csv"
-      ],
-      "proof_recent_days": 120
-    },
-    {
-      "key": "cms_pufs",
-      "what": "Part B / Part D / DMEPOS / opioid annual PUFs (new year lands ~spring)",
-      "where": "preclean/partb|partd|dmepos|opioid/ with the year in the filename",
-      "url": "https://data.cms.gov/provider-summary-by-type-of-service",
-      "every_months": 12,
-      "last_done": "2026-08-02",
-      "note": "2023 editions in hand for the freeze; annual pull matters for current-data scoring",
-      "steps": [
-        "Open the url; download FOUR datasets, always the 'by Provider and Service/Drug' detail versions (the 'by Provider' summaries are the known trap):",
-        "1) Medicare Physician & Other Practitioners BY PROVIDER AND SERVICE \u2192 preclean\\partb\\partb_<year>.csv",
-        "2) Medicare Part D Prescribers BY PROVIDER AND DRUG \u2192 preclean\\partd\\partd_<year>.csv",
-        "3) Medicare DMEPOS BY REFERRING PROVIDER AND SERVICE \u2192 preclean\\dmepos\\dmepos_<year>.csv",
-        "4) Medicare Part D Opioid Prescribing Rates by prescriber \u2192 preclean\\opioid\\opioid_<year>.csv"
-      ]
-    },
-    {
-      "key": "open_payments",
-      "what": "Open Payments annual file (kickback co-occurrence; new program year ~June)",
-      "where": "preclean/open_payments/",
-      "url": "https://openpaymentsdata.cms.gov/about/download",
-      "every_months": 12,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open https://openpaymentsdata.cms.gov/about/download \u2192 newest Program Year \u2192 General Payments detail file (it's large; the zip is fine to store)",
-        "Save to \"...preclean\\open_payments\\\" with the program year in the name",
-        "If the NPI column name differs from Covered_Recipient_NPI (older layouts), send Claude the header row"
-      ],
-      "proof": [
-        "preclean/open_payments/*.csv"
-      ]
-    },
-    {
-      "key": "hcris",
-      "what": "HCRIS cost reports (cost_report_fraud)",
-      "where": "preclean/hcris/ (flattened cost-report csvs)",
-      "url": "https://www.cms.gov/data-research/statistics-trends-reports/cost-reports",
-      "every_months": 12,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open the Cost Reports page (url above) \u2192 'Hospital 2010 form' (HOSPITAL10) newest fiscal year",
-        "Use the FLATTENED csv version, not the raw worksheet format (known trap)",
-        "Save to \"...preclean\\hcris\\\" with the fiscal year in the name"
-      ],
-      "proof": [
-        "preclean/hcris/*.csv",
-        "preclean/hcris/raw/*.zip"
-      ]
-    },
-    {
-      "key": "physician_time",
-      "what": "PFS Final Rule Physician Work Time file (impossible-day minutes; new rule ~November)",
-      "where": "preclean/hcpcs_time/physician_time_<year>.xlsx then run hcpcs_time_convert",
-      "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician",
-      "every_months": 12,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Google 'CY <year> PFS Final Rule Physician Work Time' \u2014 the file lives in the rule's downloads (a zip with a Physician Time .xlsx)",
-        "Header must start with cpt_code and contain Median_Intra_Service_Time (an RVU file like PPRRVU is the known wrong file)",
-        "Save as \"...preclean\\hcpcs_time\\physician_time_<year>.xlsx\", then paste the commands below with <year> filled in"
-      ],
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.ingest_cms.hcpcs_time_convert --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcpcs_time\\physician_time_<year>.xlsx\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcpcs_time\\hcpcs_minutes_<year>.csv\"",
-        "python -m src.reminders --done physician_time"
-      ]
-    },
-    {
-      "key": "docgraph",
-      "what": "DocGraph/CareSet referral teaming file (referral rings)",
-      "where": "preclean/docgraph/ with year window in the filename",
-      "url": "https://careset.com/docgraph/",
-      "every_months": 12,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open https://careset.com/docgraph/ \u2192 DocGraph Hop Teaming, newest year window",
-        "Required columns: from_npi, to_npi, patient_count",
-        "Save to \"...preclean\\docgraph\\\" keeping the year window in the filename"
-      ],
-      "proof": [
-        "preclean/docgraph/*.csv"
-      ]
-    },
-    {
-      "key": "nucc",
-      "what": "NUCC taxonomy crosswalk (peer grouping; published Jan + Jul)",
-      "where": "preclean/nucc/",
-      "url": "https://www.nucc.org/index.php/code-sets-mainmenu-41/provider-taxonomy-mainmenu-40/csv-mainmenu-57",
-      "every_months": 6,
-      "last_done": "2026-08-02",
-      "steps": [
-        "Open the NUCC csv page (url above) \u2192 newest 'Health Care Provider Taxonomy Code Set' CSV",
-        "Save as \"...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv\""
-      ],
-      "proof": [
-        "preclean/nucc/*.csv"
-      ]
-    },
-    {
-      "key": "nppes_2021_12",
-      "what": "NPPES December-2021 monthly edition (freezes the address layer for the v7 2021-12 rolling-origin run; one-time)",
-      "where": "preclean/nppes/npidata_pfile_20050523-20211212.csv (extracted CSV, several GB; next to the 2023 edition)",
-      "url": "https://data.nber.org/npi/",
-      "every_months": 120,
-      "last_done": "2026-10-09",
-      "steps": [
-        "Open https://data.nber.org/npi/ (NBER archives every monthly NPPES release; CMS itself keeps only the current month)",
-        "Find the December 2021 full NPPES Data Dissemination (the zip whose main csv is named npidata_pfile_20050523-20211212.csv or the closest December-2021 date)",
-        "Download and EXTRACT the zip; keep only the big npidata_pfile_*.csv",
-        "Then paste the commands below (moves it next to the 2023 edition and marks the item done)"
-      ],
-      "commands": [
-        "move \"%USERPROFILE%\\Downloads\\npidata_pfile_20050523-2021*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\\"",
-        "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\npidata_pfile_*2021*.csv\"",
-        "python -m src.reminders --done nppes_2021_12"
-      ],
-      "proof": [
-        "preclean/nppes/npidata_pfile_20050523-2021*.csv"
-      ],
-      "note": "closed 2026-10-09 from the operator's VINTAGE_INSPECT inventory: preclean/nppes/npidata_pfile_20050523-20211212.csv (8.5 GB) is on disk"
-    },
-    {
-      "key": "hospice_2021_archive",
-      "what": "Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)",
-      "where": "preclean/facility/Hospice_Provider_Feb2022.csv (CMS's own name inside the Feb-2022 archive zip; keep the Nov-2023 file too; bundle 248 picks the edition by vintage: a 2021-12 freeze reads Feb2022, a current-day run reads the newest)",
-      "url": "https://data.cms.gov/provider-data/archived-data/hospice-care",
-      "every_months": 120,
-      "last_done": "2026-10-09",
-      "steps": [
-        "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"  (two files = done)",
-        "2026-10-09: hospice-care_2022-02-16.zip downloaded and extracted to Downloads\\hospice_2022_02; the provider-level file inside is Hospice_Provider_Feb2022.csv (38 MB). The copy line below files it.",
-        "Open https://data.cms.gov/provider-data/archived-data/hospice-care (only if the zip is not in Downloads)",
-        "Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip"
-      ],
-      "commands": [
-        "powershell -Command \"Expand-Archive -Force -Path '%USERPROFILE%\\Downloads\\hospice-care_2022-02-16.zip' -DestinationPath '%USERPROFILE%\\Downloads\\hospice_2022_02'\"",
-        "copy /y \"%USERPROFILE%\\Downloads\\hospice_2022_02\\Hospice_Provider_Feb2022.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider_Feb2022.csv\"",
-        "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"",
-        "python -m src.reminders --done hospice_2021_archive"
-      ],
-      "proof": [
-        "preclean/facility/Hospice_Provider_*2022*.csv",
-        "preclean/facility/Hospice_Provider_*2021*.csv",
-        "preclean/facility/Hospice_Provider_20????.csv"
-      ],
-      "note": "closed 2026-10-09: Hospice_Provider_Feb2022.csv (38 MB) on disk beside Hospice_Provider_Nov2023.csv (operator's dir listing)"
-    },
-    {
-      "key": "oig_cia",
-      "what": "LOW PRIORITY: OIG Corporate Integrity Agreement list (recall benchmark for the DOJ case DB in the label audit + a mild risk prior; changes no PI lead). Five-minute copy from the 'CIA Documents' table page, not the overview page; never worth Manus money",
-      "where": "preclean/cia/cia_list.csv",
-      "url": "https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp",
-      "every_months": 3,
-      "last_done": "2026-10-09",
-      "steps": [
-        "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\"  (the --done line also refuses until the file is there)",
-        "Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp",
-        "Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link",
-        "Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)"
-      ],
-      "commands": [
-        "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\"",
-        "move \"%USERPROFILE%\\Downloads\\cia_list.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\\cia_list.csv\"",
-        "python -m src.reminders --done oig_cia"
-      ],
-      "proof": [
-        "preclean/cia/cia_list.csv"
-      ],
-      "note": "closed 2026-10-09: cia_list.csv moved into preclean/cia/ (the guard accepted the --done); header check pending in chat"
-    },
-    {
-      "key": "nppes_practice_locations",
-      "what": "NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check",
-      "where": "preclean/nppes/pl_pfile_<dates>.csv",
-      "url": "https://download.cms.gov/nppes/NPI_Files.html",
-      "every_months": 1,
-      "last_done": "2026-10-14",
-      "steps": [
-        "Open https://download.cms.gov/nppes/NPI_Files.html and download the 'NPPES Data Dissemination' monthly zip (the full file, ~1 GB zipped) if you do not already have this month's",
-        "Extract ONLY the practice-location file from the zip with the first command below (the zip is huge; do not unzip everything)",
-        "Move it into preclean\\nppes with the second command; run_capacity.bat finds it automatically"
-      ],
-      "commands": [
-        "for %f in (\"%USERPROFILE%\\Downloads\\NPPES_Data_Dissemination_*.zip\") do tar -xf \"%f\" -C \"%USERPROFILE%\\Downloads\" \"pl_pfile_*.csv\"",
-        "move \"%USERPROFILE%\\Downloads\\pl_pfile_*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\\"",
-        "python -m src.reminders --done nppes_practice_locations"
-      ],
-      "proof": [
-        "preclean/nppes/pl_pfile*.csv"
-      ]
-    },
-    {
-      "key": "state_capacity_rosters",
-      "what": "LOW PRIORITY (2026-09-16: the Northeast PI packet is clinics and therapy offices; a roster only moves a bed-based check). State licensed-facility rosters with LICENSED CAPACITY for waiver group homes, residential habilitation, adult day, assisted living, hospice houses. The one Northeast item that moves a current card: NJ DHS/DDD group homes (Special Homes of NJ). Everything else (FL AHCA, IL, IN, DC, TX, CA, MA, RI) is for a future capacity pass",
-      "where": "preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)",
-      "url": "https://health.ri.gov/licenses/",
-      "every_months": 6,
-      "last_done": null,
-      "steps": [
-        "FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type PPEC (prescribed pediatric extended care), then Assisted Living, then Adult Day Care -> Download/Export with the licensed capacity column; save as FL_ppec.csv, FL_assisted_living.csv, FL_adult_day.csv",
-        "NJ (group homes): https://www.nj.gov/humanservices/ddd/ -> licensed community residences / provider search (DHS licenses developmental-disability group homes; the DOH long-term-care file already loaded does not cover them); save as NJ_ddd_homes.csv",
-        "IN: https://www.in.gov/fssa/ddrs/ -> BDDS licensed group homes / supervised group living list with capacity; save as IN_group_homes.csv (retires the occupancy-artifact rows)",
-        "DC: https://dds.dc.gov/ or https://dchealth.dc.gov/ -> community residence facilities with bed capacity; save as DC_residential.csv (same purpose)",
-        "TX: https://www.hhs.texas.gov/providers/long-term-care-providers -> HCSSA directory export; save as TX_hcssa.csv",
-        "NY (two files, joined on Facility ID by the loader; the old Adult Care Facility Directory was retired in 2022): beds = https://health.data.ny.gov/api/views/2g9y-7kqm/rows.csv?accessType=DOWNLOAD (Health Facility Certification Information; downloads as Health_Facility_Certification_Information*.csv) and addresses = https://health.data.ny.gov/api/views/vn5v-hh5r/rows.csv?accessType=DOWNLOAD (Health Facility General Information; downloads as Health_Facility_General_Information*.csv); the copy lines below name them NY_certification.csv / NY_facilities.csv",
-        "NJ: hospitals with licensed beds = https://data.nj.gov/api/views/mrzk-zrvp/rows.csv?accessType=DOWNLOAD (Acute-Care Facilities; downloads as Acute-Care_Facilities*.csv -> NJ_acute_care.csv). Nursing homes are already covered by the CMS POS file; NJ assisted living / residential has no CSV export (https://healthapps.nj.gov/facilities/fssearch.aspx is a search form), so skip it unless a table is copied by hand",
-        "IL: https://dph.illinois.gov/topics-services/health-care-regulation/health-care-facilities -> facility directories (community integrated living arrangements, intermediate care facilities, assisted living); export or copy with the licensed capacity column; save as IL_<type>.csv",
-        "RI: https://health.ri.gov/licenses/ -> Health Care Facilities -> the licensed facility list/search; export or copy the table (hospice, assisted living, group homes) with the licensed bed/capacity column; save as RI_<type>.csv",
-        "FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type (Adult Day Care, Assisted Living, Hospice) -> Download; keep the capacity/beds column; save as FL_<type>.csv",
-        "ME: https://www.maine.gov/dhhs/dlc -> licensed facilities lists (assisted housing, residential care, group homes) -> export; save as ME_<type>.csv",
-        "MO: https://health.mo.gov/safety/showmelongtermcare/ -> facility list with licensed beds (residential care, assisted living, ICF); save as MO_<type>.csv",
-        "CO: https://cdphe.colorado.gov/health-facilities -> 'find and compare' facility data download (assisted living, group homes, adult day); save as CO_<type>.csv",
-        "Any state: the file needs a facility name, street address, city, zip and a capacity/beds column under any common header; unusual headers are fine, tell Claude and a column map is added",
-        "Then build the capacity table with the commands below"
-      ],
-      "commands": [
-        "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\"",
-        "for %f in (\"%USERPROFILE%\\Downloads\\Health_Facility_Certification_Information*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_certification.csv\"",
-        "for %f in (\"%USERPROFILE%\\Downloads\\Health_Facility_General_Information*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_facilities.csv\"",
-        "for %f in (\"%USERPROFILE%\\Downloads\\Acute-Care_Facilities*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NJ_acute_care.csv\"",
-        "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_licensed_capacity.bat\"",
-        "python -m src.reminders --done state_capacity_rosters"
-      ],
-      "progress": "2026-09-16: NY (Certification + General Information) and NJ (Acute-Care + All_LTC_NJ.xlsx) loaded: 2,335 licensed sites, 19,075 NPIs matched. Next: IL, CA, MA, FL, RI.",
-      "proof": [
-        "preclean/state_capacity/*.csv"
-      ],
-      "note": "2026-10-09 inventory: NY_certification.csv, NY_facilities.csv, NJ_acute_care.csv and NJ_ltc.xlsx are already under preclean/state_capacity/ (the three direct downloads are DONE); what remains is the optional hand-copied state lists (FL, NJ DDD group homes, IN, DC, TX, IL, RI, ME, MO, CO)"
-    },
-    {
-      "what": "State Medicaid terminated/excluded provider lists for the Southeast (Medicaid-side FCA labels that lead the LEIE by years and carry NPIs). Seven download; Florida and Louisiana need a records request. Tier by stated reason when loading (fraud/abuse/conviction/program integrity = hard; license/paperwork = weak).",
-      "last_done": "2026-09-26",
-      "url": "https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list",
-      "steps": [
-        "Georgia: https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list -> List of Excluded Individuals (xlsx)",
-        "Alabama: https://www.medicaid.alabama.gov/content/8.0_Fraud/8.7_Suspended_Providers.aspx -> Provider Sanction List (xlsx or pdf; name-only)",
-        "Tennessee: https://www.tn.gov/tenncare/fraud-and-abuse/program-integrity.html -> Terminated Provider List",
-        "North Carolina: https://medicaid.ncdhhs.gov/providers/excluded-providers -> State Excluded Provider List (monthly xlsx)",
-        "South Carolina: https://www.scdhhs.gov/fraud-waste-and-abuse -> Excluded/Terminated Providers (xlsx)",
-        "Kentucky: https://www.chfs.ky.gov/agencies/dms/dpi/pe/Pages/terminated.aspx -> Terminated and Excluded Provider List (xlsx)",
-        "Mississippi: https://medicaid.ms.gov/providers/provider-terminations/ -> Sanctioned Providers List (xlsx)",
-        "Florida: no bulk list. Provider Master List at https://portal.flmmis.com/FLPublic/Provider_ManagedCare/Provider_ManagedCare_Registration/tabId/77/Default.aspx?linkid=pml plus a records request to PublicRecordsReq@ahca.myflorida.com for the s.409.913 terminated-for-cause list with NPI, reason, effective date",
-        "Louisiana: search screen only (https://adverseactions.ldh.la.gov/SelSearch); records request to LDH Program Integrity for the adverse actions list as a file",
-        "Leave the downloads in Downloads with the state name in the filename, then run the sorter (dry run, then --apply); it checks headers and files them"
-      ],
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
-        "python sort_state_lists.py",
-        "python sort_state_lists.py --apply",
-        "python -m src.reminders --done state_terminations"
-      ],
-      "key": "state_terminations",
-      "every_months": 3,
-      "where": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)",
-      "proof": [
-        "preclean/state_terminations/*"
-      ]
-    },
-    {
-      "key": "fda_ndc_directory",
-      "what": "FDA NDC Directory (product.txt: labeler code -> manufacturer, DEA schedule): the bridge that runs pharma_kickback on the Medicaid NDC file (built 2026-10-10). The operator downloaded and extracted it on 2026-10-10 into Downloads\\ndctext (product.txt + package.txt); the loader reads the two .txt files or the zip. Refresh every 6 months.",
-      "where": "preclean/fda_ndc/",
-      "url": "https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory",
-      "every_months": 6,
-      "last_done": "2026-10-10",
-      "steps": [
-        "Open https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory",
-        "Under 'NDC Database File', download the Text (zip) version and extract it (product.txt + package.txt)",
-        "Copy the two .txt files into \"...preclean\\fda_ndc\\\" with the commands below (or save the zip there unextracted; either works)"
-      ],
-      "commands": [
-        "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\"",
-        "copy /y \"%USERPROFILE%\\Downloads\\ndctext\\product.txt\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\\product.txt\"",
-        "copy /y \"%USERPROFILE%\\Downloads\\ndctext\\package.txt\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\\package.txt\"",
-        "python -m src.reminders --done fda_ndc_directory"
-      ],
-      "proof": [
-        "preclean/fda_ndc/product.txt",
-        "preclean/fda_ndc/*.zip"
-      ]
-    },
-    {
-      "key": "pre_cutoff_editions_2021",
-      "what": "The 2021 editions that the 2021-12 freeze needs (one-time). Eight runs read 2023 snapshots (PBJ 2023Q4, POS Q4 2023, Care Compare NH Nov2023, Order & Referring 2023-12) inside a 2021-12 freeze; bundle 324 makes the export read only editions on/before the freeze, so until these land the facility / PBJ / POS features are simply absent on frozen runs (FROZEN_SKIP=facility,pos in the runner, which you set to FROZEN_SKIP=\"\" once the files exist). Keep the 2023 files; the picker chooses by the date in the name. Also: no All-Owners edition on/before 2021-12 exists for any dataset family, so ownership_turnover is empty on every frozen run; the CMS data.cms.gov pages keep historical versions under 'Data > Historical / Versions'.",
-      "where": "preclean/pos/<CMS name>_Q4_2021.csv; preclean/facility/pbj_daily_staffing_2021Q4.csv (+2021Q3); preclean/facility/NH_Ownership_Dec2021.csv, NH_Penalties_Dec2021.csv, NH_HealthCitations_Dec2021.csv; preclean/order_referring/order_referring_2021-12.csv; preclean/nadac/nadac_2021.csv; preclean/owners_prior/<Dataset>_All_Owners_2021.12.01.csv",
-      "url": "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities",
-      "every_months": 120,
-      "last_done": null,
-      "steps": [
-        "POS (three files, Q4 2021): https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities -> 'Historical' / version list -> the 2021 Q4 (December 2021) version -> Download CSV; same for the CLIA file (provider-of-services-file-clinical-laboratories) and the iQIES HHA/ASC/Hospice file (provider-of-services-file-internet-quality-improvement-and-evaluation-system-home-health-agency-ambulatory-surgical-center-and-hospice-providers). Rename each download so the name carries Q4_2021 (e.g. POS_File_CLIA_Q4_2021.csv) and save under preclean\\pos\\",
-        "PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> version list -> 2021 Q4 (and Q3) -> Download CSV; save as preclean\\facility\\pbj_daily_staffing_2021Q4.csv (and _2021Q3.csv)",
-        "Care Compare nursing homes, December 2021 archive: https://data.cms.gov/provider-data/archived-data/nursing-homes -> the 12_2021 (or 11_2021) monthly zip -> extract -> copy NH_Ownership_*.csv, NH_Penalties_*.csv, NH_HealthCitations_*.csv into preclean\\facility\\ with Dec2021 in the name (the zip's own names carry the month; keep them)",
-        "Order & Referring, December 2021: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment/order-and-referring -> version list -> the December 2021 version -> Download; save as preclean\\order_referring\\order_referring_2021-12.csv",
-        "NADAC 2021: https://data.medicaid.gov/dataset/dfa2ab14-06c2-457a-9e36-5cb6d80f8d93 (NADAC 2021; or search data.medicaid.gov for 'NADAC (National Average Drug Acquisition Cost) 2021') -> Download CSV; save as preclean\\nadac\\nadac_2021.csv (un-gates drug prices on the freeze; the 2026 file stays as the name lookup)",
-        "All Owners, 2021 editions (one per dataset family: SNF, HHA, Hospice, Hospital, FQHC, RHC): each data.cms.gov 'All Owners' page (e.g. https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/skilled-nursing-facility-all-owners) -> version list -> a 2021 version (two per family if offered, e.g. June and December 2021) -> Download CSV; name them like the existing owners_prior files with the version date (e.g. SNF_All_Owners_2021.12.01.csv) and save under preclean\\owners_prior\\",
-        "Then paste the commands below (the vintage inspector settles every file's period and writes the rename plan; the next frozen run sets FROZEN_SKIP=\"\")"
-      ],
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\\*2021*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\NH_*2021*.csv\"",
-        "python -m src.vintage_inspect --data-root \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\"",
-        "python -m src.reminders --done pre_cutoff_editions_2021"
-      ],
-      "proof": [
-        "preclean/pos/*2021*.csv",
-        "preclean/facility/pbj_daily_staffing_2021*.csv"
-      ]
-    }
-  ],
-  "tasks": [
-    {
-      "key": "brad_ri_package",
-      "what": "Send Brad the RI dossier v4.1 + honest-grade email (ready; your call)",
-      "added": "2026-08-02"
-    },
-    {
-      "key": "dossier_poll__frozen_2023-12_v5",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-08-04",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v5\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v5"
-      ]
-    },
-    {
-      "key": "registry_verdict__frozen_2023-12_v5",
-      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v5 \u2014 close only when you have them",
-      "added": "2026-08-04"
-    },
-    {
-      "key": "dossier_poll__frozen_2023-12_v6",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v6 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-09-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6"
-      ]
-    },
-    {
-      "key": "run_packet__frozen_2021-12_v7",
-      "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-      "added": "2026-09-14",
-      "commands": [
-        "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7",
-        "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-        "REM then upload run_packet.zip to the chat",
-        "python -m src.reminders --done-task run_packet__frozen_2021-12_v7"
-      ]
-    },
-    {
-      "key": "pursuit_dossier__frozen_2021-12_v7",
-      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v7 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-      "added": "2026-09-14",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --dispatch",
-        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v7"
-      ]
-    },
-    {
-      "key": "dossier_poll__frozen_2021-12_v7",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v7 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-09-14",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7"
-      ]
-    },
-    {
-      "key": "peer_hard2:_after_the_fraud",
-      "what": "peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names",
-      "added": "2026-09-15"
-    },
-    {
-      "key": "state_letter:_every_named",
-      "what": "State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter",
-      "added": "2026-09-16"
-    },
-    {
-      "key": "pi_packet_v9_feedback",
-      "what": "PI Packet v11 (final for this round, 2026-09-16; v10 superseded by the limitations clock: paid_after check over Tiers 1-2, Tier 1 reordered by live dollars, Infinity/Jacoby/Perspectives to desk-first) sent to Trey: 9 Tier 1 + 7 Tier 2 + 2 Tier 3 + 6 national + 1 desk-first, 19 do-not-send rows, all 50 cards reviewed. OPEN until the PIs' feedback comes back and is folded into v10 (or Trey confirms no changes). Next capacity pass to-dos recorded in the packet: minutes map H2035=60; find the pre-2020 Hope Pediatrics NPI in the spending fact; Special Homes billed residential days vs 76 licensed places. Consensus read 2026-09-16: five-run national book is hospitals/health systems/national chains (do-not-send class); it adds no PI card; ACT HOME HEALTH SERVICES, INC (org:pac:3971547985, $18M/yr, hot 3/5, rapid_ramp) is the one new non-institutional name, held for a desk check next round (state unknown; no state column in the CSV). Successor-NPI check ran 2026-09-16: Renew Resources, Perspectives Counseling Center and Velocity have no claims through 2024-12; Perspectives is lowest priority, Velocity waits for the next data refresh. FIRST PI REPORT RECEIVED 2026-10-12 (Sage Intelligence case 260136, dated 2026-10-07, to Brad; attorney work product, keep it OUT of git and OUT of OneDrive-shared folders: save under <data_root>\\enforcement\\pi_reports\\): Part I surveillance of the three Chinatown cards (Lau 2 Mott St, Chang 217 Grand St, Xie 139 Centre St): Lau = a real solo pediatric office with two receptionists, two child patients in 75 minutes, a Brooklyn second site, and two NPs plus an FNP tied to the address (NP services billed under the physician NPI is the innocent explanation to rule out first, and the scheme if the rate was the physician's); Chang = busy ophthalmology office open 7 days, an optometrist and a second physician at the address; Xie = neurology office EMPTY on both visits (85 minutes), a PA and an NP tied to it at Brooklyn addresses. Part II: former employees with tenure windows identified for about 20 packet practices; next phase = door knocks and interviews. OUR NEXT STEP: send Sage the WHEN sheet (pi_facts --deep now writes PI_FACTS_*_WINDOWS.md: active years / ramp month / peak year per practice) so interviews go to formers whose tenure overlaps the active window; and the three surveillance facts go into the Lau / Chang / Xie cards as field observations. 2026-10-13: Special Homes of NJ RESOLVED by the capacity ratio (74 residents per calendar day worst month against 76 licensed places; census 70 median): ordinary near-full provider, drop the card from the next packet. Lau's second billing number (the P.C.) is $674k and stopped 2022-07: no change to the card.",
-      "added": "2026-09-16",
-      "commands": [
-        "(no command: paste the PIs' notes into the chat)"
-      ]
-    },
-    {
-      "key": "consensus_v7_disagreement",
-      "what": "CONSENSUS.md 2026-09-16: the 2021-12_v7 run scores the top-5 hospitals (Carolinas, Montefiore, Barnes Jewish, CEP America) at 0.00-0.02 while v3/v4/v5 score them 0.99-1.00; top_schemes are contract_pharmacy-led. Diagnose before the next pre-registration: is the 2023-12 freeze's 340B/contract_pharmacy input the driver, and is it absent under the 2021-12 freeze? Only 11 of 2,738 orgs are hot in >=3 runs, one in 4/5. Feed the answer into scheme triage; never gate a run on it.",
-      "added": "2026-09-16",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.scheme_triage --run \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\""
-      ]
-    },
-    {
-      "key": "editions_undated_reference",
-      "what": "LOW: fill EDITIONS.csv data_period for the reference files that carry no date inside or in their name (PECOS.csv, hud/zip_county.*, nucc/*, opensanctions/targets.simple.csv): the download date is the period. Operator entries are never overwritten.",
-      "added": "2026-09-16",
-      "commands": [
-        "notepad \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\EDITIONS.csv\""
-      ]
-    },
-    {
-      "key": "preclean_orphans_2026_09",
-      "what": "Operator's call (nothing runs on them): preclean/pecos/enrollment.csv is a 321 MB duplicate of PECOS.csv; preclean/nppes/npi_deactivation.csv is an unreadable 8 MB orphan (the wired file is nppes_deactivation/deactivation_20260608.zip). Delete or move both to free space; no adapter reads either.",
-      "added": "2026-09-16",
-      "commands": [
-        "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pecos\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\""
-      ]
-    },
-    {
-      "key": "build_ready_to_wire_schemes",
-      "what": "CLAUDE build queue from SCHEME_DISCOVERY 2026-09-16: three READY TO WIRE (nh_ownership_stakes from NH_Ownership_Nov2023 Ownership Percentage/Role; nh_penalties from NH_Penalties_Nov2023 Fine Amount; pbj_weekend_staffing from pbj_daily_staffing Hrs_RN by WorkDate weekday); the six hospice candidates need the long-format Measure Code pivot (facility.py already pivots hospice, so the discovery check should read the pivoted view); new idea: HCRIS HHA discipline visit counts (RN/LPN/PT/OT/SLP visits, Medicaid Title XIX) as a home-health capacity check (visits per licensed nurse). No operator action.",
-      "added": "2026-09-16",
-      "commands": []
-    },
-    {
-      "key": "fl_la_state_lists",
-      "what": "Florida and Louisiana state Medicaid termination lists are still not loaded (the operator prefers to keep searching for a downloadable file). Florida: the AHCA search screen and the Provider Master List on the FLMMIS portal; a records request for the for-cause list goes to PublicRecordsReq@ahca.myflorida.com. Louisiana: LDH adverse actions is a search screen only. When a file lands: save it in Downloads with the state name in the filename, run the sorter dry run then --apply, rerun the loader and the census (state_terminations cadence commands), and upload STATE_TERMINATIONS_REPORT.md.",
-      "added": "2026-09-27"
-    },
-    {
-      "key": "defendant_resolver_run",
-      "what": "2026-09-28: resolver run 4 (bundle 183+) = 1,329 resolved mentions -> 1,052 NPIs / 1,212 cases; SE 314 NPIs; 1,680 research residual. Manus tiers 1 and 2 DISPATCHED 2026-09-27 (280 tracked tasks; ~448 orphan duplicates from concurrent windows are paid but untracked). OPERATOR (a day after dispatch, ONE window): poll with --resolved (the poll folds the answers into case_defendant_npis.parquet itself; no resolver re-run needed for that); after the poll re-run the strict export (task fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md + DEFENDANT_RESEARCH.md. A second batch (excluding already-dispatched org_ids) only after this batch's answer quality is known.",
-      "added": "2026-09-27",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --status",
-        "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --poll --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
-        "REM then re-run the strict export (see fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md",
-        "python -m src.reminders --done-task defendant_resolver_run"
-      ]
-    },
-    {
-      "key": "case_harvest_sources_1_6",
-      "what": "2026-09-28 state: (1) deep DOJ backfill DONE (9,256 feed cases back to 2016-09-28; case table 15,240 after merge + reclassify: criminal_hcf 7,126 / civil_fca 4,594 / oig_cmp 614 / not_fraud 334 / untyped 2,572). (2) CourtListener docket backfill SKIPPED by operator decision (no account). (3) OIG harvest since 2015 WITH linked releases is RUNNING (6-8 h, network only; a bundle merge is safe while it runs). (4-6) harvest prompts DISPATCHED 2026-09-27 (98 tracked + 59 duplicate tasks). OPERATOR when the OIG window prints its summary: paste it, then run the merge line WITH --reclassify, the resolver, the strict export; upload OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md, FCA_LABEL_EXPORT.md. A day after dispatch (ONE window): poll the harvest prompts, review every CSV under processed\\case_harvest\\results\\, load only accepted ones via research_evidence mfcu-cases.",
-      "added": "2026-09-27",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --reclassify",
-        "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
-        "REM a day after dispatch:",
-        "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --poll",
-        "REM review each CSV under processed\\case_harvest\\results\\; load an accepted one with:",
-        "python -m src.enforcement.research_evidence mfcu-cases --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\\results\\<accepted>.csv\" --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
-        "python -m src.reminders --done-task case_harvest_sources_1_6"
-      ]
-    },
-    {
-      "key": "fca_strict_label_export",
-      "what": "PARKED UNTIL THE PURPLELAB POC STARTS (operator 2026-10-09: nothing sent, POC not started). When it starts, send two attachments: the handoff brief PurpleLab_POC_Handoff_Brief_v4.pdf (chat, 2026-09-29; re-rendered on request) and processed\\fca_label_strong\\labels_fca_strict.csv (5,155 rows / 4,672 NPIs: exact_id + strong + moderate). NEVER the processed\\fca_label\\ copy (5,544 rows, carries the 389 weak rows that verified at 74%). STATUS OF THE LABEL: verified by the research agent on 249 rows (strong 39/40, moderate 69/75 = 92%, weak 65/88 = 74%, so weak is held out); tiered by FCA relevance; graded by label_audit. It has been used as the EVALUATION ruler (the forward FCA ruler that graded v6 and v7 today) but NO model has been TRAINED with the resolved-defendant rows yet: v7 was built 2026-09-14, the resolver ran 2026-09-28; v8 is the first such run. Say 'PurpleLab sent' after sending.",
-      "added": "2026-09-27",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv\"",
-        "powershell -Command \"(Get-Content 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv').Count - 1\"",
-        "REM attach both to the PurpleLab email when the POC starts; then say 'PurpleLab sent' in chat"
-      ]
-    },
-    {
-      "key": "storage_sense_off",
-      "what": "OneDrive Storage Sense dehydrated the data folder on 2026-10-02 (86.4 GB freed; every parquet became a cloud-only placeholder and queries died with 'The cloud file provider is not running'). The folder is pinned (attrib +P) but the setting must be changed or it recurs in 30 days: Settings > System > Storage > Storage Sense: set 'Content will become online-only if not opened for more than' to Never, and turn 'Automatic User content cleanup' Off. Then check free disk space; the overnight runs need tens of GB.",
-      "added": "2026-10-05",
-      "commands": [
-        "wmic logicaldisk get caption,freespace,size",
-        "python -m src.reminders --done-task storage_sense_off"
-      ]
-    },
-    {
-      "key": "ohio_medicaid_cost_report_request",
-      "what": "Wesleyan / Lahasky stack: file the Ohio public records request (R.C. 149.43; OAG 76-011 says NF Medicaid cost reports are public) with the Ohio Department of Medicaid for the CY2021-2024 nursing facility cost reports of the 21 Ohio homes below, all schedules incl. related-party. The federal HCRIS A-8-1 run (2026-10-06) showed: Wesleyan Village filed NO related-organization worksheet 2021-2025 despite WV Healthcare Management LLC in managerial control; the Gardens group booked $9.2M (2021) / $7.7M (2022) to related home-office + property companies with $4.5M / $11.5M disallowed as above-cost, then the home-office entities vanish from the 2023+ filings; the six Ayden/Buckeye Forest homes' related-party charges grew $3.0M (2021) to $7.5M (2024) after the Lahasky acquisition. The Ohio report is the state-side version of the same schedule and the one Ohio rate-setting uses. CCNs: 365162 Wesleyan Village; 365330 Ayden Wauseon; 365453 Ayden Oregon; 365532 Ayden Greenville; 365607 Ayden Piqua; 365617 Ayden Waterville; 365849 Ayden Toledo; 365315 Capital City Gardens; 365355 Gardens of Mayfield Village; 365557 Eaton/Maple Gardens; 365559 Lansing Gardens/Rolling Hills; 365577 Marysville/Prestige Gardens; 365594 Gardens of Euclid Beach; 365933 Buckeye Terrace/Edgewood Manor of Westerville; 366002 Crestline; 366010 Summit Villa/Pinnacle; 366012 Country Meadow; 366014 Whispering Hills; 366085 Legends Care; 366158 Mount Royal Villa; 366187 Minerva Healthcare. Send to ODM public records (address on medicaid.ohio.gov, Public Records); Claude drafted the letter in chat 2026-10-06. Close when sent.",
-      "added": "2026-10-06",
-      "commands": [
-        "python -m src.reminders --done-task ohio_medicaid_cost_report_request"
-      ]
-    },
-    {
-      "key": "build_nursing_home_dollar_basis",
-      "what": "BUILD QUEUE (lesson from Wesleyan Village, 2026-10-06): the cost_report_fraud scheme put Wesleyan at the 98th peer percentile (hcris_cost_anomaly 0.984, subscore 0.95) in BOTH the v6 and v7 runs, yet it sat in priority tier 6_none with zero concept signals, because the leads ranking is dollar-weighted on the Medicaid HCPCS file and a nursing home's revenue (the LT per diem) has no HCPCS code: Wesleyan shows $1.7M of assisted-living waiver lines against a multi-million per-diem stream the file cannot see. Nursing facilities (taxonomy 31xx) are therefore systematically under-ranked. Fix: for 31xx orgs use the HCRIS cost report as the dollar basis (Worksheet S-3 Medicaid days and total patient revenue, G-2/G-3 revenue) via the CCN crosswalk, and let cost_report_fraud + worthless_services + ownership_integrity carry the rank for that class. Also: the raw-HCRIS A-8-1 related-party share (hcris_related_party.py) should feed hcris.py's related_party_cost_share, which the published file lacks.",
-      "added": "2026-10-06",
-      "commands": [
-        "python -m src.reminders --done-task build_nursing_home_dollar_basis"
-      ]
-    },
-    {
-      "key": "wesleyan_balance_sheet_readout",
-      "what": "Wesleyan Village (365162) balance sheet, read 2026-10-07 from the raw HCRIS Worksheet G: the mortgage ($23.3M in 2021, $21.2M in 2025) existed all along, so the $1.9M/yr interest that first appears on Worksheet A in 2023 is a preparer reclassification out of A&G, not new debt (correction to the 10-07 reading). The step-down (Worksheet B, B-1 statistics: campus 152,417 sq ft vs SNF 69,000; campus resident days still used 2023-25) allocates about half of all cost, $9.1M to $11.2M a year, to the campus nonreimbursable center, so the campus carve-out is NOT thin after allocation (second correction). What IS new from 2023: other-assets line 31 (the standard form label is 'Due from owners/officers') $0 (2022) -> $1.57M (2023) -> $9.39M (2024) -> $20.29M (2025); long-term line 47 (standard label 'Loans from owners') $0 -> $2.76M -> $9.59M -> $17.22M; $8.6M of plant moved to 'Investments' in 2023 and out again in 2025; $1.56M of land left the books in 2024; A-7 capital worksheet left blank (1s) in 2023 and 2024; fund balance $4.93M (2021) -> $2.44M (2024) while reporting losses. No A-8-1 any year. Operator: confirm the Worksheet G line labels against Pub 15-2 chapter 41 (CMS blocked from the session; open https://m.nber.org/hcris/2540-10/manual/pr2_41.pdf or the CMS 2540-10 form) before any of this goes to Brad in those words; the Ohio cost report records request already covers the related-party schedule where these loans must be disclosed.",
-      "added": "2026-10-07",
-      "commands": [
-        "python -m src.reminders --done-task wesleyan_balance_sheet_readout"
-      ]
-    },
-    {
-      "key": "grade_large_book_v7",
-      "what": "LEVER 4 (large-biller book), first grade on v7, after bundle 266 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes.",
-      "added": "2026-10-10",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -u -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --priority-list",
-        "python -u -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --horizon-months 36 --list-name provider_priority_list_large.csv",
-        "python -m src.reminders --done-task grade_large_book_v7"
-      ]
-    },
-    {
-      "key": "pursuit_dossier__frozen_2021-12_v11",
-      "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). Build + dispatch the pursuit dossier for frozen_2021-12_v11 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) Only if the packet read-out says PROMOTE, or the operator says go.",
-      "added": "2026-10-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --dispatch",
-        "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v11"
-      ]
-    },
-    {
-      "key": "dossier_poll__frozen_2021-12_v11",
-      "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). ~30 min after dispatch: collect Manus research into the frozen_2021-12_v11 dossier and send PURSUIT_DOSSIER.md Only if the packet read-out says PROMOTE, or the operator says go.",
-      "added": "2026-10-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --poll",
-        "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11"
-      ]
-    },
-    {
-      "key": "v13_label_ablation_agency_codes",
-      "what": "CLAUDE / operator question for AFTER v12 (never gates a run): the enrollment file's agency codes with no stated cause are label candidates only where they are a MINORITY code in their state (FL 'TERM - MEDICAID AUTHORITY' 2,133 at 2 percent of FL's ends; IA / TX / AL 'ACTION TAKEN BY MEDICAID/CHIP' at 5 to 6 percent; CT 'MEDICAID AUTHORITY' 2,410 at 37 percent). Run label_ablation on the v12 matrix with those rows added as a source and read the forward-lift delta; admit them to v13's label only if the delta is positive with a CI above zero.",
-      "added": "2026-10-12",
-      "commands": [
-        "REM after v12 is graded; Claude writes the exact ablation line then"
-      ]
-    },
-    {
-      "key": "sage_followups_2026_10",
-      "what": "Sage follow-ups after the first report, the titles PDF, the WHEN sheets and the staff-NPI profile (PI_FEEDBACK_CROSSREF_2026-10-12.md, PI_ROLES_READOUT_2026-10-12.md, PI_WHEN_READOUT_2026-10-13.md, PI_STAFF_READOUT_2026-10-13.md: all with the PI report under <data_root>\\enforcement\\pi_reports\\, never in git). DONE 2026-10-13: the seven NPPES lookups, the WHEN sheets, the staff-NPI profile (five of seven staff NPIs are absent from the fact as biller AND renderer; one Mott St NP rendered $293k over 12 months under TWO Lau billing numbers, the individual NPI and CHEUK W. LAU M.D., P.C. 1730477274, which the card never counted; the optometrist at Grand St renders only under two optical shops, never under Chang) and the Special Homes fact sheet ($59.6M 2018 to 2024, 99.6 percent H2016 per diem, one rendering NPI, 28.6 lines per patient-month). SETTLED 2026-10-13: Special Homes = 74 residents per calendar day in the worst month against 76 places (97 percent), census 70 median / 78 worst, 94 percent of days billed: an ordinary nearly-full residential provider, NO visit, drop from the next packet; Lau's P.C. number = $674k over 2018-01 to 2022-07 then stopped (4 percent of the practice), the card stands on the individual NPI. OURS, still open: (1) rerun pi_facts on the three Chinatown NPIs so the sheet names Lau's third rendering NPI by dollars (block below, one minute); (2) tell Brad the Infinity PACER first-to-file check is time-sensitive ($126M in 2022 alone). SAGE: the first-call list (PI_WHEN_READOUT section 2) and the WINDOWS sheet; titles for the Tier 4 cards (Brar, CTW / 212 Therapy, Clubhouse for Kids, Infinity, Perspectives); which practice the two Chang/Xie formers worked at; a second patient-flow window at 2 Mott St plus the Brooklyn office; EEG equipment / technologist at 139 Centre St; exam lanes at 217 Grand St; the Brooklyn route now four addresses (6402 8th Ave Rm 501, 749 and 755 61st St, the card-2 cluster); 2024 to 2026 departures for Queens Optometric and CTW; Infinity, Perspectives, Jacoby, Special Homes on hold until counsel says go. Close when the Tier 4 titles are in, the first-call list and WINDOWS sheet are with Sage, and (1) and (2) are done.",
-      "added": "2026-10-12",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --npis \"1508848441;1588703995;1558688754\" --deep --out-prefix pi_facts_chinatown",
-        "REM upload PI_FACTS_CHINATOWN.md in chat; say 'Sage first-call list sent' when the email goes"
-      ]
-    },
-    {
-      "key": "tms_nevada_followup",
-      "what": "Brad's TMS tip, answered 2026-10-13 (TMS_LOOKUP_READOUT_2026-10-13.md with the PI reports): Learning to Achieve Wellness (Brandon FL, org NPI 1033849575) has ZERO Medicaid dollars on 90867/90868/90869 and no rank anywhere; its TMS is Medicare / commercial or billed under the psychiatrist's individual NPI. ASK BRAD for the psychiatrist's name or NPI and the payer mix, then run the line below. The 'others' list: seven individual NPIs carrying TMS with one renderer (Rosa Bellota NV $1.0M the largest) and a NEVADA CLUSTER of 20+ short-lived single-renderer TMS entities at 100 percent TMS share (Salvi, Nula, Sunrise Health Solutions, Cerebral Medical Center, DC Medical, Evolutionary Beginnings, Mana, TM Services, Vitalmind ...): an ownership / address / rendering-psychiatrist research question; check Nevada Medicaid's TMS coverage date first (the innocent explanation).",
-      "added": "2026-10-13",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npi <psychiatrist NPI from Brad> --codes 90867,90868,90869 --no-national --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ltaw_psychiatrist.md\"",
-        "REM Nevada cluster owners / addresses (pi_facts on the org ids from the lookup table, --deep):",
-        "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npis \"1578258281;1740998202;1871372003;1841928397;1962094714;1255000386;1780428698;1336988831;1467287391;1811280183\" --deep --out-prefix pi_facts_nv_tms"
-      ]
-    },
-    {
-      "key": "label_sources_followups",
-      "what": "Operator decision 2026-10-13 (docs/EXCLUSION_SOURCES_AUDIT_2026-10.md section 7): the training label takes every provider with a strong fraud signal; the grading ruler stays on outcomes. BUILT: the 'charged' tier (bundle 309) and, in bundle 311, (1) charged-only case rows as `charged_case` positives (case_labels: criminal indictment / charge or a government civil complaint with no outcome; direct + org_billing bases; trains only under --label-tier hard+charged) and (2) the OUTCOME REFRESH lane (prompts + loader; a plea / verdict / settlement becomes its own case row, a dismissal / acquittal quarantines the charge). ALSO FIXED on the way: criminal conviction releases without a stated dollar amount never reached the org_billing tier (the resolver's amount filter); they do now (v15 semantics). RUN after bundle 311 is merged: the v15 A/B on v14's matrix (two refits, hard vs hard+charged, graded on the FCA ruler: the lines below), and write the outcome_refresh prompt batch (review the CSV, then --dispatch when Manus credits are available). STILL QUEUED: (3) big-state exclusion lists with license_number / medicaid_id aliases + the NPPES type-05 join; (4) OpenSanctions as an identifier crosswalk (license gate, Brad); (5) the 1128(a)(4) pill-mill ablation; (6) the case date over the exclusion date when an NPI resolves to a DOJ case; (7) `hcf_commercial` (state AG / insurance-department fraud convictions) as a training-only source under ablation.",
-      "added": "2026-10-13",
-      "commands": [
-        "# on the VM, after bundle 311 is merged + pushed and pulled (the charged rows need a fresh export; on v14's matrix the A/B measures the policy switch on the charged rows ALREADY in the matrix, which is none, so run the export line of run_frozen_night.sh first OR read the A/B as a no-op check):",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
-        "python -u -m src.enforcement.case_harvest_prompts --out-dir \"$MEDICAID_DATA_ROOT/processed/outcome_refresh\" --sets outcome_refresh --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\"",
-        "head -5 \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_batch.csv\"; wc -l \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_prompts.jsonl\"",
-        "# the v15 A/B (after the v15 export, whose SOURCES_REPORT must show charged_case NPIs > 0):",
-        "RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v15; EXCL=$MEDICAID_DATA_ROOT/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet",
-        "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_hard/ACCURACY_DIAGNOSTICS.md\"",
-        "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard+charged --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md\"",
-        "grep -h \"hits@\" \"$RUN\"/ab_tier_hard/ACCURACY_DIAGNOSTICS.md \"$RUN\"/ab_tier_charged/ACCURACY_DIAGNOSTICS.md | head -20",
-        "# when a reviewed outcome_refresh answer CSV is on the laptop:",
-        "python -m src.enforcement.research_evidence outcome-refresh --in \"%USERPROFILE%\\Downloads\\outcome_refresh_answers.csv\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\""
-      ]
-    },
-    {
-      "key": "v17_run",
-      "what": "v17 = the retrain on the corrected inputs: v16 put the CIA parties on the rulers (583 in-universe positives) but a re-grade cannot train on the 284 pre-freeze parties; v17 does. Full runner (run_frozen_night.sh, step 0 merges the corrected cia_cases.csv; the as-of graph is reused, no --rebuild-graph; about 6 to 8 hours on the VM). Needs bundle 322 merged + pushed, the VM started, pull, pre-register, run under tmux, then the packet. If hits@100 reads 3 again, the v18 pre-registration moves the 100-budget check to the large book.",
-      "added": "2026-10-14",
-      "commands": [
-        "# VM, one line at a time (start it in the AWS console: EC2 > Instances, NOT 'Launch an instance'; swap the IP if it changed):",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
-        "source .venv/bin/activate && source ~/.medicaid_env",
-        "grep -c \"agreed to pay\" \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\"    # must be about 339 (the corrected file from v16)",
-        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v17 --goal \"retrain on the expanded label with the CIA parties IN training (284 pre-freeze parties) and ON the rulers (74 post-freeze positives), the 843 name-resolved exclusions already in the as-of graph; ten seeds, train = hard; the v16 checks\" --expected \"pursuit hits@100 at least 4 and hits@250 at least 6 under the 583-positive FCA ruler; large book hits@50 at least 2; Jaccard at least 0.6; train = hard; if hits@100 still reads 3, v18 grades the 100 budget on the large book\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-        "tmux new -d -s v17 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=dollar PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v16 bash ops/vm/run_frozen_night.sh v17 2021-12\"",
-        "# that starts the run in the background; check with: tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17/night_run.log   (or from the laptop: ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/model_a/frozen_2021-12_v17/night_run.log\")",
-        "# when it prints [v17] DONE, from the laptop:",
-        "REM ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v17 && tar -czf /home/ubuntu/run_packet_v17.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v17\"",
-        "REM scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v17.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and say 'v17 finished'"
-      ]
-    },
-    {
-      "key": "v18_run",
-      "added": "2026-10-14",
-      "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. Pre-register under the v17 checks; if v17 read 3 at 100, apply the v16 rule (the 100-budget check moves to the large book: large_hits100 >= 4 in place of hits100 >= 4). After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. Run manus_lanes_run FIRST so v18 trains on the loaded research rows (then --rebuild-graph).",
-      "commands": [
-        "# VM (tmux so the run survives the laptop closing):",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
-        "source .venv/bin/activate && source ~/.medicaid_env",
-        "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v18 --goal \"first run with the as-of v3 billing scores restored, the 2023 facility/POS editions excluded from the freeze, and the measurement block (scheme AUC on the FCA ruler, label enrichment, source + label ablations); v17's label inputs; ten seeds, train = hard\" --expected \"pursuit hits@250 at least 6 and large book hits@50 at least 2 under the FCA ruler; Jaccard at least 0.6; the 100 budget per the v16 rule; every scheme carries an FCA-ruler AUC and the ablation names the families to prune for v19\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
-        "# if v17 read 3 at 100: replace \"hits100 >= 4\" above with \"large_hits100 >= 4\" (the v16 rule) before pre-registering",
-        "tmux new -s v18 -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v18 2021-12 --rebuild-graph'",
-        "tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v18/night_run.log",
-        "# when it prints '[v18] DONE': tell Claude 'v18 finished', then the packet lines the log prints (tar + sync up + scp)"
-      ]
-    },
-    {
-      "key": "manus_lanes_run",
-      "added": "2026-10-14",
-      "what": "THE RESEARCH LANES, UNATTENDED (operator 2026-10-14: 'you have my Manus key; build everything in the plan'). ops/vm/manus_lanes.sh runs every lane from one command on the VM where MANUS_API_KEY lives (~/.medicaid_env): refreshes the CIA + names residues, builds the prompts for cia / names / outcome_refresh / label_verification / commercial / defendant_research / label_review, dispatches under a budget (MANUS_MAX_NEW=40 per lane, MANUS_TOTAL=250 across lanes: raise them if credits allow), polls for up to 4 hours, loads every answer through the lane's loader (Luhn NPI, confidence >= medium, NPI among our candidates, resolved outcomes only; the rest in <lane>_quarantine.csv), rebuilds the merged label inputs and writes processed/manus_lanes/MANUS_LANES.md. Needs bundle 325 merged + pulled. Run it under tmux so it survives the laptop closing; tasks still running answer on a later --poll --load (free). After it: --rebuild-graph on the next frozen run (the names rows become exclusion nodes). The human review is the report + the quarantine files, not a gate in front of the keyboard.",
-      "commands": [
-        "# VM, one line at a time:",
-        "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
-        "source .venv/bin/activate && source ~/.medicaid_env && echo \"key set: ${MANUS_API_KEY:+yes}\"",
-        "tmux new -s lanes -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && MANUS_MAX_NEW=40 MANUS_TOTAL=250 bash ops/vm/manus_lanes.sh v17'",
-        "tail -5 $MEDICAID_DATA_ROOT/processed/manus_lanes/lanes_run.log",
-        "# when it prints '[lanes] DONE': cat $MEDICAID_DATA_ROOT/processed/manus_lanes/MANUS_LANES.md   (paste it to Claude)",
-        "# later, free (re-attaches by task id):  python -m src.model_a.manus_lanes --data-root \"$MEDICAID_DATA_ROOT\" --poll --load"
-      ]
-    },
-    {
-      "key": "run_packet__frozen_2021-12_v17",
-      "what": "Send the run packet for frozen_2021-12_v17 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-      "added": "2026-10-20",
-      "commands": [
-        "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
-        "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-        "REM then upload run_packet.zip to the chat",
-        "python -m src.reminders --done-task run_packet__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
-      ]
-    },
-    {
-      "key": "pursuit_dossier__frozen_2021-12_v17",
-      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v17 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-      "added": "2026-10-20",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17\" --dispatch",
-        "python -m src.reminders --done-task pursuit_dossier__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
-      ]
-    },
-    {
-      "key": "dossier_poll__frozen_2021-12_v17",
-      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v17 dossier and send PURSUIT_DOSSIER.md",
-      "added": "2026-10-20",
-      "commands": [
-        "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-        "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17\" --poll",
-        "python -m src.reminders --done-task dossier_poll__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
-      ]
-    },
-    {
-      "key": "registry_verdict__frozen_2021-12_v17",
-      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v17 \u2014 close only when you have them",
-      "added": "2026-10-20",
-      "commands": []
-    }
-  ]
+ "data_root": "C:/Users/treyr/OneDrive/Desktop/data",
+ "cadence": [
+  {
+   "key": "leie",
+   "what": "OIG LEIE exclusion list (THE label source \u2014 new bans are training labels)",
+   "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
+   "url": "https://oig.hhs.gov/exclusions/exclusions_list.asp",
+   "every_months": 1,
+   "last_done": "2026-09-16",
+   "steps": [
+    "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
+    "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
+    "Then paste the commands below (they back up the old file, then swap in the new one)"
+   ],
+   "commands": [
+    "copy \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_%date:~10,4%%date:~4,2%.csv.bak\"",
+    "move \"%USERPROFILE%\\Downloads\\UPDATED.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\"",
+    "python -m src.reminders --done leie"
+   ],
+   "proof": [
+    "preclean/caught.csv"
+   ],
+   "proof_recent_days": 45
+  },
+  {
+   "key": "nppes_deactivation",
+   "what": "CMS Deactivated NPI Report (invalid_identity scheme)",
+   "where": "preclean/nppes_deactivation/ (keep as the .zip; loader unzips)",
+   "url": "https://download.cms.gov/nppes/NPI_Files.html",
+   "every_months": 1,
+   "last_done": "2026-10-07",
+   "steps": [
+    "Open https://download.cms.gov/nppes/NPI_Files.html",
+    "Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)"
+   ],
+   "commands": [
+    "move \"%USERPROFILE%\\Downloads\\NPPES_Deactivated_*.zip\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes_deactivation\\\"",
+    "python -m src.reminders --done nppes_deactivation"
+   ],
+   "proof": [
+    "preclean/nppes_deactivation/*.zip",
+    "preclean/nppes_deactivation/*.xlsx"
+   ],
+   "proof_recent_days": 45
+  },
+  {
+   "key": "sam_exclusions",
+   "what": "SAM.gov exclusions extract (widens the PU label)",
+   "where": "preclean/sam/",
+   "url": "https://sam.gov/data-services",
+   "every_months": 1,
+   "last_done": "2026-10-09",
+   "steps": [
+    "Open https://sam.gov/data-services and pick 'Exclusions' -> 'Public V2' current extract (CSV); no login needed",
+    "Save it as sam_exclusions_<yyyymm>.csv under preclean\\sam\\ (replace <yyyymm> in the move line)",
+    "Then the load line below (seconds); the next graph build merges it into the exclusion nodes + the PU label"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "move \"%USERPROFILE%\\Downloads\\SAM_Exclusions_Public_Extract*.CSV\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions_<yyyymm>.csv\"",
+    "python -m src.enforcement.sam_api --from-csv \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\"",
+    "python -m src.reminders --done sam_exclusions"
+   ],
+   "proof": [
+    "preclean/sam/*.csv"
+   ],
+   "proof_recent_days": 45,
+   "note": "Bundle 250: the public extract is now the SAM source (enforcement/sam_api.py --from-csv): it writes processed/exclusions_sam.parquet in the exclusions schema with the NPI the extract carries and the agency in excl_type (HHS debarments tier weak). Run the load line after each download; the graph rebuild (part of every frozen run) merges it. The older undated sam_exclusions.CSV can be deleted. FIRST LOAD 2026-10-09: 168,445 exclusions, 19,357 with an NPI, 69,978 placed by HHS, all active -> processed/exclusions_sam.parquet (the paged-API parquet is superseded)."
+  },
+  {
+   "key": "owner_snapshot",
+   "what": "make owner-snapshot (no download \u2014 archives owner edges; ownership_turnover needs 2+ months)",
+   "where": "run from repo: make owner-snapshot",
+   "url": "",
+   "every_months": 1,
+   "last_done": "2026-10-07",
+   "steps": [
+    "Nothing to download \u2014 paste the commands below"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.entity_graph.ownership_snapshot --owned-by \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\edges\\owned_by_edges.parquet\" --snapshots-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\owner_snapshots\"",
+    "python -m src.reminders --done owner_snapshot"
+   ]
+  },
+  {
+   "key": "warn_notices",
+   "what": "WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.",
+   "where": "preclean/warn/",
+   "url": "",
+   "every_months": 1,
+   "last_done": "2026-10-09",
+   "steps": [
+    "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"  (the --done line also refuses until files are there)",
+    "2026-10-09: CA, TX, NC and RI postings downloaded (three .xlsx, one .csv); the copy lines below file them as warn_<ST>_<yyyymm>.<ext>; the monitor (bundle 247) reads the whole folder, Excel included, and takes the state from the filename. FL did not download (a 37 KB 'Unconfirmed ...crdownload' in Downloads is the failed attempt): retry FloridaJobs WARN notices and save it as warn_FL_<yyyymm>.csv or .xlsx",
+    "Each month: Google '<state> WARN notices' (RI, NC, FL, TX, CA first); each state DOL posts a table; export the current year as CSV or XLSX; save as warn_<ST>_<yyyymm>.<ext> under preclean\\warn\\"
+   ],
+   "proof": [
+    "preclean/warn/warn_*.csv",
+    "preclean/warn/warn_*.xlsx"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"",
+    "python -m src.sourcing.warn_monitor --warn \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\" --summary",
+    "for %f in (\"%USERPROFILE%\\Downloads\\California warn_report*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_CA_202610.xlsx\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\texas warn-act-listings*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_TX_202610.xlsx\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\north carolina warn summary report*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_NC_202610.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\rhode island Warn Report*.xlsx\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\\warn_RI_202610.xlsx\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\warn\"",
+    "python -m src.reminders --done warn_notices"
+   ],
+   "note": "2026-10-09: CA, TX, NC, RI filed under preclean/warn/ (guard accepted); FL still to retry"
+  },
+  {
+   "key": "mue",
+   "what": "CMS MUE quarterly files (practitioner + facility)",
+   "where": "preclean/mue/",
+   "url": "https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open the MUE page (url above); download BOTH quarterly zips: 'Practitioner Services MUE Table' + 'Facility Outpatient Hospital Services MUE Table'",
+    "Extract each zip; take the DATA sheet (the AMA-copyright cover sheet is the known trap)",
+    "Save as \"...preclean\\mue\\mue_practitioner_<yyyyQq>.csv\" and \"...preclean\\mue\\mue_facility_<yyyyQq>.csv\""
+   ],
+   "proof": [
+    "preclean/mue/*.csv",
+    "preclean/mue/*.xlsx"
+   ],
+   "proof_recent_days": 120
+  },
+  {
+   "key": "pos",
+   "what": "Provider of Services file (quarterly)",
+   "where": "preclean/pos/ (current editions to pos_current_hold/ while frozen builds run)",
+   "url": "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open the POS page (url above) \u2192 newest quarter \u2192 download the CSV set",
+    "Keep the quarter in every filename (e.g. pos_other_<yyyyQq>.csv)",
+    "IMPORTANT: while the 2023-12 frozen builds are the working runs, save CURRENT editions to preclean\\pos_current_hold\\ so they never leak into a frozen build"
+   ],
+   "proof": [
+    "preclean/pos_current_hold/*.csv",
+    "preclean/pos/*.csv"
+   ],
+   "proof_recent_days": 120
+  },
+  {
+   "key": "pbj",
+   "what": "PBJ Daily Nurse Staffing (quarterly)",
+   "where": "preclean/facility/ (current to facility_current_hold/)",
+   "url": "https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open the PBJ page (url above) \u2192 newest quarter \u2192 download the Nurse Staffing CSV (the one WITH Hrs_RN columns \u2014 the 'non-nurse' file is the known trap)",
+    "Save as \"...preclean\\facility_current_hold\\pbj_daily_staffing_<yyyyQq>.csv\" while frozen builds are the working runs (the frozen 2023Q4 edition stays in facility\\)"
+   ],
+   "proof": [
+    "preclean/facility_current_hold/pbj_daily_staffing_*.csv",
+    "preclean/facility/pbj_daily_staffing_*.csv"
+   ],
+   "proof_recent_days": 120
+  },
+  {
+   "key": "care_compare",
+   "what": "Care Compare provider-data archives (hospice measures, NH citations/ownership/penalties)",
+   "where": "preclean/facility/ (current to facility_current_hold/)",
+   "url": "https://data.cms.gov/provider-data/archived-data",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open https://data.cms.gov/provider-data/archived-data \u2192 'Hospice care' + 'Nursing homes' \u2192 newest month's zip",
+    "From the hospice zip keep Hospice_Provider; from the NH zip keep HealthCitations, Ownership, Penalties, SurveyDates",
+    "Rename each with the month (e.g. Hospice_Provider_<Mon><yyyy>.csv) and save to preclean\\facility_current_hold\\ (frozen Nov2023 editions stay in facility\\)"
+   ],
+   "proof": [
+    "preclean/facility_current_hold/*.csv",
+    "preclean/facility/Hospice_Provider_*.csv"
+   ],
+   "proof_recent_days": 120
+  },
+  {
+   "key": "nadac",
+   "what": "NADAC drug pricing (drug_spread_anomaly)",
+   "where": "preclean/nadac/",
+   "url": "https://data.medicaid.gov/datasets",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open https://data.medicaid.gov/datasets and search 'NADAC (National Average Drug Acquisition Cost)'",
+    "Download the current full CSV",
+    "Save as \"...preclean\\nadac\\nadac_<yyyymm>.csv\""
+   ],
+   "proof": [
+    "preclean/nadac/*.csv"
+   ],
+   "proof_recent_days": 120
+  },
+  {
+   "key": "work_plan",
+   "what": "OIG Work Plan curated table refresh (government_interest overlay)",
+   "where": "src/model_a/government_interest.py (Claude updates the code table)",
+   "url": "https://oig.hhs.gov/reports-and-publications/workplan/",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Nothing to download \u2014 just tell Claude: 'work plan refresh is due'",
+    "Claude re-reads the OIG Work Plan active items and updates the curated table in code"
+   ]
+  },
+  {
+   "key": "hrsa_340b",
+   "what": "340B OPAIS Covered Entity Daily Report (contract_pharmacy)",
+   "where": "preclean/hrsa_340b/ (3-worksheet .xlsx)",
+   "url": "https://340bopais.hrsa.gov/reports",
+   "every_months": 3,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open https://340bopais.hrsa.gov/reports \u2192 'Covered Entity Daily Report' \u2192 Excel export (must be the 3-worksheet .xlsx with Contract Pharmacies)",
+    "Save as \"...preclean\\hrsa_340b\\opais_covered_entity_<yyyymmdd>.xlsx\""
+   ],
+   "proof": [
+    "preclean/hrsa_340b/*.xlsx",
+    "preclean/hrsa_340b/*.csv"
+   ],
+   "proof_recent_days": 120
+  },
+  {
+   "key": "cms_pufs",
+   "what": "Part B / Part D / DMEPOS / opioid annual PUFs (new year lands ~spring)",
+   "where": "preclean/partb|partd|dmepos|opioid/ with the year in the filename",
+   "url": "https://data.cms.gov/provider-summary-by-type-of-service",
+   "every_months": 12,
+   "last_done": "2026-08-02",
+   "note": "2023 editions in hand for the freeze; annual pull matters for current-data scoring",
+   "steps": [
+    "Open the url; download FOUR datasets, always the 'by Provider and Service/Drug' detail versions (the 'by Provider' summaries are the known trap):",
+    "1) Medicare Physician & Other Practitioners BY PROVIDER AND SERVICE \u2192 preclean\\partb\\partb_<year>.csv",
+    "2) Medicare Part D Prescribers BY PROVIDER AND DRUG \u2192 preclean\\partd\\partd_<year>.csv",
+    "3) Medicare DMEPOS BY REFERRING PROVIDER AND SERVICE \u2192 preclean\\dmepos\\dmepos_<year>.csv",
+    "4) Medicare Part D Opioid Prescribing Rates by prescriber \u2192 preclean\\opioid\\opioid_<year>.csv"
+   ]
+  },
+  {
+   "key": "open_payments",
+   "what": "Open Payments annual file (kickback co-occurrence; new program year ~June)",
+   "where": "preclean/open_payments/",
+   "url": "https://openpaymentsdata.cms.gov/about/download",
+   "every_months": 12,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open https://openpaymentsdata.cms.gov/about/download \u2192 newest Program Year \u2192 General Payments detail file (it's large; the zip is fine to store)",
+    "Save to \"...preclean\\open_payments\\\" with the program year in the name",
+    "If the NPI column name differs from Covered_Recipient_NPI (older layouts), send Claude the header row"
+   ],
+   "proof": [
+    "preclean/open_payments/*.csv"
+   ]
+  },
+  {
+   "key": "hcris",
+   "what": "HCRIS cost reports (cost_report_fraud)",
+   "where": "preclean/hcris/ (flattened cost-report csvs)",
+   "url": "https://www.cms.gov/data-research/statistics-trends-reports/cost-reports",
+   "every_months": 12,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open the Cost Reports page (url above) \u2192 'Hospital 2010 form' (HOSPITAL10) newest fiscal year",
+    "Use the FLATTENED csv version, not the raw worksheet format (known trap)",
+    "Save to \"...preclean\\hcris\\\" with the fiscal year in the name"
+   ],
+   "proof": [
+    "preclean/hcris/*.csv",
+    "preclean/hcris/raw/*.zip"
+   ]
+  },
+  {
+   "key": "physician_time",
+   "what": "PFS Final Rule Physician Work Time file (impossible-day minutes; new rule ~November)",
+   "where": "preclean/hcpcs_time/physician_time_<year>.xlsx then run hcpcs_time_convert",
+   "url": "https://www.cms.gov/medicare/payment/fee-schedules/physician",
+   "every_months": 12,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Google 'CY <year> PFS Final Rule Physician Work Time' \u2014 the file lives in the rule's downloads (a zip with a Physician Time .xlsx)",
+    "Header must start with cpt_code and contain Median_Intra_Service_Time (an RVU file like PPRRVU is the known wrong file)",
+    "Save as \"...preclean\\hcpcs_time\\physician_time_<year>.xlsx\", then paste the commands below with <year> filled in"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.ingest_cms.hcpcs_time_convert --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcpcs_time\\physician_time_<year>.xlsx\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\hcpcs_time\\hcpcs_minutes_<year>.csv\"",
+    "python -m src.reminders --done physician_time"
+   ]
+  },
+  {
+   "key": "docgraph",
+   "what": "DocGraph/CareSet referral teaming file (referral rings)",
+   "where": "preclean/docgraph/ with year window in the filename",
+   "url": "https://careset.com/docgraph/",
+   "every_months": 12,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open https://careset.com/docgraph/ \u2192 DocGraph Hop Teaming, newest year window",
+    "Required columns: from_npi, to_npi, patient_count",
+    "Save to \"...preclean\\docgraph\\\" keeping the year window in the filename"
+   ],
+   "proof": [
+    "preclean/docgraph/*.csv"
+   ]
+  },
+  {
+   "key": "nucc",
+   "what": "NUCC taxonomy crosswalk (peer grouping; published Jan + Jul)",
+   "where": "preclean/nucc/",
+   "url": "https://www.nucc.org/index.php/code-sets-mainmenu-41/provider-taxonomy-mainmenu-40/csv-mainmenu-57",
+   "every_months": 6,
+   "last_done": "2026-08-02",
+   "steps": [
+    "Open the NUCC csv page (url above) \u2192 newest 'Health Care Provider Taxonomy Code Set' CSV",
+    "Save as \"...preclean\\nucc\\nucc_taxonomy_<yyyymm>.csv\""
+   ],
+   "proof": [
+    "preclean/nucc/*.csv"
+   ]
+  },
+  {
+   "key": "nppes_2021_12",
+   "what": "NPPES December-2021 monthly edition (freezes the address layer for the v7 2021-12 rolling-origin run; one-time)",
+   "where": "preclean/nppes/npidata_pfile_20050523-20211212.csv (extracted CSV, several GB; next to the 2023 edition)",
+   "url": "https://data.nber.org/npi/",
+   "every_months": 120,
+   "last_done": "2026-10-09",
+   "steps": [
+    "Open https://data.nber.org/npi/ (NBER archives every monthly NPPES release; CMS itself keeps only the current month)",
+    "Find the December 2021 full NPPES Data Dissemination (the zip whose main csv is named npidata_pfile_20050523-20211212.csv or the closest December-2021 date)",
+    "Download and EXTRACT the zip; keep only the big npidata_pfile_*.csv",
+    "Then paste the commands below (moves it next to the 2023 edition and marks the item done)"
+   ],
+   "commands": [
+    "move \"%USERPROFILE%\\Downloads\\npidata_pfile_20050523-2021*.csv\" \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\\"",
+    "dir \"C:/Users/treyr/OneDrive/Desktop/data\\preclean\\nppes\\npidata_pfile_*2021*.csv\"",
+    "python -m src.reminders --done nppes_2021_12"
+   ],
+   "proof": [
+    "preclean/nppes/npidata_pfile_20050523-2021*.csv"
+   ],
+   "note": "closed 2026-10-09 from the operator's VINTAGE_INSPECT inventory: preclean/nppes/npidata_pfile_20050523-20211212.csv (8.5 GB) is on disk"
+  },
+  {
+   "key": "hospice_2021_archive",
+   "what": "Archived Hospice Provider (Care Compare) file with measure periods ending <= 2021-12 (the 2021-12 freeze emptied the Nov-2023 edition: hospice_live_discharge_rate all-NaN, 2 expectation FAILs in v7; one-time)",
+   "where": "preclean/facility/Hospice_Provider_Feb2022.csv (CMS's own name inside the Feb-2022 archive zip; keep the Nov-2023 file too; bundle 248 picks the edition by vintage: a 2021-12 freeze reads Feb2022, a current-day run reads the newest)",
+   "url": "https://data.cms.gov/provider-data/archived-data/hospice-care",
+   "every_months": 120,
+   "last_done": "2026-10-09",
+   "steps": [
+    "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"  (two files = done)",
+    "2026-10-09: hospice-care_2022-02-16.zip downloaded and extracted to Downloads\\hospice_2022_02; the provider-level file inside is Hospice_Provider_Feb2022.csv (38 MB). The copy line below files it.",
+    "Open https://data.cms.gov/provider-data/archived-data/hospice-care (only if the zip is not in Downloads)",
+    "Pick a release from late 2021 or early 2022 (measure periods ending in 2021) and download its zip"
+   ],
+   "commands": [
+    "powershell -Command \"Expand-Archive -Force -Path '%USERPROFILE%\\Downloads\\hospice-care_2022-02-16.zip' -DestinationPath '%USERPROFILE%\\Downloads\\hospice_2022_02'\"",
+    "copy /y \"%USERPROFILE%\\Downloads\\hospice_2022_02\\Hospice_Provider_Feb2022.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider_Feb2022.csv\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\Hospice_Provider*.csv\"",
+    "python -m src.reminders --done hospice_2021_archive"
+   ],
+   "proof": [
+    "preclean/facility/Hospice_Provider_*2022*.csv",
+    "preclean/facility/Hospice_Provider_*2021*.csv",
+    "preclean/facility/Hospice_Provider_20????.csv"
+   ],
+   "note": "closed 2026-10-09: Hospice_Provider_Feb2022.csv (38 MB) on disk beside Hospice_Provider_Nov2023.csv (operator's dir listing)"
+  },
+  {
+   "key": "oig_cia",
+   "what": "LOW PRIORITY: OIG Corporate Integrity Agreement list (recall benchmark for the DOJ case DB in the label audit + a mild risk prior; changes no PI lead). Five-minute copy from the 'CIA Documents' table page, not the overview page; never worth Manus money",
+   "where": "preclean/cia/cia_list.csv",
+   "url": "https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp",
+   "every_months": 3,
+   "last_done": "2026-10-09",
+   "steps": [
+    "ALREADY DONE? run: dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\"  (the --done line also refuses until the file is there)",
+    "Open https://oig.hhs.gov/compliance/corporate-integrity-agreements/cia-documents.asp",
+    "Use the page's 'Export' / 'Download CSV' control if present; otherwise select the whole table, paste into Excel, and save as CSV with the headers Party, State, Effective Date, Status, Link",
+    "Save the file as cia_list.csv, then paste the commands below (they create the folder and move the file)"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\"",
+    "move \"%USERPROFILE%\\Downloads\\cia_list.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\cia\\cia_list.csv\"",
+    "python -m src.reminders --done oig_cia"
+   ],
+   "proof": [
+    "preclean/cia/cia_list.csv"
+   ],
+   "note": "closed 2026-10-09: cia_list.csv moved into preclean/cia/ (the guard accepted the --done); header check pending in chat"
+  },
+  {
+   "key": "nppes_practice_locations",
+   "what": "NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check",
+   "where": "preclean/nppes/pl_pfile_<dates>.csv",
+   "url": "https://download.cms.gov/nppes/NPI_Files.html",
+   "every_months": 1,
+   "last_done": "2026-10-14",
+   "steps": [
+    "Open https://download.cms.gov/nppes/NPI_Files.html and download the 'NPPES Data Dissemination' monthly zip (the full file, ~1 GB zipped) if you do not already have this month's",
+    "Extract ONLY the practice-location file from the zip with the first command below (the zip is huge; do not unzip everything)",
+    "Move it into preclean\\nppes with the second command; run_capacity.bat finds it automatically"
+   ],
+   "commands": [
+    "for %f in (\"%USERPROFILE%\\Downloads\\NPPES_Data_Dissemination_*.zip\") do tar -xf \"%f\" -C \"%USERPROFILE%\\Downloads\" \"pl_pfile_*.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\pl_pfile_*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\\"",
+    "python -m src.reminders --done nppes_practice_locations"
+   ],
+   "proof": [
+    "preclean/nppes/pl_pfile*.csv"
+   ]
+  },
+  {
+   "key": "state_capacity_rosters",
+   "what": "LOW PRIORITY (2026-09-16: the Northeast PI packet is clinics and therapy offices; a roster only moves a bed-based check). State licensed-facility rosters with LICENSED CAPACITY for waiver group homes, residential habilitation, adult day, assisted living, hospice houses. The one Northeast item that moves a current card: NJ DHS/DDD group homes (Special Homes of NJ). Everything else (FL AHCA, IL, IN, DC, TX, CA, MA, RI) is for a future capacity pass",
+   "where": "preclean/state_capacity/<ST>_<what>.csv (e.g. RI_hospice.csv, FL_adult_day.csv)",
+   "url": "https://health.ri.gov/licenses/",
+   "every_months": 6,
+   "last_done": null,
+   "steps": [
+    "FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type PPEC (prescribed pediatric extended care), then Assisted Living, then Adult Day Care -> Download/Export with the licensed capacity column; save as FL_ppec.csv, FL_assisted_living.csv, FL_adult_day.csv",
+    "NJ (group homes): https://www.nj.gov/humanservices/ddd/ -> licensed community residences / provider search (DHS licenses developmental-disability group homes; the DOH long-term-care file already loaded does not cover them); save as NJ_ddd_homes.csv",
+    "IN: https://www.in.gov/fssa/ddrs/ -> BDDS licensed group homes / supervised group living list with capacity; save as IN_group_homes.csv (retires the occupancy-artifact rows)",
+    "DC: https://dds.dc.gov/ or https://dchealth.dc.gov/ -> community residence facilities with bed capacity; save as DC_residential.csv (same purpose)",
+    "TX: https://www.hhs.texas.gov/providers/long-term-care-providers -> HCSSA directory export; save as TX_hcssa.csv",
+    "NY (two files, joined on Facility ID by the loader; the old Adult Care Facility Directory was retired in 2022): beds = https://health.data.ny.gov/api/views/2g9y-7kqm/rows.csv?accessType=DOWNLOAD (Health Facility Certification Information; downloads as Health_Facility_Certification_Information*.csv) and addresses = https://health.data.ny.gov/api/views/vn5v-hh5r/rows.csv?accessType=DOWNLOAD (Health Facility General Information; downloads as Health_Facility_General_Information*.csv); the copy lines below name them NY_certification.csv / NY_facilities.csv",
+    "NJ: hospitals with licensed beds = https://data.nj.gov/api/views/mrzk-zrvp/rows.csv?accessType=DOWNLOAD (Acute-Care Facilities; downloads as Acute-Care_Facilities*.csv -> NJ_acute_care.csv). Nursing homes are already covered by the CMS POS file; NJ assisted living / residential has no CSV export (https://healthapps.nj.gov/facilities/fssearch.aspx is a search form), so skip it unless a table is copied by hand",
+    "IL: https://dph.illinois.gov/topics-services/health-care-regulation/health-care-facilities -> facility directories (community integrated living arrangements, intermediate care facilities, assisted living); export or copy with the licensed capacity column; save as IL_<type>.csv",
+    "RI: https://health.ri.gov/licenses/ -> Health Care Facilities -> the licensed facility list/search; export or copy the table (hospice, assisted living, group homes) with the licensed bed/capacity column; save as RI_<type>.csv",
+    "FL: https://quality.healthfinder.fl.gov/Facility-Provider/FacilityLocator -> facility type (Adult Day Care, Assisted Living, Hospice) -> Download; keep the capacity/beds column; save as FL_<type>.csv",
+    "ME: https://www.maine.gov/dhhs/dlc -> licensed facilities lists (assisted housing, residential care, group homes) -> export; save as ME_<type>.csv",
+    "MO: https://health.mo.gov/safety/showmelongtermcare/ -> facility list with licensed beds (residential care, assisted living, ICF); save as MO_<type>.csv",
+    "CO: https://cdphe.colorado.gov/health-facilities -> 'find and compare' facility data download (assisted living, group homes, adult day); save as CO_<type>.csv",
+    "Any state: the file needs a facility name, street address, city, zip and a capacity/beds column under any common header; unusual headers are fine, tell Claude and a column map is added",
+    "Then build the capacity table with the commands below"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\Health_Facility_Certification_Information*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_certification.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\Health_Facility_General_Information*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_facilities.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\Acute-Care_Facilities*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NJ_acute_care.csv\"",
+    "\"C:\\Users\\treyr\\medicaid-fraud-detection\\run_licensed_capacity.bat\"",
+    "python -m src.reminders --done state_capacity_rosters"
+   ],
+   "progress": "2026-09-16: NY (Certification + General Information) and NJ (Acute-Care + All_LTC_NJ.xlsx) loaded: 2,335 licensed sites, 19,075 NPIs matched. Next: IL, CA, MA, FL, RI.",
+   "proof": [
+    "preclean/state_capacity/*.csv"
+   ],
+   "note": "2026-10-09 inventory: NY_certification.csv, NY_facilities.csv, NJ_acute_care.csv and NJ_ltc.xlsx are already under preclean/state_capacity/ (the three direct downloads are DONE); what remains is the optional hand-copied state lists (FL, NJ DDD group homes, IN, DC, TX, IL, RI, ME, MO, CO)"
+  },
+  {
+   "what": "State Medicaid terminated/excluded provider lists for the Southeast (Medicaid-side FCA labels that lead the LEIE by years and carry NPIs). Seven download; Florida and Louisiana need a records request. Tier by stated reason when loading (fraud/abuse/conviction/program integrity = hard; license/paperwork = weak).",
+   "last_done": "2026-09-26",
+   "url": "https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list",
+   "steps": [
+    "Georgia: https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list -> List of Excluded Individuals (xlsx)",
+    "Alabama: https://www.medicaid.alabama.gov/content/8.0_Fraud/8.7_Suspended_Providers.aspx -> Provider Sanction List (xlsx or pdf; name-only)",
+    "Tennessee: https://www.tn.gov/tenncare/fraud-and-abuse/program-integrity.html -> Terminated Provider List",
+    "North Carolina: https://medicaid.ncdhhs.gov/providers/excluded-providers -> State Excluded Provider List (monthly xlsx)",
+    "South Carolina: https://www.scdhhs.gov/fraud-waste-and-abuse -> Excluded/Terminated Providers (xlsx)",
+    "Kentucky: https://www.chfs.ky.gov/agencies/dms/dpi/pe/Pages/terminated.aspx -> Terminated and Excluded Provider List (xlsx)",
+    "Mississippi: https://medicaid.ms.gov/providers/provider-terminations/ -> Sanctioned Providers List (xlsx)",
+    "Florida: no bulk list. Provider Master List at https://portal.flmmis.com/FLPublic/Provider_ManagedCare/Provider_ManagedCare_Registration/tabId/77/Default.aspx?linkid=pml plus a records request to PublicRecordsReq@ahca.myflorida.com for the s.409.913 terminated-for-cause list with NPI, reason, effective date",
+    "Louisiana: search screen only (https://adverseactions.ldh.la.gov/SelSearch); records request to LDH Program Integrity for the adverse actions list as a file",
+    "Leave the downloads in Downloads with the state name in the filename, then run the sorter (dry run, then --apply); it checks headers and files them"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
+    "python sort_state_lists.py",
+    "python sort_state_lists.py --apply",
+    "python -m src.reminders --done state_terminations"
+   ],
+   "key": "state_terminations",
+   "every_months": 3,
+   "where": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)",
+   "proof": [
+    "preclean/state_terminations/*"
+   ]
+  },
+  {
+   "key": "fda_ndc_directory",
+   "what": "FDA NDC Directory (product.txt: labeler code -> manufacturer, DEA schedule): the bridge that runs pharma_kickback on the Medicaid NDC file (built 2026-10-10). The operator downloaded and extracted it on 2026-10-10 into Downloads\\ndctext (product.txt + package.txt); the loader reads the two .txt files or the zip. Refresh every 6 months.",
+   "where": "preclean/fda_ndc/",
+   "url": "https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory",
+   "every_months": 6,
+   "last_done": "2026-10-10",
+   "steps": [
+    "Open https://www.fda.gov/drugs/drug-approvals-and-databases/national-drug-code-directory",
+    "Under 'NDC Database File', download the Text (zip) version and extract it (product.txt + package.txt)",
+    "Copy the two .txt files into \"...preclean\\fda_ndc\\\" with the commands below (or save the zip there unextracted; either works)"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\"",
+    "copy /y \"%USERPROFILE%\\Downloads\\ndctext\\product.txt\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\\product.txt\"",
+    "copy /y \"%USERPROFILE%\\Downloads\\ndctext\\package.txt\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\fda_ndc\\package.txt\"",
+    "python -m src.reminders --done fda_ndc_directory"
+   ],
+   "proof": [
+    "preclean/fda_ndc/product.txt",
+    "preclean/fda_ndc/*.zip"
+   ]
+  },
+  {
+   "key": "pre_cutoff_editions_2021",
+   "what": "The 2021 editions that the 2021-12 freeze needs (one-time). Eight runs read 2023 snapshots (PBJ 2023Q4, POS Q4 2023, Care Compare NH Nov2023, Order & Referring 2023-12) inside a 2021-12 freeze; bundle 324 makes the export read only editions on/before the freeze, so until these land the facility / PBJ / POS features are simply absent on frozen runs (FROZEN_SKIP=facility,pos in the runner, which you set to FROZEN_SKIP=\"\" once the files exist). Keep the 2023 files; the picker chooses by the date in the name. Also: no All-Owners edition on/before 2021-12 exists for any dataset family, so ownership_turnover is empty on every frozen run; the CMS data.cms.gov pages keep historical versions under 'Data > Historical / Versions'.",
+   "where": "preclean/pos/<CMS name>_Q4_2021.csv; preclean/facility/pbj_daily_staffing_2021Q4.csv (+2021Q3); preclean/facility/NH_Ownership_Dec2021.csv, NH_Penalties_Dec2021.csv, NH_HealthCitations_Dec2021.csv; preclean/order_referring/order_referring_2021-12.csv; preclean/nadac/nadac_2021.csv; preclean/owners_prior/<Dataset>_All_Owners_2021.12.01.csv",
+   "url": "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities",
+   "every_months": 120,
+   "last_done": null,
+   "steps": [
+    "POS (three files, Q4 2021): https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities -> 'Historical' / version list -> the 2021 Q4 (December 2021) version -> Download CSV; same for the CLIA file (provider-of-services-file-clinical-laboratories) and the iQIES HHA/ASC/Hospice file (provider-of-services-file-internet-quality-improvement-and-evaluation-system-home-health-agency-ambulatory-surgical-center-and-hospice-providers). Rename each download so the name carries Q4_2021 (e.g. POS_File_CLIA_Q4_2021.csv) and save under preclean\\pos\\",
+    "PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> version list -> 2021 Q4 (and Q3) -> Download CSV; save as preclean\\facility\\pbj_daily_staffing_2021Q4.csv (and _2021Q3.csv)",
+    "Care Compare nursing homes, December 2021 archive: https://data.cms.gov/provider-data/archived-data/nursing-homes -> the 12_2021 (or 11_2021) monthly zip -> extract -> copy NH_Ownership_*.csv, NH_Penalties_*.csv, NH_HealthCitations_*.csv into preclean\\facility\\ with Dec2021 in the name (the zip's own names carry the month; keep them)",
+    "Order & Referring, December 2021: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment/order-and-referring -> version list -> the December 2021 version -> Download; save as preclean\\order_referring\\order_referring_2021-12.csv",
+    "NADAC 2021: https://data.medicaid.gov/dataset/dfa2ab14-06c2-457a-9e36-5cb6d80f8d93 (NADAC 2021; or search data.medicaid.gov for 'NADAC (National Average Drug Acquisition Cost) 2021') -> Download CSV; save as preclean\\nadac\\nadac_2021.csv (un-gates drug prices on the freeze; the 2026 file stays as the name lookup)",
+    "All Owners, 2021 editions (one per dataset family: SNF, HHA, Hospice, Hospital, FQHC, RHC): each data.cms.gov 'All Owners' page (e.g. https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/skilled-nursing-facility-all-owners) -> version list -> a 2021 version (two per family if offered, e.g. June and December 2021) -> Download CSV; name them like the existing owners_prior files with the version date (e.g. SNF_All_Owners_2021.12.01.csv) and save under preclean\\owners_prior\\",
+    "Then paste the commands below (the vintage inspector settles every file's period and writes the rename plan; the next frozen run sets FROZEN_SKIP=\"\")"
+   ],
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\\*2021*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\NH_*2021*.csv\"",
+    "python -m src.vintage_inspect --data-root \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\"",
+    "python -m src.reminders --done pre_cutoff_editions_2021"
+   ],
+   "proof": [
+    "preclean/pos/*2021*.csv",
+    "preclean/facility/pbj_daily_staffing_2021*.csv"
+   ]
+  }
+ ],
+ "tasks": [
+  {
+   "key": "brad_ri_package",
+   "what": "Send Brad the RI dossier v4.1 + honest-grade email (ready; your call)",
+   "added": "2026-08-02"
+  },
+  {
+   "key": "dossier_poll__frozen_2023-12_v5",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-08-04",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v5\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v5"
+   ]
+  },
+  {
+   "key": "registry_verdict__frozen_2023-12_v5",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v5 \u2014 close only when you have them",
+   "added": "2026-08-04"
+  },
+  {
+   "key": "dossier_poll__frozen_2023-12_v6",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v6 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-09-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6"
+   ]
+  },
+  {
+   "key": "run_packet__frozen_2021-12_v7",
+   "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
+   "added": "2026-09-14",
+   "commands": [
+    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7",
+    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
+    "REM then upload run_packet.zip to the chat",
+    "python -m src.reminders --done-task run_packet__frozen_2021-12_v7"
+   ]
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v7",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v7 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "added": "2026-09-14",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v7"
+   ]
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v7",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v7 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-09-14",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7"
+   ]
+  },
+  {
+   "key": "peer_hard2:_after_the_fraud",
+   "what": "peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names",
+   "added": "2026-09-15"
+  },
+  {
+   "key": "state_letter:_every_named",
+   "what": "State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter",
+   "added": "2026-09-16"
+  },
+  {
+   "key": "pi_packet_v9_feedback",
+   "what": "PI Packet v11 (final for this round, 2026-09-16; v10 superseded by the limitations clock: paid_after check over Tiers 1-2, Tier 1 reordered by live dollars, Infinity/Jacoby/Perspectives to desk-first) sent to Trey: 9 Tier 1 + 7 Tier 2 + 2 Tier 3 + 6 national + 1 desk-first, 19 do-not-send rows, all 50 cards reviewed. OPEN until the PIs' feedback comes back and is folded into v10 (or Trey confirms no changes). Next capacity pass to-dos recorded in the packet: minutes map H2035=60; find the pre-2020 Hope Pediatrics NPI in the spending fact; Special Homes billed residential days vs 76 licensed places. Consensus read 2026-09-16: five-run national book is hospitals/health systems/national chains (do-not-send class); it adds no PI card; ACT HOME HEALTH SERVICES, INC (org:pac:3971547985, $18M/yr, hot 3/5, rapid_ramp) is the one new non-institutional name, held for a desk check next round (state unknown; no state column in the CSV). Successor-NPI check ran 2026-09-16: Renew Resources, Perspectives Counseling Center and Velocity have no claims through 2024-12; Perspectives is lowest priority, Velocity waits for the next data refresh. FIRST PI REPORT RECEIVED 2026-10-12 (Sage Intelligence case 260136, dated 2026-10-07, to Brad; attorney work product, keep it OUT of git and OUT of OneDrive-shared folders: save under <data_root>\\enforcement\\pi_reports\\): Part I surveillance of the three Chinatown cards (Lau 2 Mott St, Chang 217 Grand St, Xie 139 Centre St): Lau = a real solo pediatric office with two receptionists, two child patients in 75 minutes, a Brooklyn second site, and two NPs plus an FNP tied to the address (NP services billed under the physician NPI is the innocent explanation to rule out first, and the scheme if the rate was the physician's); Chang = busy ophthalmology office open 7 days, an optometrist and a second physician at the address; Xie = neurology office EMPTY on both visits (85 minutes), a PA and an NP tied to it at Brooklyn addresses. Part II: former employees with tenure windows identified for about 20 packet practices; next phase = door knocks and interviews. OUR NEXT STEP: send Sage the WHEN sheet (pi_facts --deep now writes PI_FACTS_*_WINDOWS.md: active years / ramp month / peak year per practice) so interviews go to formers whose tenure overlaps the active window; and the three surveillance facts go into the Lau / Chang / Xie cards as field observations. 2026-10-13: Special Homes of NJ RESOLVED by the capacity ratio (74 residents per calendar day worst month against 76 licensed places; census 70 median): ordinary near-full provider, drop the card from the next packet. Lau's second billing number (the P.C.) is $674k and stopped 2022-07: no change to the card.",
+   "added": "2026-09-16",
+   "commands": [
+    "(no command: paste the PIs' notes into the chat)"
+   ]
+  },
+  {
+   "key": "consensus_v7_disagreement",
+   "what": "CONSENSUS.md 2026-09-16: the 2021-12_v7 run scores the top-5 hospitals (Carolinas, Montefiore, Barnes Jewish, CEP America) at 0.00-0.02 while v3/v4/v5 score them 0.99-1.00; top_schemes are contract_pharmacy-led. Diagnose before the next pre-registration: is the 2023-12 freeze's 340B/contract_pharmacy input the driver, and is it absent under the 2021-12 freeze? Only 11 of 2,738 orgs are hot in >=3 runs, one in 4/5. Feed the answer into scheme triage; never gate a run on it.",
+   "added": "2026-09-16",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.scheme_triage --run \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\""
+   ]
+  },
+  {
+   "key": "editions_undated_reference",
+   "what": "LOW: fill EDITIONS.csv data_period for the reference files that carry no date inside or in their name (PECOS.csv, hud/zip_county.*, nucc/*, opensanctions/targets.simple.csv): the download date is the period. Operator entries are never overwritten.",
+   "added": "2026-09-16",
+   "commands": [
+    "notepad \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\EDITIONS.csv\""
+   ]
+  },
+  {
+   "key": "preclean_orphans_2026_09",
+   "what": "Operator's call (nothing runs on them): preclean/pecos/enrollment.csv is a 321 MB duplicate of PECOS.csv; preclean/nppes/npi_deactivation.csv is an unreadable 8 MB orphan (the wired file is nppes_deactivation/deactivation_20260608.zip). Delete or move both to free space; no adapter reads either.",
+   "added": "2026-09-16",
+   "commands": [
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pecos\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\""
+   ]
+  },
+  {
+   "key": "build_ready_to_wire_schemes",
+   "what": "CLAUDE build queue from SCHEME_DISCOVERY 2026-09-16: three READY TO WIRE (nh_ownership_stakes from NH_Ownership_Nov2023 Ownership Percentage/Role; nh_penalties from NH_Penalties_Nov2023 Fine Amount; pbj_weekend_staffing from pbj_daily_staffing Hrs_RN by WorkDate weekday); the six hospice candidates need the long-format Measure Code pivot (facility.py already pivots hospice, so the discovery check should read the pivoted view); new idea: HCRIS HHA discipline visit counts (RN/LPN/PT/OT/SLP visits, Medicaid Title XIX) as a home-health capacity check (visits per licensed nurse). No operator action.",
+   "added": "2026-09-16",
+   "commands": []
+  },
+  {
+   "key": "fl_la_state_lists",
+   "what": "Florida and Louisiana state Medicaid termination lists are still not loaded (the operator prefers to keep searching for a downloadable file). Florida: the AHCA search screen and the Provider Master List on the FLMMIS portal; a records request for the for-cause list goes to PublicRecordsReq@ahca.myflorida.com. Louisiana: LDH adverse actions is a search screen only. When a file lands: save it in Downloads with the state name in the filename, run the sorter dry run then --apply, rerun the loader and the census (state_terminations cadence commands), and upload STATE_TERMINATIONS_REPORT.md.",
+   "added": "2026-09-27"
+  },
+  {
+   "key": "defendant_resolver_run",
+   "what": "2026-09-28: resolver run 4 (bundle 183+) = 1,329 resolved mentions -> 1,052 NPIs / 1,212 cases; SE 314 NPIs; 1,680 research residual. Manus tiers 1 and 2 DISPATCHED 2026-09-27 (280 tracked tasks; ~448 orphan duplicates from concurrent windows are paid but untracked). OPERATOR (a day after dispatch, ONE window): poll with --resolved (the poll folds the answers into case_defendant_npis.parquet itself; no resolver re-run needed for that); after the poll re-run the strict export (task fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md + DEFENDANT_RESEARCH.md. A second batch (excluding already-dispatched org_ids) only after this batch's answer quality is known.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --status",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --poll --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
+    "REM then re-run the strict export (see fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md",
+    "python -m src.reminders --done-task defendant_resolver_run"
+   ]
+  },
+  {
+   "key": "case_harvest_sources_1_6",
+   "what": "2026-09-28 state: (1) deep DOJ backfill DONE (9,256 feed cases back to 2016-09-28; case table 15,240 after merge + reclassify: criminal_hcf 7,126 / civil_fca 4,594 / oig_cmp 614 / not_fraud 334 / untyped 2,572). (2) CourtListener docket backfill SKIPPED by operator decision (no account). (3) OIG harvest since 2015 WITH linked releases is RUNNING (6-8 h, network only; a bundle merge is safe while it runs). (4-6) harvest prompts DISPATCHED 2026-09-27 (98 tracked + 59 duplicate tasks). OPERATOR when the OIG window prints its summary: paste it, then run the merge line WITH --reclassify, the resolver, the strict export; upload OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md, FCA_LABEL_EXPORT.md. A day after dispatch (ONE window): poll the harvest prompts, review every CSV under processed\\case_harvest\\results\\, load only accepted ones via research_evidence mfcu-cases.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --reclassify",
+    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
+    "REM a day after dispatch:",
+    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --poll",
+    "REM review each CSV under processed\\case_harvest\\results\\; load an accepted one with:",
+    "python -m src.enforcement.research_evidence mfcu-cases --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\\results\\<accepted>.csv\" --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
+    "python -m src.reminders --done-task case_harvest_sources_1_6"
+   ]
+  },
+  {
+   "key": "fca_strict_label_export",
+   "what": "PARKED UNTIL THE PURPLELAB POC STARTS (operator 2026-10-09: nothing sent, POC not started). When it starts, send two attachments: the handoff brief PurpleLab_POC_Handoff_Brief_v4.pdf (chat, 2026-09-29; re-rendered on request) and processed\\fca_label_strong\\labels_fca_strict.csv (5,155 rows / 4,672 NPIs: exact_id + strong + moderate). NEVER the processed\\fca_label\\ copy (5,544 rows, carries the 389 weak rows that verified at 74%). STATUS OF THE LABEL: verified by the research agent on 249 rows (strong 39/40, moderate 69/75 = 92%, weak 65/88 = 74%, so weak is held out); tiered by FCA relevance; graded by label_audit. It has been used as the EVALUATION ruler (the forward FCA ruler that graded v6 and v7 today) but NO model has been TRAINED with the resolved-defendant rows yet: v7 was built 2026-09-14, the resolver ran 2026-09-28; v8 is the first such run. Say 'PurpleLab sent' after sending.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv\"",
+    "powershell -Command \"(Get-Content 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\fca_label_strong\\labels_fca_strict.csv').Count - 1\"",
+    "REM attach both to the PurpleLab email when the POC starts; then say 'PurpleLab sent' in chat"
+   ]
+  },
+  {
+   "key": "storage_sense_off",
+   "what": "OneDrive Storage Sense dehydrated the data folder on 2026-10-02 (86.4 GB freed; every parquet became a cloud-only placeholder and queries died with 'The cloud file provider is not running'). The folder is pinned (attrib +P) but the setting must be changed or it recurs in 30 days: Settings > System > Storage > Storage Sense: set 'Content will become online-only if not opened for more than' to Never, and turn 'Automatic User content cleanup' Off. Then check free disk space; the overnight runs need tens of GB.",
+   "added": "2026-10-05",
+   "commands": [
+    "wmic logicaldisk get caption,freespace,size",
+    "python -m src.reminders --done-task storage_sense_off"
+   ]
+  },
+  {
+   "key": "ohio_medicaid_cost_report_request",
+   "what": "Wesleyan / Lahasky stack: file the Ohio public records request (R.C. 149.43; OAG 76-011 says NF Medicaid cost reports are public) with the Ohio Department of Medicaid for the CY2021-2024 nursing facility cost reports of the 21 Ohio homes below, all schedules incl. related-party. The federal HCRIS A-8-1 run (2026-10-06) showed: Wesleyan Village filed NO related-organization worksheet 2021-2025 despite WV Healthcare Management LLC in managerial control; the Gardens group booked $9.2M (2021) / $7.7M (2022) to related home-office + property companies with $4.5M / $11.5M disallowed as above-cost, then the home-office entities vanish from the 2023+ filings; the six Ayden/Buckeye Forest homes' related-party charges grew $3.0M (2021) to $7.5M (2024) after the Lahasky acquisition. The Ohio report is the state-side version of the same schedule and the one Ohio rate-setting uses. CCNs: 365162 Wesleyan Village; 365330 Ayden Wauseon; 365453 Ayden Oregon; 365532 Ayden Greenville; 365607 Ayden Piqua; 365617 Ayden Waterville; 365849 Ayden Toledo; 365315 Capital City Gardens; 365355 Gardens of Mayfield Village; 365557 Eaton/Maple Gardens; 365559 Lansing Gardens/Rolling Hills; 365577 Marysville/Prestige Gardens; 365594 Gardens of Euclid Beach; 365933 Buckeye Terrace/Edgewood Manor of Westerville; 366002 Crestline; 366010 Summit Villa/Pinnacle; 366012 Country Meadow; 366014 Whispering Hills; 366085 Legends Care; 366158 Mount Royal Villa; 366187 Minerva Healthcare. Send to ODM public records (address on medicaid.ohio.gov, Public Records); Claude drafted the letter in chat 2026-10-06. Close when sent.",
+   "added": "2026-10-06",
+   "commands": [
+    "python -m src.reminders --done-task ohio_medicaid_cost_report_request"
+   ]
+  },
+  {
+   "key": "build_nursing_home_dollar_basis",
+   "what": "BUILD QUEUE (lesson from Wesleyan Village, 2026-10-06): the cost_report_fraud scheme put Wesleyan at the 98th peer percentile (hcris_cost_anomaly 0.984, subscore 0.95) in BOTH the v6 and v7 runs, yet it sat in priority tier 6_none with zero concept signals, because the leads ranking is dollar-weighted on the Medicaid HCPCS file and a nursing home's revenue (the LT per diem) has no HCPCS code: Wesleyan shows $1.7M of assisted-living waiver lines against a multi-million per-diem stream the file cannot see. Nursing facilities (taxonomy 31xx) are therefore systematically under-ranked. Fix: for 31xx orgs use the HCRIS cost report as the dollar basis (Worksheet S-3 Medicaid days and total patient revenue, G-2/G-3 revenue) via the CCN crosswalk, and let cost_report_fraud + worthless_services + ownership_integrity carry the rank for that class. Also: the raw-HCRIS A-8-1 related-party share (hcris_related_party.py) should feed hcris.py's related_party_cost_share, which the published file lacks.",
+   "added": "2026-10-06",
+   "commands": [
+    "python -m src.reminders --done-task build_nursing_home_dollar_basis"
+   ]
+  },
+  {
+   "key": "wesleyan_balance_sheet_readout",
+   "what": "Wesleyan Village (365162) balance sheet, read 2026-10-07 from the raw HCRIS Worksheet G: the mortgage ($23.3M in 2021, $21.2M in 2025) existed all along, so the $1.9M/yr interest that first appears on Worksheet A in 2023 is a preparer reclassification out of A&G, not new debt (correction to the 10-07 reading). The step-down (Worksheet B, B-1 statistics: campus 152,417 sq ft vs SNF 69,000; campus resident days still used 2023-25) allocates about half of all cost, $9.1M to $11.2M a year, to the campus nonreimbursable center, so the campus carve-out is NOT thin after allocation (second correction). What IS new from 2023: other-assets line 31 (the standard form label is 'Due from owners/officers') $0 (2022) -> $1.57M (2023) -> $9.39M (2024) -> $20.29M (2025); long-term line 47 (standard label 'Loans from owners') $0 -> $2.76M -> $9.59M -> $17.22M; $8.6M of plant moved to 'Investments' in 2023 and out again in 2025; $1.56M of land left the books in 2024; A-7 capital worksheet left blank (1s) in 2023 and 2024; fund balance $4.93M (2021) -> $2.44M (2024) while reporting losses. No A-8-1 any year. Operator: confirm the Worksheet G line labels against Pub 15-2 chapter 41 (CMS blocked from the session; open https://m.nber.org/hcris/2540-10/manual/pr2_41.pdf or the CMS 2540-10 form) before any of this goes to Brad in those words; the Ohio cost report records request already covers the related-party schedule where these loans must be disclosed.",
+   "added": "2026-10-07",
+   "commands": [
+    "python -m src.reminders --done-task wesleyan_balance_sheet_readout"
+   ]
+  },
+  {
+   "key": "grade_large_book_v7",
+   "what": "LEVER 4 (large-biller book), first grade on v7, after bundle 266 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes.",
+   "added": "2026-10-10",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -u -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --priority-list",
+    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --horizon-months 36 --list-name provider_priority_list_large.csv",
+    "python -m src.reminders --done-task grade_large_book_v7"
+   ]
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v11",
+   "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). Build + dispatch the pursuit dossier for frozen_2021-12_v11 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) Only if the packet read-out says PROMOTE, or the operator says go.",
+   "added": "2026-10-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v11"
+   ]
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v11",
+   "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). ~30 min after dispatch: collect Manus research into the frozen_2021-12_v11 dossier and send PURSUIT_DOSSIER.md Only if the packet read-out says PROMOTE, or the operator says go.",
+   "added": "2026-10-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11"
+   ]
+  },
+  {
+   "key": "v13_label_ablation_agency_codes",
+   "what": "CLAUDE / operator question for AFTER v12 (never gates a run): the enrollment file's agency codes with no stated cause are label candidates only where they are a MINORITY code in their state (FL 'TERM - MEDICAID AUTHORITY' 2,133 at 2 percent of FL's ends; IA / TX / AL 'ACTION TAKEN BY MEDICAID/CHIP' at 5 to 6 percent; CT 'MEDICAID AUTHORITY' 2,410 at 37 percent). Run label_ablation on the v12 matrix with those rows added as a source and read the forward-lift delta; admit them to v13's label only if the delta is positive with a CI above zero.",
+   "added": "2026-10-12",
+   "commands": [
+    "REM after v12 is graded; Claude writes the exact ablation line then"
+   ]
+  },
+  {
+   "key": "sage_followups_2026_10",
+   "what": "Sage follow-ups after the first report, the titles PDF, the WHEN sheets and the staff-NPI profile (PI_FEEDBACK_CROSSREF_2026-10-12.md, PI_ROLES_READOUT_2026-10-12.md, PI_WHEN_READOUT_2026-10-13.md, PI_STAFF_READOUT_2026-10-13.md: all with the PI report under <data_root>\\enforcement\\pi_reports\\, never in git). DONE 2026-10-13: the seven NPPES lookups, the WHEN sheets, the staff-NPI profile (five of seven staff NPIs are absent from the fact as biller AND renderer; one Mott St NP rendered $293k over 12 months under TWO Lau billing numbers, the individual NPI and CHEUK W. LAU M.D., P.C. 1730477274, which the card never counted; the optometrist at Grand St renders only under two optical shops, never under Chang) and the Special Homes fact sheet ($59.6M 2018 to 2024, 99.6 percent H2016 per diem, one rendering NPI, 28.6 lines per patient-month). SETTLED 2026-10-13: Special Homes = 74 residents per calendar day in the worst month against 76 places (97 percent), census 70 median / 78 worst, 94 percent of days billed: an ordinary nearly-full residential provider, NO visit, drop from the next packet; Lau's P.C. number = $674k over 2018-01 to 2022-07 then stopped (4 percent of the practice), the card stands on the individual NPI. OURS, still open: (1) rerun pi_facts on the three Chinatown NPIs so the sheet names Lau's third rendering NPI by dollars (block below, one minute); (2) tell Brad the Infinity PACER first-to-file check is time-sensitive ($126M in 2022 alone). SAGE: the first-call list (PI_WHEN_READOUT section 2) and the WINDOWS sheet; titles for the Tier 4 cards (Brar, CTW / 212 Therapy, Clubhouse for Kids, Infinity, Perspectives); which practice the two Chang/Xie formers worked at; a second patient-flow window at 2 Mott St plus the Brooklyn office; EEG equipment / technologist at 139 Centre St; exam lanes at 217 Grand St; the Brooklyn route now four addresses (6402 8th Ave Rm 501, 749 and 755 61st St, the card-2 cluster); 2024 to 2026 departures for Queens Optometric and CTW; Infinity, Perspectives, Jacoby, Special Homes on hold until counsel says go. Close when the Tier 4 titles are in, the first-call list and WINDOWS sheet are with Sage, and (1) and (2) are done.",
+   "added": "2026-10-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --npis \"1508848441;1588703995;1558688754\" --deep --out-prefix pi_facts_chinatown",
+    "REM upload PI_FACTS_CHINATOWN.md in chat; say 'Sage first-call list sent' when the email goes"
+   ]
+  },
+  {
+   "key": "tms_nevada_followup",
+   "what": "Brad's TMS tip, answered 2026-10-13 (TMS_LOOKUP_READOUT_2026-10-13.md with the PI reports): Learning to Achieve Wellness (Brandon FL, org NPI 1033849575) has ZERO Medicaid dollars on 90867/90868/90869 and no rank anywhere; its TMS is Medicare / commercial or billed under the psychiatrist's individual NPI. ASK BRAD for the psychiatrist's name or NPI and the payer mix, then run the line below. The 'others' list: seven individual NPIs carrying TMS with one renderer (Rosa Bellota NV $1.0M the largest) and a NEVADA CLUSTER of 20+ short-lived single-renderer TMS entities at 100 percent TMS share (Salvi, Nula, Sunrise Health Solutions, Cerebral Medical Center, DC Medical, Evolutionary Beginnings, Mana, TM Services, Vitalmind ...): an ownership / address / rendering-psychiatrist research question; check Nevada Medicaid's TMS coverage date first (the innocent explanation).",
+   "added": "2026-10-13",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npi <psychiatrist NPI from Brad> --codes 90867,90868,90869 --no-national --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ltaw_psychiatrist.md\"",
+    "REM Nevada cluster owners / addresses (pi_facts on the org ids from the lookup table, --deep):",
+    "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npis \"1578258281;1740998202;1871372003;1841928397;1962094714;1255000386;1780428698;1336988831;1467287391;1811280183\" --deep --out-prefix pi_facts_nv_tms"
+   ]
+  },
+  {
+   "key": "label_sources_followups",
+   "what": "Operator decision 2026-10-13 (docs/EXCLUSION_SOURCES_AUDIT_2026-10.md section 7): the training label takes every provider with a strong fraud signal; the grading ruler stays on outcomes. BUILT: the 'charged' tier (bundle 309) and, in bundle 311, (1) charged-only case rows as `charged_case` positives (case_labels: criminal indictment / charge or a government civil complaint with no outcome; direct + org_billing bases; trains only under --label-tier hard+charged) and (2) the OUTCOME REFRESH lane (prompts + loader; a plea / verdict / settlement becomes its own case row, a dismissal / acquittal quarantines the charge). ALSO FIXED on the way: criminal conviction releases without a stated dollar amount never reached the org_billing tier (the resolver's amount filter); they do now (v15 semantics). RUN after bundle 311 is merged: the v15 A/B on v14's matrix (two refits, hard vs hard+charged, graded on the FCA ruler: the lines below), and write the outcome_refresh prompt batch (review the CSV, then --dispatch when Manus credits are available). STILL QUEUED: (3) big-state exclusion lists with license_number / medicaid_id aliases + the NPPES type-05 join; (4) OpenSanctions as an identifier crosswalk (license gate, Brad); (5) the 1128(a)(4) pill-mill ablation; (6) the case date over the exclusion date when an NPI resolves to a DOJ case; (7) `hcf_commercial` (state AG / insurance-department fraud convictions) as a training-only source under ablation.",
+   "added": "2026-10-13",
+   "commands": [
+    "# on the VM, after bundle 311 is merged + pushed and pulled (the charged rows need a fresh export; on v14's matrix the A/B measures the policy switch on the charged rows ALREADY in the matrix, which is none, so run the export line of run_frozen_night.sh first OR read the A/B as a no-op check):",
+    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
+    "python -u -m src.enforcement.case_harvest_prompts --out-dir \"$MEDICAID_DATA_ROOT/processed/outcome_refresh\" --sets outcome_refresh --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\"",
+    "head -5 \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_batch.csv\"; wc -l \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_prompts.jsonl\"",
+    "# the v15 A/B (after the v15 export, whose SOURCES_REPORT must show charged_case NPIs > 0):",
+    "RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v15; EXCL=$MEDICAID_DATA_ROOT/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet",
+    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_hard/ACCURACY_DIAGNOSTICS.md\"",
+    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard+charged --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md\"",
+    "grep -h \"hits@\" \"$RUN\"/ab_tier_hard/ACCURACY_DIAGNOSTICS.md \"$RUN\"/ab_tier_charged/ACCURACY_DIAGNOSTICS.md | head -20",
+    "# when a reviewed outcome_refresh answer CSV is on the laptop:",
+    "python -m src.enforcement.research_evidence outcome-refresh --in \"%USERPROFILE%\\Downloads\\outcome_refresh_answers.csv\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\""
+   ]
+  },
+  {
+   "key": "v17_run",
+   "what": "v17 = the retrain on the corrected inputs: v16 put the CIA parties on the rulers (583 in-universe positives) but a re-grade cannot train on the 284 pre-freeze parties; v17 does. Full runner (run_frozen_night.sh, step 0 merges the corrected cia_cases.csv; the as-of graph is reused, no --rebuild-graph; about 6 to 8 hours on the VM). Needs bundle 322 merged + pushed, the VM started, pull, pre-register, run under tmux, then the packet. If hits@100 reads 3 again, the v18 pre-registration moves the 100-budget check to the large book.",
+   "added": "2026-10-14",
+   "commands": [
+    "# VM, one line at a time (start it in the AWS console: EC2 > Instances, NOT 'Launch an instance'; swap the IP if it changed):",
+    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
+    "source .venv/bin/activate && source ~/.medicaid_env",
+    "grep -c \"agreed to pay\" \"$MEDICAID_DATA_ROOT/enforcement/cia_cases.csv\"    # must be about 339 (the corrected file from v16)",
+    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v17 --goal \"retrain on the expanded label with the CIA parties IN training (284 pre-freeze parties) and ON the rulers (74 post-freeze positives), the 843 name-resolved exclusions already in the as-of graph; ten seeds, train = hard; the v16 checks\" --expected \"pursuit hits@100 at least 4 and hits@250 at least 6 under the 583-positive FCA ruler; large book hits@50 at least 2; Jaccard at least 0.6; train = hard; if hits@100 still reads 3, v18 grades the 100 budget on the large book\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+    "tmux new -d -s v17 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=dollar PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v16 bash ops/vm/run_frozen_night.sh v17 2021-12\"",
+    "# that starts the run in the background; check with: tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17/night_run.log   (or from the laptop: ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/model_a/frozen_2021-12_v17/night_run.log\")",
+    "# when it prints [v17] DONE, from the laptop:",
+    "REM ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v17 && tar -czf /home/ubuntu/run_packet_v17.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v17\"",
+    "REM scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v17.tar.gz C:\\Users\\treyr\\Downloads\\   then attach it and say 'v17 finished'"
+   ]
+  },
+  {
+   "key": "v18_run",
+   "added": "2026-10-14",
+   "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. Pre-register under the v17 checks; if v17 read 3 at 100, apply the v16 rule (the 100-budget check moves to the large book: large_hits100 >= 4 in place of hits100 >= 4). After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. Run manus_lanes_run FIRST so v18 trains on the loaded research rows (then --rebuild-graph).",
+   "commands": [
+    "# VM (tmux so the run survives the laptop closing):",
+    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1",
+    "source .venv/bin/activate && source ~/.medicaid_env",
+    "python -u -m src.model_a.run_registry --data-root \"$MEDICAID_DATA_ROOT\" --preregister --tag frozen_2021-12_v18 --goal \"first run with the as-of v3 billing scores restored, the 2023 facility/POS editions excluded from the freeze, and the measurement block (scheme AUC on the FCA ruler, label enrichment, source + label ablations); v17's label inputs; ten seeds, train = hard\" --expected \"pursuit hits@250 at least 6 and large book hits@50 at least 2 under the FCA ruler; Jaccard at least 0.6; the 100 budget per the v16 rule; every scheme carries an FCA-ruler AUC and the ablation names the families to prune for v19\" --check \"large_hits50 >= 2\" \"large_prec50_lo > large_base50\" \"hits100 >= 4\" \"hits250 >= 6\" \"lead_ge_gap >= 0.5\" \"inst_share50 <= 0.4\" \"top50_jaccard >= 0.6\" \"eval_policy = fca\" \"horizon = 36\" \"frozen = True\" \"seeds >= 10\" \"groups = case_cluster\" \"broadcast = weight\" \"train = hard\"",
+    "# if v17 read 3 at 100: replace \"hits100 >= 4\" above with \"large_hits100 >= 4\" (the v16 rule) before pre-registering",
+    "tmux new -s v18 -d 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v18 2021-12 --rebuild-graph'",
+    "tail -3 $MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v18/night_run.log",
+    "# when it prints '[v18] DONE': tell Claude 'v18 finished', then the packet lines the log prints (tar + sync up + scp)"
+   ]
+  },
+  {
+   "key": "run_packet__frozen_2021-12_v17",
+   "what": "Send the run packet for frozen_2021-12_v17 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
+   "added": "2026-10-20",
+   "commands": [
+    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
+    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
+    "REM then upload run_packet.zip to the chat",
+    "python -m src.reminders --done-task run_packet__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
+   ]
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v17",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v17 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "added": "2026-10-20",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
+   ]
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v17",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v17 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-10-20",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17\" --poll",
+    "python -m src.reminders --done-task dossier_poll__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17"
+   ]
+  },
+  {
+   "key": "registry_verdict__frozen_2021-12_v17",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v17 \u2014 close only when you have them",
+   "added": "2026-10-20",
+   "commands": []
+  },
+  {
+   "key": "merge_bundle326",
+   "added": "2026-10-20",
+   "what": "Merge bundle326 (cumulative, supersedes 239 to 325; merge 326 only): the lane-loader fix (the 2026-10-14 cycle dispatched 212 tasks and 180 answered with real CSV attachments, but the CIA loader crashed on nine defendants sharing five release URLs and every lane stayed unloaded; one row per defendant now, fields aligned by case_id, and one lane's failure no longer stops the others), org_find fixes, and the reminder state (v17 post-run checklist, stale tasks cleared). Then the VM pull, then the free re-load of the answers already on disk (task lanes_reload).",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "ops\\laptop\\merge_push.bat 326",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
+   ]
+  },
+  {
+   "key": "lanes_reload",
+   "added": "2026-10-20",
+   "what": "RE-LOAD THE RESEARCH ANSWERS (free; nothing is re-sent). The 2026-10-14 lane cycle: cia 40/40 answered, names 26/40, outcome_refresh 25/40, label_verification 11/12, commercial 38/40, defendant_research 40/40 (212 dispatched, 180 answered, 32 errored at the service); the loader crashed before taking any of them in (fixed in bundle 326). The raw answers and their signed CSV links are on the VM under processed/manus_lanes/<lane>/ (links valid to 2026-11-01). After bundle 326 is merged and pulled: one --poll --load pass (the poll also re-attaches the 32 errored tasks by id), then read MANUS_LANES.md (loaded / quarantined per lane) and paste it; then the merge-inputs step runs inside the next night runner. If loaded is still 0 for a lane, paste its LOAD FAILED note from the report.",
+   "commands": [
+    "# laptop Command Prompt, after merge_bundle326:",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2021-12_v17 --poll --load && cat /data/medicaid/processed/manus_lanes/MANUS_LANES.md\"",
+    "REM paste the table; the remaining 8 cia / 21 names / 114 outcome_refresh / 72 commercial / 1,896 defendant_research prompts are un-dispatched (budget): a second cycle sends them when credits allow:",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --lanes cia,names,outcome_refresh,commercial --dispatch --max-new 40 --total-budget 120\""
+   ]
+  }
+ ]
 }
