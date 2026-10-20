@@ -851,8 +851,8 @@
       ]
     },
     {
-      "key": "run_packet__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
-      "what": "Send the run packet for C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
+      "key": "run_packet__frozen_2021-12_v17",
+      "what": "Send the run packet for frozen_2021-12_v17 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
       "added": "2026-10-20",
       "commands": [
         "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
@@ -862,8 +862,8 @@
       ]
     },
     {
-      "key": "pursuit_dossier__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
-      "what": "Build + dispatch the pursuit dossier for C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+      "key": "pursuit_dossier__frozen_2021-12_v17",
+      "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v17 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
       "added": "2026-10-20",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -872,8 +872,8 @@
       ]
     },
     {
-      "key": "dossier_poll__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
-      "what": "~30 min after dispatch: collect Manus research into the C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17 dossier and send PURSUIT_DOSSIER.md",
+      "key": "dossier_poll__frozen_2021-12_v17",
+      "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v17 dossier and send PURSUIT_DOSSIER.md",
       "added": "2026-10-20",
       "commands": [
         "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -882,9 +882,10 @@
       ]
     },
     {
-      "key": "registry_verdict__C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17",
-      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v17 \u2014 close only when you have them",
-      "added": "2026-10-20"
+      "key": "registry_verdict__frozen_2021-12_v17",
+      "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v17 \u2014 close only when you have them",
+      "added": "2026-10-20",
+      "commands": []
     }
   ]
 }
