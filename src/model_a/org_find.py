@@ -502,6 +502,7 @@ def main() -> None:
     md = report(a.name, dim_hits, mat_hits, list_hits, codes, conc_named, conc_national, sources,
                 npi_summary=npi_summary, npi_under=npi_under)
     if a.out:
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)   # the VM had no pi_reports/ folder yet (2026-10-20)
         Path(a.out).write_text(md, encoding="utf-8")
         print(f"[org_find] wrote {a.out}")
     else:
