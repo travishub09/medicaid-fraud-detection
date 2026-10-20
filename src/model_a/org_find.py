@@ -106,7 +106,8 @@ def find_in_matrix(matrix: Path, npis: list[str], pattern: str | None = None,
     want = [c for c in ("npi", "org_node_id", "org_legal_name", "provider_name",
                         "practice_state", "net_paid", "rank", "assessable") if c in cols]
     con.execute("CREATE OR REPLACE TEMP TABLE want_npi(npi VARCHAR)")
-    con.executemany("INSERT INTO want_npi VALUES (?)", [(str(n),) for n in npis])
+    if len(npis):                                  # executemany refuses an empty list (2026-10-20)
+        con.executemany("INSERT INTO want_npi VALUES (?)", [(str(n),) for n in npis])
     name_cols = [c for c in ("org_legal_name", "provider_name") if c in cols]
     where = "CAST(npi AS VARCHAR) IN (SELECT npi FROM want_npi)"
     params: list = []
