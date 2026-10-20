@@ -541,6 +541,28 @@
  ],
  "tasks": [
   {
+   "key": "lanes_gates_apply",
+   "added": "2026-10-20",
+   "what": "APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
+   "commands": [
+    "REM after merge_push.bat 330 and the VM pull; laptop Command Prompt, one line per paste:",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2021-12_v17 --load && cat /data/medicaid/processed/manus_lanes/MANUS_LANES.md\"",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.state_terminations --in-dir /data/medicaid/preclean/state_terminations --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/processed/exclusions_state_terminations.parquet 2>&1 | tail -15\"",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv 2>&1 | tail -5\"",
+    "python -m src.reminders --done-task lanes_gates_apply"
+   ]
+  },
+  {
+   "key": "merge_bundle330",
+   "added": "2026-10-20",
+   "what": "Merge bundle330 (cumulative; fast-forwards from 92b3164): the four label gates (src/enforcement/label_gates.py), the verification read-out, the lanes_gates_apply + v18 reminders. Then the VM pull.",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "ops\\laptop\\merge_push.bat 330",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
+   ]
+  },
+  {
    "key": "merge_bundle328",
    "added": "2026-10-20",
    "what": "Merge bundle328 (cumulative; 327 is already merged, so this fast-forwards one commit: the reminders with the lane results, the human-read task, the v18 ssh lines and the VM SSH rule). Then the VM pull.",
@@ -548,7 +570,9 @@
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "ops\\laptop\\merge_push.bat 328",
     "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
-   ]
+   ],
+   "done": "2026-10-20",
+   "closed_note": "superseded: 329 merged 2026-10-20 (92b3164 on origin and the VM)"
   },
   {
    "key": "lanes_review",
@@ -561,7 +585,9 @@
     "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/label_verification/LABEL_VERIFICATION.md\" \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/label_verification/verification_results.csv\" \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/MANUS_LANES.md\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\\\"",
     "REM open LABEL_VERIFICATION.md; paste the wrong_npi / wrong_person rows (NPI, defendant, match_level, strength) to Claude",
     "python -m src.reminders --done-task lanes_review"
-   ]
+   ],
+   "done": "2026-10-20",
+   "closed_note": "the eight flagged rows read 2026-10-20 (docs/LABEL_VERIFICATION_READ_2026-10-20.md): five wrong (Live Care, Dermatology Healthcare, Tantuwaya, the MS aide, Mika Harris), three keep (Cutler P.C., Brown, Mazumder); four gates built in bundle 330"
   },
   {
    "key": "lanes_dispatch_2",
@@ -852,7 +878,7 @@
   {
    "key": "v18_run",
    "added": "2026-10-14",
-   "what": "v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. v17 GRADED 2026-10-20 (docs/ACCURACY_READOUT_v17_2026-10-20.md): hits@100 = 5 (PASS for the first time), large book 4 at 50, HOLD on top-50 Jaccard 0.575 (bar 0.6) only. v18 keeps hits100 >= 4 and top50_jaccard >= 0.6; the pmax order (the first sweep row to beat the shipped order: 2/3/5/9 vs 1/2/5/7) is graded as a third book, never shipped yet. After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. The lane rows ARE loaded (2026-10-20): cia / outcome_refresh / commercial rows sit in enforcement/doj_cases_v3.csv, the 22 name-resolved exclusions in processed/exclusions_name_resolved.parquet (so --rebuild-graph is REQUIRED: the as-of graph must carry them as exclusion nodes), the 26 researched defendants in processed/case_defendant_npis.parquet. Needs bundle 327 merged + pulled first (the pmax book and the dossier bar are in ab95883). Every line below is a laptop Command Prompt ssh one-liner; one line per paste.",
+   "what": "AFTER lanes_gates_apply (the gates must run on the VM first so v18 trains on the cleaned rows). v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. v17 GRADED 2026-10-20 (docs/ACCURACY_READOUT_v17_2026-10-20.md): hits@100 = 5 (PASS for the first time), large book 4 at 50, HOLD on top-50 Jaccard 0.575 (bar 0.6) only. v18 keeps hits100 >= 4 and top50_jaccard >= 0.6; the pmax order (the first sweep row to beat the shipped order: 2/3/5/9 vs 1/2/5/7) is graded as a third book, never shipped yet. After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. The lane rows ARE loaded (2026-10-20): cia / outcome_refresh / commercial rows sit in enforcement/doj_cases_v3.csv, the 22 name-resolved exclusions in processed/exclusions_name_resolved.parquet (so --rebuild-graph is REQUIRED: the as-of graph must carry them as exclusion nodes), the 26 researched defendants in processed/case_defendant_npis.parquet. Needs bundle 327 merged + pulled first (the pmax book and the dossier bar are in ab95883). Every line below is a laptop Command Prompt ssh one-liner; one line per paste.",
    "commands": [
     "REM 1. the VM must carry ab95883 (bundle 327 merged on the laptop first: ops\\laptop\\merge_push.bat 327):",
     "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\"",

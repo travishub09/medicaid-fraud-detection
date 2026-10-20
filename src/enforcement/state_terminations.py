@@ -210,6 +210,18 @@ def normalize_state_list(df: pd.DataFrame, fields: dict, state: str,
     excl_type = ("state_term:" + st + ":" + reason.where(reason != "", "unspecified")
                  + ptype.where(ptype == "", " [" + ptype + "]"))
     now = pd.Timestamp.today().normalize()
+    # the row's own words about the person's occupation (type / category / title /
+    # description columns, whatever the state called them): an aide, driver or clerk
+    # never holds an NPI, so a blank-NPI row for one must never name-match a clinician
+    # (2026-10-20 verification: a Mississippi nurse's aide matched the one FNP of that
+    # name in the state)
+    from src.enforcement.label_gates import non_npi_role
+    occ_cols = [c for c in df.columns if re.search(r"type|categor|title|occupation|profession|descr|role|general|"
+                                                   r"specialt|license|classif|position", str(c), re.I)]
+    occ_text = pd.Series("", index=df.index, dtype=object)
+    for c in occ_cols:
+        occ_text = occ_text + " | " + df[c].fillna("").astype(str)
+    occ_text = occ_text + " | " + ptype.fillna("").astype(str)
     out = pd.DataFrame({
         "npi": npi,
         "entity_name": name,
@@ -220,6 +232,7 @@ def normalize_state_list(df: pd.DataFrame, fields: dict, state: str,
         "currently_active": (rein.isna() | (rein >= now)).astype(int),
         "state": st,
         "source_file": source_file,
+        "non_npi_role": occ_text.map(non_npi_role).astype(int),
     })
     out = out[(out["name_key"] != "") | (out["npi"] != "")]
     return out.drop_duplicates(["npi", "name_key", "excl_type", "excl_date"]).reset_index(drop=True)
@@ -254,7 +267,11 @@ def match_names_to_nppes(rows: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.D
     rows["match_basis"] = "npi_on_list"
     blank = rows["npi"] == ""
     keys = _normalize_name(rows.loc[blank, "entity_name"])
+    non_npi = rows["non_npi_role"].fillna(0).astype(int) if "non_npi_role" in rows.columns else pd.Series(0, index=rows.index)
     for idx, k, st in zip(rows.index[blank], keys, rows.loc[blank, "state"]):
+        if int(non_npi.at[idx]):
+            rows.at[idx, "match_basis"] = "non_npi_role"      # an aide / driver / clerk never resolves on a name
+            continue
         if not k or not distinctive_name_key(k):
             rows.at[idx, "match_basis"] = "unmatched"
             continue

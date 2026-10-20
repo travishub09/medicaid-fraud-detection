@@ -58,7 +58,7 @@ def test_prompts_file_and_fold_back(tmp_path):
                                  "output": '{"npi": null, "confidence": "high", "evidence": "owner, not a clinician; no NPI"}'},
     }
     out, summ = fold_results(res, pj, results)
-    assert summ == {"folded_resolved": 1, "low_confidence": 1, "no_npi": 1}
+    assert summ == {"folded_resolved": 1, "low_confidence": 1, "no_npi": 1, "name_conflict": 0}
     g = out[out["defendant"] == "Miguel Gonzalez"].iloc[0]
     assert g["npi"] == "1234567893" and g["status"] == "resolved" and g["match_level"] == "research_high" and g["task_id"] == "t1"
     assert out[out["defendant"] == "Foot Care Store, Inc."]["status"].iloc[0] == "research_low"

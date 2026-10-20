@@ -49,6 +49,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.enforcement.label_gates import is_index_url
+
 LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
          "label_verification", "label_review")
 DEFAULT_STATES = ["FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY",
@@ -85,6 +87,7 @@ def inputs(data_root: Path, run_dir: Path | None = None) -> dict:
         "name_residue": r / "processed" / "exclusion_name_residue.csv",
         "name_resolved": r / "processed" / "exclusions_name_resolved.parquet",
         "defendant_npis": r / "processed" / "case_defendant_npis.parquet",
+        "provider_dim": r / "processed" / "provider_dim.parquet",
         "verification_sample": next((p for p in (r / "processed" / "fca_label_strong" / "verification_sample_strata.csv",
                                                  r / "processed" / "fca_label_strong" / "verification_sample.csv",
                                                  r / "processed" / "fca_label" / "verification_sample_strata.csv")
@@ -320,6 +323,11 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
         ct = default_type or ("criminal_hcf" if re.search(r"convict|plea|guilty|sentenc", outcome, re.I) else "civil_fca")
         summary = (f"{outcome}. " + str(r.get("conduct_summary") or r.get("scheme") or "")).strip()
         url = str(r.get("source_url") or "").strip()
+        if is_index_url(url):
+            # a press-release INDEX is not evidence of a case (2026-10-20: 'Live Care Inc.'
+            # keyed to usao-mdfl/pr); the row waits for a release URL in the quarantine
+            bad.append({**r, "drop_reason": f"index page, not a release ({url})"})
+            continue
         st = str(r.get("state") or "").strip().upper()
         npi = re.sub(r"\D", "", str(r.get("npi") or ""))
         qt = str(r.get("qui_tam") or "").strip().lower()
@@ -433,6 +441,14 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
                 got = rev.load_exclusion_npis(t, residue, min_confidence="medium") if residue is not None else pd.DataFrame()
                 rows.append(got)
                 tally["quarantined"] += max(0, len(t) - len(got))
+                if len(t) > len(got):
+                    # the refused rows are the human read too (2026-10-20: the names lane
+                    # quarantined 236 rows and wrote no file)
+                    npi_col = next((c for c in t.columns if c.lower() == "npi"), None)
+                    kept = set(got["npi"].astype(str)) if len(got) and "npi" in got.columns else set()
+                    refused = t[~t[npi_col].astype(str).str.replace(r"\D", "", regex=True).isin(kept)] if npi_col else t
+                    quarantine_rows.append(refused.assign(
+                        drop_reason="gate: Luhn-valid NPI, confidence >= medium, NPI among the listed candidates"))
         if rows:
             new = pd.concat(rows, ignore_index=True)
             n = _append_parquet(inp["name_resolved"], new, ["npi", "excl_type", "excl_date"])
@@ -469,12 +485,20 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
         from src.enforcement import defendant_research as dr
         res = _read_table(inp["defendant_npis"])
         if res is not None:
-            table, summ = dr.fold_results(res, files["dir"] / "defendant_research_prompts.jsonl", results)
+            pdim = inp["provider_dim"] if inp["provider_dim"].exists() else None
+            if pdim is None:
+                tally["notes"].append("no provider_dim: researched NPIs NOT checked against NPPES names")
+            table, summ = dr.fold_results(res, files["dir"] / "defendant_research_prompts.jsonl", results,
+                                          provider_dim=pdim)
             table.to_parquet(inp["defendant_npis"], index=False)
             tally["loaded"] += int(summ.get("folded_resolved", 0))
-            tally["quarantined"] += int(summ.get("low_confidence", 0) + summ.get("no_npi", 0))
+            tally["quarantined"] += int(summ.get("low_confidence", 0) + summ.get("no_npi", 0)
+                                        + summ.get("name_conflict", 0))
             tally["files"].append(str(inp["defendant_npis"]))
             tally["notes"].append(json.dumps(summ))
+            if "status" in table.columns and (table["status"] == "research_name_conflict").any():
+                quarantine_rows.append(table[table["status"] == "research_name_conflict"]
+                                       .assign(drop_reason=lambda d: "NPPES name disagrees: " + d["gate_note"].astype(str)))
     elif lane == "label_verification":
         from src.model_a import label_verification as lv
         sp = files["dir"] / "verification_sample.csv"

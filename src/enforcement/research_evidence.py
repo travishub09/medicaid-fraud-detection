@@ -42,7 +42,90 @@ from src.enforcement.case_db import (CASE_COLUMNS, _SCHEME_KEYWORDS,
                                      _SECTOR_KEYWORDS, _classify, _classify_all,
                                      build_case_db)
 from src.enforcement.opensanctions import EXCLUSION_COLS
+from src.enforcement.label_gates import is_index_url, name_in_page
 from src.entity_graph.resolve_entities import norm_org_name
+
+
+# ---- the defendant must be on the page the row cites -----------------------------------
+def _html_text(html: str) -> str:
+    s = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", str(html or ""))
+    s = re.sub(r"(?s)<[^>]+>", " ", s)
+    return re.sub(r"&nbsp;|&amp;|&#\d+;|&\w+;", " ", s)
+
+
+def verify_names_on_pages(cases: pd.DataFrame, fetch_page, kind_col: str | None = None,
+                          limit: int | None = None, cache: dict | None = None, log=print) -> pd.DataFrame:
+    """Read each row's source page and record whether the defendant is named on it:
+    ``name_in_source`` = 1 (named), 0 (page read, name absent), '' (no page: not an
+    http URL, an index page, or the fetch failed). ``fetch_page(url) -> html`` is
+    injectable; pages are cached per URL within the call. Nothing is dropped here:
+    the caller quarantines the zeros (2026-10-20 verification: a state AG release
+    harvested under a physician it never names)."""
+    out = cases.copy()
+    out["name_in_source"] = (out["name_in_source"].astype(object) if "name_in_source" in out.columns
+                             else pd.Series("", index=out.index, dtype=object))
+    cache = {} if cache is None else cache
+    todo = out.index if limit is None else out.index[:limit]
+    n_read = n_absent = n_fail = 0
+    for i in todo:
+        url = str(out.at[i, "source_url"] if "source_url" in out.columns else "").strip()
+        if not url:
+            url = re.sub(r"#.*$", "", str(out.at[i, "case_id"]))
+        if not url.lower().startswith("http") or is_index_url(url):
+            continue
+        if url not in cache:
+            try:
+                cache[url] = _html_text(fetch_page(url))
+            except Exception as ex:  # noqa: BLE001
+                cache[url] = None
+                n_fail += 1
+                log(f"    [verify_sources] fetch failed {url}: {type(ex).__name__}")
+        text = cache[url]
+        if text is None:
+            continue
+        name = str(out.at[i, "defendant_name"])
+        kind = str(out.at[i, kind_col]) if kind_col and kind_col in out.columns else (
+            "org" if re.search(r"\b(inc|llc|corp|pllc|p\.?c\.?|p\.?a\.?|center|clinic|hospital|pharmacy|"
+                               r"services|group|associates|health|care|home|lab)\b", name, re.I) else "person")
+        hit = name_in_page(name, kind, text)
+        if hit is None:
+            continue
+        n_read += 1
+        out.at[i, "name_in_source"] = 1 if hit else 0
+        n_absent += 0 if hit else 1
+    log(f"    [verify_sources] {n_read:,} rows read against their page: {n_absent:,} defendants NOT on the page, "
+        f"{n_fail:,} pages unreachable")
+    return out
+
+
+def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: str = r"MFCU|AG\b|state|commercial",
+                                 limit: int | None = None, log=print) -> int:
+    """CLI body of ``verify-sources``: for the case rows whose jurisdiction matches (the
+    research-harvested state and commercial cases by default), read the cited page and
+    mark a row whose defendant is absent ``usable=0`` with qc_note
+    ``defendant_not_on_page`` (quarantine, never delete). Returns the rows marked."""
+    p = Path(case_db_path)
+    db = read_csv_text(str(p), dtype=str)
+    for c, v in (("usable", "1"), ("qc_note", ""), ("name_in_source", "")):
+        if c not in db.columns:
+            db[c] = v
+    jur = db.get("jurisdiction", pd.Series("", index=db.index)).fillna("").astype(str)
+    sel = jur.str.contains(jurisdiction_regex, regex=True, na=False) & (db["usable"].fillna("1").astype(str) != "0") \
+        & (db["name_in_source"].fillna("").astype(str) == "")
+    sub = db.loc[sel]
+    if limit is not None:
+        sub = sub.head(limit)
+    if not len(sub):
+        log("    [verify_sources] nothing to verify")
+        return 0
+    checked = verify_names_on_pages(sub, fetch_page, log=log)
+    db.loc[checked.index, "name_in_source"] = checked["name_in_source"].astype(str)
+    absent = checked.index[checked["name_in_source"].astype(str) == "0"]
+    db.loc[absent, "usable"] = "0"
+    db.loc[absent, "qc_note"] = "defendant_not_on_page"
+    db.to_csv(p, index=False)
+    log(f"    [verify_sources] {len(absent):,} rows marked usable=0 (defendant_not_on_page) in {p}")
+    return int(len(absent))
 
 # state lists arrive in ~40 formats; resolve the essentials by alias
 _STATE_EXCL_ALIASES = {
@@ -137,6 +220,8 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
         if not defendant and not summary:
             continue
         url = str(r.get("source_url") or "").strip()
+        if is_index_url(url):
+            continue                                   # a listing page cites no case (label_gates)
         date = str(r.get("announced_date") or "").strip()
         cid = url or f"mfcu:{st.lower()}:{abs(hash((st, defendant, date))) & 0xFFFFFFFF:x}"
         text = f"{defendant}. {summary}"
@@ -196,6 +281,9 @@ def load_commercial_cases(table: pd.DataFrame, state: str) -> tuple[pd.DataFrame
             bad.append({**r, "drop_reason": "no resolved outcome (charge / arrest / pending)"})
             continue
         url = str(r.get("source_url") or "").strip()
+        if is_index_url(url):
+            bad.append({**r, "drop_reason": f"index page, not a release ({url})"})
+            continue
         date = str(r.get("outcome_date") or r.get("announced_date") or "").strip()
         # one case row per defendant even when several share a release URL (url#<name key>,
         # the DOJ feed's convention; build_case_db de-duplicates on case_id)
@@ -469,8 +557,20 @@ def main() -> None:
                                                  "into the case DB; dismissals / acquittals clear the charged row")
     orf.add_argument("--in", dest="inp", required=True)
     orf.add_argument("--case-db", required=True, help="enforcement/doj_cases_v3.csv (merged in place)")
+    vs = sub.add_parser("verify-sources", help="read each research-harvested case row's cited page; a row whose "
+                                               "defendant is not named on it is marked usable=0 (defendant_not_on_page)")
+    vs.add_argument("--case-db", required=True)
+    vs.add_argument("--jurisdiction-regex", default=r"MFCU|AG\b|state|commercial",
+                    help="which rows to check (default: the state / commercial research harvests)")
+    vs.add_argument("--limit", type=int, default=None, help="check at most N rows this pass")
 
     args = ap.parse_args()
+    if args.cmd == "verify-sources":
+        from src.feeds.client import default_fetch_text
+        n = quarantine_absent_defendants(args.case_db, default_fetch_text, args.jurisdiction_regex, args.limit)
+        print(f"[research_evidence] verify-sources: {n:,} rows quarantined; rebuild the case labels (the next export) "
+              "so they leave the label")
+        return
     table = _read_any(args.inp)
     if args.cmd == "commercial-cases":
         cases, quarantine = load_commercial_cases(table, args.state)

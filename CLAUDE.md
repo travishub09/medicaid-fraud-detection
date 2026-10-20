@@ -1534,6 +1534,24 @@ first, then paste" above every move/done block.
   security group's /32 SSH rule pinned to an old home IP (task vm_ssh_rule). v18 =
   bundle 327 merged + pulled, pre-register, `--rebuild-graph` (the name-resolved
   exclusions), ten seeds, three books graded (task v18_run carries the ssh lines).
+  THE VERIFICATION READ (2026-10-20, docs/LABEL_VERIFICATION_READ_2026-10-20.md): of
+  the eight flagged rows five were wrong, each one of four shapes, now four gates in
+  `enforcement/label_gates.py`: (1) `is_index_url` (a case row keyed to a press-release
+  INDEX, usao-mdfl/pr, is never evidence: harvest loaders quarantine it, case_labels
+  drops it on every file); (2) `non_npi_role` (a state-list row whose own words say
+  aide / CNA / PCA / driver / clerk never name-matches NPPES: `match_basis =
+  non_npi_role`); (3) `name_agrees` (a researched NPI must carry the defendant's name
+  in NPPES: last name present + FIRST name exact for a person, every distinctive word
+  + at most one extra + city agreement for an org; the solo "<Name>, M.D., P.C." =
+  the physician shape agrees; `defendant_research.fold_results(provider_dim=)` reads
+  provider_dim through DuckDB and demotes a conflict to `research_name_conflict` with
+  the NPI in `npi_candidate`); (4) `name_in_page` + `research_evidence verify-sources
+  --case-db` (the research-harvested state / commercial rows are read against their
+  cited page; a defendant not on it is `usable=0`, qc_note `defendant_not_on_page`).
+  The names and research lanes now write their quarantine files. Three rows were
+  KEEPs (the doctor's own P.C., a physician the OIG listing omits but the release
+  names, a 40-page MFCU report). Order on the VM (task lanes_gates_apply): re-load
+  the lanes, re-run the state loader, verify-sources, THEN v18 --rebuild-graph.
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

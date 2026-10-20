@@ -240,6 +240,17 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                   f"per QC provenance")
         if not len(case_db):
             return pd.DataFrame(columns=cols)
+    # a row keyed to a press-release INDEX page (usao-xx/pr, /news) cites no announcement:
+    # it is never evidence (2026-10-20 verification: 'Live Care Inc.' on usao-mdfl/pr)
+    from src.enforcement.label_gates import is_index_url
+    src_url = case_db.get("source_url", pd.Series("", index=case_db.index)).fillna("").astype(str)
+    cid_url = case_db["case_id"].astype(str).str.replace(r"#.*$", "", regex=True)
+    idx = src_url.map(is_index_url) | (src_url.eq("") & cid_url.map(is_index_url))
+    if idx.any():
+        print(f"    [case_labels] dropped {int(idx.sum()):,} rows whose source is a listing page, not a release")
+        case_db = case_db.loc[~idx]
+        if not len(case_db):
+            return pd.DataFrame(columns=cols)
     if medicaid_only:
         text = (case_db.get("summary", pd.Series("", index=case_db.index)).fillna("")
                 .astype(str) + " "

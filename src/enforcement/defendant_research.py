@@ -141,25 +141,76 @@ def parse_answer(output) -> dict:
     return {"npi": npi, "confidence": conf, "entity_type": et}
 
 
-def fold_results(resolved: pd.DataFrame, prompts_path: Path, results: dict) -> tuple[pd.DataFrame, dict]:
-    """Apply completed answers to the resolved table. Returns (table, summary)."""
+def nppes_lookup(provider_dim, npis: set) -> dict:
+    """{npi: (provider_name, addr_city)} for the NPIs a research batch returned. Accepts a
+    DataFrame or a parquet path (DuckDB-filtered so the 8M-row file never enters pandas)."""
+    if provider_dim is None or not npis:
+        return {}
+    if isinstance(provider_dim, pd.DataFrame):
+        p = provider_dim[provider_dim["npi"].astype(str).isin(npis)]
+        city = p["addr_city"] if "addr_city" in p.columns else pd.Series("", index=p.index)
+        return {str(n): (str(nm or ""), str(c or "")) for n, nm, c in
+                zip(p["npi"], p.get("provider_name", pd.Series("", index=p.index)), city)}
+    path = str(provider_dim)
+    if not Path(path).exists():
+        return {}
+    import duckdb
+    con = duckdb.connect()
+    cols = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{path}')").fetchall()]
+    city = "addr_city" if "addr_city" in cols else "''"
+    name = "provider_name" if "provider_name" in cols else "''"
+    lst = ",".join("'" + re.sub(r"\D", "", n) + "'" for n in npis)
+    rows = con.execute(f"SELECT CAST(npi AS VARCHAR), {name}, {city} FROM read_parquet('{path}') "
+                       f"WHERE CAST(npi AS VARCHAR) IN ({lst})").fetchall()
+    con.close()
+    return {str(n): (str(nm or ""), str(c or "")) for n, nm, c in rows}
+
+
+def fold_results(resolved: pd.DataFrame, prompts_path: Path, results: dict,
+                 provider_dim=None) -> tuple[pd.DataFrame, dict]:
+    """Apply completed answers to the resolved table. Returns (table, summary).
+
+    With ``provider_dim`` (a DataFrame or the provider_dim parquet path) every
+    researched NPI is checked against its NPPES record by ``label_gates.name_agrees``
+    (the 2026-10-20 verification: 'Mika Kamissa Harris' had been folded onto MIKALA
+    HARRIS, 'Live Care Inc., Venice' onto LIVECARE FLORIDA P.A., Tampa). A conflict
+    keeps the NPI in ``npi_candidate`` with status ``research_name_conflict``: never
+    resolved, listed for the human read."""
     items = {json.loads(l)["org_id"]: json.loads(l) for l in prompts_path.read_text(encoding="utf-8").splitlines() if l.strip()}
     out = resolved.copy()
-    for c in ("task_id", "research_confidence"):
+    for c in ("task_id", "research_confidence", "npi_candidate", "gate_note"):
         if c not in out.columns:
             out[c] = ""
-    n_hi = n_lo = n_none = 0
+    answers = {}
     for oid, env in results.items():
         if env.get("status") != "completed" or oid not in items:
             continue
+        answers[oid] = parse_answer(env.get("output") or "")
+    nppes = nppes_lookup(provider_dim, {a["npi"] for a in answers.values() if a["npi"]}) if provider_dim is not None else None
+    n_hi = n_lo = n_none = n_conf = 0
+    for oid, ans in answers.items():
         it = items[oid]
-        ans = parse_answer(env.get("output") or "")
+        env = results[oid]
         mask = (out["case_id"].astype(str) == str(it["case_id"])) & (out["defendant"].astype(str) == str(it["defendant"]))
         if not mask.any():
             continue
         out.loc[mask, "task_id"] = str(env.get("task_id") or oid)
         out.loc[mask, "research_confidence"] = ans["confidence"]
         if ans["npi"] and ans["confidence"] in ("high", "medium"):
+            if nppes is not None:
+                from src.enforcement.label_gates import name_agrees
+                row = out.loc[mask].iloc[0]
+                nm, city = nppes.get(ans["npi"], ("", ""))
+                kind = str(row.get("kind") or it.get("kind") or ("org" if ans["entity_type"].lower().startswith("org") else "person"))
+                ok, why = name_agrees(str(it["defendant"]), kind, nm, city, str(row.get("city") or it.get("city") or ""))
+                if not nm:
+                    ok, why = False, "NPI not in NPPES (provider_dim)"
+                if not ok:
+                    out.loc[mask, "npi_candidate"] = ans["npi"]
+                    out.loc[mask, "status"] = "research_name_conflict"
+                    out.loc[mask, "gate_note"] = why
+                    n_conf += 1
+                    continue
             out.loc[mask, "npi"] = ans["npi"]
             out.loc[mask, "status"] = "resolved"
             out.loc[mask, "match_level"] = f"research_{ans['confidence']}"
@@ -170,7 +221,7 @@ def fold_results(resolved: pd.DataFrame, prompts_path: Path, results: dict) -> t
         else:
             out.loc[mask, "status"] = "research_no_npi"     # a non-provider, per the research
             n_none += 1
-    return out, {"folded_resolved": n_hi, "low_confidence": n_lo, "no_npi": n_none}
+    return out, {"folded_resolved": n_hi, "low_confidence": n_lo, "no_npi": n_none, "name_conflict": n_conf}
 
 
 def main() -> None:
