@@ -7,7 +7,7 @@
    "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
    "url": "https://oig.hhs.gov/exclusions/exclusions_list.asp",
    "every_months": 1,
-   "last_done": "2026-09-16",
+   "last_done": "2026-10-20",
    "steps": [
     "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
     "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
@@ -516,8 +516,8 @@
    "what": "The 2021 editions that the 2021-12 freeze needs (one-time). Eight runs read 2023 snapshots (PBJ 2023Q4, POS Q4 2023, Care Compare NH Nov2023, Order & Referring 2023-12) inside a 2021-12 freeze; bundle 324 makes the export read only editions on/before the freeze, so until these land the facility / PBJ / POS features are simply absent on frozen runs (FROZEN_SKIP=facility,pos in the runner, which you set to FROZEN_SKIP=\"\" once the files exist). Keep the 2023 files; the picker chooses by the date in the name. Also: no All-Owners edition on/before 2021-12 exists for any dataset family, so ownership_turnover is empty on every frozen run; the CMS data.cms.gov pages keep historical versions under 'Data > Historical / Versions'.",
    "where": "preclean/pos/<CMS name>_Q4_2021.csv; preclean/facility/pbj_daily_staffing_2021Q4.csv (+2021Q3); preclean/facility/NH_Ownership_Dec2021.csv, NH_Penalties_Dec2021.csv, NH_HealthCitations_Dec2021.csv; preclean/order_referring/order_referring_2021-12.csv; preclean/nadac/nadac_2021.csv; preclean/owners_prior/<Dataset>_All_Owners_2021.12.01.csv",
    "url": "https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities",
-   "every_months": 120,
-   "last_done": null,
+   "every_months": null,
+   "last_done": "2026-10-20",
    "steps": [
     "POS (three files, Q4 2021): https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities -> 'Historical' / version list -> the 2021 Q4 (December 2021) version -> Download CSV; same for the CLIA file (provider-of-services-file-clinical-laboratories) and the iQIES HHA/ASC/Hospice file (provider-of-services-file-internet-quality-improvement-and-evaluation-system-home-health-agency-ambulatory-surgical-center-and-hospice-providers). Rename each download so the name carries Q4_2021 (e.g. POS_File_CLIA_Q4_2021.csv) and save under preclean\\pos\\",
     "PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> version list -> 2021 Q4 (and Q3) -> Download CSV; save as preclean\\facility\\pbj_daily_staffing_2021Q4.csv (and _2021Q3.csv)",
@@ -536,7 +536,8 @@
    "proof": [
     "preclean/pos/*2021*.csv",
     "preclean/facility/pbj_daily_staffing_2021*.csv"
-   ]
+   ],
+   "note": " CLOSED 2026-10-20: POS Q4 2021 (hospital/non-hospital + CLIA; no iQIES file before Q4 2023), NADAC 2021, PBJ 2021Q3+Q4, NH Nov2021 (ownership/penalties/citations) landed. Order and Referring (history from 2023-06) and All Owners (from 2022-09) have NO 2021 edition: skipped, not re-asked; the 2023-06 second freeze covers them."
   }
  ],
  "tasks": [
@@ -561,33 +562,6 @@
    "what": "THE SECOND FREEZE (docs/FREEZE_DESIGN_NOTE_2026-10-21.md): a 2023-06 cutoff with a 36-month horizon (to 2026-06) where EVERY source has an edition (POS Q4 2023, PBJ 2023Q4, NH Nov2023, Order and Referring 2023-12, NADAC 2023, All Owners 2022-09 onward, the December 2023 NPPES in nppes_history/). Run it as the second ruler beside 2021-12 after v18 is read: the same runner with the cutoff 2023-06, its own as-of graph (graph_asof_2023-06_full, --asof-nppes on the 2023 NPPES file), pre-registered under the same checks (expect smaller hit counts: fewer cases resolve within 36 months of 2023-06). A model that holds on both rulers is the evidence; v19 is graded on both. Claude writes the exact pre-register + tmux lines when v18's read-out is in.",
    "commands": [
     "REM after v18 is read; Claude writes the lines then (runner: ops/vm/run_frozen_night.sh <tag> 2023-06 --rebuild-graph)"
-   ]
-  },
-  {
-   "key": "pre_cutoff_editions_2021_rest",
-   "added": "2026-10-21",
-   "what": "THE REST OF THE 2021 EDITIONS (POS Q4 2021 x2 and NADAC 2021 landed 2026-10-20; the iQIES file does not exist before Q4 2023, those providers are inside the hospital/non-hospital file). Four downloads, each un-gating a frozen-run feature family: (1) PBJ 2021 Q4 + Q3 (nurse staffing -> worthless_services / pbj features); (2) the nursing-home Care Compare December 2021 archive (NH_Ownership / NH_Penalties / NH_HealthCitations -> facility schemes); (3) Order and Referring December 2021 (the as-of referral eligibility file); (4) the All Owners 2021 editions per family (SNF, HHA, Hospice, Hospital, FQHC, RHC -> ownership_turnover, empty on every frozen run so far). data.cms.gov pages: scroll to the Data section, the version selector (a dropdown or 'View all versions' link above the table) lists dated releases; pick the 2021 one, then Download (CSV). Keep the 2023 files; the picker reads the date in the name. Download first, then paste the matching move line; the dir line at the end shows what landed. After the session: python -m src.reminders --done-task pre_cutoff_editions_2021_rest, then the post-download checks, then on the VM bash ops/vm/sync_data.sh down before the next run.",
-   "commands": [
-    "REM 1. PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> versions -> 2021 Q4, then 2021 Q3 -> Download CSV (large: several hundred MB each). Then:",
-    "for %f in (\"%USERPROFILE%\\Downloads\\*PBJ*2021*Q4*.csv\" \"%USERPROFILE%\\Downloads\\*Q4*2021*PBJ*.csv\" \"%USERPROFILE%\\Downloads\\*Nurse_Staffing*2021*Q4*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021Q4.csv\"",
-    "for %f in (\"%USERPROFILE%\\Downloads\\*PBJ*2021*Q3*.csv\" \"%USERPROFILE%\\Downloads\\*Q3*2021*PBJ*.csv\" \"%USERPROFILE%\\Downloads\\*Nurse_Staffing*2021*Q3*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021Q3.csv\"",
-    "REM 2. NH archive: https://data.cms.gov/provider-data/archived-data/nursing-homes -> the December 2021 monthly zip (name carries 12_2021 or Dec2021) -> save to Downloads. Then (extracts, copies the three files, keeps their month in the name):",
-    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\"",
-    "for %f in (\"%USERPROFILE%\\Downloads\\*ursing*2021*.zip\" \"%USERPROFILE%\\Downloads\\*12_2021*.zip\" \"%USERPROFILE%\\Downloads\\*Dec2021*.zip\") do tar -xf \"%f\" -C \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\"",
-    "for %f in (\"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_Ownership*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_Penalties*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_HealthCitations*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\\"",
-    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\NH_*2021*.csv\"",
-    "REM 3. Order and Referring: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment/order-and-referring -> versions -> December 2021 -> Download CSV. Then:",
-    "for %f in (\"%USERPROFILE%\\Downloads\\*rder*eferring*2021*.csv\" \"%USERPROFILE%\\Downloads\\*Order_and_Referring*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\order_referring\\order_referring_2021-12.csv\"",
-    "REM 4. All Owners, one page per family (search data.cms.gov for '<family> All Owners'): skilled-nursing-facility-all-owners, home-health-agency-all-owners, hospice-all-owners, hospital-all-owners, federally-qualified-health-center-all-owners, rural-health-clinic-all-owners -> versions -> a 2021 release (December 2021 if offered, else the latest 2021) -> Download CSV, then move with the family name and the version date:",
-    "move \"%USERPROFILE%\\Downloads\\<downloaded SNF file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\SNF_All_Owners_2021.12.01.csv\"",
-    "move \"%USERPROFILE%\\Downloads\\<downloaded HHA file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\HHA_All_Owners_2021.12.01.csv\"",
-    "move \"%USERPROFILE%\\Downloads\\<downloaded Hospice file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\Hospice_All_Owners_2021.12.01.csv\"",
-    "move \"%USERPROFILE%\\Downloads\\<downloaded Hospital file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\Hospital_All_Owners_2021.12.01.csv\"",
-    "move \"%USERPROFILE%\\Downloads\\<downloaded FQHC file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\FQHC_All_Owners_2021.12.01.csv\"",
-    "move \"%USERPROFILE%\\Downloads\\<downloaded RHC file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\RHC_All_Owners_2021.12.01.csv\"",
-    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\"",
-    "REM close + the checks:",
-    "python -m src.reminders --done-task pre_cutoff_editions_2021_rest"
    ]
   },
   {
@@ -971,6 +945,35 @@
    ],
    "done": "2026-10-21",
    "closed_note": "operator confirmed 2026-10-21 (ssh test passed on cellular; bundle 331 merged, 5a84c96 on origin)"
+  },
+  {
+   "key": "pre_cutoff_editions_2021_rest",
+   "added": "2026-10-21",
+   "what": "THE REST OF THE 2021 EDITIONS (POS Q4 2021 x2 and NADAC 2021 landed 2026-10-20; the iQIES file does not exist before Q4 2023, those providers are inside the hospital/non-hospital file). Four downloads, each un-gating a frozen-run feature family: (1) PBJ 2021 Q4 + Q3 (nurse staffing -> worthless_services / pbj features); (2) the nursing-home Care Compare December 2021 archive (NH_Ownership / NH_Penalties / NH_HealthCitations -> facility schemes); (3) Order and Referring December 2021 (the as-of referral eligibility file); (4) the All Owners 2021 editions per family (SNF, HHA, Hospice, Hospital, FQHC, RHC -> ownership_turnover, empty on every frozen run so far). data.cms.gov pages: scroll to the Data section, the version selector (a dropdown or 'View all versions' link above the table) lists dated releases; pick the 2021 one, then Download (CSV). Keep the 2023 files; the picker reads the date in the name. Download first, then paste the matching move line; the dir line at the end shows what landed. After the session: python -m src.reminders --done-task pre_cutoff_editions_2021_rest, then the post-download checks, then on the VM bash ops/vm/sync_data.sh down before the next run.",
+   "commands": [
+    "REM 1. PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> versions -> 2021 Q4, then 2021 Q3 -> Download CSV (large: several hundred MB each). Then:",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*PBJ*2021*Q4*.csv\" \"%USERPROFILE%\\Downloads\\*Q4*2021*PBJ*.csv\" \"%USERPROFILE%\\Downloads\\*Nurse_Staffing*2021*Q4*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021Q4.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*PBJ*2021*Q3*.csv\" \"%USERPROFILE%\\Downloads\\*Q3*2021*PBJ*.csv\" \"%USERPROFILE%\\Downloads\\*Nurse_Staffing*2021*Q3*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021Q3.csv\"",
+    "REM 2. NH archive: https://data.cms.gov/provider-data/archived-data/nursing-homes -> the December 2021 monthly zip (name carries 12_2021 or Dec2021) -> save to Downloads. Then (extracts, copies the three files, keeps their month in the name):",
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*ursing*2021*.zip\" \"%USERPROFILE%\\Downloads\\*12_2021*.zip\" \"%USERPROFILE%\\Downloads\\*Dec2021*.zip\") do tar -xf \"%f\" -C \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\"",
+    "for %f in (\"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_Ownership*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_Penalties*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_HealthCitations*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\NH_*2021*.csv\"",
+    "REM 3. Order and Referring: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment/order-and-referring -> versions -> December 2021 -> Download CSV. Then:",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*rder*eferring*2021*.csv\" \"%USERPROFILE%\\Downloads\\*Order_and_Referring*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\order_referring\\order_referring_2021-12.csv\"",
+    "REM 4. All Owners, one page per family (search data.cms.gov for '<family> All Owners'): skilled-nursing-facility-all-owners, home-health-agency-all-owners, hospice-all-owners, hospital-all-owners, federally-qualified-health-center-all-owners, rural-health-clinic-all-owners -> versions -> a 2021 release (December 2021 if offered, else the latest 2021) -> Download CSV, then move with the family name and the version date:",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded SNF file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\SNF_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded HHA file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\HHA_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded Hospice file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\Hospice_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded Hospital file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\Hospital_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded FQHC file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\FQHC_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded RHC file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\RHC_All_Owners_2021.12.01.csv\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\"",
+    "REM close + the checks:",
+    "python -m src.reminders --done-task pre_cutoff_editions_2021_rest"
+   ],
+   "done": "2026-10-20",
+   "closed_note": "PBJ 2021Q3/Q4 + NH Nov2021 landed 2026-10-20; Order and Referring and All Owners have no pre-2022 editions (skipped)"
   }
  ]
 }

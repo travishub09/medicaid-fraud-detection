@@ -1555,6 +1555,10 @@ first, then paste" above every move/done block.
   REMINDER ENGINE RULE (2026-10-21): `--done-task` REMOVES a task from `tasks`; a
   `done` flag closes nothing (four closes written with a flag stayed on the operator's
   page for a day). Close a task in the JSON by moving it to the `closed` list.
+  PORTING RULE (2026-10-21): a bundle's reminders.json REPLACES the laptop's copy on
+  merge, so every `--done` / `--done-task` the operator ran since the last bundle must be
+  replicated in the JSON before the next bundle is cut (leie and the 2021 editions were
+  re-opened by bundle 334 that way). Read the operator's pasted engine output for closes.
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The
