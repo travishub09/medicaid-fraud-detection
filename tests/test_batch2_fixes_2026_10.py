@@ -385,3 +385,24 @@ def test_saturation_folder_stacks_the_archive_files_and_the_freeze_picks_inside(
     assert float(old.iloc[0]["n_providers"]) == 10.0           # the archive file carries the freeze
     with pytest.raises(ValueError):
         compute_saturation_metrics(raw, max_period="2015-01")
+
+
+def test_saturation_rolling_windows_are_cut_on_their_end_date():
+    """The operator's live file (2026-10-21) labels periods '2021-10-01 to 2022-09-30'; the
+    text compare admitted that window by its START under a 2021-12 freeze and took it as
+    the latest: a nine-month leak in market_saturation_index (v10..v19)."""
+    from src.ingest_cms.saturation import compute_saturation_metrics, period_end
+    labels = ["2020-01-01 to 2020-12-31", "2021-01-01 to 2021-12-31", "2021-04-01 to 2022-03-31",
+              "2021-10-01 to 2022-09-30", "2023-01-01 to 2023-12-31", "2025-01-01 to 2025-12-31"]
+    assert period_end("2021-10-01 to 2022-09-30") == "2022-09"
+    raw = pd.DataFrame({"Reference Period": labels, "Type of Service": ["Home Health"] * 6,
+                        "State Name": ["Texas"] * 6, "County Name": ["Bexar"] * 6,
+                        "State and County FIPS Code": ["48029"] * 6,
+                        "Number of Providers": [1, 2, 3, 4, 5, 6],
+                        "Number of Fee-for-Service Beneficiaries": [1000] * 6})
+    f21 = compute_saturation_metrics(raw, max_period="2021-12")
+    assert f21.attrs["reference_period"] == "2021-01-01 to 2021-12-31" and float(f21.iloc[0]["n_providers"]) == 2
+    f23 = compute_saturation_metrics(raw, max_period="2023-12")
+    assert f23.attrs["reference_period"] == "2023-01-01 to 2023-12-31"
+    cur = compute_saturation_metrics(raw)
+    assert cur.attrs["reference_period"] == "2025-01-01 to 2025-12-31"

@@ -137,6 +137,16 @@ postings for California and Rhode Island are banner-row workbooks the adapter pr
 sheet by sheet (handled); `nppes/npi_deactivation.csv` is the unreadable orphan from
 the September inventory (delete it).
 
+**D9 (found 2026-10-21 while loading the saturation archive). Market Saturation leaked nine
+months into every freeze.** The live file labels periods "2021-10-01 to 2022-09-30"
+(rolling quarters); `compute_saturation_metrics` compared the first seven characters of
+the label against the cutoff, so a 2021-12 freeze admitted every window that STARTED on
+or before the cutoff and kept the latest of them, the window ending September 2022. The
+export also read ONE file from the folder, alphabetically first, so the CMS archive files
+(2014-2019) placed beside the live file would have replaced it. Fixed in bundle 354:
+`period_end` parses the end of the label, the folder stacks, the ledger records the
+period used; test pinned on the operator's exact labels. v19 ran on the old code.
+
 **Procurement gaps that stay gaps** (no pre-2022 edition exists): Order and
 Referring, All Owners, DocGraph (the last public Shared Patient Patterns file is
 2015), HCRIS FY2021 (downloadable: the FY2021 flattened files are on the CMS cost

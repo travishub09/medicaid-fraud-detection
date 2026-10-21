@@ -1680,6 +1680,18 @@ first, then paste" above every move/done block.
   has none, so every match was "low" and billing_after_death never fired); the export's
   smoking-gun block passes it. Case-tolerant header resolvers in `nucc_taxonomy._resolve` and
   `asof_nppes._pick`. OPEN (LOW, batch 3): B.F-10, F-15..F-20.
+  SATURATION LEAK FOUND AND FIXED (2026-10-21, bundle 354/355): the live Market Saturation
+  file labels its reference periods "2021-10-01 to 2022-09-30" (rolling quarters from 2020);
+  `compute_saturation_metrics` compared the first seven characters, so a 2021-12 freeze
+  admitted every window STARTING on/before the cutoff and took the latest = the one ending
+  September 2022: a nine-month leak in market_saturation_index on every frozen run v10..v19
+  (v19 ran on that code; its read-out names it). `saturation.period_end` parses the END of
+  the label (ISO / slash / month-name / bare year); `load_saturation_folder` stacks every csv
+  under preclean/saturation (the live file + the CMS archive's 2014-2015 / 2016-2017 /
+  2018-2019 files, downloaded 2026-10-21; a file without a reference_period column is dated
+  from its name) and the export reads the folder, not the alphabetically first file (the
+  archive file would have replaced the live one); the vintage ledger records the period
+  used. RULE: on the VM, pull the code BEFORE the preclean sync that brings the archive.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);
