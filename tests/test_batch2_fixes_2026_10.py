@@ -335,3 +335,20 @@ def test_af31_read_any_reads_xlsx(tmp_path):
     pd.DataFrame({"NPI": [NPI_A], "v": ["007"]}).to_excel(p, index=False)
     df = _read_any(p)
     assert df is not None and df.iloc[0]["v"] == "007"       # strings, leading zeros kept
+
+
+# ---- the pre-registration locks EVERY check, whichever way --check is written -----------
+def test_preregister_repeated_check_flags_accumulate(tmp_path):
+    (tmp_path / "model_a").mkdir()
+    base = [sys.executable, "-m", "src.model_a.run_registry", "--data-root", str(tmp_path),
+            "--preregister", "--goal", "g", "--expected", "e"]
+    cwd = str(Path(__file__).resolve().parents[1])
+    r1 = subprocess.run(base + ["--tag", "t_rep", "--check", "hits100 >= 4", "--check", "train = hard",
+                                "--check", "frozen = True"], capture_output=True, text=True, cwd=cwd)
+    r2 = subprocess.run(base + ["--tag", "t_one", "--check", "hits100 >= 4", "train = hard", "frozen = True"],
+                        capture_output=True, text=True, cwd=cwd)
+    assert r1.returncode == 0 and r2.returncode == 0, r1.stderr + r2.stderr
+    import json as _json
+    rows = [_json.loads(l) for l in (tmp_path / "model_a" / "preregistrations.jsonl").read_text().splitlines() if l.strip()]
+    by = {r["tag"]: r for r in rows}
+    assert len(by["t_rep"]["checks"]) == 3 and len(by["t_one"]["checks"]) == 3

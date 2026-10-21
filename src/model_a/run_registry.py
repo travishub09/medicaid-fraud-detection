@@ -1425,12 +1425,16 @@ def main() -> None:
     ap.add_argument("--expected", default=None,
                     help="with --preregister: the acceptance bar, e.g. "
                          "'lift delta CI clear of zero and >= champion-0.15'")
-    ap.add_argument("--check", nargs="+", default=None,
+    # action="extend" (2026-10-21): with plain nargs="+" a REPEATED --check kept only
+    # the last expression, so the v19 pre-registration locked one check of fourteen
+    # ("enforced checks: train = hard"); both forms now accumulate
+    ap.add_argument("--check", nargs="+", action="extend", default=None,
                     help="with --preregister: the ENFORCED half of the bar, one "
                          "or more '<metric> <op> <value>' expressions checked "
                          "against the registered run — an unmet check is a HOLD. "
                          "e.g. --check \"lift_lo > 0\" \"sources_evaluated >= 2\" "
-                         "\"fails = 0\" \"network = KEEP\". Metrics are registry "
+                         "\"fails = 0\" \"network = KEEP\" (a repeated --check "
+                         "accumulates too). Metrics are registry "
                          "fields (aliases: " + ", ".join(sorted(CHECK_ALIASES))
                          + ")")
     # independent-review sign-off
