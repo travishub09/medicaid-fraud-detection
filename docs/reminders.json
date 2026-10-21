@@ -578,12 +578,6 @@
    ]
   },
   {
-   "key": "platform_audit_fix_batches",
-   "what": "BATCH 1 SHIPPED (bundle 349) and BATCH 2 SHIPPED (bundle 350, built while v19 ran): join_m1 on every export join + the broadcast fan-out assert, stage-one store_rejects (the rejected raw lines kept + counted), the strict export gated on the ruler's tier + the provenance suffix, non_npi_role in the names lane, name_agrees on the CIA entities and the research CLI, page verification on the lanes load path, ONE outcome vocabulary, exclusion-node dedup, Luhn everywhere (SAM / OpenSanctions / enrollment / case labels / the widened label), assessable held out of training, the pre-ranked pass-through, the DOB-corroborated death cut, the ablation fence = the shipped scorer, the affiliated ruler graded, the scheme-health baseline from PREV_RUN, case-tolerant NUCC / NPPES headers. RULE: do NOT git pull on the VM while v19 runs (the runner's later steps start new python processes and would mix batch-2 code into a batch-1 run); merge 350 on the laptop now, pull on the VM only after [v19] DONE. v19 = batch-1 semantics; v20 = the first run on batch 2 (task v20_run, new pre-registration, after the v19 read-out). BATCH 3 = structure (one names.py, one connect, one data_root, split the export, delete attempt_1 + dead modules, the CLI smoke test) + the LOW leftovers B.F-10 / F-15..F-20: proceeds in parallel with runs.",
-   "added": "2026-10-21",
-   "commands": []
-  },
-  {
    "key": "verify_sources_fetch",
    "added": "2026-10-21",
    "what": "FIXED in bundle 339 (the 37 pages were state AG / OIG sites refusing the feed's custom user agent, plus two PDFs the HTML reader could not parse): verify-sources now fetches with a browser user agent, reads PDFs through pypdf, and logs the error text. RE-RUN AFTER v18 IS DONE (the run reads the case file at its start; the verify rewrites it at the end): pull the code, install pypdf in the VM venv, run the verify under tmux, read the summary line. Then the fourth gate is applied for v19.",
@@ -638,67 +632,6 @@
    "added": "2026-08-02"
   },
   {
-   "key": "dossier_poll__frozen_2023-12_v5",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-08-04",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v5\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v5"
-   ]
-  },
-  {
-   "key": "registry_verdict__frozen_2023-12_v5",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v5 \u2014 close only when you have them",
-   "added": "2026-08-04"
-  },
-  {
-   "key": "dossier_poll__frozen_2023-12_v6",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v6 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-09-12",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6"
-   ]
-  },
-  {
-   "key": "run_packet__frozen_2021-12_v7",
-   "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
-   "added": "2026-09-14",
-   "commands": [
-    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7",
-    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
-    "REM then upload run_packet.zip to the chat",
-    "python -m src.reminders --done-task run_packet__frozen_2021-12_v7"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__frozen_2021-12_v7",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v7 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-   "added": "2026-09-14",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v7"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v7",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v7 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-09-14",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7"
-   ]
-  },
-  {
-   "key": "peer_hard2:_after_the_fraud",
-   "what": "peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names",
-   "added": "2026-09-15"
-  },
-  {
    "key": "state_letter:_every_named",
    "what": "State letters: nine of ten named deactivated-NPI billers are live organizations paid under an old NPI (MI: Mariners Inn, Meridian; FL: Kidz Medical, CCS Medical, Memorial Hospital of Tampa psych unit, Miami Personal Management; AZ: Creative Innervisions; CO: Adeo; RI: Kent County Memorial Hospital). Draft the program-integrity letters per state once the last name (1831471960) lands; not a PI matter",
    "added": "2026-09-16"
@@ -748,33 +681,6 @@
    "added": "2026-09-27"
   },
   {
-   "key": "defendant_resolver_run",
-   "what": "2026-09-28: resolver run 4 (bundle 183+) = 1,329 resolved mentions -> 1,052 NPIs / 1,212 cases; SE 314 NPIs; 1,680 research residual. Manus tiers 1 and 2 DISPATCHED 2026-09-27 (280 tracked tasks; ~448 orphan duplicates from concurrent windows are paid but untracked). OPERATOR (a day after dispatch, ONE window): poll with --resolved (the poll folds the answers into case_defendant_npis.parquet itself; no resolver re-run needed for that); after the poll re-run the strict export (task fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md + DEFENDANT_RESEARCH.md. A second batch (excluding already-dispatched org_ids) only after this batch's answer quality is known.",
-   "added": "2026-09-27",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --status",
-    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --poll --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
-    "REM then re-run the strict export (see fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md",
-    "python -m src.reminders --done-task defendant_resolver_run"
-   ]
-  },
-  {
-   "key": "case_harvest_sources_1_6",
-   "what": "2026-09-28 state: (1) deep DOJ backfill DONE (9,256 feed cases back to 2016-09-28; case table 15,240 after merge + reclassify: criminal_hcf 7,126 / civil_fca 4,594 / oig_cmp 614 / not_fraud 334 / untyped 2,572). (2) CourtListener docket backfill SKIPPED by operator decision (no account). (3) OIG harvest since 2015 WITH linked releases is RUNNING (6-8 h, network only; a bundle merge is safe while it runs). (4-6) harvest prompts DISPATCHED 2026-09-27 (98 tracked + 59 duplicate tasks). OPERATOR when the OIG window prints its summary: paste it, then run the merge line WITH --reclassify, the resolver, the strict export; upload OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md, FCA_LABEL_EXPORT.md. A day after dispatch (ONE window): poll the harvest prompts, review every CSV under processed\\case_harvest\\results\\, load only accepted ones via research_evidence mfcu-cases.",
-   "added": "2026-09-27",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --reclassify",
-    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
-    "REM a day after dispatch:",
-    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --poll",
-    "REM review each CSV under processed\\case_harvest\\results\\; load an accepted one with:",
-    "python -m src.enforcement.research_evidence mfcu-cases --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\\results\\<accepted>.csv\" --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
-    "python -m src.reminders --done-task case_harvest_sources_1_6"
-   ]
-  },
-  {
    "key": "fca_strict_label_export",
    "what": "PARKED UNTIL THE PURPLELAB POC STARTS (operator 2026-10-09: nothing sent, POC not started). When it starts, send two attachments: the handoff brief PurpleLab_POC_Handoff_Brief_v4.pdf (chat, 2026-09-29; re-rendered on request) and processed\\fca_label_strong\\labels_fca_strict.csv (5,155 rows / 4,672 NPIs: exact_id + strong + moderate). NEVER the processed\\fca_label\\ copy (5,544 rows, carries the 389 weak rows that verified at 74%). STATUS OF THE LABEL: verified by the research agent on 249 rows (strong 39/40, moderate 69/75 = 92%, weak 65/88 = 74%, so weak is held out); tiered by FCA relevance; graded by label_audit. It has been used as the EVALUATION ruler (the forward FCA ruler that graded v6 and v7 today) but NO model has been TRAINED with the resolved-defendant rows yet: v7 was built 2026-09-14, the resolver ran 2026-09-28; v8 is the first such run. Say 'PurpleLab sent' after sending.",
    "added": "2026-09-27",
@@ -811,45 +717,6 @@
    ]
   },
   {
-   "key": "wesleyan_balance_sheet_readout",
-   "what": "Wesleyan Village (365162) balance sheet, read 2026-10-07 from the raw HCRIS Worksheet G: the mortgage ($23.3M in 2021, $21.2M in 2025) existed all along, so the $1.9M/yr interest that first appears on Worksheet A in 2023 is a preparer reclassification out of A&G, not new debt (correction to the 10-07 reading). The step-down (Worksheet B, B-1 statistics: campus 152,417 sq ft vs SNF 69,000; campus resident days still used 2023-25) allocates about half of all cost, $9.1M to $11.2M a year, to the campus nonreimbursable center, so the campus carve-out is NOT thin after allocation (second correction). What IS new from 2023: other-assets line 31 (the standard form label is 'Due from owners/officers') $0 (2022) -> $1.57M (2023) -> $9.39M (2024) -> $20.29M (2025); long-term line 47 (standard label 'Loans from owners') $0 -> $2.76M -> $9.59M -> $17.22M; $8.6M of plant moved to 'Investments' in 2023 and out again in 2025; $1.56M of land left the books in 2024; A-7 capital worksheet left blank (1s) in 2023 and 2024; fund balance $4.93M (2021) -> $2.44M (2024) while reporting losses. No A-8-1 any year. Operator: confirm the Worksheet G line labels against Pub 15-2 chapter 41 (CMS blocked from the session; open https://m.nber.org/hcris/2540-10/manual/pr2_41.pdf or the CMS 2540-10 form) before any of this goes to Brad in those words; the Ohio cost report records request already covers the related-party schedule where these loans must be disclosed.",
-   "added": "2026-10-07",
-   "commands": [
-    "python -m src.reminders --done-task wesleyan_balance_sheet_readout"
-   ]
-  },
-  {
-   "key": "grade_large_book_v7",
-   "what": "LEVER 4 (large-biller book), first grade on v7, after bundle 266 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes.",
-   "added": "2026-10-10",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -u -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --priority-list",
-    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --horizon-months 36 --list-name provider_priority_list_large.csv",
-    "python -m src.reminders --done-task grade_large_book_v7"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__frozen_2021-12_v11",
-   "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). Build + dispatch the pursuit dossier for frozen_2021-12_v11 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) Only if the packet read-out says PROMOTE, or the operator says go.",
-   "added": "2026-10-12",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v11"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v11",
-   "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). ~30 min after dispatch: collect Manus research into the frozen_2021-12_v11 dossier and send PURSUIT_DOSSIER.md Only if the packet read-out says PROMOTE, or the operator says go.",
-   "added": "2026-10-12",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11"
-   ]
-  },
-  {
    "key": "v13_label_ablation_agency_codes",
    "what": "CLAUDE / operator question for AFTER v12 (never gates a run): the enrollment file's agency codes with no stated cause are label candidates only where they are a MINORITY code in their state (FL 'TERM - MEDICAID AUTHORITY' 2,133 at 2 percent of FL's ends; IA / TX / AL 'ACTION TAKEN BY MEDICAID/CHIP' at 5 to 6 percent; CT 'MEDICAID AUTHORITY' 2,410 at 37 percent). Run label_ablation on the v12 matrix with those rows added as a source and read the forward-lift delta; admit them to v13's label only if the delta is positive with a CI above zero.",
    "added": "2026-10-12",
@@ -865,44 +732,6 @@
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --npis \"1508848441;1588703995;1558688754\" --deep --out-prefix pi_facts_chinatown",
     "REM upload PI_FACTS_CHINATOWN.md in chat; say 'Sage first-call list sent' when the email goes"
-   ]
-  },
-  {
-   "key": "tms_nevada_followup",
-   "what": "Brad's TMS tip, answered 2026-10-13 (TMS_LOOKUP_READOUT_2026-10-13.md with the PI reports): Learning to Achieve Wellness (Brandon FL, org NPI 1033849575) has ZERO Medicaid dollars on 90867/90868/90869 and no rank anywhere; its TMS is Medicare / commercial or billed under the psychiatrist's individual NPI. ASK BRAD for the psychiatrist's name or NPI and the payer mix, then run the line below. The 'others' list: seven individual NPIs carrying TMS with one renderer (Rosa Bellota NV $1.0M the largest) and a NEVADA CLUSTER of 20+ short-lived single-renderer TMS entities at 100 percent TMS share (Salvi, Nula, Sunrise Health Solutions, Cerebral Medical Center, DC Medical, Evolutionary Beginnings, Mana, TM Services, Vitalmind ...): an ownership / address / rendering-psychiatrist research question; check Nevada Medicaid's TMS coverage date first (the innocent explanation).",
-   "added": "2026-10-13",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npi <psychiatrist NPI from Brad> --codes 90867,90868,90869 --no-national --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ltaw_psychiatrist.md\"",
-    "REM Nevada cluster owners / addresses (pi_facts on the org ids from the lookup table, --deep):",
-    "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npis \"1578258281;1740998202;1871372003;1841928397;1962094714;1255000386;1780428698;1336988831;1467287391;1811280183\" --deep --out-prefix pi_facts_nv_tms"
-   ]
-  },
-  {
-   "key": "label_sources_followups",
-   "what": "Operator decision 2026-10-13 (docs/EXCLUSION_SOURCES_AUDIT_2026-10.md section 7): the training label takes every provider with a strong fraud signal; the grading ruler stays on outcomes. BUILT: the 'charged' tier (bundle 309) and, in bundle 311, (1) charged-only case rows as `charged_case` positives (case_labels: criminal indictment / charge or a government civil complaint with no outcome; direct + org_billing bases; trains only under --label-tier hard+charged) and (2) the OUTCOME REFRESH lane (prompts + loader; a plea / verdict / settlement becomes its own case row, a dismissal / acquittal quarantines the charge). ALSO FIXED on the way: criminal conviction releases without a stated dollar amount never reached the org_billing tier (the resolver's amount filter); they do now (v15 semantics). RUN after bundle 311 is merged: the v15 A/B on v14's matrix (two refits, hard vs hard+charged, graded on the FCA ruler: the lines below), and write the outcome_refresh prompt batch (review the CSV, then --dispatch when Manus credits are available). STILL QUEUED: (3) big-state exclusion lists with license_number / medicaid_id aliases + the NPPES type-05 join; (4) OpenSanctions as an identifier crosswalk (license gate, Brad); (5) the 1128(a)(4) pill-mill ablation; (6) the case date over the exclusion date when an NPI resolves to a DOJ case; (7) `hcf_commercial` (state AG / insurance-department fraud convictions) as a training-only source under ablation.",
-   "added": "2026-10-13",
-   "commands": [
-    "# on the VM, after bundle 311 is merged + pushed and pulled (the charged rows need a fresh export; on v14's matrix the A/B measures the policy switch on the charged rows ALREADY in the matrix, which is none, so run the export line of run_frozen_night.sh first OR read the A/B as a no-op check):",
-    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
-    "python -u -m src.enforcement.case_harvest_prompts --out-dir \"$MEDICAID_DATA_ROOT/processed/outcome_refresh\" --sets outcome_refresh --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\"",
-    "head -5 \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_batch.csv\"; wc -l \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_prompts.jsonl\"",
-    "# the v15 A/B (after the v15 export, whose SOURCES_REPORT must show charged_case NPIs > 0):",
-    "RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v15; EXCL=$MEDICAID_DATA_ROOT/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet",
-    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_hard/ACCURACY_DIAGNOSTICS.md\"",
-    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard+charged --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md\"",
-    "grep -h \"hits@\" \"$RUN\"/ab_tier_hard/ACCURACY_DIAGNOSTICS.md \"$RUN\"/ab_tier_charged/ACCURACY_DIAGNOSTICS.md | head -20",
-    "# when a reviewed outcome_refresh answer CSV is on the laptop:",
-    "python -m src.enforcement.research_evidence outcome-refresh --in \"%USERPROFILE%\\Downloads\\outcome_refresh_answers.csv\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\""
-   ]
-  },
-  {
-   "key": "v18_run",
-   "added": "2026-10-14",
-   "what": "STOPPED 2026-10-21 by operator decision (the full platform audit comes first; docs/PLATFORM_AUDIT_2026-10-21.md). The audit found v18 would have failed at step 8 anyway (the runner's hard+commercial label tier is rejected by the diagnostics CLI, H1). Close when the kill line below has been run (tmux ls shows no v18 session). v19 = the first run after audit batches 1 and 2, new pre-registration.",
-   "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux kill-session -t v18; pkill -f run_frozen_night; pkill -f src.model_a; sleep 2; tmux ls; tail -3 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
-    "python -m src.reminders --done-task v18_run"
    ]
   },
   {
@@ -1078,6 +907,211 @@
    ],
    "added": "2026-10-21",
    "closed": "2026-10-21"
+  },
+  {
+   "key": "platform_audit_fix_batches",
+   "what": "BATCH 1 SHIPPED (bundle 349) and BATCH 2 SHIPPED (bundle 350, built while v19 ran): join_m1 on every export join + the broadcast fan-out assert, stage-one store_rejects (the rejected raw lines kept + counted), the strict export gated on the ruler's tier + the provenance suffix, non_npi_role in the names lane, name_agrees on the CIA entities and the research CLI, page verification on the lanes load path, ONE outcome vocabulary, exclusion-node dedup, Luhn everywhere (SAM / OpenSanctions / enrollment / case labels / the widened label), assessable held out of training, the pre-ranked pass-through, the DOB-corroborated death cut, the ablation fence = the shipped scorer, the affiliated ruler graded, the scheme-health baseline from PREV_RUN, case-tolerant NUCC / NPPES headers. RULE: do NOT git pull on the VM while v19 runs (the runner's later steps start new python processes and would mix batch-2 code into a batch-1 run); merge 350 on the laptop now, pull on the VM only after [v19] DONE. v19 = batch-1 semantics; v20 = the first run on batch 2 (task v20_run, new pre-registration, after the v19 read-out). BATCH 3 = structure (one names.py, one connect, one data_root, split the export, delete attempt_1 + dead modules, the CLI smoke test) + the LOW leftovers B.F-10 / F-15..F-20: proceeds in parallel with runs.",
+   "added": "2026-10-21",
+   "commands": [],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "dossier_poll__frozen_2023-12_v5",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v5 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-08-04",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v5\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v5"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "registry_verdict__frozen_2023-12_v5",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v5 \u2014 close only when you have them",
+   "added": "2026-08-04",
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "dossier_poll__frozen_2023-12_v6",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2023-12_v6 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-09-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2023-12_v6\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v6"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "run_packet__frozen_2021-12_v7",
+   "what": "Send the run packet for frozen_2021-12_v7 (every report + audit file, zero raw data) \u2014 Claude cannot see the run finished, so this zip IS the run's arrival",
+   "added": "2026-09-14",
+   "commands": [
+    "set RUN_DIR=C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7",
+    "powershell -Command \"Compress-Archive -Force -Path '%RUN_DIR%\\*.md','%RUN_DIR%\\*.json' -DestinationPath '%USERPROFILE%\\Desktop\\run_packet.zip'\"",
+    "REM then upload run_packet.zip to the chat",
+    "python -m src.reminders --done-task run_packet__frozen_2021-12_v7"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v7",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v7 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "added": "2026-09-14",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v7"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v7",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v7 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-09-14",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v7"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "peer_hard2:_after_the_fraud",
+   "what": "peer_hard2: after the fraud consensus finishes and bundle 168 is merged (use merge_bundle.bat), run run_peer_rank.bat (~3 h) and upload LABEL_LAG__hard2.md + the four SOURCE_ABLATION_OOF_FULL__active_*.md it names",
+   "added": "2026-09-15",
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "defendant_resolver_run",
+   "what": "2026-09-28: resolver run 4 (bundle 183+) = 1,329 resolved mentions -> 1,052 NPIs / 1,212 cases; SE 314 NPIs; 1,680 research residual. Manus tiers 1 and 2 DISPATCHED 2026-09-27 (280 tracked tasks; ~448 orphan duplicates from concurrent windows are paid but untracked). OPERATOR (a day after dispatch, ONE window): poll with --resolved (the poll folds the answers into case_defendant_npis.parquet itself; no resolver re-run needed for that); after the poll re-run the strict export (task fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md + DEFENDANT_RESEARCH.md. A second batch (excluding already-dispatched org_ids) only after this batch's answer quality is known.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --status",
+    "python -m src.enforcement.defendant_research --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\defendant_research\" --poll --resolved \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\"",
+    "REM then re-run the strict export (see fca_strict_label_export) and upload DEFENDANT_RESOLUTION.md",
+    "python -m src.reminders --done-task defendant_resolver_run"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "case_harvest_sources_1_6",
+   "what": "2026-09-28 state: (1) deep DOJ backfill DONE (9,256 feed cases back to 2016-09-28; case table 15,240 after merge + reclassify: criminal_hcf 7,126 / civil_fca 4,594 / oig_cmp 614 / not_fraud 334 / untyped 2,572). (2) CourtListener docket backfill SKIPPED by operator decision (no account). (3) OIG harvest since 2015 WITH linked releases is RUNNING (6-8 h, network only; a bundle merge is safe while it runs). (4-6) harvest prompts DISPATCHED 2026-09-27 (98 tracked + 59 duplicate tasks). OPERATOR when the OIG window prints its summary: paste it, then run the merge line WITH --reclassify, the resolver, the strict export; upload OIG_ENFORCEMENT.md, DEFENDANT_RESOLUTION.md, FCA_LABEL_EXPORT.md. A day after dispatch (ONE window): poll the harvest prompts, review every CSV under processed\\case_harvest\\results\\, load only accepted ones via research_evidence mfcu-cases.",
+   "added": "2026-09-27",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.enforcement.case_db --into \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --add \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\doj_cases.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\feeds\\enforcement\\oig_cases.csv\" --reclassify",
+    "python -m src.enforcement.defendant_resolver --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --provider-dim \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\provider_dim.parquet\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY",
+    "REM a day after dispatch:",
+    "python -m src.enforcement.case_harvest_prompts --out-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\" --poll",
+    "REM review each CSV under processed\\case_harvest\\results\\; load an accepted one with:",
+    "python -m src.enforcement.research_evidence mfcu-cases --in \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_harvest\\results\\<accepted>.csv\" --state <ST> --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\"",
+    "python -m src.reminders --done-task case_harvest_sources_1_6"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "wesleyan_balance_sheet_readout",
+   "what": "Wesleyan Village (365162) balance sheet, read 2026-10-07 from the raw HCRIS Worksheet G: the mortgage ($23.3M in 2021, $21.2M in 2025) existed all along, so the $1.9M/yr interest that first appears on Worksheet A in 2023 is a preparer reclassification out of A&G, not new debt (correction to the 10-07 reading). The step-down (Worksheet B, B-1 statistics: campus 152,417 sq ft vs SNF 69,000; campus resident days still used 2023-25) allocates about half of all cost, $9.1M to $11.2M a year, to the campus nonreimbursable center, so the campus carve-out is NOT thin after allocation (second correction). What IS new from 2023: other-assets line 31 (the standard form label is 'Due from owners/officers') $0 (2022) -> $1.57M (2023) -> $9.39M (2024) -> $20.29M (2025); long-term line 47 (standard label 'Loans from owners') $0 -> $2.76M -> $9.59M -> $17.22M; $8.6M of plant moved to 'Investments' in 2023 and out again in 2025; $1.56M of land left the books in 2024; A-7 capital worksheet left blank (1s) in 2023 and 2024; fund balance $4.93M (2021) -> $2.44M (2024) while reporting losses. No A-8-1 any year. Operator: confirm the Worksheet G line labels against Pub 15-2 chapter 41 (CMS blocked from the session; open https://m.nber.org/hcris/2540-10/manual/pr2_41.pdf or the CMS 2540-10 form) before any of this goes to Brad in those words; the Ohio cost report records request already covers the related-party schedule where these loans must be disclosed.",
+   "added": "2026-10-07",
+   "commands": [
+    "python -m src.reminders --done-task wesleyan_balance_sheet_readout"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "grade_large_book_v7",
+   "what": "LEVER 4 (large-biller book), first grade on v7, after bundle 266 is merged: rebuild the v7 priority list (the builder now also writes provider_priority_list_large.csv: the operator book over $10M billed in the window, same order as the pursuit book) and grade that file on the FCA ruler. Read ACCURACY_DIAGNOSTICS__large.md in the v7 folder: hits at 16 / 50 against random, next to the pursuit book's 1 / 2. The band earns a v9 check only if it beats the pursuit book per row read; paste the verdict box in chat. No training, minutes.",
+   "added": "2026-10-10",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -u -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --priority-list",
+    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v7\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\" --graph-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\" --defendant-npis \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\case_defendant_npis.parquet\" --horizon-months 36 --list-name provider_priority_list_large.csv",
+    "python -m src.reminders --done-task grade_large_book_v7"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v11",
+   "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). Build + dispatch the pursuit dossier for frozen_2021-12_v11 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) Only if the packet read-out says PROMOTE, or the operator says go.",
+   "added": "2026-10-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v11"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v11",
+   "what": "HELD (operator policy 2026-10-11: no Manus credits on a HOLD run). v11 registered HOLD at the console (pursuit book FCA hits@50 = 1 vs v10's 2; the packet decides). ~30 min after dispatch: collect Manus research into the frozen_2021-12_v11 dossier and send PURSUIT_DOSSIER.md Only if the packet read-out says PROMOTE, or the operator says go.",
+   "added": "2026-10-12",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v11"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "tms_nevada_followup",
+   "what": "Brad's TMS tip, answered 2026-10-13 (TMS_LOOKUP_READOUT_2026-10-13.md with the PI reports): Learning to Achieve Wellness (Brandon FL, org NPI 1033849575) has ZERO Medicaid dollars on 90867/90868/90869 and no rank anywhere; its TMS is Medicare / commercial or billed under the psychiatrist's individual NPI. ASK BRAD for the psychiatrist's name or NPI and the payer mix, then run the line below. The 'others' list: seven individual NPIs carrying TMS with one renderer (Rosa Bellota NV $1.0M the largest) and a NEVADA CLUSTER of 20+ short-lived single-renderer TMS entities at 100 percent TMS share (Salvi, Nula, Sunrise Health Solutions, Cerebral Medical Center, DC Medical, Evolutionary Beginnings, Mana, TM Services, Vitalmind ...): an ownership / address / rendering-psychiatrist research question; check Nevada Medicaid's TMS coverage date first (the innocent explanation).",
+   "added": "2026-10-13",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.org_find --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npi <psychiatrist NPI from Brad> --codes 90867,90868,90869 --no-national --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\ltaw_psychiatrist.md\"",
+    "REM Nevada cluster owners / addresses (pi_facts on the org ids from the lookup table, --deep):",
+    "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v12\" --npis \"1578258281;1740998202;1871372003;1841928397;1962094714;1255000386;1780428698;1336988831;1467287391;1811280183\" --deep --out-prefix pi_facts_nv_tms"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "label_sources_followups",
+   "what": "Operator decision 2026-10-13 (docs/EXCLUSION_SOURCES_AUDIT_2026-10.md section 7): the training label takes every provider with a strong fraud signal; the grading ruler stays on outcomes. BUILT: the 'charged' tier (bundle 309) and, in bundle 311, (1) charged-only case rows as `charged_case` positives (case_labels: criminal indictment / charge or a government civil complaint with no outcome; direct + org_billing bases; trains only under --label-tier hard+charged) and (2) the OUTCOME REFRESH lane (prompts + loader; a plea / verdict / settlement becomes its own case row, a dismissal / acquittal quarantines the charge). ALSO FIXED on the way: criminal conviction releases without a stated dollar amount never reached the org_billing tier (the resolver's amount filter); they do now (v15 semantics). RUN after bundle 311 is merged: the v15 A/B on v14's matrix (two refits, hard vs hard+charged, graded on the FCA ruler: the lines below), and write the outcome_refresh prompt batch (review the CSV, then --dispatch when Manus credits are available). STILL QUEUED: (3) big-state exclusion lists with license_number / medicaid_id aliases + the NPPES type-05 join; (4) OpenSanctions as an identifier crosswalk (license gate, Brad); (5) the 1128(a)(4) pill-mill ablation; (6) the case date over the exclusion date when an NPI resolves to a DOJ case; (7) `hcf_commercial` (state AG / insurance-department fraud convictions) as a training-only source under ablation.",
+   "added": "2026-10-13",
+   "commands": [
+    "# on the VM, after bundle 311 is merged + pushed and pulled (the charged rows need a fresh export; on v14's matrix the A/B measures the policy switch on the charged rows ALREADY in the matrix, which is none, so run the export line of run_frozen_night.sh first OR read the A/B as a no-op check):",
+    "cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && source ~/.medicaid_env",
+    "python -u -m src.enforcement.case_harvest_prompts --out-dir \"$MEDICAID_DATA_ROOT/processed/outcome_refresh\" --sets outcome_refresh --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\"",
+    "head -5 \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_batch.csv\"; wc -l \"$MEDICAID_DATA_ROOT/processed/outcome_refresh/case_harvest_prompts.jsonl\"",
+    "# the v15 A/B (after the v15 export, whose SOURCES_REPORT must show charged_case NPIs > 0):",
+    "RUN=$MEDICAID_DATA_ROOT/model_a/frozen_2021-12_v15; EXCL=$MEDICAID_DATA_ROOT/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet",
+    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_hard/ACCURACY_DIAGNOSTICS.md\"",
+    "python -u -m src.model_a.accuracy_diagnostics --run-dir \"$RUN\" --case-db \"$MEDICAID_DATA_ROOT/enforcement/doj_cases_v3.csv\" --graph-dir \"$MEDICAID_DATA_ROOT/graph\" --defendant-npis \"$MEDICAID_DATA_ROOT/processed/case_defendant_npis.parquet\" --horizon-months 36 --score-source refit --label-tier hard+charged --exclusion-nodes \"$EXCL\" --out \"$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md\"",
+    "grep -h \"hits@\" \"$RUN\"/ab_tier_hard/ACCURACY_DIAGNOSTICS.md \"$RUN\"/ab_tier_charged/ACCURACY_DIAGNOSTICS.md | head -20",
+    "# when a reviewed outcome_refresh answer CSV is on the laptop:",
+    "python -m src.enforcement.research_evidence outcome-refresh --in \"%USERPROFILE%\\Downloads\\outcome_refresh_answers.csv\" --case-db \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\doj_cases_v3.csv\""
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "v18_run",
+   "added": "2026-10-14",
+   "what": "STOPPED 2026-10-21 by operator decision (the full platform audit comes first; docs/PLATFORM_AUDIT_2026-10-21.md). The audit found v18 would have failed at step 8 anyway (the runner's hard+commercial label tier is rejected by the diagnostics CLI, H1). Close when the kill line below has been run (tmux ls shows no v18 session). v19 = the first run after audit batches 1 and 2, new pre-registration.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux kill-session -t v18; pkill -f run_frozen_night; pkill -f src.model_a; sleep 2; tmux ls; tail -3 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
+    "python -m src.reminders --done-task v18_run"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (board paste 2026-10-21)"
   }
  ]
 }
