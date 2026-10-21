@@ -1552,6 +1552,9 @@ first, then paste" above every move/done block.
   KEEPs (the doctor's own P.C., a physician the OIG listing omits but the release
   names, a 40-page MFCU report). Order on the VM (task lanes_gates_apply): re-load
   the lanes, re-run the state loader, verify-sources, THEN v18 --rebuild-graph.
+  REMINDER ENGINE RULE (2026-10-21): `--done-task` REMOVES a task from `tasks`; a
+  `done` flag closes nothing (four closes written with a flag stayed on the operator's
+  page for a day). Close a task in the JSON by moving it to the `closed` list.
 - **Next increments:** run adapters/exposure against real procured files; DOJ
   fetcher + 10-year backfill; docket monitor; Model B person-resolver (the one
   missing piece to activate the B chain; gated on people-data license). The

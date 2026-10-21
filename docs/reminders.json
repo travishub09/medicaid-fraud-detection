@@ -543,12 +543,12 @@
   {
    "key": "lanes_gates_apply",
    "added": "2026-10-20",
-   "what": "APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
+   "what": "STEPS 1 AND 2 DONE 2026-10-21 (lanes re-loaded: 21 research rows kept, 5 name conflicts quarantined; state lists re-run: 5,750 rows, 1,448 with NPI, 169 by name). STEP 3 RUNNING under tmux session verify (started 2026-10-21 00:30 UTC): done when tmux ls no longer lists it and the log ends with \"verify-sources: N rows quarantined\". APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
    "commands": [
-    "REM after merge_push.bat 330 and the VM pull; laptop Command Prompt, one line per paste:",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2021-12_v17 --load && cat /data/medicaid/processed/manus_lanes/MANUS_LANES.md\"",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.state_terminations --in-dir /data/medicaid/preclean/state_terminations --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/processed/exclusions_state_terminations.parquet 2>&1 | tail -15\"",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv 2>&1 | tail -5\"",
+    "REM step 3 status (the log is empty until it finishes; done when the verify session is gone):",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -3 /data/medicaid/enforcement/verify_sources.log\"",
+    "REM if the session is gone and the log is still empty, re-start it:",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s verify 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv > /data/medicaid/enforcement/verify_sources.log 2>&1'\"",
     "python -m src.reminders --done-task lanes_gates_apply"
    ]
   },
@@ -561,33 +561,6 @@
     "ops\\laptop\\merge_push.bat 330",
     "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
    ]
-  },
-  {
-   "key": "merge_bundle328",
-   "added": "2026-10-20",
-   "what": "Merge bundle328 (cumulative; 327 is already merged, so this fast-forwards one commit: the reminders with the lane results, the human-read task, the v18 ssh lines and the VM SSH rule). Then the VM pull.",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "ops\\laptop\\merge_push.bat 328",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
-   ],
-   "done": "2026-10-20",
-   "closed_note": "superseded: 329 merged 2026-10-20 (92b3164 on origin and the VM)"
-  },
-  {
-   "key": "lanes_review",
-   "added": "2026-10-20",
-   "what": "THE HUMAN READ of the first lane cycle (the gate refused 507 rows; a refused row is a rule, never a guess, so the read is where recall hides): pull the six quarantine files + LABEL_VERIFICATION.md + verification_results.csv to the laptop and read them. LABEL VERIFICATION: 104 decided = confirmed 96 (92 percent), wrong_npi 5, wrong_person 3; the written rule (confirmed < 90 percent or more than 1 wrong_npi = tighten) says TIGHTEN on the wrong_npi count: read the 8 flagged rows (which stratum / tier / match level each came from) and tell Claude; the fix is a resolver rule or a --min-strength move, decided from the rows. cia quarantine 254: mostly rows without a Luhn NPI or an entity we never listed; names quarantine 236: the NPI returned was not among our candidates (the resolver listed them) or confidence low; defendant_research 14 no_npi = non-providers (recruiters, marketers). Nothing in a quarantine trains until a human promotes it.",
-   "commands": [
-    "REM laptop Command Prompt (the folder stays under the data root, never in git):",
-    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/*/*_quarantine.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\\\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/label_verification/LABEL_VERIFICATION.md\" \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/label_verification/verification_results.csv\" \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/MANUS_LANES.md\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\\\"",
-    "REM open LABEL_VERIFICATION.md; paste the wrong_npi / wrong_person rows (NPI, defendant, match_level, strength) to Claude",
-    "python -m src.reminders --done-task lanes_review"
-   ],
-   "done": "2026-10-20",
-   "closed_note": "the eight flagged rows read 2026-10-20 (docs/LABEL_VERIFICATION_READ_2026-10-20.md): five wrong (Live Care, Dermatology Healthcare, Tantuwaya, the MS aide, Mika Harris), three keep (Cutler P.C., Brown, Mazumder); four gates built in bundle 330"
   },
   {
    "key": "lanes_dispatch_2",
@@ -890,6 +863,35 @@
     "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
     "REM when it prints '[v18] DONE': tell Claude 'v18 finished', then the packet lines the log prints (tar + sync up + scp)"
    ]
+  }
+ ],
+ "closed": [
+  {
+   "key": "merge_bundle328",
+   "added": "2026-10-20",
+   "what": "Merge bundle328 (cumulative; 327 is already merged, so this fast-forwards one commit: the reminders with the lane results, the human-read task, the v18 ssh lines and the VM SSH rule). Then the VM pull.",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "ops\\laptop\\merge_push.bat 328",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
+   ],
+   "done": "2026-10-20",
+   "closed_note": "superseded: 329 merged 2026-10-20 (92b3164 on origin and the VM)"
+  },
+  {
+   "key": "lanes_review",
+   "added": "2026-10-20",
+   "what": "THE HUMAN READ of the first lane cycle (the gate refused 507 rows; a refused row is a rule, never a guess, so the read is where recall hides): pull the six quarantine files + LABEL_VERIFICATION.md + verification_results.csv to the laptop and read them. LABEL VERIFICATION: 104 decided = confirmed 96 (92 percent), wrong_npi 5, wrong_person 3; the written rule (confirmed < 90 percent or more than 1 wrong_npi = tighten) says TIGHTEN on the wrong_npi count: read the 8 flagged rows (which stratum / tier / match level each came from) and tell Claude; the fix is a resolver rule or a --min-strength move, decided from the rows. cia quarantine 254: mostly rows without a Luhn NPI or an entity we never listed; names quarantine 236: the NPI returned was not among our candidates (the resolver listed them) or confidence low; defendant_research 14 no_npi = non-providers (recruiters, marketers). Nothing in a quarantine trains until a human promotes it.",
+   "commands": [
+    "REM laptop Command Prompt (the folder stays under the data root, never in git):",
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/*/*_quarantine.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\\\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/label_verification/LABEL_VERIFICATION.md\" \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/label_verification/verification_results.csv\" \"ubuntu@3.17.37.139:/data/medicaid/processed/manus_lanes/MANUS_LANES.md\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\processed\\manus_lanes_review\\\"",
+    "REM open LABEL_VERIFICATION.md; paste the wrong_npi / wrong_person rows (NPI, defendant, match_level, strength) to Claude",
+    "python -m src.reminders --done-task lanes_review"
+   ],
+   "done": "2026-10-20",
+   "closed_note": "the eight flagged rows read 2026-10-20 (docs/LABEL_VERIFICATION_READ_2026-10-20.md): five wrong (Live Care, Dermatology Healthcare, Tantuwaya, the MS aide, Mika Harris), three keep (Cutler P.C., Brown, Mazumder); four gates built in bundle 330"
   },
   {
    "key": "merge_bundle326",
