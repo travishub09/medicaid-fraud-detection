@@ -15,7 +15,8 @@ and ships the updated file in the next bundle, so the state ports forward.
 Open items are re-surfaced in EVERY response until explicitly closed.
 
   python -m src.reminders                 # what's due / coming up / queued
-  python -m src.reminders --done leie     # mark a cadence item done today
+  python -m src.reminders --done leie     # mark a cadence item done today (prints the short board)
+  python -m src.reminders --full          # the full page with steps + command blocks
   python -m src.reminders --done-task send_vintage_report
   python -m src.reminders --add-task "text of a new queued task"
 """
@@ -458,8 +459,30 @@ def render_md(cfg: dict, today: date) -> str:
     return "\n".join(L)
 
 
+def render_board(cfg: dict, today: date) -> str:
+    """The SHORT console view (operator, 2026-10-21: the full page after every
+    --done was unreadable in a command window): one line per due item and per
+    queued task, no steps, no command blocks. The full page always goes to
+    docs/OPERATOR_REMINDERS.md; `--full` prints it."""
+    due, soon = split(cfg, today)
+    L = [f"[reminders] board as of {today}: {len(due)} due, {len(soon)} coming up "
+         f"in 30 days, {len(cfg['tasks'])} queued tasks"]
+    if due:
+        L.append("  DUE NOW:")
+        L += [f"    - {it['key']}  (due {it['next_due']})" for it in due]
+    if cfg["tasks"]:
+        L.append("  QUEUE:")
+        L += [f"    - {t['key']}" for t in cfg["tasks"]]
+    L.append(f"  full page with steps + commands: {VIEW}  "
+             "(or: python -m src.reminders --full)")
+    return "\n".join(L)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    ap.add_argument("--full", action="store_true",
+                    help="print the full page (steps + command blocks); the "
+                         "default console view is the one-line-per-item board")
     ap.add_argument("--done", help="cadence key to mark done")
     ap.add_argument("--date", default=str(date.today()),
                     help="done-date override (YYYY-MM-DD)")
@@ -492,7 +515,8 @@ def main() -> None:
         save(cfg)
         print(f"[reminders] task added: {key}")
     save(cfg)
-    print(render_md(cfg, date.today()))
+    print(render_md(cfg, date.today()) if args.full
+          else render_board(cfg, date.today()))
 
 
 if __name__ == "__main__":

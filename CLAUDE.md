@@ -1552,6 +1552,10 @@ first, then paste" above every move/done block.
   KEEPs (the doctor's own P.C., a physician the OIG listing omits but the release
   names, a 40-page MFCU report). Order on the VM (task lanes_gates_apply): re-load
   the lanes, re-run the state loader, verify-sources, THEN v18 --rebuild-graph.
+  SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
+  in a command window): `python -m src.reminders` and every state change print
+  `render_board` (one line per due item and queued task, no steps or commands);
+  `--full` prints the page; docs/OPERATOR_REMINDERS.md always carries the full page.
   REMINDER ENGINE RULE (2026-10-21): `--done-task` REMOVES a task from `tasks`; a
   `done` flag closes nothing (four closes written with a flag stayed on the operator's
   page for a day). Close a task in the JSON by moving it to the `closed` list.

@@ -7,7 +7,7 @@
    "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
    "url": "https://oig.hhs.gov/exclusions/exclusions_list.asp",
    "every_months": 1,
-   "last_done": "2026-09-16",
+   "last_done": "2026-10-21",
    "steps": [
     "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
     "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement); the file should be about 15 MB / 80,000 lines. A 10 MB file is a truncated download: download it again before pasting.",
@@ -22,7 +22,7 @@
     "preclean/caught.csv"
    ],
    "proof_recent_days": 45,
-   "note": "2026-10-21: the first swap attempt lost the October file (the backup line was mangled by the keystroke swallow, the move overwrote caught.csv, the count check was skipped, and the restore put the September file back over it). caught.csv is the 2026-09-16 file (EXCLDATE max 2026-09-20); caught_202609.csv.bak is its copy. The 10.3 MB download was probably truncated (the full file is about 15 MB). The two-block swap above parks the new file first and never overwrites before the counts are read."
+   "note": "2026-10-21: October file live (84,094 lines vs 83,465 in September; same 18 columns, tighter quoting so 10.3 MB). September copy = caught_202609.csv.bak; caught_202609_replaced.csv is a second copy the operator can delete."
   },
   {
    "key": "nppes_deactivation",
@@ -859,6 +859,17 @@
     "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v18.tar.gz C:\\Users\\treyr\\Downloads\\",
     "REM then attach run_packet_v18.tar.gz to the chat"
    ]
+  },
+  {
+   "key": "post_download_checks",
+   "what": "New files landed (LEIE 2026-10) - run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.vintage_inspect --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "python -m src.model_a.scheme_discovery --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "python -m src.reminders --done-task post_download_checks"
+   ],
+   "added": "2026-10-21"
   }
  ],
  "closed": [
