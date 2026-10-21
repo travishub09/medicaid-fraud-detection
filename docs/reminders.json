@@ -7,7 +7,7 @@
    "where": "preclean/caught.csv (keep the old file as caught_<yyyymm>.csv.bak)",
    "url": "https://oig.hhs.gov/exclusions/exclusions_list.asp",
    "every_months": 1,
-   "last_done": "2026-10-20",
+   "last_done": "2026-09-16",
    "steps": [
     "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
     "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
@@ -21,7 +21,8 @@
    "proof": [
     "preclean/caught.csv"
    ],
-   "proof_recent_days": 45
+   "proof_recent_days": 45,
+   "note": " 2026-10-21 evidence check: caught.csv is still the 2026-09-16 file (EXCLDATE max 2026-09-20); the October UPDATED.csv downloaded on the 14th never reached preclean and is no longer in Downloads. Re-download (16 MB) and run the swap block."
   },
   {
    "key": "nppes_deactivation",
@@ -555,21 +556,6 @@
    ]
   },
   {
-   "key": "vintage_read_2026_10_20",
-   "added": "2026-10-21",
-   "what": "THE VINTAGE READ (VINTAGE_INSPECT.md, 2026-10-20, 210 files): nothing on the 12-file 're-download' list needs re-downloading; they are undated REFERENCE files (PECOS, the CIA roster, the FDA NDC directory, HUD zip-county, NUCC, OpenSanctions, the three MUE tables, SAM) whose period is their download date: fill EDITIONS.csv (task editions_undated_reference). Three real actions: (1) the OCTOBER NPPES main file was never swapped in: NPPES.csv still reads June 2026 (Last Update max 2026-06-08) while the October practice-location file is in place; find the extracted npidata_pfile_20050523-20261011.csv and copy it over NPPES.csv (keep the June file as NPPES_202606.csv; 11 GB each, check free disk first). (2) sam/sam_exclusions.CSV (undated, 77.7 MB) sits beside sam_exclusions_202609.csv (dated): the undated one is the older download; delete it so the loader reads one file. (3) read rename_plan.bat (one rename proposed) before running it. Also: the owners_prior archive already holds the EARLIEST All Owners editions CMS publishes (SNF 2022-09, Hospital 2022-11), so nothing older exists to fetch; the fda_ndc orphan flag was the inspector's own stale list (fixed in bundle 333).",
-   "commands": [
-    "REM 1. where did the October NPPES main file land? (then paste the result):",
-    "dir /s /b \"%USERPROFILE%\\Downloads\\npidata_pfile*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\npidata_pfile*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\npidata_pfile*\"",
-    "REM 2. the undated SAM duplicate (check the dates first, then delete the older undated copy):",
-    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\"",
-    "del \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions.CSV\"",
-    "REM 3. the proposed rename (read, then run only if it looks right):",
-    "type \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\rename_plan.bat\"",
-    "python -m src.reminders --done-task vintage_read_2026_10_20"
-   ]
-  },
-  {
    "key": "second_freeze_2023_06",
    "added": "2026-10-21",
    "what": "THE SECOND FREEZE (docs/FREEZE_DESIGN_NOTE_2026-10-21.md): a 2023-06 cutoff with a 36-month horizon (to 2026-06) where EVERY source has an edition (POS Q4 2023, PBJ 2023Q4, NH Nov2023, Order and Referring 2023-12, NADAC 2023, All Owners 2022-09 onward, the December 2023 NPPES in nppes_history/). Run it as the second ruler beside 2021-12 after v18 is read: the same runner with the cutoff 2023-06, its own as-of graph (graph_asof_2023-06_full, --asof-nppes on the 2023 NPPES file), pre-registered under the same checks (expect smaller hit counts: fewer cases resolve within 36 months of 2023-06). A model that holds on both rulers is the evidence; v19 is graded on both. Claude writes the exact pre-register + tmux lines when v18's read-out is in.",
@@ -994,6 +980,23 @@
    ],
    "done": "2026-10-21",
    "closed_note": "steps 1-3 ran (lanes re-loaded with 5 name conflicts; state lists re-run; verify-sources finished 2026-10-21 with 0 rows read / 37 pages unreachable: the fetch defect is task verify_sources_fetch); v18 started 11:44 UTC"
+  },
+  {
+   "key": "vintage_read_2026_10_20",
+   "added": "2026-10-21",
+   "what": "THE VINTAGE READ (VINTAGE_INSPECT.md, 2026-10-20, 210 files): nothing on the 12-file 're-download' list needs re-downloading; they are undated REFERENCE files (PECOS, the CIA roster, the FDA NDC directory, HUD zip-county, NUCC, OpenSanctions, the three MUE tables, SAM) whose period is their download date: fill EDITIONS.csv (task editions_undated_reference). Three real actions: (1) the OCTOBER NPPES main file was never swapped in: NPPES.csv still reads June 2026 (Last Update max 2026-06-08) while the October practice-location file is in place; find the extracted npidata_pfile_20050523-20261011.csv and copy it over NPPES.csv (keep the June file as NPPES_202606.csv; 11 GB each, check free disk first). (2) sam/sam_exclusions.CSV (undated, 77.7 MB) sits beside sam_exclusions_202609.csv (dated): the undated one is the older download; delete it so the loader reads one file. (3) read rename_plan.bat (one rename proposed) before running it. Also: the owners_prior archive already holds the EARLIEST All Owners editions CMS publishes (SNF 2022-09, Hospital 2022-11), so nothing older exists to fetch; the fda_ndc orphan flag was the inspector's own stale list (fixed in bundle 333).",
+   "commands": [
+    "REM 1. where did the October NPPES main file land? (then paste the result):",
+    "dir /s /b \"%USERPROFILE%\\Downloads\\npidata_pfile*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\nppes\\npidata_pfile*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\npidata_pfile*\"",
+    "REM 2. the undated SAM duplicate (check the dates first, then delete the older undated copy):",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\"",
+    "del \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\sam\\sam_exclusions.CSV\"",
+    "REM 3. the proposed rename (read, then run only if it looks right):",
+    "type \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\rename_plan.bat\"",
+    "python -m src.reminders --done-task vintage_read_2026_10_20"
+   ],
+   "done": "2026-10-21",
+   "closed_note": "operator closed on the laptop 2026-10-21 (NPPES October swap verified: 11.76 GB; SAM duplicate deleted; NDC file renamed)"
   }
  ]
 }
