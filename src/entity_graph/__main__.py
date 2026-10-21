@@ -45,6 +45,33 @@ def require(name: str, ok: bool, detail: str = "") -> None:
         raise AssertionError(f"ASSERTION FAILED: {name} — {detail}")
 
 
+EXCLUSION_DEDUP_KEY = ["npi", "name_key", "excl_type", "excl_date"]
+
+
+def dedup_exclusion_sources(ex: pd.DataFrame, log=log) -> pd.DataFrame:
+    """One exclusion record = one node source row (audit C.F13, 2026-10-21).
+
+    The integrate union (processed/exclusions.parquet) and a standalone adapter run
+    (processed/exclusions_<source>.parquet) can both carry the same record; the graph
+    used to concatenate every file with no de-duplication, so a record counted twice
+    in fraud proximity, the per-se checks and the label-source tallies. Exact
+    duplicates on (npi, name_key, excl_type, excl_date) are dropped here with the
+    count logged; the files on disk are untouched (integrate already quarantines its
+    own duplicates to exclusions_duplicates.parquet)."""
+    if ex is None or not len(ex):
+        return ex
+    key = [c for c in EXCLUSION_DEDUP_KEY if c in ex.columns]
+    if not key:
+        return ex
+    k = ex[key].astype(str)
+    dup = k.duplicated(keep="first")
+    n = int(dup.sum())
+    if n:
+        log(f"    [exclusions] {n:,} duplicate records across the exclusion files dropped "
+            f"(key {'+'.join(key)}); {int((~dup).sum()):,} distinct records remain")
+    return ex.loc[~dup].reset_index(drop=True)
+
+
 def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     tables: dict[str, pd.DataFrame] = {}
     for name in REQUIRED + OPTIONAL:
@@ -64,9 +91,11 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     if extra:
         frames = ([tables["exclusions"]] if tables.get("exclusions") is not None else [])
         for p in extra:
+            if p.name == "exclusions_duplicates.parquet":   # integrate's quarantine, never a node source
+                continue
             frames.append(pd.read_parquet(p))
             log(f"    + merged exclusion source {p.name}")
-        tables["exclusions"] = pd.concat(frames, ignore_index=True)
+        tables["exclusions"] = dedup_exclusion_sources(pd.concat(frames, ignore_index=True), log=log)
     # Reassignment (the CMS Revalidation Clinic Group Practice Reassignment file →
     # provider→group affiliation edges). Accept the raw CSV straight from
     # preclean/reassignment/ when no prebuilt parquet exists — the edge builder

@@ -41,7 +41,11 @@ CROSSWALK_COLS = {
 
 
 def _resolve(raw: pd.DataFrame, wanted: dict[str, list[str]]) -> dict[str, str]:
-    return {k: next((c for c in opts if c in raw.columns), None)
+    """Case- and whitespace-tolerant header match (audit A.§4d: the NUCC csv ships
+    'Code' one year and 'code' the next; an exact miss skipped the peer ladder's
+    fallback level for every scheme with one log line)."""
+    norm = {str(c).strip().lower(): c for c in raw.columns}
+    return {k: next((norm[o.strip().lower()] for o in opts if o.strip().lower() in norm), None)
             for k, opts in wanted.items()}
 
 

@@ -53,9 +53,15 @@ def _ym(s) -> str:
 
 
 def _pick(cols, header):
+    """Case- and whitespace-tolerant header match (audit A.§5i): a historical NPPES
+    edition with a re-cased header used to raise 'missing an NPI column' and end the
+    as-of graph build; the real column name is returned so usecols still works."""
+    norm = {str(h).strip().lower(): h for h in header}
     for c in cols:
         if c in header:
             return c
+        if c.strip().lower() in norm:
+            return norm[c.strip().lower()]
     return None
 
 

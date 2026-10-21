@@ -24,6 +24,7 @@ import re
 import numpy as np
 import pandas as pd
 
+from src.attempt_2.clean_data import is_valid_npi
 from src.entity_graph.resolve_entities import norm_org_name
 from src.model_a.lookalikes import resolve_settled_orgs
 
@@ -387,8 +388,9 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     npi_col = next((c for c in ("npi_in_source", "npi") if c in case_db.columns),
                    None)
     if npi_col:
-        named = case_db[case_db[npi_col].astype(str)
-                        .str.fullmatch(r"\d{10}").fillna(False)]
+        # Luhn, not shape (audit C.F14): a 10-digit docket or licence number in the
+        # NPI column never labels a provider
+        named = case_db[case_db[npi_col].astype(str).map(is_valid_npi)]
         for r in named.itertuples():
             c = cases.loc[str(r.case_id)] if str(r.case_id) in cases.index else None
             if c is None:
@@ -406,7 +408,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     # tier 1b: defendants resolved to a unique NPPES record by the resolver
     if defendant_npis is not None and len(defendant_npis):
         ok = defendant_npis[(defendant_npis.get("status", "resolved") == "resolved")
-                            & defendant_npis["npi"].astype(str).str.fullmatch(r"\d{10}").fillna(False)]
+                            & defendant_npis["npi"].astype(str).map(is_valid_npi)]
         for r in ok.drop_duplicates(["case_id", "npi"]).itertuples():
             cid = str(r.case_id)
             if cid not in cases.index:

@@ -23,7 +23,9 @@ from src.analytics.plausibility import (org_clinical_plausibility,
 from src.model_a.provider_features_export import (build_provider_matrix,
                                                   _widened_label_from_graph)
 
-N = [f"100300{i:04d}" for i in range(1, 9)]   # 10-digit NPI-shaped ids
+# Luhn-valid NPIs (batch 2: the widened label reads Luhn-valid nodes only)
+N = ["1003000001", "1003000019", "1003000027", "1003000035",
+     "1003000043", "1003000050", "1003000068", "1003000076"]
 
 
 # --------------------------------------------------------------- #1 NUCC ---

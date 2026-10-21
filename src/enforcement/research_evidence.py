@@ -36,6 +36,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from src.attempt_2.clean_data import is_valid_npi
 
 from src.attempt_2.clean_data import canonicalize_series, read_csv_text, _resolve_columns
 from src.enforcement.case_db import (CASE_COLUMNS, _SCHEME_KEYWORDS,
@@ -284,7 +285,23 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
         })
     if not rows:
         return pd.DataFrame(columns=CASE_COLUMNS)
-    return build_case_db(rows)
+    out = build_case_db(rows)
+    # PLATFORM_AUDIT C.F12: an MFCU row with a dollar amount and no outcome words trained
+    # as a hard doj_case positive while the strict export quarantined it. The outcome gate
+    # is the strict export's own regexes; a row without one is kept, usable = 0, with the
+    # reason (quarantine, never delete).
+    from src.model_a.fca_label_export import _CIVIL_OUTCOME, _CRIMINAL_OUTCOME
+    text = (out["defendant_name"].fillna("").astype(str) + ". " + out["summary"].fillna("").astype(str))
+    has_outcome = text.map(lambda t: bool(_CRIMINAL_OUTCOME.search(t) or _CIVIL_OUTCOME.search(t)))
+    if "usable" in out.columns:
+        out.loc[~has_outcome, "usable"] = 0
+    else:
+        out["usable"] = has_outcome.astype(int)
+    if "qc_note" in out.columns:
+        out.loc[~has_outcome, "qc_note"] = "no resolved outcome in the MFCU summary"
+    else:
+        out["qc_note"] = (~has_outcome).map({True: "no resolved outcome in the MFCU summary", False: ""})
+    return out
 
 
 _COMMERCIAL_ALIASES = dict(_MFCU_ALIASES, **{
@@ -344,7 +361,7 @@ def load_commercial_cases(table: pd.DataFrame, state: str) -> tuple[pd.DataFrame
             "source_url": url,
             "summary": (f"{outcome}. " if outcome else "") + summary[:480],
             "case_type": "hcf_commercial",
-            "npi_in_source": npi if re.fullmatch(r"\d{10}", npi) else "",
+            "npi_in_source": npi if (re.fullmatch(r"\d{10}", npi) and is_valid_npi(npi)) else "",
         })
     cases = build_case_db(rows) if rows else empty
     if len(cases):
@@ -476,32 +493,65 @@ def clear_charged_rows(case_csv: str | Path, cleared: pd.DataFrame) -> int:
     return int(hit.sum())
 
 
-def load_cia_entities(table: pd.DataFrame, case_ids: dict[str, str] | None = None) -> pd.DataFrame:
+_CIA_ENTITY_COLS = ["case_id", "defendant_name", "npi", "org_node_id", "status", "match_level",
+                    "n_orgs_for_party", "label_weight", "enrolled_entity_name", "evidence_url",
+                    "npi_candidate", "gate_note"]
+
+
+def load_cia_entities(table: pd.DataFrame, case_ids: dict[str, str] | None = None,
+                      provider_dim=None) -> pd.DataFrame:
     """A reviewed CIA-entity table (research answer CSV B) -> rows in the defendant-resolver
     shape (case_id, defendant_name, npi, status, match_level) for ``cia_defendant_npis``.
     Only Luhn-valid NPIs resolve (status resolved, match_level research_cia); a row without
-    one is kept with status research_no_npi so the review is visible, never a label."""
+    one is kept with status research_no_npi so the review is visible, never a label.
+
+    THE NAME GATE (audit C.F9, 2026-10-21): with ``provider_dim`` (a DataFrame or the
+    parquet path) the NPI is looked up in NPPES and the enrolled entity's name (else the
+    party's) must agree with the NPPES name through ``label_gates.name_agrees`` (org
+    rule: every distinctive word, at most one extra). A valid-Luhn typo that lands on an
+    unrelated provider is ``research_name_conflict`` with the NPI kept in
+    ``npi_candidate`` and the reason in ``gate_note``: listed, never a label. Without
+    ``provider_dim`` the gate cannot run and every row carries ``gate_note =
+    'name gate not run: no provider_dim'`` (the lane's report says so)."""
     from src.attempt_2.clean_data import is_valid_npi
     from src.enforcement.cia import normalize_cia  # noqa: F401  (schema owner)
+    from src.enforcement.label_gates import name_agrees
     if table is None or not len(table):
-        return pd.DataFrame(columns=["case_id", "defendant_name", "npi", "org_node_id", "status", "match_level",
-                                     "n_orgs_for_party", "label_weight", "enrolled_entity_name", "evidence_url"])
+        return pd.DataFrame(columns=_CIA_ENTITY_COLS)
     resolved = _resolve_columns(list(table.columns), _CIA_ENTITY_ALIASES)
     d = table.rename(columns={v: k for k, v in resolved.items()}).copy()
+    npis = {str(r.get("npi") or "").strip() for r in d.to_dict("records")}
+    nppes = None
+    if provider_dim is not None:
+        from src.enforcement.defendant_research import nppes_lookup
+        nppes = nppes_lookup(provider_dim, {n for n in npis if n and is_valid_npi(n)})
     rows = []
     for r in d.to_dict("records"):
         party = str(r.get("party") or "").strip()
         key = norm_org_name(party).upper()
         npi = str(r.get("npi") or "").strip()
+        ent = str(r.get("enrolled_entity_name") or "").strip()
         ok = bool(npi) and is_valid_npi(npi)
+        status, level, cand, note = ("resolved", "research_cia", "", "") if ok else ("research_no_npi", "", "", "")
+        if ok and nppes is None:
+            note = "name gate not run: no provider_dim"
+        elif ok:
+            nm, city = nppes.get(npi, ("", ""))
+            if not nm:
+                status, level, cand, note = "research_name_conflict", "", npi, "NPI not in NPPES (provider_dim)"
+            else:
+                agree, why = name_agrees(ent or party, "org", nm, city, "")
+                if not agree:
+                    status, level, cand, note = "research_name_conflict", "", npi, why
         rows.append({"case_id": (case_ids or {}).get(key) or f"cia:{key}", "defendant_name": party,
-                     "npi": npi if ok else "", "org_node_id": "",
-                     "status": "resolved" if ok else "research_no_npi", "match_level": "research_cia" if ok else "",
+                     "npi": npi if status == "resolved" else "", "org_node_id": "",
+                     "status": status, "match_level": level,
                      "n_orgs_for_party": 1, "label_weight": 1.0,
-                     "enrolled_entity_name": str(r.get("enrolled_entity_name") or "").strip(),
-                     "evidence_url": str(r.get("evidence_url") or "").strip()})
-    out = pd.DataFrame(rows)
-    return out.drop_duplicates(["case_id", "npi", "enrolled_entity_name"]).reset_index(drop=True)
+                     "enrolled_entity_name": ent,
+                     "evidence_url": str(r.get("evidence_url") or "").strip(),
+                     "npi_candidate": cand, "gate_note": note})
+    out = pd.DataFrame(rows, columns=_CIA_ENTITY_COLS)
+    return out.drop_duplicates(["case_id", "npi", "enrolled_entity_name", "npi_candidate"]).reset_index(drop=True)
 
 
 def load_exclusion_npis(table: pd.DataFrame, residue: pd.DataFrame,

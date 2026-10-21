@@ -120,7 +120,8 @@ def test_exclusion_name_resolve_unique_ambiguous_no_match_and_schema():
     assert "exclusion:5" not in r.index                      # already carries an NPI
     assert "exclusion:6" not in r.index                      # weak tier (license) under tier=hard
     ex = name_resolved_exclusions(res)
-    assert set(ex["npi"]) == {"1000000003", "1000000004"} and (ex["excl_type"] == "1128a1").all()
+    # batch 2 (C.F8): the provenance rides in excl_type as "<statute>|<match_level>"
+    assert set(ex["npi"]) == {"1000000003", "1000000004"} and ex["excl_type"].str.startswith("1128a1|excl_").all()
     assert "match_level" in ex.columns and "source_node_id" in ex.columns
 
 

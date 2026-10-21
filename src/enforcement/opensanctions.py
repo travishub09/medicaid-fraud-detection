@@ -86,6 +86,11 @@ def normalize_opensanctions(entities) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=EXCLUSION_COLS[:-1] + ["listed_date"])
     if not len(df):
         return pd.DataFrame(columns=EXCLUSION_COLS + ["listed_date"])
+    # npiCode / idNumber carry licence and registry numbers as often as NPIs: only a
+    # Luhn-valid 10-digit value is an identifier here (audit C.F14), the rest blank
+    from src.attempt_2.clean_data import is_valid_npi
+    npi = df["npi"].fillna("").astype(str).str.replace(r"\D", "", regex=True)
+    df["npi"] = npi.where(npi.map(is_valid_npi), "")
     df["excl_date"] = pd.to_datetime(df["excl_date"], errors="coerce")
     df["reinstate_date"] = pd.to_datetime(df["reinstate_date"], errors="coerce")
     df["listed_date"] = pd.to_datetime(df["listed_date"], errors="coerce")

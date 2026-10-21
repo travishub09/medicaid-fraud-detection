@@ -548,7 +548,7 @@
    "what": "v19 = the FIRST run on the audited code (batch 1 + the second-freeze build + the October inputs on the VM): new pre-registration (the label rule, the scheme weights, the freeze filters and the NADAC / HCRIS editions all changed = new semantics). Graded on the pursuit book at 100 / 250 and the large book at 50 under the FCA ruler, Jaccard bar 0.6, train = hard, ten seeds. The current-day graph must read GRAPH DONE first (task vm_sync_preclean). Every line is a laptop Command Prompt ssh one-liner; one per paste.",
    "commands": [
     "REM 1. merge bundle 349 on the laptop, then pull on the VM + pre-register (one line):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister v19 --goal 'first run on the audited code: batch 1 + October inputs + the 2021 editions' --check 'large_hits50 >= 2' --check 'large_prec50_lo > large_base50' --check 'hits100 >= 4' --check 'hits250 >= 6' --check 'lead_ge_gap >= 0.5' --check 'inst_share50 <= 0.4' --check 'top50_jaccard >= 0.6' --check 'eval_policy = fca' --check 'horizon = 36' --check 'frozen = True' --check 'seeds >= 10' --check 'groups = case_cluster' --check 'broadcast = weight' --check 'train = hard'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag v19 --expected 'pursuit hits at 100/250 and large at 50 above random under the FCA ruler; Jaccard >= 0.6' --goal 'first run on the audited code: batch 1 + October inputs + the 2021 editions' --check 'large_hits50 >= 2' --check 'large_prec50_lo > large_base50' --check 'hits100 >= 4' --check 'hits250 >= 6' --check 'lead_ge_gap >= 0.5' --check 'inst_share50 <= 0.4' --check 'top50_jaccard >= 0.6' --check 'eval_policy = fca' --check 'horizon = 36' --check 'frozen = True' --check 'seeds >= 10' --check 'groups = case_cluster' --check 'broadcast = weight' --check 'train = hard'\"",
     "REM 2. start (its own tmux window; --rebuild-graph: the as-of graph must carry the October LEIE + the name-resolved exclusions):",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v19 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=/data/medicaid/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v19 2021-12 --rebuild-graph'\"",
     "REM 3. status any time (done at [v19] DONE; a stuck window is the cellular link, never the run):",
@@ -561,31 +561,25 @@
    "added": "2026-10-21"
   },
   {
-   "key": "platform_audit_data_scan",
-   "what": "DONE ON CLAUDE'S SIDE 2026-10-21 (the 14:15 tar was read; section 2 of docs/PLATFORM_AUDIT_2026-10-21.md is filled: D1 the VM runs on the June/July sync, D2 ten sources read nothing under 2021-12 on that tree, D3 DocGraph 2022 inside the freeze, D4 silent blanks confirmed, D5 the newest deactivation report unread, D6 placeholder dates, D7 the stale current-day graph). Close with the done line; the re-scan after the preclean pull is task vm_sync_preclean.",
+   "key": "v20_run",
+   "what": "v20 = the FIRST run on batch 2 (bundle 350: v20 semantics, NEW pre-registration; the v19 checks carried, train = hard, ten seeds, three books). ORDER: v19 prints [v19] DONE -> packet + read-out (task v19_run) -> merge 350 on the laptop -> THEN pull on the VM -> pre-register -> start. Never pull while v19 runs. Each line is a laptop Command Prompt ssh one-liner.",
+   "added": "2026-10-21",
    "commands": [
-    "python -m src.reminders --done-task platform_audit_data_scan"
-   ],
-   "added": "2026-10-21"
-  },
-  {
-   "key": "vm_sync_preclean",
-   "what": "PULL DONE 2026-10-21 (20 files, preclean 190 GB, the October LEIE + NPPES and the 2021 editions on the VM; the re-scan read against the real tree, PLATFORM_AUDIT section 2). LEFT: the current-day graph rebuild (started 2026-10-21; done at GRAPH DONE in graph_rebuild.log) and, for a free night, stage one on the October NPPES + LEIE (`make pipeline`; several hours). Close when the graph log reads GRAPH DONE.",
-   "commands": [
-    "REM progress (done at \"[sync] done (preclean only...)\"); the two ls lines should show October dates:",
-    "REM OPTIONAL stage one on the October inputs (several hours; one tmux window):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s stage1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && make pipeline > /data/medicaid/stage1.log 2>&1 && echo STAGE1 DONE >> /data/medicaid/stage1.log'\"",
-    "REM REQUIRED the current-day graph (after stage one if you ran it):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s graph 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -u -m src.entity_graph --input /data/medicaid/processed --out /data/medicaid/graph --max-embed-nodes 0 --light-walks-above 0 > /data/medicaid/graph_rebuild.log 2>&1 && echo GRAPH DONE >> /data/medicaid/graph_rebuild.log'\"",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/graph_rebuild.log\"",
-    "REM then the fast re-scan and attach the md:",
-    "python -m src.reminders --done-task vm_sync_preclean"
-   ],
-   "added": "2026-10-21"
+    "REM 0. only after [v19] DONE and bundle 350 merged on the laptop (ops\\laptop\\merge_push.bat 350):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag v20 --expected 'pursuit hits at 100/250 and large at 50 above random under the FCA ruler; Jaccard >= 0.6; the affiliated ruler graded' --goal 'first run on batch 2: asserted joins, the label gates on every path, Luhn everywhere, assessable enforced, the ablation fence, the death cut' --check 'large_hits50 >= 2' --check 'large_prec50_lo > large_base50' --check 'hits100 >= 4' --check 'hits250 >= 6' --check 'lead_ge_gap >= 0.5' --check 'inst_share50 <= 0.4' --check 'top50_jaccard >= 0.6' --check 'eval_policy = fca' --check 'horizon = 36' --check 'frozen = True' --check 'seeds >= 10' --check 'groups = case_cluster' --check 'broadcast = weight' --check 'train = hard'\"",
+    "REM 1. start (its own tmux window; PREV_RUN = v19 so the scheme-health baseline and the drift read against v19):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v20 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=/data/medicaid/model_a/frozen_2021-12_v19 SEEDS=10 bash ops/vm/run_frozen_night.sh v20 2021-12 --rebuild-graph'\"",
+    "REM 2. status any time (done at [v20] DONE):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -5 /data/medicaid/model_a/frozen_2021-12_v20/night_run.log\"",
+    "REM 3. when DONE: tell Claude \"v20 finished\", then the packet:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v20 && tar -czf /home/ubuntu/run_packet_v20.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v20\"",
+    "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v20.tar.gz C:\\Users\\treyr\\Downloads\\",
+    "REM then attach run_packet_v20.tar.gz in chat; close with: python -m src.reminders --done-task v20_run"
+   ]
   },
   {
    "key": "platform_audit_fix_batches",
-   "what": "BATCH 1 SHIPPED 2026-10-21 (bundle 349; the operator delegated: 'the best possible model is your call'): H1 tier lists, H2 month-start case label, H3 the early return, H4 + the silent-blank class (raise or NULL, never 0), H5 enrollment per-se on the as-of fact, H6 one state_term convention, C.F10 anchored charge rule, H7 HCRIS as-of, H8 reserved inputs out of the weights, B.F-3 skip-sources everywhere, B.F-7 referrer O&R as-of, B.F-8/D7 the current-day graph step, B.F-11 audit lines on the no-row paths, H11 Makefile delegates to the shell runner, H12 the backtest CSV untracked (a test refuses tracked data), D3 DocGraph edition on the as-of graph, D6 placeholder dates, D8 LEIE duplicates quarantined, the NADAC effective-date filter. DECIDED: src/model retired to reference; the .bat runners retired (ops/vm/run_frozen_night.sh is THE runner). NEXT = v19 (task v19_run), then BATCH 2 = v20 semantics: join_m1 on the nine export joins, stage-one store_rejects + the raw conservation assert, the label gates on every path, the strict export gated on the tier, one outcome vocabulary, exclusion-node dedup, Luhn everywhere, assessable enforced, the death cut, the measure baseline, the affiliated grader; BATCH 3 = structure.",
+   "what": "BATCH 1 SHIPPED (bundle 349) and BATCH 2 SHIPPED (bundle 350, built while v19 ran): join_m1 on every export join + the broadcast fan-out assert, stage-one store_rejects (the rejected raw lines kept + counted), the strict export gated on the ruler's tier + the provenance suffix, non_npi_role in the names lane, name_agrees on the CIA entities and the research CLI, page verification on the lanes load path, ONE outcome vocabulary, exclusion-node dedup, Luhn everywhere (SAM / OpenSanctions / enrollment / case labels / the widened label), assessable held out of training, the pre-ranked pass-through, the DOB-corroborated death cut, the ablation fence = the shipped scorer, the affiliated ruler graded, the scheme-health baseline from PREV_RUN, case-tolerant NUCC / NPPES headers. RULE: do NOT git pull on the VM while v19 runs (the runner's later steps start new python processes and would mix batch-2 code into a batch-1 run); merge 350 on the laptop now, pull on the VM only after [v19] DONE. v19 = batch-1 semantics; v20 = the first run on batch 2 (task v20_run, new pre-registration, after the v19 read-out). BATCH 3 = structure (one names.py, one connect, one data_root, split the export, delete attempt_1 + dead modules, the CLI smoke test) + the LOW leftovers B.F-10 / F-15..F-20: proceeds in parallel with runs.",
    "added": "2026-10-21",
    "commands": []
   },
@@ -1059,6 +1053,31 @@
    ],
    "done": "2026-10-21",
    "closed_note": "operator closed on the laptop 2026-10-21 (NPPES October swap verified: 11.76 GB; SAM duplicate deleted; NDC file renamed)"
+  },
+  {
+   "key": "platform_audit_data_scan",
+   "what": "DONE ON CLAUDE'S SIDE 2026-10-21 (the 14:15 tar was read; section 2 of docs/PLATFORM_AUDIT_2026-10-21.md is filled: D1 the VM runs on the June/July sync, D2 ten sources read nothing under 2021-12 on that tree, D3 DocGraph 2022 inside the freeze, D4 silent blanks confirmed, D5 the newest deactivation report unread, D6 placeholder dates, D7 the stale current-day graph). Close with the done line; the re-scan after the preclean pull is task vm_sync_preclean.",
+   "commands": [
+    "python -m src.reminders --done-task platform_audit_data_scan"
+   ],
+   "added": "2026-10-21",
+   "closed": "2026-10-21"
+  },
+  {
+   "key": "vm_sync_preclean",
+   "what": "PULL DONE 2026-10-21 (20 files, preclean 190 GB, the October LEIE + NPPES and the 2021 editions on the VM; the re-scan read against the real tree, PLATFORM_AUDIT section 2). LEFT: the current-day graph rebuild (started 2026-10-21; done at GRAPH DONE in graph_rebuild.log) and, for a free night, stage one on the October NPPES + LEIE (`make pipeline`; several hours). Close when the graph log reads GRAPH DONE.",
+   "commands": [
+    "REM progress (done at \"[sync] done (preclean only...)\"); the two ls lines should show October dates:",
+    "REM OPTIONAL stage one on the October inputs (several hours; one tmux window):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s stage1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && make pipeline > /data/medicaid/stage1.log 2>&1 && echo STAGE1 DONE >> /data/medicaid/stage1.log'\"",
+    "REM REQUIRED the current-day graph (after stage one if you ran it):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s graph 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -u -m src.entity_graph --input /data/medicaid/processed --out /data/medicaid/graph --max-embed-nodes 0 --light-walks-above 0 > /data/medicaid/graph_rebuild.log 2>&1 && echo GRAPH DONE >> /data/medicaid/graph_rebuild.log'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/graph_rebuild.log\"",
+    "REM then the fast re-scan and attach the md:",
+    "python -m src.reminders --done-task vm_sync_preclean"
+   ],
+   "added": "2026-10-21",
+   "closed": "2026-10-21"
   }
  ]
 }

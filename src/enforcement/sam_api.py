@@ -117,7 +117,10 @@ def load_sam_extract(path) -> pd.DataFrame:
     person = (col("first") + " " + col("middle") + " " + col("last")).str.split().str.join(" ")
     entity = name.where(name != "", person)
     npi = col("npi").str.replace(r"[^0-9]", "", regex=True)
-    npi = npi.where(npi.str.len() == 10, "")
+    # SAM's "NPI" field holds UEI / CAGE / DUNS values too (11,234 bad-Luhn rows in the
+    # 2026-10 audit): a 10-digit string is not an NPI until the Luhn check passes
+    from src.attempt_2.clean_data import is_valid_npi
+    npi = npi.where(npi.map(is_valid_npi), "")
     etype = ("sam:" + col("excl_type") + "|" + col("agency") + "|" + col("program")).str.rstrip("|")
     df = pd.DataFrame({
         "npi": npi,

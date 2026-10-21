@@ -46,6 +46,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from src.enforcement.label_gates import non_npi_role
 
 from src.attempt_2.duck import connect as _duck_connect
 from src.entity_graph.resolve_entities import norm_org_name
@@ -696,6 +697,12 @@ def exclusion_name_resolve(exclusion_nodes: pd.DataFrame, provider_dim: pd.DataF
         if not key:
             rows.append({"npi": "", "match_level": "", "n_candidates": 0, "candidate_npis": "", "status": "no_key"})
             continue
+        # PLATFORM_AUDIT C.F5: an LEIE row whose own occupation says aide / CNA / PCA /
+        # driver / clerk never name-matches NPPES (the unique same-named NP is someone else)
+        occ = f"{getattr(r, 'general', '') or ''} {getattr(r, 'specialty', '') or ''}"
+        if r.kind == "person" and non_npi_role(occ):
+            rows.append({"npi": "", "match_level": "", "n_candidates": 0, "candidate_npis": "", "status": "non_npi_role"})
+            continue
         cands = (people if r.kind == "person" else orgs).get((key, r.state), [])
         npis = sorted({c[0] for c in cands})
         if len(npis) == 1:
@@ -725,7 +732,10 @@ def name_resolved_exclusions(res: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=EXCLUSION_COLS + ["match_level", "source_node_id"])
     out = pd.DataFrame({"npi": k["npi"].astype(str), "entity_name": k["entity_name"],
                         "name_key": k["entity_name"].map(norm_org_name),
-                        "excl_type": k["excl_type"], "excl_date": pd.to_datetime(k["excl_date"], errors="coerce"),
+                        # the provenance rides in excl_type (the graph loader keeps no other
+                        # column): "<statute>|<match_level>" (PLATFORM_AUDIT C.F8)
+                        "excl_type": k["excl_type"].astype(str) + "|" + k["match_level"].astype(str),
+                        "excl_date": pd.to_datetime(k["excl_date"], errors="coerce"),
                         "reinstate_date": pd.NaT, "currently_active": 1,
                         "match_level": k["match_level"], "source_node_id": k["source_node_id"]})
     return out.drop_duplicates(["npi", "excl_type", "excl_date"]).reset_index(drop=True)

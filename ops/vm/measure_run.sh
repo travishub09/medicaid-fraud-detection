@@ -40,9 +40,22 @@ cd "$REPO"
 m() { echo; echo "[$TAG] measure $1: $2   ($(date '+%F %T'))"; }
 mfail() { echo "[$TAG] measure step $1 FAILED ($(date '+%F %T')) -- the run's grade stands; paste the lines above to Claude"; }
 
+# THE BASELINE (audit B.F-21): the cross-run regression alarm compares this run's scheme
+# AUCs with the PREVIOUS run's scheme_health.json; it used to be handed this run's own
+# file (absent on a fresh folder), so the alarm never fired on the VM. PREV_RUN (the
+# night runner's env) names the previous run folder; without it the run's own file is
+# the fallback and the report says "no baseline".
+PREV="${PREV_RUN:-}"
+BASELINE="$RUN/scheme_health.json"
+if [ -n "$PREV" ] && [ -f "$PREV/scheme_health.json" ]; then
+  BASELINE="$PREV/scheme_health.json"
+  echo "[$TAG] measure: scheme-health baseline = $BASELINE"
+else
+  echo "[$TAG] measure: NO previous run baseline (set PREV_RUN=<previous run folder>); regression alarm inert"
+fi
 m 1/5 "scheme health on BOTH labels (exclusion label + the FCA ruler)"
 python -u -m src.model_a.scheme_health --matrix "$MATRIX" --manifest "$MANIFEST" --future-label "$FCA" \
-    --baseline "$RUN/scheme_health.json" --out "$RUN/SCHEME_HEALTH.md" --json-out "$RUN/scheme_health.json" || mfail 1
+    --baseline "$BASELINE" --out "$RUN/SCHEME_HEALTH.md" --json-out "$RUN/scheme_health.json" || mfail 1
 
 m 2/5 "signal ranking (per-feature separation on covered rows)"
 python -u -m src.model_a.signal_ranking --matrix "$MATRIX" --manifest "$MANIFEST" --out "$RUN/signal_ranking.csv" || mfail 2

@@ -318,6 +318,27 @@ STATE_OUTLIER_MIN_REFS = 3          # and at least this many reference states ex
 STATE_OUTLIER_MIN_RATE = 0.02
 
 
+def luhn_gate_candidates(events: pd.DataFrame, admin: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """A label candidate without a Luhn-valid NPI moves to the administrative frame
+    with drop_reason ``invalid_npi`` (audit C.F14: the file's NPI column carries state
+    provider ids and blanks beside real NPIs; the graph loader, the fraud-proximity
+    field and the PU label read the rows by NPI, so a bad identifier is never a node)."""
+    from src.attempt_2.clean_data import is_valid_npi
+    if events is None or not len(events) or "npi" not in events.columns:
+        return events, admin
+    ok = events["npi"].fillna("").astype(str).str.strip().map(is_valid_npi)
+    bad = events.loc[~ok].copy()
+    if len(bad):
+        bad["drop_reason"] = "invalid_npi"
+        for c in ("state_share", "state_rate"):
+            if c in admin.columns and c not in bad.columns:
+                bad[c] = float("nan")
+        admin = pd.concat([admin, bad], ignore_index=True) if admin is not None and len(admin) else bad
+        print(f"[medicaid_enrollment] {len(bad):,} label candidates without a Luhn-valid NPI -> "
+              "administrative (invalid_npi)")
+    return events.loc[ok].reset_index(drop=True), admin
+
+
 def split_label_candidates(events: pd.DataFrame,
                            state_default_share: float = STATE_DEFAULT_SHARE,
                            min_state_episodes: int = STATE_DEFAULT_MIN_EPISODES,
@@ -546,6 +567,7 @@ def main() -> None:
     # enrollment facts kept in their own file with the reason (quarantine, never delete)
     events, admin = split_label_candidates(all_events,
                                            state_npis=state_npi_counts_from_parquet(seg_p, a.asof_cutoff, con=con))
+    events, admin = luhn_gate_candidates(events, admin)
     after = None
     if a.spending and Path(a.spending).exists():
         after = paid_after_enrollment_end(a.spending, feats, con=con)

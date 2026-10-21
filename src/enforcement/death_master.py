@@ -58,8 +58,8 @@ def _sorted_name_key(name: str) -> str:
     return " ".join(sorted(norm_org_name(name).split()))
 
 
-def match_deceased_providers(provider_dim: pd.DataFrame, dmf: pd.DataFrame
-                             ) -> pd.DataFrame:
+def match_deceased_providers(provider_dim: pd.DataFrame, dmf: pd.DataFrame,
+                             dob_by_npi: pd.Series | None = None) -> pd.DataFrame:
     """NPI → deceased date, with a match-confidence flag.
 
     Matches the provider's name key to the DMF (order-invariant on name tokens);
@@ -71,6 +71,11 @@ def match_deceased_providers(provider_dim: pd.DataFrame, dmf: pd.DataFrame
     name_src = (p["provider_name"] if "provider_name" in p.columns
                 else p.get("name_key", "")).fillna("").astype(str)
     p["name_key"] = name_src.map(_sorted_name_key)
+    # NPPES carries no date of birth, so provider_dim never has one (PLATFORM_AUDIT A.F-07:
+    # every match was "low" and billing_after_death could never fire); the LEIE exclusion
+    # nodes carry a DOB for the excluded, which is the population that matters here
+    if "dob" not in p.columns and dob_by_npi is not None:
+        p["dob"] = p["npi"].map(dob_by_npi)
     p_dob = pd.to_datetime(p["dob"], errors="coerce") if "dob" in p.columns else None
 
     dmf_by_key: dict[str, list] = {}

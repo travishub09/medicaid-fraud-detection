@@ -285,11 +285,45 @@ def csv_to_parquet(con: duckdb.DuckDBPyConnection, csv_path: str, out_dir: Path)
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / (Path(csv_path).stem + ".parquet")
-    con.execute(f"""
-        COPY (SELECT * FROM read_csv_auto('{csv_path}', all_varchar=true,
-                                          ignore_errors=true, encoding='latin-1'))
-        TO '{out}' (FORMAT PARQUET)
-    """)
+    # PLATFORM_AUDIT H10: ignore_errors dropped malformed raw lines with no count and no
+    # quarantine (rule 4). store_rejects keeps every rejected line in DuckDB's
+    # reject_errors table; it is written beside the parquet and counted, so
+    # parquet rows + rejects = every line DuckDB saw. Older DuckDB builds without the
+    # option fall back to the bare read and say so.
+    rejects = None
+    try:
+        con.execute(f"""
+            COPY (SELECT * FROM read_csv_auto('{csv_path}', all_varchar=true,
+                                              ignore_errors=true, store_rejects=true,
+                                              encoding='latin-1'))
+            TO '{out}' (FORMAT PARQUET)
+        """)
+        rejects = con.execute("SELECT * FROM reject_errors").df()
+        con.execute("DELETE FROM reject_errors")
+        # one row per ERROR, several per line when a line has several extra fields:
+        # count lines, keep every error row for the quarantine
+        if len(rejects) and "line" in rejects.columns:
+            rejects.insert(0, "n_lines_rejected", int(rejects["line"].nunique()))
+    except Exception as e:                       # the option is unknown to this DuckDB
+        if "store_rejects" not in str(e) and "reject_errors" not in str(e):
+            raise
+        con.execute(f"""
+            COPY (SELECT * FROM read_csv_auto('{csv_path}', all_varchar=true,
+                                              ignore_errors=true, encoding='latin-1'))
+            TO '{out}' (FORMAT PARQUET)
+        """)
+        print(f"  {Path(csv_path).name}: rejected lines NOT counted (this DuckDB has no store_rejects)")
+    if rejects is not None:
+        rej_path = out_dir / (Path(csv_path).stem + "_rejects.parquet")
+        n_lines = (int(rejects["line"].nunique()) if len(rejects) and "line" in rejects.columns
+                   else int(len(rejects)))
+        if len(rejects):
+            rejects.to_parquet(rej_path, index=False)
+            print(f"  {Path(csv_path).name}: {n_lines:,} malformed line(s) ({len(rejects):,} error(s)) "
+                  f"set aside in {rej_path.name}")
+        elif rej_path.exists():
+            rej_path.unlink()
+        print(f"  {Path(csv_path).name}: {n_lines:,} rejected line(s)")
     print(f"  {Path(csv_path).name} → {out}")
     return str(out)
 

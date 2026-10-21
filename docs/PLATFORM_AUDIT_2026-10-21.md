@@ -312,7 +312,34 @@ month token that no longer reads "_180" as month 18.
 10. D3 DocGraph edition date on the as-of graph; D6 placeholder dates read as unknown
     by every temporal filter; D8 the 537 LEIE rows named (quarantine, never silent).
 
-**Batch 2, v19 semantics (new pre-registration):**
+**Batch 2 SHIPPED 2026-10-21 (bundle 350, tests/test_batch2_fixes_2026_10.py, built while
+v19 ran; v19 does NOT carry it — v20 is the first run on this code, a new pre-registration).**
+Every item below landed: `join_m1` (validate m:1, duplicate right rows to
+`_quarantine/join_duplicates.parquet`, manifest `join_quarantine`) on every export join and
+the broadcast (which now RAISES when npi_to_org maps one NPI to two orgs); `csv_to_parquet`
+with `store_rejects` (the rejected lines kept in `<stem>_rejects.parquet`, counted by line);
+the strict export's state rows gated on the ruler's tier and the provenance suffix read
+(`fca_tier` strips `|match_level`); `non_npi_role` in the names lane; `name_agrees` on the
+CIA entities (`load_cia_entities(provider_dim=)`, `research_name_conflict` with the NPI in
+`npi_candidate`) and on the standalone research CLI (`--provider-dim`, refuses without it
+unless `--no-name-gate`); `quarantine_absent_defendants` on the cia / commercial load path;
+ONE outcome vocabulary (the strict export's regexes in manus_lanes and `load_mfcu_cases`,
+rows without an outcome `usable=0`); `dedup_exclusion_sources` in the graph loader; Luhn in
+SAM / OpenSanctions / the enrollment candidates (`luhn_gate_candidates` -> administrative
+`invalid_npi`) / case_labels / the widened label; `assessable == 0` held out of training
+folds (`company_list.unassessable_mask`, `rollup` `n_unassessable_members`); the pre-ranked
+pass-through (`PRE_RANKED_PREFIXES` pbj_ / deficiency_ / nh_ / hospice_ + saturation + HCRIS
+anomaly drive their subscores raw, clipped 0..1); the DOB-corroborated death cut from the
+exclusion nodes' DOB (`match_deceased_providers(dob_by_npi=)`); the ablation fence
+(`source_ablation._fenced` = the shipped scorer's ban list); the affiliated ruler discovered
+and graded (`_discover_rulers` reads every `__<suffix><H>` file, key `aff`); the scheme-health
+baseline from `PREV_RUN` in measure_run.sh; case-tolerant NUCC / as-of NPPES header
+resolvers; `_read_any` reads .xlsx. Still open from this batch: B.F-10 (the five org blocks
+that log USED before the skip decision), F-15 / F-16 (`RAW_AGGREGATE_COLS`, `dropped_constant`
+on subscores), F-17..F-20 (vintage classes, in-time vs frozen `provider_hhi`, `--snapshot-dir`,
+cache re-logging) — LOW, batch 3.
+
+**Batch 2, v20 semantics (new pre-registration) — the plan as written:**
 1. H9 `join_m1()` on the nine export joins and the broadcast.
 2. H10 `store_rejects` + the raw conservation assert in stage one.
 3. C.F4 strict export gated on the tier; C.F5 / F6 / F7 the gates applied on every path;

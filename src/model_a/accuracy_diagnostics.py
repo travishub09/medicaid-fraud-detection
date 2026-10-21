@@ -72,6 +72,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -1148,14 +1149,25 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
 
 
 def _discover_rulers(run_dir: Path, cutoff: str) -> dict[str, Path]:
-    out = {}
+    """Every ruler file the runner wrote for this cutoff, keyed by its suffix.
+
+    Audit B.F-22 (2026-10-21): the runner builds `__fca<H>`, `__aff<H>` (the
+    affiliated-conviction ruler) and `__quitam<H>` beside the exclusion rulers, and
+    this discovery knew only `hard` / `hard_weak`, so the affiliated ruler had no
+    reader. The horizon digits are stripped from the key (`aff36` -> `aff`) so the
+    registry KPI names (`acc_org_hits50_aff`) are stable across freezes; the FCA and
+    qui tam rulers are rebuilt from `--case-db` under their own keys when given, and
+    the file copies are kept under `fca_file` / `qui_tam_file` so nothing is graded
+    twice under one name."""
+    out: dict[str, Path] = {}
     base = run_dir / f"future_bans_after_{cutoff}.csv"
     if base.exists():
         out["all"] = base
-    for tag in ("hard", "hard_weak"):
-        p = run_dir / f"future_bans_after_{cutoff}__{tag}.csv"
-        if p.exists():
-            out[tag] = p
+    for p in sorted(run_dir.glob(f"future_bans_after_{cutoff}__*.csv")):
+        tag = p.name[len(f"future_bans_after_{cutoff}__"):-4]
+        key = re.sub(r"\d+$", "", tag) or tag
+        key = {"fca": "fca_file", "quitam": "qui_tam_file"}.get(key, key)
+        out.setdefault(key, p)
     return out
 
 
@@ -1259,6 +1271,13 @@ def main() -> None:
                                     "undated_exclusion", "fca_tier"]]
             print(f"[accuracy_diagnostics] qui tam ruler: {int(qt['is_prospective_positive'].sum()):,} forward positives "
                   "(relator-originated cases only)")
+    # a ruler rebuilt from --case-db supersedes the runner's file copy of the same
+    # ruler (never graded twice under two names); the affiliated ruler keeps its file
+    for built, file_key in (("fca", "fca_file"), ("qui_tam", "qui_tam_file")):
+        if built in rulers and file_key in rulers:
+            rulers.pop(file_key)
+    if rulers:
+        print(f"[accuracy_diagnostics] rulers graded: {', '.join(rulers)}")
     if not rulers:
         ap.error("no ruler: pass --forward-label NAME=PATH or --case-db, or run prospective_label first")
     pl = load_priority_list(run_dir, a.list_name) if a.score_source != "refit" else None

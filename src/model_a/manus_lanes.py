@@ -56,8 +56,20 @@ LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
 DEFAULT_STATES = ["FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY",
                   "CA", "NY", "TX", "PA", "IL", "OH", "MI"]
 DEFAULT_YEARS = list(range(2019, 2026))
-_OUTCOME_OK = re.compile(r"convict|plea|guilty|sentenc|settle|judgment|exclusion|civil\s+monetary", re.I)
-_CHARGE_ONLY = re.compile(r"\b(?:charged|indict|arrest|pending|complaint)\b", re.I)
+# PLATFORM_AUDIT C.F12: ONE outcome vocabulary. The strict export's regexes decide what a
+# resolved outcome is (a bare "exclusion" or "civil monetary penalty" is not a case outcome
+# the export would keep, so the lane must not load it as one either).
+from src.model_a.fca_label_export import _CHARGED_ONLY as _CHARGE_ONLY  # noqa: E402
+from src.model_a.fca_label_export import _CIVIL_OUTCOME, _CRIMINAL_OUTCOME  # noqa: E402
+
+
+class _OutcomeOK:
+    @staticmethod
+    def search(text):
+        return _CRIMINAL_OUTCOME.search(text or "") or _CIVIL_OUTCOME.search(text or "")
+
+
+_OUTCOME_OK = _OutcomeOK()
 
 
 # --------------------------------------------------------------------------- #
@@ -416,19 +428,37 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
             merged = rev.merge_into_case_db(new_cases, inp["case_db"])
             tally["loaded"] += int(len(merged) - before)
             tally["files"].append(str(inp["case_db"]))
+            # GATE 4 ON THE LOAD PATH (audit C.F7): a harvested case row's defendant is
+            # read against the cited page the moment it enters the case DB; absent =
+            # usable=0 / defendant_not_on_page (quarantine, never delete). It used to
+            # wait for an operator to run `research_evidence verify-sources`.
+            page_fetch = fetch if fetch is not None else rev.browser_fetch_text
+            try:
+                n_abs = rev.quarantine_absent_defendants(inp["case_db"], page_fetch, log=log)
+                tally["notes"].append(f"{n_abs} harvested rows marked defendant_not_on_page")
+            except Exception as e:                          # the page read is best effort; the rows stay usable=1
+                tally["notes"].append(f"page verification FAILED ({type(e).__name__}: {str(e)[:120]}): "
+                                      "run `research_evidence verify-sources` before training")
         if lane == "cia" and ent_rows:
             case_ids = None
             cc = _read_table(inp["cia_cases"])
             if cc is not None and {"defendant_name_key", "case_id"} <= set(cc.columns):
                 case_ids = dict(zip(cc["defendant_name_key"].astype(str).str.upper(), cc["case_id"].astype(str)))
-            ents = pd.concat([rev.load_cia_entities(t, case_ids) for t in ent_rows], ignore_index=True)
+            pdim = inp["provider_dim"] if inp["provider_dim"].exists() else None
+            if pdim is None:
+                tally["notes"].append("no provider_dim: CIA entity NPIs NOT checked against NPPES names")
+            ents = pd.concat([rev.load_cia_entities(t, case_ids, provider_dim=pdim) for t in ent_rows],
+                             ignore_index=True)
             ok = ents[ents["status"] == "resolved"]
             tally["quarantined"] += int((ents["status"] != "resolved").sum())
             n = _append_parquet(inp["cia_npis"], ok, ["case_id", "npi"])
             tally["loaded"] += n
             tally["files"].append(str(inp["cia_npis"]))
-            if (ents["status"] != "resolved").any():
-                quarantine_rows.append(ents[ents["status"] != "resolved"].assign(drop_reason="no Luhn-valid NPI"))
+            bad = ents[ents["status"] != "resolved"]
+            if len(bad):
+                reason = bad["status"].map({"research_no_npi": "no Luhn-valid NPI"}).fillna("")
+                reason = reason.where(reason != "", "NPPES name disagrees: " + bad["gate_note"].astype(str))
+                quarantine_rows.append(bad.assign(drop_reason=reason))
     elif lane == "names":
         residue = _read_table(inp["name_residue"])
         rows = []

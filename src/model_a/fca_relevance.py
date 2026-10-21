@@ -227,11 +227,20 @@ _NORM = re.compile(r"[^a-z0-9]")
 _CODES_LONGEST_FIRST = sorted(LEIE_STATUTES, key=len, reverse=True)
 
 
+PROVENANCE_SUFFIX = re.compile(r"\|(?:excl_|research_|fuzzy_)[a-z0-9_]+$", re.I)
+
+
 def fca_tier(excl_type) -> tuple[str, str]:
     """Classify one exclusion-record ``excl_type`` into (tier, basis)."""
     t = str(excl_type or "").strip().lower()
     if not t:
         return "weak", "no statute or reason recorded"
+    # a provenance suffix ("1128a1|excl_name_state_unique", "...|research_medium") never
+    # changes the tier: the statute before it does (PLATFORM_AUDIT C.F8)
+    # only a MATCH-LEVEL suffix is stripped (excl_* from the names lane, research_* from a
+    # Manus answer); the pipes inside a SAM / state / enrollment body ("TERMINATED |
+    # CONVICTED OF MEDICAID FRAUD") are the reason text and stay
+    t = PROVENANCE_SUFFIX.sub("", t)
     if t.startswith("opensanctions"):
         return "excluded", "OpenSanctions: not an FCA source"
     if t.startswith("sam"):

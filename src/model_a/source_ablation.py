@@ -35,6 +35,29 @@ RANDOM_STATE = 42
 _DOJ_DEFERRED = {"open_payments", "opioid", "facility_quality", "hcris", "saturation"}
 
 
+def _fenced(cols: list[str], manifest: dict, label_name: str = "") -> list[str]:
+    """The SHIPPED scorer's feature fence applied to an ablation column set.
+
+    MODEL_REVIEW_2026-10 (open item, closed 2026-10-21): the ablations trained on
+    `partition_features`, which fences only `leakage_hard`, while the production
+    scorer (`company_list.oof_scores`) also bans `LABEL_ADJACENT_NET` and the
+    manifest's `leakage_adjacent` columns. The gating metric was therefore not the
+    shipped model: a leave-one-family-out drop could be the adjacent features reading
+    the label. Every ablation column set now goes through the same fence, whatever
+    the label (on a forward ruler the adjacent columns are fair in principle, but the
+    question asked is 'what does the model we ship gain', so the sets must match)."""
+    from src.model_a.network_ab import LABEL_ADJACENT_NET
+    banned = set(LABEL_ADJACENT_NET) | set(manifest.get("leakage_adjacent", []) or []) \
+        | set(manifest.get("leakage_hard", []) or [])
+    kept = [c for c in cols if c not in banned]
+    dropped = [c for c in cols if c in banned]
+    if dropped:
+        print(f"[source_ablation] fence: {len(dropped)} label-adjacent column(s) removed from the "
+              f"ablation set ({', '.join(dropped[:6])}{', ...' if len(dropped) > 6 else ''})"
+              + (f" [{label_name}]" if label_name else ""))
+    return kept
+
+
 def _numeric_frame(matrix: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     keep = [c for c in cols if c in matrix.columns]
     X = matrix[keep].apply(pd.to_numeric, errors="coerce")      # NaN stays NaN (native routing)
@@ -179,8 +202,8 @@ def run_source_ablation(matrix: pd.DataFrame, manifest: dict,
     groups = (m["group_id"].to_numpy() if "group_id" in m.columns else None)
 
     part = partition_features(manifest)
-    core = part["core"]
-    full = full_feature_list(part)
+    core = _fenced(part["core"], manifest, label_name)
+    full = _fenced(full_feature_list(part), manifest)
 
     core_ev = _eval_set(m, y, core, groups, splits, seeds)
     full_ev = _eval_set(m, y, full, groups, splits, seeds)
@@ -359,7 +382,7 @@ def run_oof_ablation(matrix: pd.DataFrame, manifest: dict,
     groups = (m["group_id"].to_numpy() if "group_id" in m.columns else None)
 
     part = partition_features(manifest)
-    core, full = part["core"], full_feature_list(part)
+    core, full = _fenced(part["core"], manifest, label_name), _fenced(full_feature_list(part), manifest)
 
     _rank = (lambda p: peer_rank_scores(p, m)) if peer_rank else (lambda p: p)
     p_core = _rank(oof_predict(m, y, core, groups, n_splits=n_splits))

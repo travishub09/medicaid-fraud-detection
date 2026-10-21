@@ -237,6 +237,11 @@ def main() -> None:
     ap.add_argument("--max-new", type=int, default=None, help="cap tasks created per call")
     ap.add_argument("--status", action="store_true", help="show the registry: tasks with ids, without, completed")
     ap.add_argument("--poll", action="store_true", help="collect answers and fold them into --resolved")
+    ap.add_argument("--provider-dim", default=None,
+                    help="processed/provider_dim.parquet for the NPPES name gate on --poll "
+                         "(default: provider_dim.parquet beside --resolved)")
+    ap.add_argument("--no-name-gate", action="store_true",
+                    help="fold answers WITHOUT the NPPES name check (audit C.F6: never for a training file)")
     a = ap.parse_args()
     out_dir = Path(a.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -266,7 +271,16 @@ def main() -> None:
             raise SystemExit("--poll needs --resolved to fold answers into")
         results = poll_research(registry, results_p)
         table = pd.read_parquet(a.resolved)
-        table, summ = fold_results(table, prompts, results)
+        # GATE 3 ON THE CLI PATH (audit C.F6): the standalone poll used to fold answers
+        # with no NPPES name check while the lanes runner applied it; one rule now
+        pdim = a.provider_dim or str(Path(a.resolved).parent / "provider_dim.parquet")
+        if a.no_name_gate:
+            pdim = None
+            print("defendant research poll: NAME GATE OFF (--no-name-gate); this file must not train")
+        elif not Path(pdim).exists():
+            raise SystemExit(f"--poll needs the NPPES name gate: no provider_dim at {pdim} "
+                             "(pass --provider-dim, or --no-name-gate for a review-only fold)")
+        table, summ = fold_results(table, prompts, results, provider_dim=pdim)
         table.to_parquet(a.resolved, index=False)
         done = sum(1 for v in results.values() if v.get("status") == "completed")
         print(f"defendant research poll: {done}/{len(results)} completed; folded {summ} -> {a.resolved}")

@@ -44,7 +44,7 @@ import pandas as pd
 from src.attempt_2.clean_data import is_valid_npi
 from src.enforcement.defendant_resolver import district_state, url_state, text_state
 from src.model_a.case_labels import extract_conduct_window
-from src.model_a.fca_relevance import LEIE_STATUTES, _NORM
+from src.model_a.fca_relevance import fca_tier, LEIE_STATUTES, PROVENANCE_SUFFIX, _NORM
 
 POLICIES = ("strict", "strict_plus_criminal", "with_exclusions", "fca_shaped")
 # fca_shaped = everything above PLUS fraud that COULD have been a False Claims Act
@@ -299,7 +299,9 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                 # state's own words
                 enroll = et_raw.lower().startswith("mcd_enroll")
                 body = re.sub(r"\|name_match$", "", et_raw.split(":", 2)[2] if et_raw.count(":") >= 2 else "")
-                if not _STATE_FRAUD.search(body) or npi not in pd_.index:
+                # PLATFORM_AUDIT C.F4: the ruler decides (a charge or a credible-allegation
+                # suspension is not an outcome), not a word list
+                if fca_tier(et_raw)[0] != "hard" or npi not in pd_.index:
                     continue
                 d = pd.to_datetime(getattr(r, "excl_date", None), errors="coerce")
                 st = et_raw.split(":")[1].upper() if et_raw.count(":") >= 2 else ""
@@ -319,7 +321,12 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                     "flags": "window_inferred", "source_url": "",
                 })
                 continue
-            key = _NORM.sub("", et_raw.lower())
+            # C.F8: a name-resolved / research-resolved LEIE row carries its provenance as a
+            # suffix ("1128a1|excl_name_state_unique"); the statute is the part before it
+            m_prov = PROVENANCE_SUFFIX.search(et_raw)
+            prov = m_prov.group(0)[1:] if m_prov else ""
+            et_stat = PROVENANCE_SUFFIX.sub("", et_raw)
+            key = _NORM.sub("", et_stat.lower())
             code = next((k for k in sorted(LEIE_STATUTES, key=len, reverse=True) if key.startswith(k)), "")
             if code not in STRICT_STATUTES:
                 continue
@@ -334,9 +341,12 @@ def build_strict_labels(case_db: pd.DataFrame, defendant_npis: pd.DataFrame, pro
                 "announced_date": d.strftime("%Y-%m-%d") if pd.notna(d) else "",
                 "conduct_start": d.year - 4 if pd.notna(d) else None, "conduct_end": d.year if pd.notna(d) else None,
                 "state": _s(pd_.loc[npi].get("addr_state", "")) or _s(getattr(r, "state", "")),
-                "basis": "npi_on_list", "match_level": "exact",
+                "basis": ("name_match" if prov.startswith("excl_") else "resolved_defendant" if prov else "npi_on_list"),
+                "match_level": prov or "exact",
                 "defendant": "", "kind": "", "entity_type": _s(pd_.loc[npi].get("entity_type", "")),
-                "role": "", "role_agree": "n/a", "name_national_hits": 0, "evidence_strength": "exact_id",
+                "role": "", "role_agree": "n/a", "name_national_hits": 0,
+                "evidence_strength": ("moderate" if prov.startswith("excl_") else evidence_strength("resolved_defendant", prov)
+                                      if prov else "exact_id"),
                 "flags": "window_inferred", "source_url": "https://oig.hhs.gov/exclusions/",
             })
 

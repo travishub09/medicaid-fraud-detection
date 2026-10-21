@@ -1637,6 +1637,49 @@ first, then paste" above every move/done block.
   run by a runner; the production scorer is company_list + network_ab._fit_predict); the
   Windows .bat runners are retired, ops/vm/run_frozen_night.sh is THE runner. v19 = the first
   run on this code (new pre-registration, task v19_run); batch 2 (v20 semantics) next.
+  BATCH 2 SHIPPED (2026-10-21, bundle 350, built while v19 ran on the batch-1 code; v20 = the
+  first run on it, NEW pre-registration; tests/test_batch2_fixes_2026_10.py, 25 tests):
+  `provider_features_export.join_m1` (validate m:1; duplicate right-side rows set aside in
+  `_quarantine/join_duplicates.parquet` + manifest `join_quarantine`, the first kept, logged)
+  replaces every `drop_duplicates("npi")` merge and `_broadcast_org_to_npi` RAISES when
+  npi_to_org maps one NPI to two orgs; `clean_data.csv_to_parquet` reads with `store_rejects`
+  (the malformed raw lines kept in `<stem>_rejects.parquet`, counted by LINE: parquet rows +
+  rejected lines = every line seen); `PRE_RANKED_PREFIXES` (pbj_ / deficiency_ / nh_ /
+  hospice_) + `PRE_RANKED_INPUTS` (market_saturation_index, hcris_cost_anomaly) drive their
+  subscores raw (clipped 0..1) instead of a percentile of a percentile; `_read_any` reads
+  .xlsx. LABEL CHAIN: the strict export's state rows are gated on `fca_tier(et)[0] == "hard"`
+  (the ruler, not a word list) and read the provenance suffix (`"1128a1|excl_name_state_unique"`:
+  `fca_relevance.PROVENANCE_SUFFIX` strips ONLY a match-level suffix `|excl_* / |research_* /
+  |fuzzy_*`; the pipes inside a SAM / state / enrollment reason body stay; the names lane
+  writes it; the strict export rates such rows moderate / name_match, never exact_id);
+  `exclusion_name_resolve` refuses a non-NPI role (aide / CNA / driver / clerk from LEIE
+  GENERAL + SPECIALTY: status `non_npi_role`); `research_evidence.load_cia_entities(provider_dim=)`
+  runs `name_agrees` on every CIA entity NPI (`research_name_conflict`, NPI kept in
+  `npi_candidate`, reason in `gate_note`; without provider_dim the row says "name gate not
+  run"); `defendant_research --poll` REFUSES without provider_dim (`--provider-dim`, default
+  beside --resolved; `--no-name-gate` = review-only fold); manus_lanes runs
+  `quarantine_absent_defendants` on the case DB right after a cia / commercial load (page
+  verification on the load path, best effort, the failure named in the tally); ONE outcome
+  vocabulary (`manus_lanes._OUTCOME_OK` / `_CHARGE_ONLY` = the strict export's regexes;
+  `load_mfcu_cases` sets usable=0 + qc_note on a row without a resolved outcome);
+  `entity_graph.dedup_exclusion_sources` (npi + name_key + excl_type + excl_date, logged;
+  exclusions_duplicates.parquet never loaded); LUHN EVERYWHERE: `sam_api.load_sam_extract`,
+  `opensanctions.normalize_opensanctions`, `medicaid_enrollment.luhn_gate_candidates`
+  (-> administrative `invalid_npi`), `case_labels` named / resolved NPIs, and the export's
+  widened label (a ten-digit non-NPI never flips a positive; the count logged). SCORER:
+  `company_list.unassessable_mask` holds `assessable == 0` rows out of every training fold
+  (scored out-of-fold, like the ambiguous rows; `rollup` adds `n_unassessable_members`; a
+  matrix without the column trains as before); `source_ablation._fenced` applies the SHIPPED
+  scorer's ban list (LABEL_ADJACENT_NET + leakage_adjacent + leakage_hard) to every ablation
+  set (the MODEL_REVIEW open item: the gating metric is now the shipped model). MEASUREMENT:
+  `accuracy_diagnostics._discover_rulers` reads every `future_bans_after_<cut>__<suffix><H>.csv`
+  (key = suffix without the horizon: `aff` is graded, `fca_file` / `qui_tam_file` yield to
+  the --case-db rulers); measure_run.sh takes the scheme-health baseline from
+  `$PREV_RUN/scheme_health.json` (the regression alarm was inert: it read the run's own file).
+  DEATH CUT: `match_deceased_providers(dob_by_npi=)` takes the exclusion nodes' DOB (NPPES
+  has none, so every match was "low" and billing_after_death never fired); the export's
+  smoking-gun block passes it. Case-tolerant header resolvers in `nucc_taxonomy._resolve` and
+  `asof_nppes._pick`. OPEN (LOW, batch 3): B.F-10, F-15..F-20.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

@@ -330,6 +330,15 @@ def calibrate_oof(matrix: pd.DataFrame, scores: np.ndarray, label_col: str | Non
     return out
 
 
+def unassessable_mask(matrix: pd.DataFrame) -> np.ndarray:
+    """True where the export's ``assessable`` flag is 0 (a matrix without the column
+    has no unassessable rows: v8-and-earlier matrices train exactly as before)."""
+    if "assessable" not in matrix.columns:
+        return np.zeros(len(matrix), dtype=bool)
+    a = pd.to_numeric(matrix["assessable"], errors="coerce")
+    return (a.fillna(1) == 0).to_numpy(dtype=bool)
+
+
 def oof_scores(matrix: pd.DataFrame, manifest: dict,
                label_col: str = "provider_on_exclusion",
                n_splits: int = 5) -> np.ndarray:
@@ -400,6 +409,17 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     if ambiguous.any():
         print(f"[company_list] {int(ambiguous.sum()):,} listed-but-not-kept providers masked "
               f"from training (scored, never negatives)")
+    # ASSESSABLE ENFORCED (audit B.F-14, 2026-10-21): the export's `assessable` flag
+    # (a real peer percentile AND billing or volume) was written and promised in the
+    # manifest but never read by the scorer, so a provider with no evidence at all
+    # trained as a clean negative. Unassessable rows are held out of every training
+    # fold like the ambiguous rows (still scored out-of-fold, still rolled up with
+    # the count in n_unassessable_members).
+    unassessable = unassessable_mask(matrix)
+    if unassessable.any():
+        print(f"[company_list] {int(unassessable.sum()):,} unassessable providers (no peer percentile "
+              f"or no billing) held out of training folds (scored out-of-fold)")
+        ambiguous = ambiguous | unassessable
     groups = (matrix["group_id"].to_numpy()
               if "group_id" in matrix.columns else None)
     # PER-CASE BUDGET (2026-10-10): the export's label_weight dilutes the
@@ -513,6 +533,11 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
     out = out.rename(columns={org_col: "org_id"})
     if n_excl is not None:
         out["n_excluded_members"] = out["org_id"].map(n_excl).fillna(0).astype(int)
+    if "assessable" in m.columns:
+        # how much of the org's score rests on members the export could not assess
+        ua = pd.Series(unassessable_mask(m), index=m.index)
+        n_ua = m.loc[ua].groupby(m.loc[ua][org_col]).size() if ua.any() else pd.Series(dtype=int)
+        out["n_unassessable_members"] = out["org_id"].map(n_ua).fillna(0).astype(int)
     # percentile-normalize the headline score so ANY cutoff is meaningful.
     # SIGNAL SORTS, DOLLARS FILTER (operator decision 2026-08-04): rank by
     # the max-score percentile, then dollar-weighted score (still signal) —

@@ -251,6 +251,39 @@ def _gate_ownership_subscore(m: pd.DataFrame) -> pd.Series | None:
         | _num("ownership_turnover").notna())
     return assessable
 
+# PLATFORM_AUDIT H9 (batch 2): rule 3 says joins are many-to-one BY CONSTRUCTION AND
+# ASSERTED; the export enforced it by drop_duplicates("npi") on the right side, which
+# silently kept the first of any duplicated adapter row. join_m1 keeps the merge
+# many-to-one (validate="m:1" raises on a fan-out), sets the duplicate right-side rows
+# aside in _JOIN_QUARANTINE with their source (main writes _quarantine/join_duplicates
+# .parquet and the manifest counts them), and logs the count. Quarantine, never delete.
+_JOIN_QUARANTINE: list[pd.DataFrame] = []
+
+
+def join_m1(left: pd.DataFrame, right: pd.DataFrame, source: str, on: str = "npi",
+            how: str = "left", log=print) -> pd.DataFrame:
+    r = right
+    if r[on].duplicated().any():
+        dup = r[r[on].duplicated(keep="first")].copy()
+        dup.insert(0, "join_source", source)
+        _JOIN_QUARANTINE.append(dup)
+        log(f"    [join:{source}] {len(dup):,} duplicate {on} row(s) on the right side set aside "
+            "(the first kept; _quarantine/join_duplicates.parquet)")
+        r = r.drop_duplicates(on, keep="first")
+    return left.merge(r, on=on, how=how, validate="m:1")
+
+
+# facility / nursing-home / saturation / HCRIS adapters emit ONE-SIDED PERCENTILES already
+# (facility_peer_percentiles, saturation's state-county ranking, hcris_anomaly); the export
+# re-ranked them across taxonomy peers (a percentile of a percentile, PLATFORM_AUDIT B.F-9).
+# They now pass through like the analytics percentiles. v20 semantics.
+PRE_RANKED_PREFIXES = ("pbj_", "deficiency_", "nh_", "hospice_")
+PRE_RANKED_INPUTS = {"market_saturation_index", "hcris_cost_anomaly"}
+
+
+def _is_pre_ranked(col: str) -> bool:
+    return col in PRE_RANKED_INPUTS or col.startswith(PRE_RANKED_PREFIXES)
+
 
 def _broadcast_org_to_npi(npi_to_org: pd.DataFrame, org_frame: pd.DataFrame,
                           value_cols: list[str]) -> pd.DataFrame:
@@ -260,9 +293,11 @@ def _broadcast_org_to_npi(npi_to_org: pd.DataFrame, org_frame: pd.DataFrame,
     cols = [c for c in value_cols if c in org_frame.columns]
     if not cols or "org_node_id" not in org_frame.columns:
         return pd.DataFrame(columns=["npi"])
-    xw = npi_to_org[["npi", "org_node_id"]].astype(str).drop_duplicates("npi")
-    out = xw.merge(org_frame[["org_node_id"] + cols].astype({"org_node_id": str}),
-                   on="org_node_id", how="left")
+    xw = npi_to_org[["npi", "org_node_id"]].astype(str)
+    if xw["npi"].duplicated().any():
+        raise AssertionError("npi_to_org maps one NPI to several organizations: the broadcast would fan out")
+    org = org_frame[["org_node_id"] + cols].astype({"org_node_id": str})
+    out = join_m1(xw, org, source="broadcast_org_to_npi", on="org_node_id")
     return out.drop(columns=["org_node_id"])
 
 
@@ -346,7 +381,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     xw = npi_to_org[["npi", "org_node_id"]].copy()
     xw["npi"] = xw["npi"].astype(str)
     xw["org_node_id"] = xw["org_node_id"].astype(str)
-    m = m.merge(xw.drop_duplicates("npi"), on="npi", how="left")
+    m = join_m1(m, xw, source="npi_to_org")
     assert len(m) == n0, "npi_to_org join fanned out"
 
     # #4: org size — every member NPI carries its org's member count, so the model
@@ -375,7 +410,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         wl["npi"] = wl["npi"].astype(str)
         cols = [c for c in ["npi", "provider_on_exclusion", "exclusion_label_sources"]
                 if c in wl.columns]
-        m = m.merge(wl[cols].drop_duplicates("npi"), on="npi", how="left")
+        m = join_m1(m, wl[cols], source="widened_label")
         assert len(m) == n0, "widened-label join fanned out"
         if "provider_on_exclusion" in m.columns:
             m["provider_on_exclusion"] = m["provider_on_exclusion"].fillna(0).astype(int)
@@ -390,7 +425,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                             "case_ids", "label_basis", "case_sector", "amount_usd",
                             "fca_strict_tier", "intervened", "qui_tam",
                             "label_weight", "case_fanout"] if c in cl.columns]
-        m = m.merge(cl[meta].drop_duplicates("npi"), on="npi", how="left")
+        m = join_m1(m, cl[meta], source="case_labels")
         assert len(m) == n0, "case-label join fanned out"
         # the per-case budget weight (case_labels): 1.0 for every row the case
         # label did not touch, the diluted broadcast weight otherwise. Label
@@ -455,7 +490,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     if org_graph_features is not None and len(org_graph_features):
         gf = _broadcast_org_to_npi(npi_to_org, org_graph_features, GRAPH_FEATURES)
         if "npi" in gf.columns and len(gf.columns) > 1:
-            m = m.merge(gf.drop_duplicates("npi"), on="npi", how="left")
+            m = join_m1(m, gf, source="org_graph_features")
             assert len(m) == n0, "graph-feature broadcast fanned out"
             # At-scale graph builds (>400k orgs, the sparse path) skip the
             # expensive centralities and emit them as a constant default —
@@ -483,7 +518,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         new_cols = [c for c in f.columns if c != "npi" and c not in m.columns]
         if not new_cols:
             continue
-        m = m.merge(f[["npi"] + new_cols].drop_duplicates("npi"), on="npi", how="left")
+        m = join_m1(m, f[["npi"] + new_cols], source=f"adapter:{name}")
         assert len(m) == n0, f"adapter '{name}' join fanned out"
         sources_used[name] = new_cols
 
@@ -512,7 +547,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             continue
         b = _broadcast_org_to_npi(npi_to_org, fr, val_cols)
         if "npi" in b.columns and len(b.columns) > 1:
-            m = m.merge(b.drop_duplicates("npi"), on="npi", how="left")
+            m = join_m1(m, b, source=f"org_grain:{name}")
             assert len(m) == n0, f"org-grain source '{name}' broadcast fanned out"
             sources_used[name] = [c for c in b.columns if c != "npi"]
 
@@ -522,7 +557,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         ng["npi"] = ng["npi"].astype(str)
         keep = [c for c in ["npi", "peer_group_key", "nucc_grouping", "nucc_classification"]
                 if c in ng.columns]
-        m = m.merge(ng[keep].drop_duplicates("npi"), on="npi", how="left")
+        m = join_m1(m, ng[keep], source="nucc_peer_groups")
         assert len(m) == n0, "nucc peer-group join fanned out"
         sources_used["nucc_taxonomy"] = [c for c in keep if c != "npi"]
 
@@ -549,8 +584,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         if c in m.columns:
             subin[c] = pd.to_numeric(m[c], errors="coerce")
     for c in adapter_present:
-        if c in RAW_SUBSCORE_INPUTS:
-            subin[c] = pd.to_numeric(m[c], errors="coerce").clip(0, 1)   # event flag: raw drives it
+        if c in RAW_SUBSCORE_INPUTS or _is_pre_ranked(c):
+            subin[c] = pd.to_numeric(m[c], errors="coerce").clip(0, 1)   # event flag / pre-ranked: raw drives it
         else:
             subin[c] = peerpct[f"{c}__peerpct"]      # peer-relative value drives the subscore
     subscores, coverage = compute_subscores(subin)
@@ -1008,6 +1043,8 @@ def _read_any(path: Path) -> pd.DataFrame | None:
         return None
     if path.suffix == ".parquet":
         return pd.read_parquet(path)
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        return pd.read_excel(path, dtype=str)       # the PUF picker admits .xlsx (A.F-31)
     from src.attempt_2.clean_data import read_csv_text
     return read_csv_text(path)
 
@@ -1064,7 +1101,7 @@ def _apply_asof_freeze(leads: pd.DataFrame, asof_spend_p: Path, cutoff: str,
         v3 = asof_v3_scores(str(asof_spend_p), cutoff, out[dim_cols], log=log)
         keep_v3 = ["npi"] + V3_SCORE_COLS + ["log_max_single_month", "n_concept_signals"]
         n0 = len(out)
-        out = out.merge(v3[keep_v3].drop_duplicates("npi"), on="npi", how="left")
+        out = join_m1(out, v3[keep_v3], source="asof_v3")
         assert len(out) == n0, "as-of v3 join fanned out"
         out["n_concept_signals"] = out["n_concept_signals"].fillna(0).astype(int)
         cov = {c: float(out[c].notna().mean()) for c in V3_SCORE_COLS}
@@ -1134,7 +1171,15 @@ def _widened_label_from_graph(graph_dir: Path, log):
         return None
     ex = ex.copy()
     ex["npi"] = ex["npi"].astype(str)
-    ex = ex[ex["npi"].str.len() >= 10]                  # NPI-matched only
+    # NPI-matched only, and Luhn-valid (audit C.F14): a node whose identifier is a
+    # licence / registry number of ten digits never flips the training label
+    from src.attempt_2.clean_data import is_valid_npi
+    n0 = len(ex)
+    ex = ex[ex["npi"].map(is_valid_npi)]
+    n_bad = n0 - len(ex)
+    if n_bad:
+        print(f"    [label] {n_bad:,} of {n0:,} exclusion rows have no Luhn-valid NPI (name-only or "
+              "foreign identifier): never a positive")
     if not len(ex):
         return None
     ex["src"] = ex.get("excl_type", "").map(_label_source)
@@ -2584,6 +2629,7 @@ def main() -> None:
     # the operator has to grep. ``audit`` IS the log everywhere a source is reported.
     audit = _SourceAudit(print)
     _VINTAGE.clear()
+    _JOIN_QUARANTINE.clear()
     rescache = None                    # set on real-data runs unless disabled
 
     if args.fixture:
@@ -2851,6 +2897,25 @@ def main() -> None:
                     cuts.append(("deact", deact.rename(
                         columns={"deactivation_date": "cutoff_date"})
                         [["npi", "cutoff_date"]]))
+            try:
+                dmf_p = _first_existing(preclean / "dmf", "dmf.csv", "*.csv")
+                pdim_sg = _first_existing(processed, "provider_dim.parquet")
+                if dmf_p and pdim_sg:
+                    from src.enforcement.death_master import match_deceased_providers, parse_dmf
+                    pdim_df = pd.read_parquet(pdim_sg)
+                    dob_by_npi = None
+                    if ep.exists():
+                        exn = pd.read_parquet(ep)
+                        if "dob" in exn.columns:
+                            exn = exn[exn["npi"].astype(str).str.len() >= 10].drop_duplicates("npi")
+                            dob_by_npi = exn.set_index(exn["npi"].astype(str))["dob"]
+                    dm = match_deceased_providers(pdim_df, parse_dmf(_read_any(dmf_p)), dob_by_npi=dob_by_npi)
+                    dm = dm[dm["match_confidence"] == "high"]
+                    if len(dm):
+                        cuts.append(("death", dm.rename(columns={"deceased_date": "cutoff_date"})[["npi", "cutoff_date"]]))
+                        audit(f"    [smoking_gun_timeline/death] {len(dm):,} DOB-corroborated deaths from {dmf_p.name}")
+            except Exception as e:
+                audit(f"    [smoking_gun_timeline/death] skipped: {e}")
             if spend_tl and cuts and not _have("smoking_gun_timeline"):
                 tl = None
                 for prefix, cut in cuts:
@@ -3143,6 +3208,16 @@ def main() -> None:
     manifest["sources_audit"] = audit.records()
     # the vintage ledger: every edition pick with its verdict (run_issues grades it)
     manifest["vintage_audit"] = list(_VINTAGE)
+    # the join quarantine (H9): duplicate right-side rows every many-to-one join set aside
+    if _JOIN_QUARANTINE:
+        jq = pd.concat(_JOIN_QUARANTINE, ignore_index=True)
+        (out_dir / "_quarantine").mkdir(parents=True, exist_ok=True)
+        jq.to_parquet(out_dir / "_quarantine" / "join_duplicates.parquet", index=False)
+        manifest["join_quarantine"] = jq.groupby("join_source").size().to_dict()
+        audit(f"    [joins] {len(jq):,} duplicate row(s) quarantined across "
+              f"{jq['join_source'].nunique()} join(s): _quarantine/join_duplicates.parquet")
+    else:
+        manifest["join_quarantine"] = {}
     # The BILLING freeze is a top-level manifest fact (the registry and the run
     # catalog read it; before this it lived only under graph_substrate.asof,
     # which is the GRAPH's as-of and was null-reported as the run's cutoff).
