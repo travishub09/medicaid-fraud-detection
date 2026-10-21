@@ -541,6 +541,33 @@
  ],
  "tasks": [
   {
+   "key": "pre_cutoff_editions_2021_rest",
+   "added": "2026-10-21",
+   "what": "THE REST OF THE 2021 EDITIONS (POS Q4 2021 x2 and NADAC 2021 landed 2026-10-20; the iQIES file does not exist before Q4 2023, those providers are inside the hospital/non-hospital file). Four downloads, each un-gating a frozen-run feature family: (1) PBJ 2021 Q4 + Q3 (nurse staffing -> worthless_services / pbj features); (2) the nursing-home Care Compare December 2021 archive (NH_Ownership / NH_Penalties / NH_HealthCitations -> facility schemes); (3) Order and Referring December 2021 (the as-of referral eligibility file); (4) the All Owners 2021 editions per family (SNF, HHA, Hospice, Hospital, FQHC, RHC -> ownership_turnover, empty on every frozen run so far). data.cms.gov pages: scroll to the Data section, the version selector (a dropdown or 'View all versions' link above the table) lists dated releases; pick the 2021 one, then Download (CSV). Keep the 2023 files; the picker reads the date in the name. Download first, then paste the matching move line; the dir line at the end shows what landed. After the session: python -m src.reminders --done-task pre_cutoff_editions_2021_rest, then the post-download checks, then on the VM bash ops/vm/sync_data.sh down before the next run.",
+   "commands": [
+    "REM 1. PBJ: https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing -> versions -> 2021 Q4, then 2021 Q3 -> Download CSV (large: several hundred MB each). Then:",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*PBJ*2021*Q4*.csv\" \"%USERPROFILE%\\Downloads\\*Q4*2021*PBJ*.csv\" \"%USERPROFILE%\\Downloads\\*Nurse_Staffing*2021*Q4*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021Q4.csv\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*PBJ*2021*Q3*.csv\" \"%USERPROFILE%\\Downloads\\*Q3*2021*PBJ*.csv\" \"%USERPROFILE%\\Downloads\\*Nurse_Staffing*2021*Q3*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\pbj_daily_staffing_2021Q3.csv\"",
+    "REM 2. NH archive: https://data.cms.gov/provider-data/archived-data/nursing-homes -> the December 2021 monthly zip (name carries 12_2021 or Dec2021) -> save to Downloads. Then (extracts, copies the three files, keeps their month in the name):",
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*ursing*2021*.zip\" \"%USERPROFILE%\\Downloads\\*12_2021*.zip\" \"%USERPROFILE%\\Downloads\\*Dec2021*.zip\") do tar -xf \"%f\" -C \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\"",
+    "for %f in (\"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_Ownership*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_Penalties*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\nh_2021_tmp\\NH_HealthCitations*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\NH_*2021*.csv\"",
+    "REM 3. Order and Referring: https://data.cms.gov/provider-characteristics/medicare-provider-supplier-enrollment/order-and-referring -> versions -> December 2021 -> Download CSV. Then:",
+    "for %f in (\"%USERPROFILE%\\Downloads\\*rder*eferring*2021*.csv\" \"%USERPROFILE%\\Downloads\\*Order_and_Referring*.csv\") do move \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\order_referring\\order_referring_2021-12.csv\"",
+    "REM 4. All Owners, one page per family (search data.cms.gov for '<family> All Owners'): skilled-nursing-facility-all-owners, home-health-agency-all-owners, hospice-all-owners, hospital-all-owners, federally-qualified-health-center-all-owners, rural-health-clinic-all-owners -> versions -> a 2021 release (December 2021 if offered, else the latest 2021) -> Download CSV, then move with the family name and the version date:",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded SNF file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\SNF_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded HHA file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\HHA_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded Hospice file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\Hospice_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded Hospital file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\Hospital_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded FQHC file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\FQHC_All_Owners_2021.12.01.csv\"",
+    "move \"%USERPROFILE%\\Downloads\\<downloaded RHC file>.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\\RHC_All_Owners_2021.12.01.csv\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\owners_prior\"",
+    "REM close + the checks:",
+    "python -m src.reminders --done-task pre_cutoff_editions_2021_rest"
+   ]
+  },
+  {
    "key": "lanes_gates_apply",
    "added": "2026-10-20",
    "what": "STEPS 1 AND 2 DONE 2026-10-21 (lanes re-loaded: 21 research rows kept, 5 name conflicts quarantined; state lists re-run: 5,750 rows, 1,448 with NPI, 169 by name). STEP 3 RUNNING under tmux session verify (started 2026-10-21 00:30 UTC): done when tmux ls no longer lists it and the log ends with \"verify-sources: N rows quarantined\". APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
@@ -553,16 +580,6 @@
    ]
   },
   {
-   "key": "merge_bundle330",
-   "added": "2026-10-20",
-   "what": "Merge bundle330 (cumulative; fast-forwards from 92b3164): the four label gates (src/enforcement/label_gates.py), the verification read-out, the lanes_gates_apply + v18 reminders. Then the VM pull.",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "ops\\laptop\\merge_push.bat 330",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
-   ]
-  },
-  {
    "key": "lanes_dispatch_2",
    "added": "2026-10-20",
    "what": "GATED ON THE OPERATOR SAYING GO (spends Manus credits; never run from a reminder nag, never by Claude). SECOND LANE CYCLE when Manus credits allow (the first cycle spent 212 tasks; un-dispatched prompts: cia 8, names 21, outcome_refresh 114 (398 charged rows still pending an outcome), commercial 72, defendant_research 1,896; the 32 errored tasks of cycle 1 are re-sent as new tasks by --dispatch since --poll could not revive them). --dispatch SENDS (credits); --poll / --load are free. Budget line below = 120 tasks across four lanes, outcome_refresh and names first (each answer is a label row or a charge converted to hard). Not before the lanes_review read: a loader rule learned from the quarantine applies to the new answers too.",
@@ -572,16 +589,6 @@
     "REM a few hours later, free:",
     "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2021-12_v17 --poll --load && cat /data/medicaid/processed/manus_lanes/MANUS_LANES.md\"",
     "python -m src.reminders --done-task lanes_dispatch_2"
-   ]
-  },
-  {
-   "key": "vm_ssh_rule",
-   "added": "2026-10-20",
-   "what": "VM SSH BLOCKED AGAIN = the security group, not the VM. 2026-10-20: ssh timed out while the instance showed Running 3/3 and the same IP; the inbound SSH rule (sg-01ed08aca02724f15, rule sgr-043e4fb6e23e0add9) was pinned to the home IP of the 12th (70.125.32.112/32). Fix each time the home IP changes: EC2 console (us-east-2) > Security Groups > sg-01ed08aca02724f15 > Edit inbound rules > on the SSH row with the /32 chip set Source type to My IP > Save rules. Leave the first SSH row (prefix list pl-03915406641cb1f53 = EC2 Instance Connect, the console fallback). Never open 22 to 0.0.0.0/0. The running VM costs about $1/hour: Instance state > Stop instance between runs (a start assigns a NEW public IP unless an Elastic IP is attached; paste the new one so the ssh lines are rewritten).",
-   "commands": [
-    "REM test (10 s timeout):",
-    "ssh -o ConnectTimeout=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"hostname && uptime\"",
-    "python -m src.reminders --done-task vm_ssh_rule"
    ]
   },
   {
@@ -917,6 +924,30 @@
    ],
    "done": "2026-10-20",
    "closed_note": "loaded 2026-10-20 21:11 UTC on the VM: cia 910 rows (254 quarantined), names 22 (236 q), outcome_refresh 208 (8 charged rows cleared), commercial 76 (3 q, 5 answers without a table), defendant_research 26 (14 no_npi), label_verification 110 verdicts (confirmed 96, pending 9, cannot_verify 6, wrong_npi 5, wrong_person 3); table pasted"
+  },
+  {
+   "key": "merge_bundle330",
+   "added": "2026-10-20",
+   "what": "Merge bundle330 (cumulative; fast-forwards from 92b3164): the four label gates (src/enforcement/label_gates.py), the verification read-out, the lanes_gates_apply + v18 reminders. Then the VM pull.",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "ops\\laptop\\merge_push.bat 330",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\""
+   ],
+   "done": "2026-10-21",
+   "closed_note": "operator confirmed 2026-10-21 (ssh test passed on cellular; bundle 331 merged, 5a84c96 on origin)"
+  },
+  {
+   "key": "vm_ssh_rule",
+   "added": "2026-10-20",
+   "what": "VM SSH BLOCKED AGAIN = the security group, not the VM. 2026-10-20: ssh timed out while the instance showed Running 3/3 and the same IP; the inbound SSH rule (sg-01ed08aca02724f15, rule sgr-043e4fb6e23e0add9) was pinned to the home IP of the 12th (70.125.32.112/32). Fix each time the home IP changes: EC2 console (us-east-2) > Security Groups > sg-01ed08aca02724f15 > Edit inbound rules > on the SSH row with the /32 chip set Source type to My IP > Save rules. Leave the first SSH row (prefix list pl-03915406641cb1f53 = EC2 Instance Connect, the console fallback). Never open 22 to 0.0.0.0/0. The running VM costs about $1/hour: Instance state > Stop instance between runs (a start assigns a NEW public IP unless an Elastic IP is attached; paste the new one so the ssh lines are rewritten).",
+   "commands": [
+    "REM test (10 s timeout):",
+    "ssh -o ConnectTimeout=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"hostname && uptime\"",
+    "python -m src.reminders --done-task vm_ssh_rule"
+   ],
+   "done": "2026-10-21",
+   "closed_note": "operator confirmed 2026-10-21 (ssh test passed on cellular; bundle 331 merged, 5a84c96 on origin)"
   }
  ]
 }
