@@ -369,7 +369,10 @@ def _next_due(item: dict) -> date | None:
     if not item.get("last_done"):
         return None
     last = date.fromisoformat(item["last_done"])
-    months = item["every_months"]
+    months = item.get("every_months")
+    if not months:
+        # a ONE-TIME item (every_months null / 0): done once, never due again
+        return date.max
     y, m = divmod(last.month - 1 + months, 12)
     return last.replace(year=last.year + y, month=m + 1,
                         day=min(last.day, 28))

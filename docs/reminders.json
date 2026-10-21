@@ -565,6 +565,14 @@
    ]
   },
   {
+   "key": "hold_folders_to_live",
+   "added": "2026-10-21",
+   "what": "CLAUDE check, then operator move: the dated 2026 editions parked under preclean/facility_current_hold (Hospice_Provider_May2026, NH_HealthCitations_Jul2026, pbj_daily_staffing_2025Q4) and preclean/pos_current_hold (the 2026-Q1 POS files) are the CURRENT-DAY inputs; frozen runs would skip them by date. Before they move into facility/ and pos/, confirm in code that the current-day (no cutoff) adapters take the NEWEST edition of each table rather than pooling Nov2023 + Jul2026; then write the move lines. The five undated duplicates in those folders were deleted 2026-10-21.",
+   "commands": [
+    "REM no operator action until Claude writes the move lines"
+   ]
+  },
+  {
    "key": "lanes_gates_apply",
    "added": "2026-10-20",
    "what": "STEPS 1 AND 2 DONE 2026-10-21 (lanes re-loaded: 21 research rows kept, 5 name conflicts quarantined; state lists re-run: 5,750 rows, 1,448 with NPI, 169 by name). STEP 3 RUNNING under tmux session verify (started 2026-10-21 00:30 UTC): done when tmux ls no longer lists it and the log ends with \"verify-sources: N rows quarantined\". APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
