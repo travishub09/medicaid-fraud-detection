@@ -2253,14 +2253,21 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     if not _skipped("saturation"):
       try:
         from src.ingest_cms import saturation as sat
-        sat_p = _first_existing(pc / "saturation", "saturation.csv", "*.csv")
-        if sat_p and org_nodes is not None:
-            county = sat.compute_saturation_metrics(_read_any(sat_p),
-                                                    max_period=asof_cutoff)
+        # every csv in the folder, stacked (the live file + the CMS archive's 2014-2019
+        # files); the period is chosen INSIDE the stack, on the parsed period end
+        sat_raw, sat_files = sat.load_saturation_folder(pc / "saturation", log=log)
+        if len(sat_raw) and org_nodes is not None:
+            county = sat.compute_saturation_metrics(sat_raw, max_period=asof_cutoff)
             rp = county.attrs.get("reference_period") if hasattr(county, "attrs") else None
+            rp_end = county.attrs.get("reference_period_end") if hasattr(county, "attrs") else None
             if rp:
-                log(f"    [saturation] reference period {rp}"
+                log(f"    [saturation] reference period {rp} (ends {rp_end or '?'}) from "
+                    f"{', '.join(f.name for f in sat_files)}"
                     + (f" (capped at cutoff {asof_cutoff})" if asof_cutoff else ""))
+            _vintage("saturation", asof_cutoff, [f"saturation_{rp_end or 'undated'}.csv"], [],
+                     ("pre_cutoff" if asof_cutoff and rp_end else
+                      "current_day_newest" if rp_end else "undated_substituted"),
+                     note=f"reference period {rp or '?'} chosen inside {len(sat_files)} file(s)")
             # HUD ZIP->county crosswalk: upgrades the attach from state grain to
             # county grain. The loader existed but was never passed here, so a
             # downloaded crosswalk was dead weight. Accept both save locations.

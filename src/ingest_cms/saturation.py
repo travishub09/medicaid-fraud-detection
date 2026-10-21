@@ -20,6 +20,8 @@ county — every org in a state must not inherit its worst county.
 
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns
@@ -68,6 +70,67 @@ _STATE_NAME_TO_CODE = {
 }
 
 
+_MONTHS = {m: i + 1 for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun",
+                                            "jul", "aug", "sep", "oct", "nov", "dec"])}
+_DATE_TOKEN = re.compile(r"(20\d{2})[-/.](0[1-9]|1[0-2])(?:[-/.](?:[0-3]\d))?"      # 2021-12[-31]
+                         r"|(0[1-9]|1[0-2])[-/.](?:[0-3]\d)[-/.](20\d{2})"            # 12/31/2021
+                         r"|\b([A-Za-z]{3})[a-z]*\.?\s+(?:[0-3]?\d,?\s+)?(20\d{2})"     # Sep 30, 2024 / Dec 2021
+                         r"|\b(20\d{2})\b", re.I)                                      # 2021
+
+
+def period_end(label) -> str:
+    """The END of a reference-period label as YYYY-MM, whatever CMS wrote.
+
+    The state-county file labels periods several ways across vintages
+    ("2021-01-01", "01/01/2021-12/31/2021", "Jan 2021 - Dec 2021", "2021"); the
+    freeze compared the first seven characters as text, so a "01/01/2021..." label
+    always read as before any cutoff and the max() of such labels was the one that
+    sorted last, not the latest. The last date in the label is the period's end; a
+    bare year ends in December. '' when nothing dates it."""
+    s = str(label or "")
+    last = ""
+    for m in _DATE_TOKEN.finditer(s):
+        if m.group(1):
+            last = f"{m.group(1)}-{m.group(2)}"
+        elif m.group(4):
+            last = f"{m.group(4)}-{m.group(3)}"
+        elif m.group(6):
+            mon = _MONTHS.get((m.group(5) or "").lower())
+            last = f"{m.group(6)}-{mon:02d}" if mon else f"{m.group(6)}-12"   # "ending 2021" = a bare year
+        elif m.group(7):
+            last = f"{m.group(7)}-12"
+    return last
+
+
+def load_saturation_folder(folder, read_csv=None, log=print) -> tuple[pd.DataFrame, list]:
+    """Every csv under preclean/saturation/ stacked into one frame (the live
+    saturation.csv carries the 2020+ reference periods; the CMS archive zip's
+    2014-2015 / 2016-2017 / 2018-2019 files carry the earlier ones). A file without
+    a reference_period column gets one from the years in its name (period end).
+    The export used to read ONE file, alphabetically first, so an archive file
+    dropped beside saturation.csv would have replaced it. Returns (frame, files)."""
+    from pathlib import Path
+    from src.attempt_2.clean_data import read_csv_text
+    read_csv = read_csv or read_csv_text
+    p = Path(folder)
+    files = sorted(p.glob("*.csv")) if p.is_dir() else []
+    frames = []
+    for f in files:
+        df = read_csv(f)
+        rp_col = next((c for c in df.columns if str(c).strip().lower().replace(" ", "_") == "reference_period"), None)
+        if rp_col is None:
+            df = df.copy()
+            df["reference_period"] = period_end(f.stem)
+            log(f"    [saturation] {f.name}: no reference_period column; dated {period_end(f.stem) or 'UNDATED'} from its name")
+        elif rp_col != "reference_period":
+            df = df.rename(columns={rp_col: "reference_period"})
+        frames.append(df)
+    if not frames:
+        return pd.DataFrame(), files
+    out = pd.concat(frames, ignore_index=True)
+    return out, files
+
+
 def compute_saturation_metrics(raw: pd.DataFrame,
                                max_period: str | None = None) -> pd.DataFrame:
     """County-grain saturation: providers_per_1k_benes + market_saturation_index.
@@ -97,18 +160,23 @@ def compute_saturation_metrics(raw: pd.DataFrame,
                    if c.strip().lower().replace(" ", "_") == "reference_period"), None)
     if rp_col is not None:
         rp = df[rp_col].fillna("").astype(str)
-        pool = rp[rp != ""]
+        ends = rp.map(period_end)                       # the period's END month, parsed
+        pool = pd.DataFrame({"label": rp, "end": ends})[ends != ""]
         if max_period:
             cut = str(max_period)[:7]
-            pool = pool[pool.str.slice(0, 7) <= cut]
+            pool = pool[pool["end"] <= cut]
             if not len(pool):
                 raise ValueError(
                     f"Market Saturation file has no reference period at or "
                     f"before {max_period} — the frozen run cannot use it")
-        latest = pool.max() if len(pool) else ""
+        latest = ""
+        if len(pool):
+            top = pool["end"].max()
+            latest = pool.loc[pool["end"] == top, "label"].max()
         if latest:
             df = df[rp == latest].copy()
             df.attrs["reference_period"] = str(latest)
+            df.attrs["reference_period_end"] = period_end(latest)
 
     for c in ("fips", "county"):
         if c not in df.columns:
@@ -129,6 +197,7 @@ def compute_saturation_metrics(raw: pd.DataFrame,
         out.groupby("service_type")["providers_per_1k_benes"]
            .rank(method="average", pct=True))
     out.attrs["reference_period"] = df.attrs.get("reference_period", "")
+    out.attrs["reference_period_end"] = df.attrs.get("reference_period_end", "")
     return out
 
 

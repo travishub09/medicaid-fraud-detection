@@ -352,3 +352,36 @@ def test_preregister_repeated_check_flags_accumulate(tmp_path):
     rows = [_json.loads(l) for l in (tmp_path / "model_a" / "preregistrations.jsonl").read_text().splitlines() if l.strip()]
     by = {r["tag"]: r for r in rows}
     assert len(by["t_rep"]["checks"]) == 3 and len(by["t_one"]["checks"]) == 3
+
+
+# ---- market saturation: the period END is parsed, every file in the folder stacks ---------
+def test_saturation_period_end_reads_every_cms_label_shape():
+    from src.ingest_cms.saturation import period_end
+    assert period_end("2021-01-01") == "2021-01"
+    assert period_end("01/01/2021-12/31/2021") == "2021-12"
+    assert period_end("Jan 2021 - Dec 2021") == "2021-12"
+    assert period_end("2021") == "2021-12"
+    assert period_end("Market_Saturation_and_Utilization_State_County_Archive_Dataset_2018-2019") == "2019-12"
+    assert period_end("") == ""
+
+
+def test_saturation_folder_stacks_the_archive_files_and_the_freeze_picks_inside(tmp_path):
+    from src.ingest_cms.saturation import load_saturation_folder, compute_saturation_metrics
+    cols = {"Type of Service": "Home Health", "State Name": "Texas", "County Name": "Bexar",
+            "State and County FIPS Code": "48029", "Number of Fee-for-Service Beneficiaries": "1000"}
+    pd.DataFrame([dict(cols, **{"Number of Providers": "90", "Reference Period": "01/01/2024-12/31/2024"}),
+                  dict(cols, **{"Number of Providers": "40", "Reference Period": "01/01/2021-12/31/2021"})]
+                 ).to_csv(tmp_path / "saturation.csv", index=False)
+    # an archive file (no reference-period column): dated from its name
+    pd.DataFrame([dict(cols, **{"Number of Providers": "10"})]
+                 ).to_csv(tmp_path / "Market_Saturation_and_Utilization_State_County_Archive_Dataset_2018-2019.csv", index=False)
+    raw, files = load_saturation_folder(tmp_path, log=lambda *_: None)
+    assert len(files) == 2 and len(raw) == 3
+    cur = compute_saturation_metrics(raw)
+    assert float(cur.iloc[0]["n_providers"]) == 90.0 and cur.attrs["reference_period_end"] == "2024-12"
+    frz = compute_saturation_metrics(raw, max_period="2021-12")
+    assert float(frz.iloc[0]["n_providers"]) == 40.0 and frz.attrs["reference_period_end"] == "2021-12"
+    old = compute_saturation_metrics(raw, max_period="2020-06")
+    assert float(old.iloc[0]["n_providers"]) == 10.0           # the archive file carries the freeze
+    with pytest.raises(ValueError):
+        compute_saturation_metrics(raw, max_period="2015-01")

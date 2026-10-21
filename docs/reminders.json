@@ -540,6 +540,29 @@
     "preclean/facility/pbj_daily_staffing_2021*.csv"
    ],
    "note": " CLOSED 2026-10-20: POS Q4 2021 (hospital/non-hospital + CLIA; no iQIES file before Q4 2023), NADAC 2021, PBJ 2021Q3+Q4, NH Nov2021 (ownership/penalties/citations) landed. Order and Referring (history from 2023-06) and All Owners (from 2022-09) have NO 2021 edition: skipped, not re-asked; the 2023-06 second freeze covers them."
+  },
+  {
+   "key": "saturation_history",
+   "what": "ONE-TIME: the CMS Market Saturation & Utilization State-County ARCHIVE (reference periods 2014-2019, three csvs in one zip) beside the live saturation.csv (2020+). Downloaded 2026-10-21; the adapter now stacks every csv in the folder and picks the period inside the stack, so a 2021-12 freeze reads the 2021 (or 2020) period and a 2019-12 one would read the archive.",
+   "where": "preclean/saturation/ (keep the three archive file names; saturation.csv stays)",
+   "url": "https://data.cms.gov/summary-statistics-on-use-and-payments/program-integrity-market-saturation-by-type-of-service/market-saturation-utilization-state-county",
+   "every_months": 120,
+   "last_done": null,
+   "steps": [
+    "The dataset page -> Resources -> 'Market Saturation and Utilization State County Archive Dataset' zip (1.03 GB; three csvs: 2014-2015, 2016-2017, 2018-2019)",
+    "Extract the three csvs into C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\saturation\\ next to saturation.csv (names unchanged)",
+    "Then the live file: the same page's main dataset carries reference periods from Jan-Dec 2020 on; saturation.csv is that export. Check it holds a 2021 period with the command below"
+   ],
+   "commands": [
+    "REM move the extracted csvs (download + extract first, then paste):",
+    "move \"C:\\Users\\treyr\\Downloads\\Market_Saturation_and_Utilization_State_County_Archive_Dataset\\*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\saturation\\\"",
+    "REM which reference periods the live file carries (needs a 2021 one for the 2021-12 freeze):",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection && python -c \"import duckdb; print(duckdb.sql(\\\"select distinct columns('(?i)reference.?period') from read_csv_auto('C:/Users/treyr/OneDrive/Desktop/data/preclean/saturation/saturation.csv', all_varchar=true) order by 1\\\").fetchall())\"",
+    "python -m src.reminders --done saturation_history"
+   ],
+   "proof": [
+    "preclean/saturation/*Archive*2018-2019*.csv"
+   ]
   }
  ],
  "tasks": [
