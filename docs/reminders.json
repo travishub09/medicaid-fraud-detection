@@ -556,6 +556,14 @@
    ]
   },
   {
+   "key": "second_freeze_2023_06",
+   "added": "2026-10-21",
+   "what": "THE SECOND FREEZE (docs/FREEZE_DESIGN_NOTE_2026-10-21.md): a 2023-06 cutoff with a 36-month horizon (to 2026-06) where EVERY source has an edition (POS Q4 2023, PBJ 2023Q4, NH Nov2023, Order and Referring 2023-12, NADAC 2023, All Owners 2022-09 onward, the December 2023 NPPES in nppes_history/). Run it as the second ruler beside 2021-12 after v18 is read: the same runner with the cutoff 2023-06, its own as-of graph (graph_asof_2023-06_full, --asof-nppes on the 2023 NPPES file), pre-registered under the same checks (expect smaller hit counts: fewer cases resolve within 36 months of 2023-06). A model that holds on both rulers is the evidence; v19 is graded on both. Claude writes the exact pre-register + tmux lines when v18's read-out is in.",
+   "commands": [
+    "REM after v18 is read; Claude writes the lines then (runner: ops/vm/run_frozen_night.sh <tag> 2023-06 --rebuild-graph)"
+   ]
+  },
+  {
    "key": "pre_cutoff_editions_2021_rest",
    "added": "2026-10-21",
    "what": "THE REST OF THE 2021 EDITIONS (POS Q4 2021 x2 and NADAC 2021 landed 2026-10-20; the iQIES file does not exist before Q4 2023, those providers are inside the hospital/non-hospital file). Four downloads, each un-gating a frozen-run feature family: (1) PBJ 2021 Q4 + Q3 (nurse staffing -> worthless_services / pbj features); (2) the nursing-home Care Compare December 2021 archive (NH_Ownership / NH_Penalties / NH_HealthCitations -> facility schemes); (3) Order and Referring December 2021 (the as-of referral eligibility file); (4) the All Owners 2021 editions per family (SNF, HHA, Hospice, Hospital, FQHC, RHC -> ownership_turnover, empty on every frozen run so far). data.cms.gov pages: scroll to the Data section, the version selector (a dropdown or 'View all versions' link above the table) lists dated releases; pick the 2021 one, then Download (CSV). Keep the 2023 files; the picker reads the date in the name. Download first, then paste the matching move line; the dir line at the end shows what landed. After the session: python -m src.reminders --done-task pre_cutoff_editions_2021_rest, then the post-download checks, then on the VM bash ops/vm/sync_data.sh down before the next run.",
