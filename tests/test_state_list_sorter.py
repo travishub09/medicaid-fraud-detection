@@ -89,3 +89,13 @@ def test_html_table_with_an_xlsx_extension_reads(tmp_path):
                  "</table></body></html>", encoding="utf-8")
     df, fields, sheet = read_state_file(p)
     assert sheet == "html" and len(df) == 2 and fields["org_name"] == "Provider Name" and fields["npi"] == "NPI"
+
+
+def test_a_provider_roster_is_never_copied(tmp_path):
+    dl, dest = tmp_path / "dl", tmp_path / "dest"
+    dl.mkdir()
+    pd.DataFrame({"Provider Name": ["ACME", "BETA"], "NPI": ["1234567893", "1245319599"],
+                  "Provider Type": ["x", "y"], "City": ["a", "b"]}).to_csv(dl / "florida prw19000.csv", index=False)
+    rows = plan(dl, dest, today=date(2026, 10, 21))
+    assert rows and rows[0]["note"].startswith("NO DATE AND NO REASON")
+    assert apply(rows, dl, dest) == []

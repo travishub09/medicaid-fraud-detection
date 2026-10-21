@@ -132,6 +132,12 @@ def plan(downloads: Path, dest: Path, today: date | None = None) -> list[dict]:
                     "reason_col": fields.get("reason", "") or fields.get("reason2", ""), "sheet": sheet})
         if not row["name_col"]:
             row["note"] = f"NO NAME COLUMN: header {list(df.columns)[:6]}; the loader would skip it"
+        elif not row["date_col"] and not row["reason_col"]:
+            # 2026-10-21: the FLMMIS Provider Master List (466,694 enrolled providers) carried a
+            # state name and a name column; copied, it would make every enrolled Florida
+            # provider an exclusion node. A sanction list carries a date or a reason.
+            row["note"] = (f"NO DATE AND NO REASON COLUMN: a provider roster, not a sanction list "
+                           f"(header {list(df.columns)[:6]}); NOT copied")
         elif not row["reason_col"]:
             row["note"] = "no reason column: every row tiers WEAK (never trains under hard)"
         if (dest / row["target"]).exists():
@@ -144,8 +150,8 @@ def apply(rows: list[dict], downloads: Path, dest: Path) -> list[Path]:
     dest.mkdir(parents=True, exist_ok=True)
     done = []
     for r in rows:
-        if not r["name_col"] or r["note"].startswith("duplicate") or r["note"].startswith("unreadable") \
-                or r["note"].startswith("needs a reader"):
+        if not r["name_col"] or r["note"].startswith(("duplicate", "unreadable", "needs a reader",
+                                                         "NO DATE AND NO REASON")):
             continue
         src = downloads / r["file"]
         tgt = dest / r["target"]
