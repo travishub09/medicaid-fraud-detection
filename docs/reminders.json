@@ -10,19 +10,19 @@
    "last_done": "2026-09-16",
    "steps": [
     "Open https://oig.hhs.gov/exclusions/exclusions_list.asp",
-    "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement)",
-    "Then paste the commands below (they back up the old file, then swap in the new one)"
+    "Click the 'UPDATED LEIE Database' CSV link (the full database, not the monthly supplement); the file should be about 15 MB / 80,000 lines. A 10 MB file is a truncated download: download it again before pasting.",
+    "Paste block 1 (it parks the new file beside the old one and prints both line counts; nothing is overwritten)",
+    "Read the two counts. Paste block 2 ONLY if the new count is about as large as the old one or larger. If it is much smaller, delete caught_new.csv and download again."
    ],
    "commands": [
-    "copy \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_%date:~10,4%%date:~4,2%.csv.bak\"",
-    "move \"%USERPROFILE%\\Downloads\\UPDATED.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\"",
-    "python -m src.reminders --done leie"
+    "move \"%USERPROFILE%\\Downloads\\UPDATED.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_new.csv\" && find /c /v \"\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_new.csv\" && find /c /v \"\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\"",
+    "copy /y \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_202609.csv.bak\" && move /y \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught_new.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\caught.csv\" && python -m src.reminders --done leie"
    ],
    "proof": [
     "preclean/caught.csv"
    ],
    "proof_recent_days": 45,
-   "note": " 2026-10-21 evidence check: caught.csv is still the 2026-09-16 file (EXCLDATE max 2026-09-20); the October UPDATED.csv downloaded on the 14th never reached preclean and is no longer in Downloads. Re-download (16 MB) and run the swap block."
+   "note": "2026-10-21: the first swap attempt lost the October file (the backup line was mangled by the keystroke swallow, the move overwrote caught.csv, the count check was skipped, and the restore put the September file back over it). caught.csv is the 2026-09-16 file (EXCLDATE max 2026-09-20); caught_202609.csv.bak is its copy. The 10.3 MB download was probably truncated (the full file is about 15 MB). The two-block swap above parks the new file first and never overwrites before the counts are read."
   },
   {
    "key": "nppes_deactivation",
