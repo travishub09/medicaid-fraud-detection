@@ -463,7 +463,7 @@
   },
   {
    "what": "State Medicaid terminated/excluded provider lists for the Southeast (Medicaid-side FCA labels that lead the LEIE by years and carry NPIs). Seven download; Florida and Louisiana need a records request. Tier by stated reason when loading (fraud/abuse/conviction/program integrity = hard; license/paperwork = weak).",
-   "last_done": "2026-09-26",
+   "last_done": "2026-10-21",
    "url": "https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list",
    "steps": [
     "Georgia: https://dch.georgia.gov/office-inspector-general/georgia-oig-exclusions-list -> List of Excluded Individuals (xlsx)",
@@ -491,7 +491,8 @@
    "where": "preclean/state_terminations/<ST>_terminations_<yyyymm>.<ext> (the sorter names them)",
    "proof": [
     "preclean/state_terminations/*"
-   ]
+   ],
+   "note": "2026-10-21: 16 lists filed by the sorter (AL CA FL(2) GA KY LA MI MS NC NY OH PA SC TN TX); the FLMMIS provider master list (466,694 rows) refused as a roster; Illinois 'Active Sanctions.xlsx' unreadable (not a zip workbook, not HTML: format pending); the Florida Denied/Terminated/Suspended report read 1 row (sheet layout pending). NY / CA / TX / PA / OH / GA / AL carry no reason column: weak only, never train."
   },
   {
    "key": "fda_ndc_directory",
@@ -706,7 +707,7 @@
   },
   {
    "key": "fl_la_state_lists",
-   "what": "Florida and Louisiana state Medicaid termination lists are still not loaded (the operator prefers to keep searching for a downloadable file). Florida: the AHCA search screen and the Provider Master List on the FLMMIS portal; a records request for the for-cause list goes to PublicRecordsReq@ahca.myflorida.com. Louisiana: LDH adverse actions is a search screen only. When a file lands: save it in Downloads with the state name in the filename, run the sorter dry run then --apply, rerun the loader and the census (state_terminations cadence commands), and upload STATE_TERMINATIONS_REPORT.md.",
+   "what": "2026-10-21: FOUND and filed: the Louisiana State Exclusion List (5,972 rows with reasons) and the Florida AHCA Final Orders report (FOReport, 7,108 rows with NPIs and violation CODES; the codes need a code-to-statute map before any tiers hard). Still open: the Florida Denied/Terminated/Suspended report (read 1 row: the data sits on another sheet or under a banner; paste `dir /b \"C:\\Users\\treyr\\Downloads\\Florida Denied*\"`), and the s.409.913 terminated-for-cause list by records request to PublicRecordsReq@ahca.myflorida.com.",
    "added": "2026-09-27"
   },
   {
