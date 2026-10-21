@@ -137,6 +137,26 @@ done
 # 2026-10-21 (PLATFORM_AUDIT B.F-8 / D7): the forward rulers read the CURRENT-DAY graph
 # ($DATA/graph), the only merge point of processed/exclusions_*.parquet; it was never
 # rebuilt by a runner, so label rows loaded after its build date never reached a ruler.
+# 2026-10-21: the state lists arrive with the preclean sync (the operator's sorter files them as
+# <ST>_terminations_<yyyymm>.*); nothing on the VM ran the loader, so a new list never became
+# exclusion nodes. The loader runs when any list is newer than its parquet (or the parquet is
+# missing); step 2b then sees the newer exclusions file and rebuilds the current-day graph.
+step 2a/13 "state termination lists -> processed/exclusions_state_terminations.parquet (when a list is newer)"
+ST_DIR="$DATA/preclean/state_terminations"
+ST_OUT="$DATA/processed/exclusions_state_terminations.parquet"
+if [ -d "$ST_DIR" ] && ls "$ST_DIR"/*_terminations_* >/dev/null 2>&1; then
+  ST_NEWER=$( [ -f "$ST_OUT" ] && find "$ST_DIR" -maxdepth 1 -name '*_terminations_*' -newer "$ST_OUT" | head -3 || echo "no parquet yet" )
+  if [ -n "$ST_NEWER" ]; then
+    echo "[$TAG]   loading the state lists (newer: $ST_NEWER)"
+    python -u -m src.enforcement.state_terminations --in-dir "$ST_DIR" --provider-dim "$DATA/processed/provider_dim.parquet" --out "$ST_OUT" || fail 2a
+    echo "[$TAG]   read $DATA/processed/STATE_TERMINATIONS_REPORT.md: the reasons the tier table does not know tier WEAK"
+  else
+    echo "[$TAG]   state lists unchanged since $ST_OUT: reused"
+  fi
+else
+  echo "[$TAG]   no state lists under $ST_DIR"
+fi
+
 step 2b/13 "the current-day graph (rebuilt when an exclusion source is newer than it; REBUILD_CURRENT=1 forces)"
 CUR="$DATA/graph/nodes/exclusion_nodes.parquet"
 NEWER=$(find "$DATA/processed" -maxdepth 1 -name 'exclusions*.parquet' -newer "$CUR" 2>/dev/null | head -5)

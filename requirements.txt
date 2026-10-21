@@ -6,6 +6,7 @@ scipy>=1.13
 networkx>=3.2
 pyarrow>=15.0
 openpyxl>=3.1
+xlrd>=2.0.1          # .xls (Excel 97) state lists: Texas HHSC-OIG exclusions
 duckdb>=0.10
 sqlalchemy>=2.0
 psycopg2-binary>=2.9

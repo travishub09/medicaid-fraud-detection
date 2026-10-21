@@ -475,14 +475,16 @@
     "Mississippi: https://medicaid.ms.gov/providers/provider-terminations/ -> Sanctioned Providers List (xlsx)",
     "Florida: no bulk list. Provider Master List at https://portal.flmmis.com/FLPublic/Provider_ManagedCare/Provider_ManagedCare_Registration/tabId/77/Default.aspx?linkid=pml plus a records request to PublicRecordsReq@ahca.myflorida.com for the s.409.913 terminated-for-cause list with NPI, reason, effective date",
     "Louisiana: search screen only (https://adverseactions.ldh.la.gov/SelSearch); records request to LDH Program Integrity for the adverse actions list as a file",
-    "Leave the downloads in Downloads with the state name in the filename, then run the sorter (dry run, then --apply); it checks headers and files them"
+    "BIG STATES (label plan L1.4, downloaded 2026-10-21): NY OMIG exclusion list (omig.ny.gov), CA Medi-Cal Suspended and Ineligible Provider List (dhcs.ca.gov), TX HHSC-OIG exclusions (oig.hhs.texas.gov, .xls), IL HFS-OIG sanctions (hfs.illinois.gov), PA Medicheck (dhs.pa.gov), OH exclusion and suspension list (medicaid.ohio.gov), MI sanctioned provider list (michigan.gov/mdhhs); NJ (nj.gov/comptroller) still to fetch",
+    "Save each download with the state code or name in the file name (PA_..., 'NY SOMIG...', 'ca suspended-...'); the sorter reads the state from the name, checks the header, names the copy <ST>_terminations_<yyyymm>.<ext>",
+    "The label stays fraud-only: every row is tiered from its stated reason (fraud / false claims / kickback / conviction = hard; license, derivative, bare 'terminated' = weak; unknown reason = weak). Nothing trains under --label-tier hard on the word 'excluded' alone."
    ],
    "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data",
-    "python sort_state_lists.py",
-    "python sort_state_lists.py --apply",
-    "python -m src.reminders --done state_terminations"
+    "REM download first, then paste (laptop, repo folder). Dry run: every state-named file in Downloads, its header check and target name:",
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection && set MEDICAID_DATA_ROOT=C:\\Users\\treyr\\OneDrive\\Desktop\\data && pip install -q xlrd && python -m src.enforcement.state_list_sorter",
+    "REM then copy them in (the downloads stay) and close:",
+    "python -m src.enforcement.state_list_sorter --apply && python -m src.reminders --done state_terminations",
+    "REM the files reach the VM with the preclean sync; the runner's step 2a loads them and 2b rebuilds the graph; read processed/STATE_TERMINATIONS_REPORT.md for reasons the tier table does not know (they tier WEAK until a rule is added)"
    ],
    "key": "state_terminations",
    "every_months": 3,

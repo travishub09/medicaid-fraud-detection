@@ -1692,6 +1692,20 @@ first, then paste" above every move/done block.
   from its name) and the export reads the folder, not the alphabetically first file (the
   archive file would have replaced the live one); the vintage ledger records the period
   used. RULE: on the VM, pull the code BEFORE the preclean sync that brings the archive.
+  BIG-STATE SANCTION LISTS + THE SORTER (2026-10-21, bundle 356): the operator downloaded NY
+  OMIG, CA Medi-Cal S&I, TX HHSC-OIG (.xls), IL HFS, PA Medicheck, OH, MI (label plan L1.4);
+  the `sort_state_lists.py` the reminders named had never been committed, so
+  `src/enforcement/state_list_sorter.py` is it: Downloads -> state from the file name (two-
+  letter prefix, state name, or agency token SOMIG / Medicheck / suspended-ineligible /
+  TexasExclusions / ExclusionSuspensionList / Sanctioned_Provider_List), the loader's own
+  header check, browser duplicates collapsed by digest, `<ST>_terminations_<yyyymm>.<ext>`
+  (the month from the name else today), dry run by default, `--apply` copies (the download
+  stays). `xlrd` added to requirements for .xls. The runner's NEW step 2a runs
+  `state_terminations` on the VM when a list is newer than its parquet (nothing had ever run
+  the loader on the VM), then 2b rebuilds the current-day graph. THE LABEL STAYS FRAUD-ONLY
+  (operator, same day): every state row is tiered from its stated reason by STATE_TERM_RULES;
+  an unknown reason is WEAK and never trains under `--label-tier hard`; the report's "reasons
+  the tier table does not know" list is read before any rule is added.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);
