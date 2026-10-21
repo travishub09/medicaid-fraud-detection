@@ -157,6 +157,31 @@ _CRITICAL = {
     "preclusion": ["npi", "preclusion_date"],
 }
 
+# a CRITICAL field satisfied by ANY member of the group (the hospice adapter takes a
+# combined "Measure Date Range" column when no End Date exists)
+_CRITICAL_ANY = {"hospice": [["end_date", "date_range"]]}
+# files a CRITICAL field does not apply to (POS lab / iQIES classes carry no beds)
+_CRITICAL_EXEMPT = {"pos": (re.compile(r"clia|iqies", re.I), ["bed_count"])}
+# sources whose ADAPTER is the only honest header reader (multi-sheet workbooks with a
+# banner, zips with a banner-row workbook, the keyword-resolved WARN postings): the
+# scanner calls the adapter's own loader and reports what it resolved
+def _probe_warn(p):
+    from src.sourcing.warn_monitor import load_warn
+    df = load_warn(p)
+    return {c: c for c in df.columns if c in ("employer", "state", "notice_date", "layoff_date", "employees")}
+
+def _probe_opais(p):
+    from src.ingest_cms.hrsa_340b import OPAIS_COLS, load_opais
+    df = load_opais(p)
+    return resolve_contract(list(df.columns), OPAIS_COLS)
+
+def _probe_deactivation(p):
+    from src.ingest_cms.nppes_deactivation import DEACT_COLS, load_deactivation
+    df = load_deactivation(p)
+    return resolve_contract(list(df.columns), DEACT_COLS)
+
+_PROBE = {"warn": _probe_warn, "hrsa_340b": _probe_opais, "nppes_deactivation": _probe_deactivation}
+
 # folders the export reads that the preflight registry does not list
 _EXTRA = [
     Source("mue", "reference/mue", [], [".csv", ".xlsx"], None, None, "snapshot",
@@ -318,6 +343,10 @@ def _candidate_files(pre: Path, src: Source) -> list[Path]:
                 for ext in src.exts or [".csv"]:
                     hits += [p for p in d.glob(f"*{ext}") if p.is_file()]
     hits = sorted(set(hits))
+    if src.key == "nucc":
+        hits = [p for p in hits if "crosswalk" not in p.name.lower()]
+    elif src.key == "nucc_xwalk":
+        hits = [p for p in hits if "crosswalk" in p.name.lower()]
     if src.folder == "facility":
         pat = _FACILITY_HINT.get(src.key)
         if pat:
@@ -334,12 +363,35 @@ def _cut(cutoff: str | None) -> str | None:
     return c + "-12" if len(c) == 4 else c
 
 
-def audit_file(p: Path, src: Source, cols: dict | None, cutoff: str | None, counts: bool) -> dict:
+def _is_adapter_file(p: Path, src: Source, siblings: list) -> bool:
+    """With explicit contract names, a file whose stem does not start with a canonical
+    stem (package.txt beside product.txt; specialty_crosswalk beside nucc_taxonomy) is
+    not the adapter's file, PROVIDED some sibling does match; with no match anywhere
+    every file is graded (the dated PUF editions, the state lists)."""
+    if not src.names:
+        return True
+    stems = [Path(n).stem.lower() for n in src.names]
+    def match(q):
+        return any(q.stem.lower().startswith(st) for st in stems)
+    if match(p):
+        return True
+    return not any(match(q) for q in siblings)
+
+
+def audit_file(p: Path, src: Source, cols: dict | None, cutoff: str | None, counts: bool,
+               graded: bool = True) -> dict:
     st = p.stat()
     rec = {"source": src.key, "file": p.name, "path": str(p), "size_mb": round(st.st_size / 1e6, 1),
            "mtime": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d"),
            "name_period": _file_period(p.name), "header": None, "zip_inner": [],
-           "resolved": {}, "missing": [], "date_range": {}, "rows": None, "error": ""}
+           "resolved": {}, "missing": [], "date_range": {}, "rows": None, "error": "", "note": ""}
+    if p.suffix.lower() == ".json":
+        rec["header"] = []
+        rec["error"] = ""
+        rec["note"] = "json: read by the adapter as records, not a header table"
+        if counts:
+            rec["rows"] = None
+        return rec
     if p.suffix.lower() == ".zip":
         header, inner = _zip_header(p)
         rec["zip_inner"] = inner
@@ -349,12 +401,46 @@ def audit_file(p: Path, src: Source, cols: dict | None, cutoff: str | None, coun
             rec["name_period"] = max(per) if per else None
     else:
         header = _read_header(p)
+        if header is None and p.suffix.lower() in (".csv", ".txt") and st.st_size < 2_000_000:
+            # a two-column reference table (hcpcs, minutes) fails the probe's ">= 3
+            # named columns" rule; read its first line directly
+            try:
+                with open(p, encoding="utf-8-sig", errors="replace") as fh:
+                    first = fh.readline().strip()
+                cand = [c.strip().strip('"') for c in first.split(",")]
+                if len(cand) >= 2 and all(cand):
+                    header = cand
+                    _READ_ERRORS.pop(str(p), None)
+            except Exception:
+                pass
     rec["header"] = header
     if header is None:
         rec["error"] = _READ_ERRORS.get(str(p), "unreadable")
-    res = resolve_contract(header, cols)
+    probe = _PROBE.get(src.key)
+    if probe is not None and cols:
+        try:
+            res = probe(p)
+            rec["note"] = "resolved by the adapter's own loader"
+            if header is None:
+                header = rec["header"] = list(res.values())
+                rec["error"] = ""
+        except Exception as e:
+            res = resolve_contract(header, cols)
+            rec["note"] = f"the adapter's loader failed: {type(e).__name__}: {str(e)[:120]}"
+    else:
+        res = resolve_contract(header, cols)
     rec["resolved"] = res
     rec["missing"] = [k for k, v in res.items() if v is None]
+    if not graded:
+        rec["missing"] = []
+        rec["note"] = "not this adapter's file (listed only)"
+    # any-of groups and per-file exemptions
+    for grp in _CRITICAL_ANY.get(src.key, []):
+        if any(res.get(k) for k in grp):
+            rec["missing"] = [m for m in rec["missing"] if m not in grp]
+    ex = _CRITICAL_EXEMPT.get(src.key)
+    if ex and ex[0].search(p.name):
+        rec["missing"] = [m for m in rec["missing"] if m not in ex[1]]
     if cols and "__error__" in cols:
         rec["error"] = cols["__error__"][0]
     if header and p.suffix.lower() != ".zip":
@@ -377,7 +463,8 @@ def grade_source(src: Source, files: list[dict], cutoff: str | None) -> dict:
         g["freeze"] = "MISSING"
         g["issues"].append("no file on disk")
         return g
-    unreadable = [f["file"] for f in files if f["header"] is None and not f["zip_inner"]]
+    unreadable = [f["file"] for f in files if f["header"] is None and not f["zip_inner"]
+                  and not f.get("note", "").startswith("not this adapter")]
     if unreadable:
         g["issues"].append("unreadable: " + ", ".join(unreadable))
     if src.module:
@@ -500,7 +587,8 @@ def run(data_root: Path, cutoff: str | None, run_dir: Path | None, counts: bool,
         if only and src.key not in only:
             continue
         cols = _cols_map(src)
-        files = [audit_file(p, src, cols, cutoff, counts) for p in _candidate_files(pre, src)]
+        cands = _candidate_files(pre, src)
+        files = [audit_file(p, src, cols, cutoff, counts, graded=_is_adapter_file(p, src, cands)) for p in cands]
         g = grade_source(src, files, cutoff)
         g["contract_fields"] = [k for k in (cols or {}) if k != "__error__"]
         if cols and "__error__" in cols:
@@ -551,6 +639,8 @@ def render(report: dict) -> str:
             else:
                 found = [f"{k}={v}" for k, v in f["resolved"].items() if v]
                 con = ("MISSING " + ", ".join(f["missing"]) + "; " if f["missing"] else "all fields; ") + "found " + ", ".join(found)
+            if f.get("note"):
+                con = f"({f['note']}) " + con
             L.append(f"| {f['file']} | {f['size_mb']} | {f['mtime']} | {f['name_period'] or ''} | "
                      f"{f['rows'] if f['rows'] is not None else ''} | {dr} | {con} |")
         L.append("")

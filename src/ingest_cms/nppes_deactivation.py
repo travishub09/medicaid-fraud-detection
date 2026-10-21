@@ -22,6 +22,7 @@ Dormant until the deactivation file + spending are loaded; exact-match, no fuzz.
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from pathlib import Path
 
@@ -79,6 +80,73 @@ def load_deactivation(path: str | Path) -> pd.DataFrame:
     hdr = _find_header_row(probe)
     src = io.BytesIO(data) if data is not None else p   # re-seek for the real read
     return pd.read_excel(src, dtype=str, header=hdr)
+
+
+_EDITION_RES = (
+    re.compile(r"(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])"),        # 20260914
+    re.compile(r"_(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(2\d)_", re.I),   # CMS: _091426_ (MMDDYY)
+)
+_BANNER_RE = re.compile(r"as of\s+([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s+(20\d{2})", re.I)
+_MON = {m: i + 1 for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))}
+
+
+def edition_of(path: str | Path) -> str | None:
+    """The report's edition as YYYY-MM-DD, from the file name (20260914 or the CMS
+    MMDDYY stamp _091426_), else the zip's inner name, else the banner cell
+    ('NPPES Deactivated Records as of Sep 14 2026'). 2026-10-21: the export picked
+    the alphabetically first zip, so a September report sat unread beside June's."""
+    p = Path(path)
+    names = [p.name]
+    if p.suffix.lower() == ".zip":
+        try:
+            with zipfile.ZipFile(p) as z:
+                names += z.namelist()
+        except Exception:
+            pass
+    for n in names:
+        m = _EDITION_RES[0].search(n)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
+        m = _EDITION_RES[1].search(n)
+        if m:
+            return f"20{m.group(3)}-{m.group(1)}-{m.group(2)}"
+    try:                                               # the banner cell
+        if p.suffix.lower() in (".zip", ".xlsx", ".xls"):
+            if p.suffix.lower() == ".zip":
+                with zipfile.ZipFile(p) as z:
+                    inner = next((n for n in z.namelist() if n.lower().endswith((".xlsx", ".xls"))), None)
+                    if inner is None:
+                        return None
+                    src = io.BytesIO(z.read(inner))
+            else:
+                src = p
+            probe = pd.read_excel(src, dtype=str, header=None, nrows=3)
+            text = " ".join(str(x) for x in probe.values.ravel() if pd.notna(x))
+            m = _BANNER_RE.search(text)
+            if m:
+                return f"{m.group(3)}-{_MON[m.group(1).lower()]:02d}-{int(m.group(2)):02d}"
+    except Exception:
+        return None
+    return None
+
+
+def pick_deactivation_file(folder: str | Path) -> tuple[Path | None, str | None, list]:
+    """The NEWEST deactivation report in the folder (the file is cumulative, so the
+    newest edition is right for a current-day AND a frozen run: the adapter filters
+    rows by deactivation date). Returns (path, edition, [(name, edition), ...])."""
+    d = Path(folder)
+    if not d.is_dir():
+        return None, None, []
+    cands = [q for q in sorted(d.iterdir()) if q.is_file() and q.suffix.lower() in (".zip", ".xlsx", ".xls", ".csv")
+             and not q.name.endswith(".bak")]
+    dated = [(q, edition_of(q)) for q in cands]
+    known = [(q, e) for q, e in dated if e]
+    if known:
+        q, e = max(known, key=lambda t: t[1])
+        return q, e, [(x.name, y) for x, y in dated]
+    if cands:
+        return cands[0], None, [(x.name, y) for x, y in dated]
+    return None, None, []
 
 
 def deactivated_npis(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:

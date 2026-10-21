@@ -1434,6 +1434,22 @@ def _asof_newest(base: Path, patterns: tuple, asof_cutoff: str | None, log=None,
     return max(elig, key=lambda p: _file_period(p.name) or "")
 
 
+def _deactivation_file(folder: Path, log=None, label: str = "nppes_deactivation") -> Path | None:
+    """The newest deactivation report (nppes_deactivation.pick_deactivation_file) with a
+    vintage-ledger row; the cumulative file is right for every cutoff (rows are
+    date-filtered by the adapter)."""
+    from src.ingest_cms.nppes_deactivation import pick_deactivation_file
+    dp, ed, listing = pick_deactivation_file(folder)
+    if dp is None:
+        return None
+    others = [n for n, _ in listing if n != dp.name]
+    _vintage(label, None, dp, others, "current_day_newest" if ed else "undated_substituted",
+             f"edition {ed or 'unknown'} (cumulative report; rows date-filtered)")
+    if log and others:
+        log(f"    [{label}] newest edition {ed or 'unknown'}: {dp.name}; set aside: {', '.join(others)}")
+    return dp
+
+
 def _first_existing(base: Path, *names: str) -> Path | None:
     for n in names:
         # a glob pattern (e.g. "*.csv") globs the base folder itself — so a
@@ -1871,8 +1887,7 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 deact = None
                 try:
                     from src.ingest_cms import nppes_deactivation as nd
-                    dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv",
-                                         "deactivation.xlsx", "*.zip", "*.xlsx", "*.csv")
+                    dp = _deactivation_file(pc / "nppes_deactivation", log, "medicaid_ndc/deactivation")
                     if dp:
                         deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
                 except Exception:
@@ -2064,8 +2079,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # --- post-deactivation billing (spending + deactivated NPIs + npi_to_org) ---
     try:
         from src.ingest_cms import nppes_deactivation as nd
-        dp = _first_existing(pc / "nppes_deactivation", "deactivation.csv",
-                             "deactivation.xlsx", "*.zip", "*.xlsx", "*.csv")
+        dp = _deactivation_file(pc / "nppes_deactivation", log)
         if dp and spending_p:
             deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
             spend = _spending_for_npis(spending_p, deact["npi"].tolist())
@@ -2777,8 +2791,7 @@ def main() -> None:
                     ex = ex[ex["npi"].str.len() >= 10]
                     cuts.append(("excl", ex.rename(columns={dcol: "cutoff_date"})
                                  [["npi", "cutoff_date"]]))
-            dp = _first_existing(preclean / "nppes_deactivation", "deactivation.csv",
-                                 "deactivation.xlsx", "*.zip", "*.xlsx", "*.csv")
+            dp = _deactivation_file(preclean / "nppes_deactivation", None, "smoking_gun_timeline/deactivation")
             if dp:
                 from src.ingest_cms import nppes_deactivation as nd
                 deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))

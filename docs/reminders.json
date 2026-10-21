@@ -545,20 +545,33 @@
  "tasks": [
   {
    "key": "platform_audit_data_scan",
-   "what": "THE DATA HALF OF THE PLATFORM AUDIT (docs/PLATFORM_AUDIT_2026-10-21.md section 2 is PENDING this). On the VM, after bundle 344 is merged + pulled: ops/vm/data_audit.sh grades every preclean file against the adapter's own column map (REQUIRED MISSING / SILENT BLANK / OK), dates it, says which edition a 2021-12 freeze reads, inventories processed/ + graph/, and packs the preflight registry + vintage inspector + scheme discovery into one tar. Read-only; 20-40 minutes (row counts). Then scp the tar and attach it in chat; Claude fills section 2 and the fix batch. Laptop-only files added since the last OneDrive sync (the October LEIE) are not on the VM: say so and a laptop line follows.",
+   "what": "DONE ON CLAUDE'S SIDE 2026-10-21 (the 14:15 tar was read; section 2 of docs/PLATFORM_AUDIT_2026-10-21.md is filled: D1 the VM runs on the June/July sync, D2 ten sources read nothing under 2021-12 on that tree, D3 DocGraph 2022 inside the freeze, D4 silent blanks confirmed, D5 the newest deactivation report unread, D6 placeholder dates, D7 the stale current-day graph). Close with the done line; the re-scan after the preclean pull is task vm_sync_preclean.",
    "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1 && tmux new -d -s audit 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && bash ops/vm/data_audit.sh 2021-12 > /data/medicaid/data_audit_run.log 2>&1'\"",
-    "REM progress (done when the last line reads [data_audit.sh] DONE):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -5 /data/medicaid/data_audit_run.log\"",
-    "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/home/ubuntu/data_audit_*.tar.gz\" C:\\Users\\treyr\\Downloads",
-    "REM attach data_audit_<stamp>.tar.gz in chat, then:",
     "python -m src.reminders --done-task platform_audit_data_scan"
    ],
    "added": "2026-10-21"
   },
   {
+   "key": "vm_sync_preclean",
+   "what": "THE VM RUNS ON THE JUNE/JULY SYNC (scan finding D1): Spending / NPPES / PECOS dated 2026-06-17, the September LEIE, no 2021 editions, the hold-folder duplicates still there. REQUIRED before v19: (1) pull preclean/ only (bundle 346 `down-preclean`; a FULL pull would overwrite the label work the lanes wrote on the VM under processed/ and enforcement/), (2) the current-day graph rebuild (the forward rulers read it; it predates the 10-20 label loads, D7; ~1-2 h), (3) re-scan (fast, no counts) and attach audit_rescan/DATA_AUDIT.md. RECOMMENDED when the VM has a free night: stage one on the October NPPES + LEIE (`make pipeline`, the 12 attempt_2 stages, several hours) BEFORE (2), so provider_dim and the exclusions carry October. Nothing here trains.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && tmux new -d -s sync 'cd ~/medicaid-fraud-detection && bash ops/vm/sync_data.sh down-preclean > /data/medicaid/sync_preclean.log 2>&1'\"",
+    "REM progress (done at \"[sync] done (preclean only...)\"); the two ls lines should show October dates:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/sync_preclean.log; ls -la /data/medicaid/preclean/caught.csv /data/medicaid/preclean/NPPES.csv /data/medicaid/preclean/pos /data/medicaid/preclean/facility | head -40\"",
+    "REM OPTIONAL stage one on the October inputs (several hours; one tmux window):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s stage1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && make pipeline > /data/medicaid/stage1.log 2>&1 && echo STAGE1 DONE >> /data/medicaid/stage1.log'\"",
+    "REM REQUIRED the current-day graph (after stage one if you ran it):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s graph 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -u -m src.entity_graph --input /data/medicaid/processed --out /data/medicaid/graph --max-embed-nodes 0 --light-walks-above 0 > /data/medicaid/graph_rebuild.log 2>&1 && echo GRAPH DONE >> /data/medicaid/graph_rebuild.log'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/graph_rebuild.log\"",
+    "REM then the fast re-scan and attach the md:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.data_audit --data-root /data/medicaid --cutoff 2021-12 --out /data/medicaid/audit_rescan && tail -30 /data/medicaid/audit_rescan/DATA_AUDIT.md\"",
+    "python -m src.reminders --done-task vm_sync_preclean"
+   ],
+   "added": "2026-10-21"
+  },
+  {
    "key": "platform_audit_fix_batches",
-   "what": "GATED ON THE OPERATOR'S GO per batch (docs/PLATFORM_AUDIT_2026-10-21.md section 7). Batch 1 (before any run): H1 tier choice lists, H3 the early return that drops medicaid_ndc + enrollment, H2 month-start case label, H7 HCRIS as-of, H5 enrollment per-se on the as-of fact, H4 + the silent-blank class raise instead of 0, H6 one state_term convention, skip-sources + one audit line per block, H8 producer-less scheme inputs, current-day graph rebuild step, H11/H12 Makefile + the tracked backtest CSV. Batch 2 = v19 semantics (join_m1, stage-one rejects, label gates on every path, outcome vocabulary, node dedup, assessable enforced). Batch 3 = structure. Say 'go batch 1' (etc.) in chat; each batch ships as one bundle with tests.",
+   "what": "GATED ON THE OPERATOR'S GO per batch (docs/PLATFORM_AUDIT_2026-10-21.md section 7). Batch 1 (before any run): H1 tier choice lists, H3 the early return that drops medicaid_ndc + enrollment, H2 month-start case label, H7 HCRIS as-of, H5 enrollment per-se on the as-of fact, H4 + the silent-blank class raise instead of 0, H6 one state_term convention, skip-sources + one audit line per block, H8 producer-less scheme inputs, current-day graph rebuild step, H11/H12 Makefile + the tracked backtest CSV. Batch 2 = v19 semantics (join_m1, stage-one rejects, label gates on every path, outcome vocabulary, node dedup, assessable enforced). Batch 3 = structure. Say 'go batch 1' (etc.) in chat; each batch ships as one bundle with tests. SCAN ADDITIONS TO BATCH 1 (2026-10-21): D3 DocGraph edition date on the as-of graph (the 2022 file sits inside the 2021-12 freeze), D6 placeholder dates (0001 / 1800 / 2099) read as unknown by every temporal filter, D8 the 537 LEIE rows build_exclusions drops named in a quarantine.",
    "added": "2026-10-21"
   },
   {

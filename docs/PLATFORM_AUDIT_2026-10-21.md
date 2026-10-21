@@ -63,54 +63,92 @@ point into the appendices.
 | H11 | The Makefile's export lines carry no `--case-db` / `--defendant-npis` (the v8/v9 HOLD cause) and `frozen-package` builds the as-of graph without `--asof-nppes` (the v6 lesson). | D.F5, B.F-12; `Makefile:79-84, 126-151` | A `make` run reproduces the v8 and v6 failures; three runner families drift (Makefile, ops/vm, the untracked .bat series). | `ops/vm/run_frozen_night.sh` is the single training runner; `make frozen-package` calls it; delete or commit the .bat family. |
 | H12 | `src/backtest/backtest_results.csv` (31,270 rows, 53 with matched NPIs and exclusion types) is tracked in git against `.gitignore` and rule 7. | D.F1; commit a5cb75a | Derived data in the repository. | `git rm --cached`, regenerate under the data root, a CI check that refuses tracked `*.csv` / `*.parquet` outside `docs/reminders.json`. |
 
-## 2. The data files (PENDING the VM scan)
+## 2. The data files (the VM scan of 2026-10-21 14:15 UTC, bundle 344 code)
 
-What the code review can say about the files without seeing them:
+The scan read 214 files across 44 sources on the VM's data root, counted rows, dated
+every file by name and by the adapter's own date column, and placed each under the
+2021-12 freeze. Six of its 24 flagged sources were scanner artifacts (a sibling file
+the adapter never reads, a multi-sheet workbook with a banner, a banner-row zip, a
+two-column reference table, a JSON feed, the keyword-resolved WARN postings); bundle
+346 fixes those classes and a re-scan is one line. The rest are real, ranked:
 
-- **Every vintage guard is filename-based**, and the preflight registry's canonical names
-  are UNDATED (`partb.csv`, `nadac.csv`, `order_referring.csv`). A file saved under the
-  registry's own name passes every freeze guard with "vintage unverified" (A.F-08). The
-  scanner reports every undated file a frozen run would read.
-- **Two sources are discovered by two different rules**: Order and Referring by
-  `_asof_pick` at org grain and by `_first_existing` (no cutoff, alphabetically first)
-  at referrer grain (A.F-13, B.F-7); HCRIS by a bare glob (H7).
-- **Four adapters apply no cutoff to rows that carry dates**: PBJ WorkDate and POS
-  (filename only), NH ownership association date (not in the map), the NDC / referral
-  claim slices (A.F-17, F-18, F-06).
-- **The registry and the readers disagree** on LEIE names (registry accepts three,
-  integrate reads `Caught.csv`), on the facility folder (registry says [ok] for ANY csv;
-  the export's patterns are prefix- and case-sensitive on the Linux VM, so
-  `Deficiencies.csv` matches nothing there), and eleven read folders are absent from
-  the registry (NH ownership / penalties, `reference/mue`, `reassignment`, as-of NPPES,
-  `state_capacity`, `sam`, `cia`, `warn`, `owners_prior`, `census`) (A.F-09, F-24, F-25).
-- **NPI validity is uneven**: Luhn in state_terminations / revocations / preclusion;
-  length-only in SAM and the enrollment file; OpenSanctions takes `idNumber` unverified;
-  the label filter is `len >= 10` (A.F-27, C.F14).
-- **The silent-blank class** (a missing column becomes a default and a scheme input is
-  computed on it, with the source reported as used): Part B `avg_allowed` -> 0;
-  Open Payments product columns -> correlation 0 for everyone; 340B contract-pharmacy
-  name -> concentration 0; PBJ LPN / CNA hours -> 0; HCRIS cost columns -> 0; NH owner
-  name / fine -> 0; LEIE `EXCLTYPE` -> every row untiered (A.F-10, F-11, F-14, F-15,
-  F-16, F-04). The scanner now carries this list as `_CRITICAL` and grades a missing
-  one as SILENT BLANK.
+**D1. The VM is running on the June/July sync.** Spending, NPPES and PECOS are dated
+2026-06-17 on the VM; NPPES enumeration dates stop at 2026-06-06 (the June edition;
+the laptop holds October); the LEIE is the September file (84,001 rows; the laptop
+holds October's 84,094); the stage-one outputs (provider_dim, spending_fact,
+exclusions.parquet) are from 2026-07-23. Nothing the operator fetched on 2026-10-20
+is on the VM: no PBJ 2021 quarters (only 2023Q4), no POS Q4 2021 (only Q4 2023), no
+Nursing Home December-2021 archive (only Nov2023 and Feb2022 hospice), no NADAC
+2021 (2023 and 2026 only), and the hold folders still carry the three undated
+duplicates deleted on the laptop. Every frozen run to date read this tree. Fix: a
+preclean-only pull before v19 (`sync_data.sh down-preclean`, bundle 346; a FULL pull
+would roll back the label work the lanes wrote on the VM under processed/ and
+enforcement/), then stage one on the October NPPES / LEIE, then the current-day graph.
 
-**How the scan works** (`src/data_audit.py`, bundle 343 + 344): for every source in the
-preflight registry plus the eleven unlisted folders, it finds every candidate file the way
-the export does, reads the header (BOMs, banner rows, Latin-1, zip inner files), resolves
-it against the adapter's `*_COLS` map, grades the result REQUIRED MISSING (the adapter
-raises) / SILENT BLANK (the dangerous class above) / OK, dates the file by name and by the
-adapter's own date column (MIN / MAX streamed through DuckDB), runs the export's
-`_asof_files` picker under `--cutoff` to say which editions a frozen run reads and which
-it skips, counts rows, inventories `processed/` and `graph*/` against the derived files
-the export expects, and joins the last run's `sources_audit`. Output:
-`DATA_AUDIT.md` + `data_audit.json`. `ops/vm/data_audit.sh` runs it frozen and
-current-day, with the preflight registry, the vintage inspector and scheme discovery,
-and packs one tar.
+**D2. Under 2021-12, on the VM as scanned, ten sources read NOTHING:** nadac,
+saturation, order_referring, hospice, hcris, pos, docgraph, owners, nh_ownership (and
+owners_prior / nppes_history by design). After D1's pull, pos, pbj, hospice (the
+December-2021 archive) and nadac 2021 come back. Order and Referring (editions from
+2023-06), All Owners (from 2022-09), HCRIS (only FY2023 files on disk), saturation
+(2026-08 only) and DocGraph have no pre-2022 edition: those are exactly the sources
+the 2023-12 freeze exists to test (section 7 of the design note addendum).
 
-**What the operator reads when the tar lands**: section 1 of `frozen_2021-12/DATA_AUDIT.md`
-(the sources with an issue, first), section 2 (what a frozen run reads), the derived-file
-table (every `exists = NO` is a stage that has not run on the VM). The author turns that
-into section 2 of this document (replacing PENDING) and into the fix batch.
+**D3. DocGraph is a 2022 file inside the 2021-12 freeze.** `DocGraph_Hop_Teaming_2022.csv`
+(210,313,975 rows) is the only referral edition, the graph loader applies no cutoff
+to it, and `refers_to_edges` (2,000,000 rows) sits in every as-of graph: the referral
+rings and referral features in the frozen runs describe 2022 patient sharing, one
+year after the freeze. Batch 1 adds the edition date to the as-of graph build (drop
+`refers_to` edges whose edition is after the cutoff) and the 2023-12 freeze reads it
+correctly.
+
+**D4. Silent-blank fields confirmed on disk** (the audit's class): the HHA cost-report
+file has no administrative-cost column, so `admin_cost_share` is 0 for every home
+health agency; the Medicaid NDC file carries no units, days supply or provider
+state (drug spread runs on the per-claim proxy, as designed); the enrollment file
+carries no reason column (the status description carries the cause, as handled).
+The hospice file's combined "Measure Date Range" is handled by the adapter (scanner
+artifact). POS lab and iQIES files have no beds by nature.
+
+**D5. The newest deactivation report was never read.** The folder holds the June
+report twice and the September report once; the export took the alphabetically
+first zip (June). `nppes_deactivation.edition_of` now dates a report from its name
+(the CMS MMDDYY stamp), the zip's inner name or the banner cell, and the export reads
+the newest with a vintage-ledger row (bundle 346).
+
+**D6. Placeholder dates in the inputs that the as-of filters see:** enrollment
+segment starts at 0001-01-01; owner association dates at 1800-01-01 and 2099-12-31
+(the SNF, FQHC and Hospital files). A 2099 association date is "unknown", and the
+as-of owner-edge filter treats it as future (dropped from every frozen graph) rather
+than unknown (kept). Batch 1 reads 1800 / 2099 / 0001 as unknown everywhere the
+temporal filters run.
+
+**D7. The current-day graph predates the label loads.** `graph/` is dated 2026-10-08;
+the name-resolved exclusions, the re-run state lists and the lane rows landed on
+2026-10-20. The forward rulers read this graph, so no run graded since the 20th saw
+them (appendix B, F-8). The runner now needs a current-graph rebuild step (batch 1).
+
+**D8. Smaller findings:** `processed/exclusions.parquet` holds 83,464 rows from a
+84,001-row LEIE (537 rows fall out of `build_exclusions`; batch 1 names where);
+`processed/ccn_to_npi_from_nppes.parquet` is empty (the NPPES type-06 fallback found
+nothing); the Open Payments 2019 / 2020 / 2022 files carry payment dates to 2026-06
+(the file is cumulative by program year, the row filter handles it); the CMS MUE
+files carry a line feed inside the first header cell (handled); the three WARN
+postings for California and Rhode Island are banner-row workbooks the adapter probes
+sheet by sheet (handled); `nppes/npi_deactivation.csv` is the unreadable orphan from
+the September inventory (delete it).
+
+**Procurement gaps that stay gaps** (no pre-2022 edition exists): Order and
+Referring, All Owners, DocGraph (the last public Shared Patient Patterns file is
+2015), HCRIS FY2021 (downloadable: the FY2021 flattened files are on the CMS cost
+report page and belong under preclean/hcris with the year in the name), Market
+Saturation 2021 (the CMS archive has it; reminder pre_cutoff_editions_2021).
+
+Verified correct on the VM: Spending.csv = 238,015,729 rows (2018-01 to 2024-12),
+conserved exactly into spending_fact.parquet; every PUF year 2016-2024 present with
+its contract columns; the Part D opioid summary separate from the by-drug file; the
+state lists for seven states loaded (5,750 label rows); the 72-edition All-Owners
+archive intact; the NDC fact (21.5M rows) and the enrollment segments (65.9M rows)
+built; the as-of 2021-12 full graph with 10.3M embedded nodes.
 
 ## 3. The adapter contracts (appendix A)
 
@@ -243,8 +281,10 @@ parallel with runs.
    exactly one audit line; A.F-11 `logging.warning` routed into the audit.
 7. H8 remove the three producer-less inputs from the weights (or the catalog says
    "reserved") so the documented weights are the effective weights.
-8. B.F-8 a current-day graph rebuild step in the runner before the rulers.
+8. B.F-8 a current-day graph rebuild step in the runner before the rulers (D7).
 9. H12 untrack the backtest CSV; H11 the Makefile calls the shell runner.
+10. D3 DocGraph edition date on the as-of graph; D6 placeholder dates read as unknown
+    by every temporal filter; D8 the 537 LEIE rows named (quarantine, never silent).
 
 **Batch 2, v19 semantics (new pre-registration):**
 1. H9 `join_m1()` on the nine export joins and the broadcast.
@@ -266,9 +306,11 @@ parallel with runs.
 
 ## 8. What the operator does now
 
-1. Merge bundle 344 (this document + the scanner's required / silent-blank grading).
-2. Run the VM scan (`ops/vm/data_audit.sh 2021-12`, lines in reminder
-   `platform_audit_data_scan`), pull the tar, attach it. The author fills section 2.
+1. Merge bundle 346 (section 2 filled from the scan; the scanner's false-positive
+   classes fixed; the deactivation edition picker; the preclean-only sync).
+2. Pull the raw inputs onto the VM (`sync_data.sh down-preclean`, reminder
+   `vm_sync_preclean`), then stage one on the October NPPES / LEIE, then the
+   current-day graph, then re-scan (one line) so section 2 reads against the real tree.
 3. Say go on batch 1. It ships as one bundle with tests; v19 is pre-registered after
    batch 2 under the v17 checks plus the ones the ledger suggests.
 4. Decide `src/model` with Travis (D.F6) and the .bat runner family (H11).

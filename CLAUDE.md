@@ -1593,6 +1593,21 @@ first, then paste" above every move/done block.
   takes the newest period, not the alphabetically first name. HCRIS is as-of (audit H7). The
   four `--label-tier` choice lists read TIER_POLICIES (audit H1: a second-freeze run could not
   finish without it). Tests: tests/test_second_freeze_2026_10.py (1,150 pass).
+  THE FIRST DATA SCAN READ (2026-10-21 14:15 UTC, PLATFORM_AUDIT section 2, bundle 346): THE VM
+  RUNS ON THE JUNE/JULY SYNC (Spending / NPPES / PECOS 2026-06-17, the September LEIE, none of
+  the 2021 editions fetched on 10-20); `sync_data.sh down-preclean` pulls preclean/ only (a
+  FULL `down` would overwrite the label work the lanes wrote on the VM under processed/ and
+  enforcement/: never run it after a lanes load); DocGraph 2022 sits inside the 2021-12
+  freeze (no cutoff on refers_to edges: batch 1); the newest deactivation report was never
+  read (`nppes_deactivation.edition_of` / `pick_deactivation_file`: the CMS MMDDYY stamp, the
+  zip inner name or the banner cell; the export's `_deactivation_file` takes the newest with
+  a ledger row); placeholder dates 0001 / 1800 / 2099 reach the temporal filters; the current-
+  day graph predates the 10-20 label loads. SCANNER CLASSES FIXED: `_PROBE` hooks call the
+  adapter's own loader for multi-sheet / banner / keyword sources (warn, hrsa_340b,
+  nppes_deactivation), `_is_adapter_file` lists a sibling the adapter never reads without
+  grading it, `_CRITICAL_ANY` (hospice end_date OR date_range), `_CRITICAL_EXEMPT` (POS lab /
+  iQIES beds), json feeds and two-column reference tables. Tests:
+  tests/test_data_audit_scan_fixes_2026_10.py.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);
