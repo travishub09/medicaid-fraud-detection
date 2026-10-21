@@ -635,16 +635,6 @@
    ]
   },
   {
-   "key": "hold_folders_to_live",
-   "added": "2026-10-21",
-   "what": "ANSWERED 2026-10-21 (bundle 345): a current-day run used to POOL every edition in facility/ and pos/ (PBJ 2021 averaged with 2025; POS Q4 2021 beside Q1 2026) and the single-file pickers took the alphabetically first name. Fixed: a current-day run reads the newest edition (POS, HCRIS, the NH tables) or the newest four quarters (PBJ); frozen runs are unchanged (pre-cutoff only). The hold folders can move after bundle 345 is merged. Download first? No: these files are already on disk; paste the move lines, then the done line.",
-   "commands": [
-    "move \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility_current_hold\\*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\\" && move \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos_current_hold\\*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\\\" && dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\"",
-    "rmdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility_current_hold\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos_current_hold\"",
-    "python -m src.reminders --done-task hold_folders_to_live"
-   ]
-  },
-  {
    "key": "lanes_dispatch_2",
    "added": "2026-10-20",
    "what": "GATED ON THE OPERATOR SAYING GO (spends Manus credits; never run from a reminder nag, never by Claude). SECOND LANE CYCLE when Manus credits allow (the first cycle spent 212 tasks; un-dispatched prompts: cia 8, names 21, outcome_refresh 114 (398 charged rows still pending an outcome), commercial 72, defendant_research 1,896; the 32 errored tasks of cycle 1 are re-sent as new tasks by --dispatch since --poll could not revive them). --dispatch SENDS (credits); --poll / --load are free. Budget line below = 120 tasks across four lanes, outcome_refresh and names first (each answer is a label row or a charge converted to hard). Not before the lanes_review read: a loader rule learned from the quarantine applies to the new answers too.",
@@ -1142,6 +1132,18 @@
    ],
    "closed": "2026-10-21",
    "closed_by": "operator --done-task (board paste 2026-10-21)"
+  },
+  {
+   "key": "hold_folders_to_live",
+   "added": "2026-10-21",
+   "what": "ANSWERED 2026-10-21 (bundle 345): a current-day run used to POOL every edition in facility/ and pos/ (PBJ 2021 averaged with 2025; POS Q4 2021 beside Q1 2026) and the single-file pickers took the alphabetically first name. Fixed: a current-day run reads the newest edition (POS, HCRIS, the NH tables) or the newest four quarters (PBJ); frozen runs are unchanged (pre-cutoff only). The hold folders can move after bundle 345 is merged. Download first? No: these files are already on disk; paste the move lines, then the done line.",
+   "commands": [
+    "move \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility_current_hold\\*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\\" && move \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos_current_hold\\*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\\\" && dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\"",
+    "rmdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility_current_hold\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos_current_hold\"",
+    "python -m src.reminders --done-task hold_folders_to_live"
+   ],
+   "closed": "2026-10-21",
+   "closed_by": "operator --done-task (files and POS folders moved back; hold folders removed)"
   }
  ]
 }
