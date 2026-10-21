@@ -22,7 +22,7 @@
     "preclean/caught.csv"
    ],
    "proof_recent_days": 45,
-   "note": "2026-10-21: October file live (84,094 lines vs 83,465 in September; same 18 columns, tighter quoting so 10.3 MB). September copy = caught_202609.csv.bak; caught_202609_replaced.csv is a second copy the operator can delete."
+   "note": "2026-10-21: October file live as caught.csv (84,094 lines, 10.8 MB: same 18 columns, tighter quoting); caught_202609.csv.bak = September (15.6 MB), caught_202610.csv.bak = the October copy. Two-block swap: block 1 parks + counts, block 2 swaps + closes; run block 2 ONCE."
   },
   {
    "key": "nppes_deactivation",
