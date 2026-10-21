@@ -132,33 +132,57 @@ def verify_names_on_pages(cases: pd.DataFrame, fetch_page, kind_col: str | None 
     return out
 
 
+ABSENT_NOTE = "defendant_not_on_page"
+
+
 def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: str = r"MFCU|AG\b|state|commercial",
-                                 limit: int | None = None, log=print) -> int:
+                                 limit: int | None = None, log=print, recheck: bool = True) -> int:
     """CLI body of ``verify-sources``: for the case rows whose jurisdiction matches (the
     research-harvested state and commercial cases by default), read the cited page and
     mark a row whose defendant is absent ``usable=0`` with qc_note
-    ``defendant_not_on_page`` (quarantine, never delete). Returns the rows marked."""
+    ``defendant_not_on_page`` (quarantine, never delete). Returns the rows marked.
+
+    ``recheck`` (2026-10-21): rows ALREADY marked absent are read again. The first run
+    (2026-10-20) got refusal pages back from the state sites and counted the defendant
+    as absent from them: 225 rows quarantined on a 403 body. A re-read that finds the
+    name restores the row (usable=1, qc_note ``re-verified: on page``); an unreachable
+    page leaves the mark in place; a real read with the name absent keeps it."""
     p = Path(case_db_path)
     db = read_csv_text(str(p), dtype=str)
     for c, v in (("usable", "1"), ("qc_note", ""), ("name_in_source", "")):
         if c not in db.columns:
             db[c] = v
     jur = db.get("jurisdiction", pd.Series("", index=db.index)).fillna("").astype(str)
-    sel = jur.str.contains(jurisdiction_regex, regex=True, na=False) & (db["usable"].fillna("1").astype(str) != "0") \
+    usable = db["usable"].fillna("1").astype(str)
+    marked = db["qc_note"].fillna("").astype(str).eq(ABSENT_NOTE)
+    sel = jur.str.contains(jurisdiction_regex, regex=True, na=False) & (usable != "0") \
         & (db["name_in_source"].fillna("").astype(str) == "")
-    sub = db.loc[sel]
+    if recheck:
+        sel = sel | marked
+    sub = db.loc[sel].copy()
     if limit is not None:
         sub = sub.head(limit)
     if not len(sub):
         log("    [verify_sources] nothing to verify")
         return 0
+    if recheck and marked.any():
+        log(f"    [verify_sources] re-checking {int(marked.loc[sub.index].sum()):,} rows marked {ABSENT_NOTE} earlier")
+    sub["name_in_source"] = ""                       # every selected row is read afresh
     checked = verify_names_on_pages(sub, fetch_page, log=log)
-    db.loc[checked.index, "name_in_source"] = checked["name_in_source"].astype(str)
+    read = checked["name_in_source"].astype(str).isin(["0", "1"])
+    db.loc[checked.index[read], "name_in_source"] = checked.loc[read, "name_in_source"].astype(str)
     absent = checked.index[checked["name_in_source"].astype(str) == "0"]
+    present = checked.index[checked["name_in_source"].astype(str) == "1"]
     db.loc[absent, "usable"] = "0"
-    db.loc[absent, "qc_note"] = "defendant_not_on_page"
+    db.loc[absent, "qc_note"] = ABSENT_NOTE
+    restored = [i for i in present if marked.get(i, False)]
+    if restored:
+        db.loc[restored, "usable"] = "1"
+        db.loc[restored, "qc_note"] = "re-verified: on page"
+        log(f"    [verify_sources] {len(restored):,} rows RESTORED (the defendant is on the page; the earlier mark "
+            "came from a refusal page)")
     db.to_csv(p, index=False)
-    log(f"    [verify_sources] {len(absent):,} rows marked usable=0 (defendant_not_on_page) in {p}")
+    log(f"    [verify_sources] {len(absent):,} rows marked usable=0 ({ABSENT_NOTE}) in {p}")
     return int(len(absent))
 
 # state lists arrive in ~40 formats; resolve the essentials by alias
@@ -655,10 +679,14 @@ def main() -> None:
     vs.add_argument("--jurisdiction-regex", default=r"MFCU|AG\b|state|commercial",
                     help="which rows to check (default: the state / commercial research harvests)")
     vs.add_argument("--limit", type=int, default=None, help="check at most N rows this pass")
+    vs.add_argument("--no-recheck", action="store_true",
+                    help="leave rows already marked defendant_not_on_page alone (default: re-read them; a mark "
+                         "from a refusal page is restored when the name is on the page)")
 
     args = ap.parse_args()
     if args.cmd == "verify-sources":
-        n = quarantine_absent_defendants(args.case_db, browser_fetch_text, args.jurisdiction_regex, args.limit)
+        n = quarantine_absent_defendants(args.case_db, browser_fetch_text, args.jurisdiction_regex, args.limit,
+                                         recheck=not args.no_recheck)
         print(f"[research_evidence] verify-sources: {n:,} rows quarantined; rebuild the case labels (the next export) "
               "so they leave the label")
         return

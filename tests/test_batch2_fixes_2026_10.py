@@ -406,3 +406,39 @@ def test_saturation_rolling_windows_are_cut_on_their_end_date():
     assert f23.attrs["reference_period"] == "2023-01-01 to 2023-12-31"
     cur = compute_saturation_metrics(raw)
     assert cur.attrs["reference_period"] == "2025-01-01 to 2025-12-31"
+
+
+# ---- verify-sources re-checks rows a refusal page had marked absent -----------------------
+def test_verify_sources_restores_rows_marked_absent_by_a_refusal_page(tmp_path):
+    from src.enforcement.research_evidence import quarantine_absent_defendants, ABSENT_NOTE
+    db = pd.DataFrame([
+        {"case_id": "https://ag.state.x/a", "defendant_name": "ACME CLINIC INC", "jurisdiction": "state MFCU",
+         "source_url": "https://ag.state.x/a", "usable": "0", "qc_note": ABSENT_NOTE, "name_in_source": "0"},
+        {"case_id": "https://ag.state.x/b", "defendant_name": "BETA PHARMACY LLC", "jurisdiction": "state MFCU",
+         "source_url": "https://ag.state.x/b", "usable": "0", "qc_note": ABSENT_NOTE, "name_in_source": "0"},
+        {"case_id": "https://ag.state.x/c", "defendant_name": "GAMMA HOME HEALTH", "jurisdiction": "state MFCU",
+         "source_url": "https://ag.state.x/c", "usable": "1", "qc_note": "", "name_in_source": ""},
+        {"case_id": "https://ag.state.x/d", "defendant_name": "DELTA LABS INC", "jurisdiction": "state MFCU",
+         "source_url": "https://ag.state.x/d", "usable": "0", "qc_note": ABSENT_NOTE, "name_in_source": "0"},
+    ])
+    p = tmp_path / "cases.csv"
+    db.to_csv(p, index=False)
+    pages = {"https://ag.state.x/a": "<html>Acme Clinic Inc agreed to pay $1M to settle</html>",   # the name IS there
+             "https://ag.state.x/b": "<html>Attorney General announces a settlement with Omega Corp</html>",  # truly absent
+             "https://ag.state.x/c": "<html>Gamma Home Health pleaded guilty</html>"}
+    def fetch(url, binary=False):
+        if url not in pages:
+            raise RuntimeError("403 Forbidden")                   # d: unreachable
+        return pages[url]
+    n = quarantine_absent_defendants(p, fetch, log=lambda *_: None)
+    out = pd.read_csv(p, dtype=str).set_index("case_id")
+    assert out.loc["https://ag.state.x/a", "usable"] == "1" and "re-verified" in out.loc["https://ag.state.x/a", "qc_note"]
+    assert out.loc["https://ag.state.x/b", "usable"] == "0" and out.loc["https://ag.state.x/b", "qc_note"] == ABSENT_NOTE
+    assert out.loc["https://ag.state.x/c", "usable"] == "1" and out.loc["https://ag.state.x/c", "name_in_source"] == "1"
+    assert out.loc["https://ag.state.x/d", "usable"] == "0"               # unreachable: the mark stays
+    assert n == 1
+    # --no-recheck leaves the marked rows alone
+    db.to_csv(p, index=False)
+    quarantine_absent_defendants(p, fetch, log=lambda *_: None, recheck=False)
+    out2 = pd.read_csv(p, dtype=str).set_index("case_id")
+    assert out2.loc["https://ag.state.x/a", "usable"] == "0"

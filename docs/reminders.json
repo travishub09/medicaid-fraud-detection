@@ -610,13 +610,13 @@
   {
    "key": "verify_sources_fetch",
    "added": "2026-10-21",
-   "what": "FIXED in bundle 339 (the 37 pages were state AG / OIG sites refusing the feed's custom user agent, plus two PDFs the HTML reader could not parse): verify-sources now fetches with a browser user agent, reads PDFs through pypdf, and logs the error text. RE-RUN AFTER v18 IS DONE (the run reads the case file at its start; the verify rewrites it at the end): pull the code, install pypdf in the VM venv, run the verify under tmux, read the summary line. Then the fourth gate is applied for v19.",
+   "what": "NOT DONE, AND WORSE (2026-10-21 check): the last log reads 0 pages, yet 225 case rows carry defendant_not_on_page: an earlier run got refusal pages back and counted the defendant as absent from them, so 225 rows are quarantined on a 403 body. Bundle 363: verify-sources RE-CHECKS marked rows by default (restores a row whose name is on the page; an unreachable page leaves the mark; a real read with the name absent keeps it). RUN AFTER v19 PRINTS DONE and after the VM pull in the v20 order (the run reads the case file at its start; the verify rewrites it): pypdf in the venv, the verify under tmux, the summary lines (expect 'RESTORED' and 'rows read' above 0).",
    "commands": [
-    "REM after v18 prints DONE and bundle 339 is merged:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && pip install -q pypdf && git log --oneline -1\"",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s verify 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv > /data/medicaid/enforcement/verify_sources.log 2>&1'\"",
-    "REM a few minutes later (37 pages):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -4 /data/medicaid/enforcement/verify_sources.log\"",
+    "REM after [v19] DONE and the VM pull (bundle 363+ on the VM):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && pip install -q pypdf && tmux new -d -s verify 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv > /data/medicaid/enforcement/verify_sources.log 2>&1'\"",
+    "REM a few minutes later:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -5 /data/medicaid/enforcement/verify_sources.log; grep -c defendant_not_on_page /data/medicaid/enforcement/doj_cases_v3.csv; grep -c 're-verified' /data/medicaid/enforcement/doj_cases_v3.csv\"",
+    "REM paste both counts to Claude, then:",
     "python -m src.reminders --done-task verify_sources_fetch"
    ]
   },
