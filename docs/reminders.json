@@ -492,7 +492,7 @@
    "proof": [
     "preclean/state_terminations/*"
    ],
-   "note": "2026-10-21: 16 lists filed by the sorter (AL CA FL(2) GA KY LA MI MS NC NY OH PA SC TN TX); the FLMMIS provider master list (466,694 rows) refused as a roster; Illinois 'Active Sanctions.xlsx' unreadable (not a zip workbook, not HTML: format pending); the Florida Denied/Terminated/Suspended report read 1 row (sheet layout pending). NY / CA / TX / PA / OH / GA / AL carry no reason column: weak only, never train."
+   "note": "2026-10-21: 17 states filed by the sorter (AL CA FL GA IL KY LA MI MS NC NY OH PA SC TN TX + the Southeast set); Illinois read from its sheet XML (3,273 rows, Action Type as the reason); the FLMMIS provider master list refused as a roster; the Florida Denied/Terminated template deleted. NY / CA / TX / PA / OH / GA / AL carry no reason column: weak only, never train."
   },
   {
    "key": "fda_ndc_directory",
@@ -707,7 +707,7 @@
   },
   {
    "key": "fl_la_state_lists",
-   "what": "2026-10-21: FOUND and filed: the Louisiana State Exclusion List (5,972 rows with reasons) and the Florida AHCA Final Orders report (FOReport, 7,108 rows with NPIs and violation CODES; the codes need a code-to-statute map before any tiers hard). Still open: the Florida Denied/Terminated/Suspended report (read 1 row: the data sits on another sheet or under a banner; paste `dir /b \"C:\\Users\\treyr\\Downloads\\Florida Denied*\"`), and the s.409.913 terminated-for-cause list by records request to PublicRecordsReq@ahca.myflorida.com.",
+   "what": "2026-10-21: FOUND and filed: the Louisiana State Exclusion List (5,972 rows with reasons) and the Florida AHCA Final Orders report (7,108 rows with NPIs and violation CODES: the codes need a code-to-statute map before any tiers hard; read STATE_TERMINATIONS_REPORT.md after the VM load). Still open: the s.409.913 terminated-for-cause list by records request to PublicRecordsReq@ahca.myflorida.com (the Denied/Terminated/Suspended download was a template).",
    "added": "2026-09-27"
   },
   {
