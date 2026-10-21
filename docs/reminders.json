@@ -269,7 +269,7 @@
    "where": "preclean/hcris/ (flattened cost-report csvs)",
    "url": "https://www.cms.gov/data-research/statistics-trends-reports/cost-reports",
    "every_months": 12,
-   "last_done": "2026-08-02",
+   "last_done": "2026-10-21",
    "steps": [
     "Open the Cost Reports page (url above) \u2192 'Hospital 2010 form' (HOSPITAL10) newest fiscal year",
     "Use the FLATTENED csv version, not the raw worksheet format (known trap)",
@@ -278,7 +278,8 @@
    "proof": [
     "preclean/hcris/*.csv",
     "preclean/hcris/raw/*.zip"
-   ]
+   ],
+   "note": "2026-10-21: the flattened 2021 files landed as Hospital_Provider_Cost_Report_2021.csv / SNF_Cost_Report_2021.csv / HHA_Cost_Report_2021.csv beside the 2023 files (CostReport_2023_Final, CostReportsnf_Final_23_thru2024, CostReporthha_Final_23_update_thru2024); the freeze picker reads the year in the name. Raw HOSP10FY2021 / HHA20FY2021 zips are optional (nothing reads them; the related-party check reads SNF10FY<year>.zip only)."
   },
   {
    "key": "physician_time",
