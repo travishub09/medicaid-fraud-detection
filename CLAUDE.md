@@ -1552,6 +1552,26 @@ first, then paste" above every move/done block.
   KEEPs (the doctor's own P.C., a physician the OIG listing omits but the release
   names, a 40-page MFCU report). Order on the VM (task lanes_gates_apply): re-load
   the lanes, re-run the state loader, verify-sources, THEN v18 --rebuild-graph.
+  PLATFORM AUDIT (2026-10-21, operator: stop v18, deep-scan the code and the data files before
+  moving forward; `docs/PLATFORM_AUDIT_2026-10-21.md` + the four appendices under
+  docs/audit_2026-10-21/ = adapter contracts, feature wiring, label chain, architecture; READ
+  IT before touching the export, the label chain or a runner): twelve HIGH findings, two of
+  which would have ended v18 (the runner's hard+commercial tier rejected by the diagnostics
+  CLI choice list; the case label boxed at month END while every other freeze is month START),
+  three silent-blank fields that score a scheme on a default of 0 while SOURCES_REPORT says
+  'used', the nadac_namegrain early return that drops both July-2026 sources, HCRIS pooling
+  every edition under a freeze, three producer-less scheme inputs, nine dedup-instead-of-
+  assert joins, stage-one ignore_errors with no reject count, the Makefile without --case-db,
+  a tracked backtest CSV. Fix plan in section 7 (batch 1 before any run, batch 2 = v19
+  semantics, batch 3 structure), gated on the operator's go per batch. THE DATA SCANNER
+  (`src/data_audit.py`, `ops/vm/data_audit.sh <cutoff>`): every preclean file graded against
+  the adapter's OWN `*_COLS` map (REQUIRED MISSING = the adapter raises / SILENT BLANK = a
+  default feeds a scheme / OK), dated by name and by the adapter's date column, placed under
+  the export's `_asof_files` picker for the freeze, processed/ + graph/ inventoried against the
+  derived files the export expects, the last run's sources_audit joined -> DATA_AUDIT.md +
+  data_audit.json. Run it after every download session and before every pre-registration;
+  the hand-written REQUIRED_COLS in vintage_inspect is the older, partial version of the same
+  check. The operator's console is the SHORT BOARD below; never paste the full page in chat.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

@@ -35,13 +35,13 @@ def test_contract_and_freeze_verdicts(tmp_path):
     # the vintage picker: Q4 2021 read, Q1 2023 skipped under the 2021-12 freeze
     assert by["pos"]["picked"] == ["POS_File_Q4_2021.csv"] and by["pos"]["skipped"] == ["POS_File_Q1_2023.csv"]
     # the renamed NADAC column is caught against NADAC_COLS, not a hand-written table
-    assert by["nadac"]["contract"] == "FIELDS MISSING" and any("ndc" in i for i in by["nadac"]["issues"])
+    assert by["nadac"]["contract"] == "REQUIRED MISSING" and any("ndc" in i for i in by["nadac"]["issues"])
     assert by["pbj"]["contract"] == "OK"
     leie = [f for f in rep["files"] if f["source"] == "leie"][0]
     assert leie["rows"] == 1 and leie["resolved"]["excl_date"] == "EXCLDATE"
     assert leie["date_range"]["EXCLDATE"] == ("2022-01-15", "2022-01-15")
     md = da.render(rep)
-    assert "FIELDS MISSING" in md and "POS_File_Q1_2023.csv" in md
+    assert "REQUIRED MISSING" in md and "POS_File_Q1_2023.csv" in md
 
 
 def test_resolve_contract_is_tolerant():

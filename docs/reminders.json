@@ -543,6 +543,24 @@
  ],
  "tasks": [
   {
+   "key": "platform_audit_data_scan",
+   "what": "THE DATA HALF OF THE PLATFORM AUDIT (docs/PLATFORM_AUDIT_2026-10-21.md section 2 is PENDING this). On the VM, after bundle 344 is merged + pulled: ops/vm/data_audit.sh grades every preclean file against the adapter's own column map (REQUIRED MISSING / SILENT BLANK / OK), dates it, says which edition a 2021-12 freeze reads, inventories processed/ + graph/, and packs the preflight registry + vintage inspector + scheme discovery into one tar. Read-only; 20-40 minutes (row counts). Then scp the tar and attach it in chat; Claude fills section 2 and the fix batch. Laptop-only files added since the last OneDrive sync (the October LEIE) are not on the VM: say so and a laptop line follows.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1 && tmux new -d -s audit 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && bash ops/vm/data_audit.sh 2021-12 > /data/medicaid/data_audit_run.log 2>&1'\"",
+    "REM progress (done when the last line reads [data_audit.sh] DONE):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -5 /data/medicaid/data_audit_run.log\"",
+    "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem \"ubuntu@3.17.37.139:/home/ubuntu/data_audit_*.tar.gz\" C:\\Users\\treyr\\Downloads",
+    "REM attach data_audit_<stamp>.tar.gz in chat, then:",
+    "python -m src.reminders --done-task platform_audit_data_scan"
+   ],
+   "added": "2026-10-21"
+  },
+  {
+   "key": "platform_audit_fix_batches",
+   "what": "GATED ON THE OPERATOR'S GO per batch (docs/PLATFORM_AUDIT_2026-10-21.md section 7). Batch 1 (before any run): H1 tier choice lists, H3 the early return that drops medicaid_ndc + enrollment, H2 month-start case label, H7 HCRIS as-of, H5 enrollment per-se on the as-of fact, H4 + the silent-blank class raise instead of 0, H6 one state_term convention, skip-sources + one audit line per block, H8 producer-less scheme inputs, current-day graph rebuild step, H11/H12 Makefile + the tracked backtest CSV. Batch 2 = v19 semantics (join_m1, stage-one rejects, label gates on every path, outcome vocabulary, node dedup, assessable enforced). Batch 3 = structure. Say 'go batch 1' (etc.) in chat; each batch ships as one bundle with tests.",
+   "added": "2026-10-21"
+  },
+  {
    "key": "verify_sources_fetch",
    "added": "2026-10-21",
    "what": "FIXED in bundle 339 (the 37 pages were state AG / OIG sites refusing the feed's custom user agent, plus two PDFs the HTML reader could not parse): verify-sources now fetches with a browser user agent, reads PDFs through pypdf, and logs the error text. RE-RUN AFTER v18 IS DONE (the run reads the case file at its start; the verify rewrites it at the end): pull the code, install pypdf in the VM venv, run the verify under tmux, read the summary line. Then the fourth gate is applied for v19.",
@@ -850,14 +868,10 @@
   {
    "key": "v18_run",
    "added": "2026-10-14",
-   "what": "RUNNING since 2026-10-21 11:44 UTC (tmux session v18 on the VM; pre-registered under the v17 checks, train = hard, --rebuild-graph, 10 seeds; the measurement block adds 3 to 5 hours: expect DONE late 2026-10-21 UTC). The log is empty for long stretches during the export; a stuck window is the cellular link, never the run (every line below carries the ssh keepalive). AFTER lanes_gates_apply (the gates must run on the VM first so v18 trains on the cleaned rows). v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. v17 GRADED 2026-10-20 (docs/ACCURACY_READOUT_v17_2026-10-20.md): hits@100 = 5 (PASS for the first time), large book 4 at 50, HOLD on top-50 Jaccard 0.575 (bar 0.6) only. v18 keeps hits100 >= 4 and top50_jaccard >= 0.6; the pmax order (the first sweep row to beat the shipped order: 2/3/5/9 vs 1/2/5/7) is graded as a third book, never shipped yet. After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. The lane rows ARE loaded (2026-10-20): cia / outcome_refresh / commercial rows sit in enforcement/doj_cases_v3.csv, the 22 name-resolved exclusions in processed/exclusions_name_resolved.parquet (so --rebuild-graph is REQUIRED: the as-of graph must carry them as exclusion nodes), the 26 researched defendants in processed/case_defendant_npis.parquet. Needs bundle 327 merged + pulled first (the pmax book and the dossier bar are in ab95883). Every line below is a laptop Command Prompt ssh one-liner; one line per paste.",
+   "what": "STOPPED 2026-10-21 by operator decision (the full platform audit comes first; docs/PLATFORM_AUDIT_2026-10-21.md). The audit found v18 would have failed at step 8 anyway (the runner's hard+commercial label tier is rejected by the diagnostics CLI, H1). Close when the kill line below has been run (tmux ls shows no v18 session). v19 = the first run after audit batches 1 and 2, new pre-registration.",
    "commands": [
-    "REM status any time (done when the last line reads '[v18] DONE'):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -5 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
-    "REM when DONE: tell Claude 'v18 finished', then the packet (one line each):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v18 && tar -czf /home/ubuntu/run_packet_v18.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v18\"",
-    "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v18.tar.gz C:\\Users\\treyr\\Downloads\\",
-    "REM then attach run_packet_v18.tar.gz to the chat"
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux kill-session -t v18; pkill -f run_frozen_night; pkill -f src.model_a; sleep 2; tmux ls; tail -3 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
+    "python -m src.reminders --done-task v18_run"
    ]
   },
   {

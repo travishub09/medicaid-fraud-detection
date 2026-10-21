@@ -116,6 +116,47 @@ _CONTRACT = {
     "owners": ("src.entity_graph.owners_vintage", "OWNER_VINTAGE_COLS", []),
     "zip_county": ("src.ingest_cms.census_population", "ZIP_COLS", []),
 }
+# From the 2026-10-21 contract audit (docs/PLATFORM_AUDIT_2026-10-21.md section 3):
+# REQUIRED = the adapter RAISES (the source is skipped) when the field is absent;
+# CRITICAL = the adapter SILENTLY fills a default (0 / "" / NaN) and a scheme
+# input is computed on it: a missing CRITICAL field is the dangerous class,
+# because the run reports the source as used.
+_REQUIRED = {
+    "nppes": ["npi", "entity_type", "org_name", "last_name", "first_name", "taxonomy_code",
+              "addr_line1", "addr_city", "addr_state", "addr_zip"],
+    "pecos": ["npi", "pac_id", "enrollment_id", "provider_type_code", "provider_type_desc", "state"],
+    "leie": ["last_name", "first_name", "busname"],
+    "partb": ["npi", "hcpcs", "services"], "partd": ["npi", "claims", "cost"],
+    "dmepos": ["npi", "hcpcs", "services"], "opioid": ["npi", "opioid_claims"],
+    "open_payments": ["npi", "manufacturer", "amount"],
+    "nadac": ["ndc", "per_unit", "description"],
+    "medicaid_ndc": ["billing_npi", "ndc", "service_month", "total_paid"],
+    "medicaid_enrollment": ["npi", "state", "start_date"],
+    "fda_ndc": ["product_ndc", "labeler"], "saturation": ["service", "state", "n_providers", "n_benes"],
+    "hrsa_340b": ["name", "begin_date"], "nppes_deactivation": ["npi"],
+    "order_referring": ["npi"], "pbj": ["ccn", "census", "hrs_rn"], "hospice": ["ccn", "score"],
+    "deficiencies": ["ccn", "survey_date"], "hcris": ["ccn"], "pos": ["ccn"],
+    "nucc": ["taxonomy_code", "grouping", "classification", "specialization"],
+    "docgraph": ["from_npi", "to_npi"], "dmf": ["last", "dod"], "cia": ["party"],
+    "owners": ["facility_enrollment_id", "owner_pac_id"],
+    "owners_prior": ["facility_enrollment_id", "owner_pac_id"],
+    "nh_ownership": ["ccn"], "nh_penalties": ["ccn", "penalty_date"],
+    "nppes_history": ["npi"], "zip_county": ["zip", "fips"], "warn": ["employer"],
+}
+_CRITICAL = {
+    "leie": ["excl_type", "excl_date", "npi"],
+    "partb": ["avg_allowed"], "partd": ["brand_name", "generic_name"], "dmepos": ["avg_allowed"],
+    "open_payments": ["product", "payment_date"], "nadac": ["classification"],
+    "medicaid_ndc": ["prescribing_npi", "total_claim_lines", "total_patients"],
+    "medicaid_enrollment": ["status", "end_date"], "nppes_deactivation": ["deactivation_date"],
+    "dmf": ["dob"], "order_referring": ["dme"], "hrsa_340b": ["contract_pharmacy"],
+    "pbj": ["hrs_lpn", "hrs_cna", "workdate"], "hospice": ["measure_code", "end_date"],
+    "deficiencies": ["severity"], "nh_ownership": ["owner_name", "stake"], "nh_penalties": ["fine"],
+    "hcris": ["total_costs", "total_charges", "admin_costs"], "pos": ["bed_count"],
+    "revocations": ["npi", "revocation_date", "reason"], "docgraph": ["patient_count"],
+    "preclusion": ["npi", "preclusion_date"],
+}
+
 # folders the export reads that the preflight registry does not list
 _EXTRA = [
     Source("mue", "reference/mue", [], [".csv", ".xlsx"], None, None, "snapshot",
@@ -340,10 +381,24 @@ def grade_source(src: Source, files: list[dict], cutoff: str | None) -> dict:
     if unreadable:
         g["issues"].append("unreadable: " + ", ".join(unreadable))
     if src.module:
-        bad = [(f["file"], f["missing"]) for f in files if f["missing"] and f["header"] is not None]
-        g["contract"] = "OK" if not bad else "FIELDS MISSING"
-        for fn, miss in bad:
-            g["issues"].append(f"{fn}: no header matches {', '.join(miss)}")
+        req, crit = set(_REQUIRED.get(src.key, [])), set(_CRITICAL.get(src.key, []))
+        worst = "OK"
+        for f in files:
+            if f["header"] is None or not f["missing"]:
+                continue
+            miss = set(f["missing"])
+            r, c, o = sorted(miss & req), sorted(miss & crit), sorted(miss - req - crit)
+            if r:
+                worst = "REQUIRED MISSING"
+                g["issues"].append(f"{f['file']}: the adapter RAISES without {', '.join(r)} (source skipped)")
+            if c:
+                worst = worst if worst == "REQUIRED MISSING" else "SILENT BLANK"
+                g["issues"].append(f"{f['file']}: {', '.join(c)} absent -> the adapter fills a default and a "
+                                   "scheme input is computed on it (no log line)")
+            if o:
+                f["optional_missing"] = o
+        g["contract"] = worst
+        g["required"], g["critical"] = sorted(req), sorted(crit)
     if cut and src.kind in ("snapshot",):
         paths = [Path(f["path"]) for f in files]
         elig = {Path(x).name for x in _asof_files(paths, cut)}
