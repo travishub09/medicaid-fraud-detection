@@ -53,6 +53,39 @@ def _html_text(html: str) -> str:
     return re.sub(r"&nbsp;|&amp;|&#\d+;|&\w+;", " ", s)
 
 
+def _page_text(url: str, fetch_page) -> str:
+    """The page as text: HTML stripped of tags; a PDF (state AG and OIG releases are often
+    PDFs) read through pypdf when it is installed, else left unreadable (unknown, never a
+    false 'absent')."""
+    if url.lower().split("?")[0].endswith(".pdf"):
+        try:
+            from pypdf import PdfReader  # optional dependency
+        except ImportError as ex:
+            raise RuntimeError("pdf page and pypdf is not installed") from ex
+        import io
+        try:
+            raw = fetch_page(url, binary=True)
+        except TypeError:                      # a fetcher without the binary flag (tests)
+            raw = fetch_page(url)
+        data = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("latin-1", "ignore")
+        return " ".join((pg.extract_text() or "") for pg in PdfReader(io.BytesIO(data)).pages)
+    return _html_text(fetch_page(url))
+
+
+def browser_fetch_text(url: str, binary: bool = False):
+    """The page fetch verify-sources uses: a browser user agent (state AG and OIG sites
+    refuse unknown agents with 403; the 2026-10-21 run reached 0 of 37 pages) and, for
+    PDFs, the raw bytes."""
+    import requests
+    hdrs = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+            "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9"}
+    resp = requests.get(url, headers=hdrs, timeout=30, allow_redirects=True)
+    resp.raise_for_status()
+    return resp.content if binary else resp.text
+
+
 def verify_names_on_pages(cases: pd.DataFrame, fetch_page, kind_col: str | None = None,
                           limit: int | None = None, cache: dict | None = None, log=print) -> pd.DataFrame:
     """Read each row's source page and record whether the defendant is named on it:
@@ -75,11 +108,11 @@ def verify_names_on_pages(cases: pd.DataFrame, fetch_page, kind_col: str | None 
             continue
         if url not in cache:
             try:
-                cache[url] = _html_text(fetch_page(url))
+                cache[url] = _page_text(url, fetch_page)
             except Exception as ex:  # noqa: BLE001
                 cache[url] = None
                 n_fail += 1
-                log(f"    [verify_sources] fetch failed {url}: {type(ex).__name__}")
+                log(f"    [verify_sources] fetch failed {url}: {type(ex).__name__}: {str(ex)[:200]}")
         text = cache[url]
         if text is None:
             continue
@@ -566,8 +599,7 @@ def main() -> None:
 
     args = ap.parse_args()
     if args.cmd == "verify-sources":
-        from src.feeds.client import default_fetch_text
-        n = quarantine_absent_defendants(args.case_db, default_fetch_text, args.jurisdiction_regex, args.limit)
+        n = quarantine_absent_defendants(args.case_db, browser_fetch_text, args.jurisdiction_regex, args.limit)
         print(f"[research_evidence] verify-sources: {n:,} rows quarantined; rebuild the case labels (the next export) "
               "so they leave the label")
         return
