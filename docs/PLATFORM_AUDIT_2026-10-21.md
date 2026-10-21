@@ -143,6 +143,19 @@ Referring, All Owners, DocGraph (the last public Shared Patient Patterns file is
 report page and belong under preclean/hcris with the year in the name), Market
 Saturation 2021 (the CMS archive has it; reminder pre_cutoff_editions_2021).
 
+**The re-scan after the preclean pull (2026-10-21, bundle 347 code, 190 GB preclean):**
+the October LEIE and NPPES are on the VM; under 2021-12 the freeze now reads POS Q4 2021
+(both files), PBJ 2021Q3 and Q4, the nursing-home November 2021 ownership / penalties /
+citations, NADAC 2021 and the Feb-2022 hospice release (its measure periods end before
+the freeze); the six scanner artifacts are gone. Still nothing before 2022: Order and
+Referring, All Owners, HCRIS, saturation, DocGraph (the 2023-12 freeze's work). Two
+overshoots the first re-scan flagged were the scanner's, not the data's: the POS lab
+file's certification-expiry dates run to 2027 by nature, and the overshoot check now
+reads only the adapter's own date column; the NADAC 2021 edition carries effective
+dates into January 2022, which the adapter does not filter (batch 1 adds the row
+filter). The scan now caches each file's date range by size and modification time, so
+a re-scan is minutes instead of forty.
+
 Verified correct on the VM: Spending.csv = 238,015,729 rows (2018-01 to 2024-12),
 conserved exactly into spending_fact.parquet; every PUF year 2016-2024 present with
 its contract columns; the Part D opioid summary separate from the by-drug file; the

@@ -325,6 +325,23 @@ def _row_count(p: Path) -> int | None:
     return None
 
 
+_DATE_CACHE: dict = {}
+
+
+def load_date_cache(path: Path) -> None:
+    try:
+        _DATE_CACHE.update(json.loads(path.read_text(encoding="utf-8")))
+    except Exception:
+        pass
+
+
+def save_date_cache(path: Path) -> None:
+    try:
+        path.write_text(json.dumps(_DATE_CACHE), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _candidate_files(pre: Path, src: Source) -> list[Path]:
     base = pre / src.folder if src.folder else pre
     if not base.is_dir():
@@ -446,7 +463,13 @@ def audit_file(p: Path, src: Source, cols: dict | None, cutoff: str | None, coun
     if header and p.suffix.lower() != ".zip":
         date_cols = [res[k] for k in src.date_keys if res.get(k)]
         probe = list(dict.fromkeys(date_cols + list(header)))      # adapter's date cols first
-        rec["date_range"] = _date_minmax(p, probe)
+        ck = f"{p}|{st.st_size}|{int(st.st_mtime)}"
+        if ck in _DATE_CACHE:
+            rec["date_range"] = {k: tuple(v) for k, v in _DATE_CACHE[ck].items()}
+            rec["note"] = (rec.get("note", "") + " dates from cache").strip()
+        else:
+            rec["date_range"] = _date_minmax(p, probe)
+            _DATE_CACHE[ck] = {k: list(v) for k, v in rec["date_range"].items()}
     if counts:
         rec["rows"] = _row_count(p)
     return rec
@@ -486,7 +509,16 @@ def grade_source(src: Source, files: list[dict], cutoff: str | None) -> dict:
                 f["optional_missing"] = o
         g["contract"] = worst
         g["required"], g["critical"] = sorted(req), sorted(crit)
-    if cut and src.kind in ("snapshot",):
+    if cut and src.key == "hospice":
+        from src.ingest_cms.facility import pick_edition
+        pick = pick_edition([Path(f["path"]) for f in files], cut)
+        g["picked"] = [pick.name] if pick else []
+        g["skipped"] = sorted(f["file"] for f in files if not pick or f["file"] != pick.name)
+        g["freeze"] = "OK (row-filtered: measure periods ending <= the freeze)" if pick else "NOTHING ELIGIBLE"
+        if pick and (_file_period(pick.name) or "") > cut:
+            g["note"] = (f"{pick.name} is the earliest release AFTER the freeze; the adapter keeps only "
+                         "the measure periods that ended on/before it")
+    elif cut and src.kind in ("snapshot",):
         paths = [Path(f["path"]) for f in files]
         elig = {Path(x).name for x in _asof_files(paths, cut)}
         g["picked"] = sorted(elig)
@@ -501,8 +533,9 @@ def grade_source(src: Source, files: list[dict], cutoff: str | None) -> dict:
         else:
             g["freeze"] = "OK"
         for f in dated:
-            if f["file"] in elig:
-                hi = max((v[1] for v in f["date_range"].values()), default=None)
+            if f["file"] in elig and src.date_keys:
+                own = [f["resolved"].get(k) for k in src.date_keys if f["resolved"].get(k)]
+                hi = max((v[1] for c, v in f["date_range"].items() if c in own), default=None)
                 if hi and hi[:7] > cut:
                     g["issues"].append(f"{f['file']}: named {f['name_period']} but rows run to {hi} "
                                        f"(post-cutoff rows inside a 'pre-cutoff' edition)")
@@ -666,12 +699,20 @@ def main() -> None:
     ap.add_argument("--cutoff", default=None, help="the freeze, YYYY-MM (omit for current-day)")
     ap.add_argument("--run-dir", default=None, help="a run folder whose feature_manifest.json sources_audit is shown")
     ap.add_argument("--counts", action="store_true", help="DuckDB row counts (full scans)")
+    ap.add_argument("--no-cache", action="store_true",
+                    help="re-probe every file's dates (default: a file with the same size + mtime "
+                         "reuses the dates from preclean/.data_audit_dates.json)")
     ap.add_argument("--only", default=None, help="comma list of source keys")
     ap.add_argument("--out", default=None, help="output folder (default <data_root>/preclean)")
     a = ap.parse_args()
     root = Path(a.data_root)
+    cache = root / "preclean" / ".data_audit_dates.json"
+    if not a.no_cache:
+        load_date_cache(cache)
     rep = run(root, a.cutoff, Path(a.run_dir) if a.run_dir else None, a.counts,
               set(a.only.split(",")) if a.only else None)
+    if not a.no_cache:
+        save_date_cache(cache)
     out = Path(a.out) if a.out else root / "preclean"
     out.mkdir(parents=True, exist_ok=True)
     (out / "DATA_AUDIT.md").write_text(render(rep), encoding="utf-8")

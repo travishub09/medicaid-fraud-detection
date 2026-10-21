@@ -94,3 +94,30 @@ def test_two_column_reference_table_and_warn_keyword_headers(tmp_path):
     by = {s["key"]: s for s in rep["sources"]}
     assert not by["hcpcs_time"]["issues"], by["hcpcs_time"]["issues"]
     assert by["warn"]["contract"] == "OK", by["warn"]["issues"]
+
+
+def test_rescan_rules(tmp_path):
+    """The 2021-12 re-scan (bundle 348): hospice mirrors pick_edition (the earliest release
+    after the freeze is the right one), the overshoot check reads only the adapter's date
+    column (POS certification expiries run to 2027 by nature), and the date cache."""
+    fac = tmp_path / "preclean" / "facility"
+    fac.mkdir(parents=True)
+    (fac / "Hospice_Provider_Feb2022.csv").write_text(
+        "CMS Certification Number (CCN),Measure Code,Measure Name,Score,Start Date,End Date\n"
+        "010001,H_001,x,1.0,01/01/2021,12/31/2021\n")
+    (fac / "Hospice_Provider_Nov2023.csv").write_text(
+        "CMS Certification Number (CCN),Measure Code,Measure Name,Score,Measure Date Range\n"
+        "010001,H_001,x,1.0,04/01/2022 - 03/31/2023\n")
+    pos = tmp_path / "preclean" / "pos"
+    pos.mkdir()
+    (pos / "POS_File_CLIA_Q4_2021.csv").write_text("PRVDR_NUM,GNRL_FAC_TYPE_CD,STATE_CD,CRTFCTN_DT,TRMNTN_EXPRTN_DT\n01D000,22,AL,2015-01-01,2027-03-26\n")
+    rep = da.run(tmp_path, "2021-12", None, counts=False, only={"hospice", "pos"})
+    by = {s["key"]: s for s in rep["sources"]}
+    assert by["hospice"]["picked"] == ["Hospice_Provider_Feb2022.csv"] and by["hospice"]["freeze"].startswith("OK")
+    assert not by["pos"]["issues"], by["pos"]["issues"]
+    # the cache: the second run reads the dates without probing
+    da._DATE_CACHE.clear()
+    da.run(tmp_path, "2021-12", None, counts=False, only={"pos"})
+    assert da._DATE_CACHE
+    rep2 = da.run(tmp_path, "2021-12", None, counts=False, only={"pos"})
+    assert any("cache" in f.get("note", "") for f in rep2["files"])
