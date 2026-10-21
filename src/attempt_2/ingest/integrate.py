@@ -37,6 +37,7 @@ import pandas as pd
 
 # Rule 8: reuse the ONE canonicaliser + ONE name/address normaliser everywhere.
 from ..clean_data import (
+    contract_file,
     PRECLEAN_DIR,
     canonicalize_series,
     _normalize_name,
@@ -663,7 +664,7 @@ def main() -> None:
     p.add_argument("--spending", default=str(PRECLEAN_DIR / "Spending.csv"))
     p.add_argument("--nppes", default=str(PRECLEAN_DIR / "NPPES.csv"))
     p.add_argument("--pecos", default=str(PRECLEAN_DIR / "PECOS.csv"))
-    p.add_argument("--leie", default=str(PRECLEAN_DIR / "Caught.csv"))
+    p.add_argument("--leie", default=str(contract_file(PRECLEAN_DIR, "Caught.csv")))
     p.add_argument("--revocations",
                    default=str(PRECLEAN_DIR / "revocations" / "revoked_providers.csv"),
                    help="optional HHS Revoked Medicare Providers CSV; unioned into "

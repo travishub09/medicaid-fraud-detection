@@ -106,11 +106,12 @@ def main() -> None:
     for p in (pf, base):
         if not p.exists():
             raise FileNotFoundError(f"required input missing: {p}")
-    raw = next((d / "Caught.csv" for d in [data / "raw", data, data / "preclean"]
-                if (d / "Caught.csv").exists()), None)
+    from src.attempt_2.clean_data import contract_file
+    raw = next((contract_file(d, "Caught.csv") for d in [data / "raw", data, data / "preclean"]
+                if contract_file(d, "Caught.csv").exists()), None)
     if raw is None:
         # last resort: recursive search under ~/Desktop/data
-        hits = list(data.rglob("Caught.csv"))
+        hits = [q for q in data.rglob("*") if q.is_file() and q.name.lower() == "caught.csv"]
         raw = hits[0] if hits else None
     if raw is None:
         raise FileNotFoundError(

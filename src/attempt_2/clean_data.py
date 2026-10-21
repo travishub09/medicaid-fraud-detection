@@ -61,6 +61,24 @@ DATA_ROOT = Path(os.environ.get("MEDICAID_DATA_ROOT",
                                 str(Path.home() / "Desktop" / "data")))
 PRECLEAN_DIR = DATA_ROOT / "preclean"
 
+
+def contract_file(folder, name: str):
+    """The contract-named file (Caught.csv, Spending.csv, ...) found CASE-INSENSITIVELY.
+    2026-10-21: the laptop keeps the LEIE as caught.csv on a case-insensitive disk; an
+    rclone sync onto the Linux VM lands it as caught.csv, and the exact-name default
+    Caught.csv then does not exist there. Returns the exact path when nothing matches,
+    so error messages still name the contract file."""
+    from pathlib import Path as _P
+    d = _P(folder)
+    exact = d / name
+    if exact.exists() or not d.is_dir():
+        return exact
+    low = name.lower()
+    for q in d.iterdir():
+        if q.is_file() and q.name.lower() == low:
+            return q
+    return exact
+
 # Most recent N months of claims are incomplete ("run-out"); flag them so they
 # never feed a trend/outlier feature. CMS guidance is ~6-12 months; 12 is safe.
 DEFAULT_RUNOUT_MONTHS = 12
@@ -995,7 +1013,7 @@ def main() -> None:
     p.add_argument("--spending", default=str(PRECLEAN_DIR / "Spending.csv"),
                    help="CMS Medicaid provider spending file (CSV/Parquet)")
     p.add_argument("--nppes", default=str(PRECLEAN_DIR / "NPPES.csv"), help="NPPES NPI data file")
-    p.add_argument("--leie", default=str(PRECLEAN_DIR / "Caught.csv"),
+    p.add_argument("--leie", default=str(contract_file(PRECLEAN_DIR, "Caught.csv")),
                    help="OIG LEIE (exclusions) CSV — 'Caught.csv'")
     p.add_argument("--pecos", default=str(PRECLEAN_DIR / "PECOS.csv"),
                    help="PECOS enrollment file (NPI↔PAC↔enrollment); also the owners crosswalk")
