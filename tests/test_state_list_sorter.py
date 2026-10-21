@@ -137,3 +137,20 @@ def test_sorter_skips_a_template(tmp_path):
                   "Termination Reason": ["example"]}).to_excel(
         dl / "Florida Denied.Terminated.Suspended.Provider.Report.Template_12_18_2024.xlsx", index=False)
     assert plan(dl, tmp_path / "dest", today=date(2026, 10, 21)) == []
+
+
+def test_loader_keeps_only_the_newest_edition_per_state(tmp_path):
+    from src.enforcement.state_terminations import load_all, newest_editions
+    d = tmp_path / "state_terminations"
+    d.mkdir()
+    row = {"Provider Name": "ACME CLINIC", "NPI": "1234567893", "Effective Date": "2024-01-05", "Reason": "Medicaid fraud"}
+    pd.DataFrame([row]).to_csv(d / "GA_terminations_202609.csv", index=False)
+    pd.DataFrame([row, dict(row, **{"Provider Name": "BETA LLC", "NPI": "1245319599"})]).to_csv(
+        d / "GA_terminations_202610.csv", index=False)
+    pd.DataFrame([row]).to_csv(d / "LA_terminations_202610.csv", index=False)
+    keep, superseded = newest_editions(sorted(d.glob("*")))
+    assert superseded == {"GA_terminations_202609.csv": "GA_terminations_202610.csv"}
+    assert sorted(p.name for p in keep) == ["GA_terminations_202610.csv", "LA_terminations_202610.csv"]
+    rows, log = load_all(d)
+    assert len(rows) == 3                                   # 2 GA (October) + 1 LA, never the September GA row again
+    assert any("superseded" in r["note"] for r in log)

@@ -477,11 +477,43 @@ def match_names_to_nppes(rows: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.D
     return rows
 
 
+_EDITION_RE = re.compile(r"^([A-Za-z]{2})_terminations_(\d{6})\.", re.I)
+
+
+def newest_editions(paths: list[Path]) -> tuple[list[Path], dict[str, str]]:
+    """Each state's list is a full snapshot of its current sanctions, so only the NEWEST
+    ``<ST>_terminations_<yyyymm>`` file per state loads (2026-10-21: September and
+    October editions sat side by side for seven states and would have doubled every
+    row). Returns (files to load, {older file name: the newer file that supersedes it});
+    files outside the convention load as before."""
+    best: dict[str, tuple[str, Path]] = {}
+    for p in paths:
+        m = _EDITION_RE.match(p.name)
+        if not m:
+            continue
+        st, ed = m.group(1).upper(), m.group(2)
+        if st not in best or ed > best[st][0]:
+            best[st] = (ed, p)
+    superseded: dict[str, str] = {}
+    keep = []
+    for p in paths:
+        m = _EDITION_RE.match(p.name)
+        if m and best[m.group(1).upper()][1] != p:
+            superseded[p.name] = best[m.group(1).upper()][1].name
+        else:
+            keep.append(p)
+    return keep, superseded
+
+
 def load_all(in_dir: Path, provider_dim: pd.DataFrame | None = None) -> tuple[pd.DataFrame, list[dict]]:
     frames, log = [], []
-    for p in sorted(Path(in_dir).glob("*")):
-        if p.suffix.lower() not in (".xlsx", ".xls", ".csv") or p.name.startswith("~"):
-            continue
+    files = [p for p in sorted(Path(in_dir).glob("*"))
+             if p.suffix.lower() in (".xlsx", ".xls", ".csv") and not p.name.startswith("~")]
+    files, superseded = newest_editions(files)
+    for old, new in superseded.items():
+        log.append({"file": old, "state": state_from_filename(Path(old)), "rows": 0,
+                    "note": f"older edition, superseded by {new} (kept on disk, not loaded)"})
+    for p in files:
         st = state_from_filename(p)
         if not st or "template" in p.name.lower() or "smmc" in p.name.lower():
             log.append({"file": p.name, "state": st, "rows": 0, "note": "skipped (no state prefix or a template)"})
