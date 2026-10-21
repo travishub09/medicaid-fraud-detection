@@ -94,6 +94,21 @@ def forward_label_vector(matrix: pd.DataFrame, forward: pd.DataFrame | None
     return npi.isin(pos).to_numpy().astype(int), (~npi.isin(drop)).to_numpy()
 
 
+# docs/FREEZE_DESIGN_NOTE_2026-10-21.md rule 3: a feature admitted from a later
+# edition needs a leak audit = "the forward-ruler AUC implausibly above the in-time
+# AUC". A scheme that separates the FUTURE cases far better than the cases already
+# known at the freeze is reading something it should not be able to see.
+LEAK_GAP = 0.15
+
+
+def leak_suspect(label_auc, fca_auc, n_label_pos, n_fca_pos) -> bool:
+    if label_auc is None or fca_auc is None or not n_label_pos or not n_fca_pos:
+        return False
+    if n_label_pos < FCA_MIN_POS or n_fca_pos < FCA_MIN_POS:
+        return False
+    return (float(fca_auc) - float(label_auc)) >= LEAK_GAP and float(fca_auc) >= 0.70
+
+
 def fca_verdict(auc, n_pos) -> str:
     if auc is None or n_pos is None or n_pos < FCA_MIN_POS:
         return "thin"
@@ -192,6 +207,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
             "n_fca_pos": n_fca_pos,
             "fca_verdict": (fca_verdict(fca_auc, n_fca_pos) if y_fca is not None
                             and sub in cols and not constant else ""),
+            "leak_suspect": leak_suspect(label_auc, fca_auc, n_pos, n_fca_pos),
         })
     order = {"BROKEN": 0, "CHECK_DIRECTION": 1, "DEGRADED": 2, "DORMANT": 3,
              "HEALTHY": 4}

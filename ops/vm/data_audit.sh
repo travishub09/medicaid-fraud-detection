@@ -23,6 +23,10 @@ python -m src.preflight --registry --data-root "$ROOT" > "$OUT/PREFLIGHT_REGISTR
 echo "[2/5] data_audit (frozen $CUT, with row counts)"
 python -m src.data_audit --data-root "$ROOT" --cutoff "$CUT" --counts \
   ${RUN:+--run-dir "$RUN"} --out "$OUT/frozen_$CUT" > "$OUT/data_audit_frozen.log" 2>&1
+echo "[2b/5] data_audit for the second-freeze candidates (no counts: what each cutoff would read)"
+for c2 in 2023-12 2023-06; do
+  python -m src.data_audit --data-root "$ROOT" --cutoff "$c2" --out "$OUT/frozen_$c2" > "$OUT/data_audit_frozen_$c2.log" 2>&1
+done
 echo "[3/5] data_audit (current-day)"
 python -m src.data_audit --data-root "$ROOT" --out "$OUT/current" > "$OUT/data_audit_current.log" 2>&1
 

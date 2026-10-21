@@ -174,6 +174,14 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
                                      "drop the scheme family in the next pre-registration if SOURCE_ABLATION's "
                                      "leave-one-out delta is also ~0; a scheme whose INPUTS are missing is "
                                      "re-judged once they land", "SCHEME_HEALTH.md"))
+            if s.get("leak_suspect"):
+                issues.append(_issue("scheme", name, "leak_suspect", "FAIL",
+                                     f"FCA-ruler AUC {fauc} on {fpos} forward positives against exclusion-label AUC "
+                                     f"{auc} on {npos}: the scheme separates the FUTURE cases far better than the "
+                                     "cases known at the freeze",
+                                     "a substituted later edition or a post-cutoff row inside one of its inputs; read "
+                                     "the vintage ledger rows for its sources and SOURCE_ABLATION's per-group delta "
+                                     "before the scheme ships", "scheme_health.json"))
             elif fv == "inverted":
                 issues.append(_issue("scheme", name, "fca_inverted", "WARN",
                                      f"FCA-ruler AUC {fauc} on {fpos} forward positives: fires on the clean side",
@@ -185,6 +193,41 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
     else:
         issues.append(_issue("stage", "scheme_health", "missing_artifact", "INFO",
                              "no scheme_health.json", "the scheme-health step did not run", "run folder"))
+
+    # --- the vintage ledger (manifest vintage_audit, 2026-10-21) -------------------------
+    # every edition pick the export made; the design note's rule 3 as a graded row
+    for v in (man.get("vintage_audit") or []) if man else []:
+        src, verdict, st = str(v.get("source")), str(v.get("verdict")), v.get("staleness_months")
+        if verdict == "post_cutoff_reference":
+            issues.append(_issue("vintage", src, "post_cutoff_reference", "WARN",
+                                 f"a lookup table read from edition {v.get('edition')} ({st} months after the freeze): "
+                                 f"{v.get('note', '')}", "procure the pre-cutoff edition; names / classes only are read",
+                                 "feature_manifest.json"))
+        elif verdict == "undated_substituted":
+            issues.append(_issue("vintage", src, "undated_substituted", "WARN",
+                                 f"no dated edition on/before {v.get('cutoff')}; undated file(s) read: "
+                                 f"{', '.join(v.get('picked') or [])}",
+                                 "date the file (EDITIONS.csv / the name) or procure the pre-cutoff edition; an "
+                                 "undated input is a substitution the freeze cannot verify", "feature_manifest.json"))
+        elif verdict == "nothing_eligible":
+            issues.append(_issue("vintage", src, "nothing_eligible", "INFO",
+                                 f"every edition on disk is after {v.get('cutoff')}: {', '.join(v.get('skipped') or [])}",
+                                 "procure the pre-cutoff edition (reminder pre_cutoff_editions_2021)", "feature_manifest.json"))
+        elif st is not None and st > 0:
+            issues.append(_issue("vintage", src, "post_cutoff_edition", "FAIL",
+                                 f"edition {v.get('edition')} read {st} months AFTER the freeze {v.get('cutoff')}",
+                                 "the picker must not return it: a bug, not a procurement gap", "feature_manifest.json"))
+    fi = _json(d / "freeze_inputs.json")
+    if fi and isinstance(fi.get("asof_nppes"), dict):
+        npp = fi["asof_nppes"]
+        if npp.get("rule") == "nearest_later":
+            issues.append(_issue("vintage", "asof_nppes", "nppes_edition_after_freeze", "WARN",
+                                 f"the address layer froze on NPPES edition {npp.get('edition')}, "
+                                 f"{npp.get('staleness_months')} months after the freeze {fi.get('cutoff')} "
+                                 "(no earlier edition on disk): address moves inside that window can leak into "
+                                 "co-location edges",
+                                 "download the NPPES monthly edition for the cutoff month into preclean/nppes_history/",
+                                 "freeze_inputs.json"))
 
     # --- vintage audit (SCHEME_TRIAGE) -----------------------------------------------
     tri = d / "SCHEME_TRIAGE.md"

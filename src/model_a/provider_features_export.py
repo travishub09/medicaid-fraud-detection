@@ -1247,29 +1247,78 @@ def _warn_if_graph_stale(graph_dir: Path, leads_path: Path, log) -> None:
 
 
 _NAME_DATE_RE = re.compile(r"(20\d{2})(?:[-_.]?([01]\d))?")
+# 2026-10-21: quarter and month-name tokens date an edition to its month, so the
+# quarters of one year are distinct periods ("PBJ_2021Q3" is 2021-09, not 2021-12)
+# and a freeze between them picks correctly ("POS_File_Q4_2023" is AFTER 2023-06).
+_QUARTER_RE = re.compile(r"(?:Q([1-4])[\s_.-]*(20\d{2}))|(?:(20\d{2})[\s_.-]*Q([1-4]))", re.I)
+_MONTHS = {m: i + 1 for i, m in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))}
+_MONTH_RE = re.compile(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s_.-]*(20\d{2})", re.I)
 
 
 def _file_period(name: str) -> str | None:
     """Latest YYYY-MM implied by date tokens in a filename (year-only → Dec).
-    'nadac_2023' → 2023-12; 'order_referring_20260802' → 2026-08."""
+    'nadac_2023' → 2023-12; 'order_referring_20260802' → 2026-08;
+    'PBJ_Daily_Nurse_Staffing_Q3_2021' → 2021-09; 'NH_Ownership_Nov2023' → 2023-11."""
     best = None
+    for q1, y1, y2, q2 in _QUARTER_RE.findall(name):
+        y, q = (y1, q1) if y1 else (y2, q2)
+        p = f"{y}-{3 * int(q):02d}"
+        best = p if best is None or p > best else best
+    for mon, y in _MONTH_RE.findall(name):
+        p = f"{y}-{_MONTHS[mon.lower()[:3]]:02d}"
+        best = p if best is None or p > best else best
+    if best:
+        return best
     for y, m in _NAME_DATE_RE.findall(name):
         p = f"{y}-{m}" if m else f"{y}-12"
         best = p if best is None or p > best else best
     return best
 
 
+# ---------------------------------------------------------------------------
+# THE VINTAGE LEDGER (2026-10-21, docs/FREEZE_DESIGN_NOTE_2026-10-21.md rule 3:
+# "do not substitute later editions as slow-moving"). Every edition picker below
+# records what it chose and why; main() writes the list to the manifest as
+# ``vintage_audit`` and SOURCES_REPORT prints it, and run_issues grades each row
+# (POST-CUTOFF = FAIL, an undated or later substitute = WARN with the staleness in
+# months). A substitution is therefore never silent: it is a ledger row.
+_VINTAGE: list[dict] = []
+
+
+def _months_between(edition: str | None, cutoff: str | None) -> int | None:
+    """edition - cutoff in months (positive = the edition is AFTER the freeze)."""
+    if not edition or not cutoff:
+        return None
+    ey, em = int(edition[:4]), int(edition[5:7])
+    cy, cm = int(cutoff[:4]), int(cutoff[5:7])
+    return (ey - cy) * 12 + (em - cm)
+
+
+def _vintage(label: str, cutoff: str | None, picked, skipped, verdict: str, note: str = "") -> None:
+    picked = [Path(x).name for x in (picked if isinstance(picked, (list, tuple)) else ([picked] if picked else []))]
+    skipped = [Path(x).name for x in (skipped or [])]
+    editions = [e for e in (_file_period(n) for n in picked) if e]
+    edition = max(editions) if editions else None
+    _VINTAGE.append({"source": label, "cutoff": (cutoff[:7] if cutoff else None), "picked": picked,
+                     "skipped": skipped, "edition": edition,
+                     "staleness_months": _months_between(edition, cutoff[:7] if cutoff else None),
+                     "verdict": verdict, "note": note})
+
+
 def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
-               pattern: str = "*.csv", fallback_newest: bool = False) -> Path | None:
+               pattern: str = "*.csv", fallback_newest: bool = False,
+               label: str = "") -> Path | None:
     """Vintage-aware ``_first_existing`` for snapshot sources with several
     dated editions in one folder (NADAC, Order & Referring).
 
     With a cutoff: the NEWEST dated file on/before it wins (a frozen run
     must never read a post-cutoff edition); an undated contract-name file
-    is the fallback, and the vintage audit flags it. Without a cutoff:
+    is the fallback, and the vintage ledger flags it. Without a cutoff:
     the newest dated file wins, then the plain contract name."""
     if not base.is_dir():
         return None
+    label = label or base.name
     dated = [(p, _file_period(p.name)) for p in sorted(base.glob(pattern))]
     dated = [(p, d) for p, d in dated if d]
     if asof_cutoff:
@@ -1277,10 +1326,15 @@ def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
         if len(cut) == 4:
             cut += "-12"
         elig = [(p, d) for p, d in dated if d <= cut]
+        post = [p for p, d in dated if d > cut]
         if elig:
-            return max(elig, key=lambda t: t[1])[0]
+            pick = max(elig, key=lambda t: t[1])[0]
+            _vintage(label, cut, pick, post, "pre_cutoff")
+            return pick
         exact_p = base / exact
         if exact_p.exists():
+            _vintage(label, cut, exact_p, post, "undated_substituted",
+                     "no dated edition on/before the freeze; the undated contract-name file was read")
             return exact_p
         # a REFERENCE table (NADAC drug names -> brand / generic / opioid class) is a
         # lookup, not a billing input: with no edition on or before the cutoff the
@@ -1288,60 +1342,93 @@ def _asof_pick(base: Path, exact: str, asof_cutoff: str | None = None,
         # (v10 shipped seven all-NaN columns for want of a 2021 NADAC file). The
         # caller logs the edition; prices are never read from it on a frozen run.
         if fallback_newest and dated:
-            return max(dated, key=lambda t: t[1])[0]
+            pick = max(dated, key=lambda t: t[1])[0]
+            _vintage(label, cut, pick, [], "post_cutoff_reference",
+                     "a lookup table read from a later edition (names / classes only, never prices)")
+            return pick
+        _vintage(label, cut, None, post, "nothing_eligible")
         return None
     if dated:
-        return max(dated, key=lambda t: t[1])[0]
+        pick = max(dated, key=lambda t: t[1])[0]
+        _vintage(label, None, pick, [p for p, _ in dated if p != pick], "current_day_newest")
+        return pick
     return _first_existing(base, exact, pattern)
 
 
-def _asof_files(files: list, asof_cutoff: str | None, log=None, label: str = "") -> list:
+def _asof_files(files: list, asof_cutoff: str | None, log=None, label: str = "",
+                keep: str | int = "all") -> list:
     """Vintage-aware filter for MULTI-FILE snapshot sources (PBJ quarters, POS
-    quarters, Care Compare NH editions) that used to read and pool EVERY file on
-    disk, so a 2023 edition sat inside a 2021-12 freeze for eight runs (the ledger
-    FAIL on facility / pbj / pos). With a cutoff: the dated files on/before it
-    (every eligible quarter, pooled as before); else the undated files (the
-    vintage audit flags them); else nothing, and the post-cutoff editions are
-    named in the log. Without a cutoff: every file, unchanged."""
+    quarters, Care Compare NH editions, HCRIS years).
+
+    With a cutoff: the dated files on/before it, then ``keep`` applied; else the
+    undated files (flagged in the ledger); else nothing, with the post-cutoff
+    editions named. Without a cutoff (a CURRENT-DAY run): ``keep`` applied to
+    every dated file. ``keep``: "all" = pool every eligible edition (the v6..v18
+    behaviour); "newest" = only the files of the newest eligible PERIOD (a POS
+    quarter is several files: hospital, non-hospital, CLIA); an int N = the
+    newest N periods (PBJ: the last four quarters). 2026-10-21: without a cutoff
+    these blocks pooled Nov-2023 with Jul-2026 (hold_folders_to_live)."""
     files = list(files)
-    if not asof_cutoff or not files:
+    label = label or "asof"
+    if not files:
         return files
-    cut = str(asof_cutoff)[:7]
-    if len(cut) == 4:
-        cut += "-12"
+    cut = None
+    if asof_cutoff:
+        cut = str(asof_cutoff)[:7]
+        if len(cut) == 4:
+            cut += "-12"
     dated = [(p, _file_period(Path(p).name)) for p in files]
-    elig = [p for p, d in dated if d and d <= cut]
     undated = [p for p, d in dated if not d]
-    post = [Path(p).name for p, d in dated if d and d > cut]
+    post = [p for p, d in dated if d and cut and d > cut]
+    elig = [(p, d) for p, d in dated if d and (not cut or d <= cut)]
     if elig:
-        if post and log:
-            log(f"    [{label or 'asof'}] editions after {cut} skipped: {', '.join(post)}")
-        return elig
+        periods = sorted({d for _, d in elig}, reverse=True)
+        if keep == "newest":
+            periods = periods[:1]
+        elif isinstance(keep, int):
+            periods = periods[:keep]
+        chosen = [p for p, d in elig if d in set(periods)]
+        dropped = [p for p, d in elig if d not in set(periods)]
+        if cut:
+            if post and log:
+                log(f"    [{label}] editions after {cut} skipped: {', '.join(Path(p).name for p in post)}")
+            _vintage(label, cut, chosen, post + dropped, "pre_cutoff")
+        else:
+            if dropped and log:
+                log(f"    [{label}] current-day run reads the newest {len(periods)} edition(s) "
+                    f"({', '.join(periods)}); older editions set aside: "
+                    f"{', '.join(Path(p).name for p in dropped)}")
+            _vintage(label, None, chosen, dropped,
+                     "current_day_newest" if keep != "all" else "current_day_pooled")
+        return chosen
     if undated:
         if log:
-            log(f"    [{label or 'asof'}] no dated edition on/before {cut}; reading the undated "
+            log(f"    [{label}] no dated edition on/before {cut or 'today'}; reading the undated "
                 f"file(s) {', '.join(Path(p).name for p in undated)} (vintage unverified)"
-                + (f"; post-cutoff editions skipped: {', '.join(post)}" if post else ""))
+                + (f"; post-cutoff editions skipped: {', '.join(Path(p).name for p in post)}" if post else ""))
+        _vintage(label, cut, undated, post, "undated_substituted",
+                 "no dated edition on/before the freeze; undated file(s) read, vintage unverified")
         return undated
     if log:
-        log(f"    [{label or 'asof'}] skipped: every edition on disk is after the freeze {cut} "
-            f"({', '.join(post)}); procure the pre-cutoff edition (reminder pre_cutoff_editions_2021)")
+        log(f"    [{label}] skipped: every edition on disk is after the freeze {cut} "
+            f"({', '.join(Path(p).name for p in post)}); procure the pre-cutoff edition (reminder pre_cutoff_editions_2021)")
+    _vintage(label, cut, [], post, "nothing_eligible")
     return []
 
 
 def _asof_newest(base: Path, patterns: tuple, asof_cutoff: str | None, log=None,
                  label: str = "") -> Path | None:
     """The newest eligible edition among several glob patterns (the NH Care Compare
-    files): ``_asof_files`` then the latest period; the first match without a cutoff."""
+    files): ``_asof_files`` then the latest period. Without a cutoff the NEWEST
+    dated file (2026-10-21: it used to return the alphabetically first hit, so a
+    current-day run could read Nov-2023 beside a Jul-2026 edition by name order)."""
     hits: list[Path] = []
     for pat in patterns:
         hits += [q for q in (sorted(base.glob(pat)) if base.is_dir() else []) if q.is_file()]
     hits = sorted(set(hits))
     if not hits:
         return None
-    if not asof_cutoff:
-        return hits[0]
-    elig = _asof_files(hits, asof_cutoff, log, label)
+    elig = _asof_files(hits, asof_cutoff, log, label, keep="newest")
     if not elig:
         return None
     return max(elig, key=lambda p: _file_period(p.name) or "")
@@ -2194,8 +2281,10 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     # PBJ) must not take hospice + deficiencies down with it.
     ccn_feats = []
     try:
+        # PBJ is a quarterly time series: the newest four quarters (a year of staffing),
+        # frozen or current-day; pooling 2021 with 2025 averaged two different homes
         pbj_files = _asof_files(sorted((pc / "facility").glob("pbj*.csv")), asof_cutoff,
-                                log, "facility/pbj")
+                                log, "facility/pbj", keep=4)
         if pbj_files:
             parts = []
             for pf in pbj_files:            # multi-quarter: read them all, concat
@@ -2292,7 +2381,10 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
     # HCRIS cost-report anomaly — ALL vintage files (hospital/HHA/SNF), not just
     # the alphabetically first one: load_hcris resolves each layout separately.
     try:
-        hcris_files = sorted((pc / "hcris").glob("*.csv"))
+        # 2026-10-21 (PLATFORM_AUDIT H7): one cost-report year per run, on/before the
+        # freeze; this block pooled every file on disk (the facility / POS leak class)
+        hcris_files = _asof_files(sorted((pc / "hcris").glob("*.csv")), asof_cutoff, log, "hcris",
+                                  keep="newest")
         if hcris_files:
             m, h_dropped = hc.load_hcris(hcris_files)
             log(f"    [hcris] {len(hcris_files)} files -> {len(m):,} CCN rows "
@@ -2311,7 +2403,9 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
         # rglob, not glob: the CMS zips extract into their own subfolders
         # ("Provider of Services File - .../*.csv") — top-level-only matching
         # would silently skip them.
-        pos_files = _asof_files(sorted((pc / "pos").rglob("*.csv")), asof_cutoff, log, "pos")
+        # POS is a snapshot: the newest eligible quarter only (its several files together)
+        pos_files = _asof_files(sorted((pc / "pos").rglob("*.csv")), asof_cutoff, log, "pos",
+                                keep="newest")
         if pos_files:
             caps = []
             for pf in pos_files:
@@ -2435,6 +2529,7 @@ def main() -> None:
     # ends with one SOURCES_REPORT table (used/skipped + reason + file), not a console
     # the operator has to grep. ``audit`` IS the log everywhere a source is reported.
     audit = _SourceAudit(print)
+    _VINTAGE.clear()
     rescache = None                    # set on real-data runs unless disabled
 
     if args.fixture:
@@ -2978,6 +3073,8 @@ def main() -> None:
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.
     manifest["sources_audit"] = audit.records()
+    # the vintage ledger: every edition pick with its verdict (run_issues grades it)
+    manifest["vintage_audit"] = list(_VINTAGE)
     # The BILLING freeze is a top-level manifest fact (the registry and the run
     # catalog read it; before this it lived only under graph_substrate.asof,
     # which is the GRAPH's as-of and was null-reported as the run's cutoff).
@@ -3015,7 +3112,7 @@ def main() -> None:
         json.dumps(manifest, indent=2), encoding="utf-8")
     _write_dictionary(matrix, manifest, out_dir)
     _write_report(matrix, manifest, out_dir)
-    _write_sources_report(manifest["sources_audit"], out_dir)
+    _write_sources_report(manifest["sources_audit"], out_dir, manifest.get("vintage_audit"))
     if rescache is not None:
         rescache.clear()               # run completed — the crash insurance
         print("  [resume] checkpoint cache cleared (run completed)")
@@ -3178,7 +3275,7 @@ def _write_report(matrix: pd.DataFrame, manifest: dict, out_dir: Path) -> None:
         "".join(lines), encoding="utf-8")
 
 
-def _write_sources_report(audit: list[dict], out_dir: Path) -> None:
+def _write_sources_report(audit: list[dict], out_dir: Path, vintage: list[dict] | None = None) -> None:
     """One glance: every source this run touched, used vs. skipped, with the reason /
     file. Built from the captured ``[source] …`` progress lines (see _SourceAudit) so
     a silently-dropped source — the year-suffixed Part-B/D skip class of bug — is now
@@ -3197,6 +3294,18 @@ def _write_sources_report(audit: list[dict], out_dir: Path) -> None:
         badge = "✅ used" if r["status"] == "used" else "⏭️ skipped"
         detail = (r["detail"] or "").replace("|", "\\|")
         lines.append(f"| `{r['source']}` | {badge} | {detail} |\n")
+    if vintage:
+        lines += ["\n## Editions read (the vintage ledger)\n\n",
+                  "_Every edition pick with its verdict. A frozen run must read pre_cutoff rows only; "
+                  "undated_substituted and post_cutoff_reference are the substitutions the design note "
+                  "forbids as features (run_issues grades them)._\n\n",
+                  "| source | cutoff | picked | edition | months vs freeze | verdict | set aside |\n",
+                  "|---|---|---|---|---|---|---|\n"]
+        for v in vintage:
+            lines.append(f"| `{v['source']}` | {v.get('cutoff') or 'current-day'} | "
+                         f"{', '.join(v['picked']) or '(nothing)'} | {v.get('edition') or ''} | "
+                         f"{'' if v.get('staleness_months') is None else v['staleness_months']} | "
+                         f"{v['verdict']} | {', '.join(v['skipped'])} |\n")
     (out_dir / "SOURCES_REPORT.md").write_text("".join(lines), encoding="utf-8")
 
 

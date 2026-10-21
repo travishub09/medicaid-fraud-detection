@@ -55,8 +55,8 @@ fail() { echo; echo "[$NEW] FAILED at step $1  ($(date '+%F %T'))  -- paste the 
 echo "[$NEW] started $(date '+%F %T')  (re-grade of $SRC's matrix under $(git -C "$REPO" rev-parse --short HEAD); order=$PURSUIT_ORDER tier=$TRAIN_TIER)"
 step 0/7 "copy the matrix, manifest, labels and OOF scores from $SRC_RUN (no retrain)"
 for f in provider_features_for_model.parquet feature_manifest.json provider_oof_scores.parquet \
-         future_bans_after_${CUT}.csv future_bans_after_${CUT}.TIERS.md future_bans_after_${CUT}__fca36.csv \
-         future_bans_after_${CUT}__fca36.TIERS.md PROVIDER_FEATURES_EXPORT_REPORT.md PROVIDER_FEATURES_DICTIONARY.md \
+         future_bans_after_${CUT}.csv future_bans_after_${CUT}.TIERS.md future_bans_after_${CUT}__fca${HORIZON}.csv \
+         future_bans_after_${CUT}__fca${HORIZON}.TIERS.md PROVIDER_FEATURES_EXPORT_REPORT.md PROVIDER_FEATURES_DICTIONARY.md \
          SOURCES_REPORT.md EXPECTATIONS_REPORT.md CASE_VALIDATION.md SCHEME_HEALTH.md scheme_health.json \
          SCHEME_TRIAGE.md NETWORK_AB_REPORT.md; do
   [ -e "$SRC_RUN/$f" ] && cp -a "$SRC_RUN/$f" "$RUN/$f"
@@ -68,16 +68,16 @@ if [ -n "$REBUILD_RULERS" ]; then
   python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
       --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0
   python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 \
-      --out "$RUN/future_bans_after_${CUT}__fca36.csv" || fail 0
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
+      --out "$RUN/future_bans_after_${CUT}__fca${HORIZON}.csv" || fail 0
   if [ -f "$AFFILIATED" ]; then
     python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-        --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --affiliated "$AFFILIATED" \
-        --out "$RUN/future_bans_after_${CUT}__aff36.csv" || fail 0
+        --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --affiliated "$AFFILIATED" \
+        --out "$RUN/future_bans_after_${CUT}__aff${HORIZON}.csv" || fail 0
   fi
   python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --fca-case-only --qui-tam-only \
-      --out "$RUN/future_bans_after_${CUT}__quitam36.csv" || fail 0
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only --qui-tam-only \
+      --out "$RUN/future_bans_after_${CUT}__quitam${HORIZON}.csv" || fail 0
 else
   [ -f "$CASES" ] || CASES="$CASES_BASE"
   [ -f "$DEFENDANTS" ] || DEFENDANTS="$DEFENDANTS_BASE"
@@ -88,17 +88,17 @@ python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --orde
 
 step 7/12 "accuracy diagnostics on the PURSUIT book"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
+    --horizon-months "$HORIZON" --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/12 "the large-biller book, and the broadcast A/B"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --list-name provider_priority_list_large.csv || fail 8
+    --horizon-months "$HORIZON" --list-name provider_priority_list_large.csv || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --list-name provider_priority_list_pmax.csv || fail 8    # the v17 sweep's winning order, graded as a third book (2026-10-20)
+    --horizon-months "$HORIZON" --list-name provider_priority_list_pmax.csv || fail 8    # the v17 sweep's winning order, graded as a third book (2026-10-20)
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
+    --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
+    --horizon-months "$HORIZON" --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
 
 step 9/12 "results digest + pursuit dossier (operator book, national chains set aside; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9

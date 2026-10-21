@@ -445,8 +445,11 @@ def run(run_dir: Path, prev_run_dir: Path | None, ruler_path: Path | None, top_f
     misses, fc = pd.DataFrame(), pd.DataFrame()
     if ruler_path is None:
         cutoff = str(manifest.get("asof_cutoff") or (manifest.get("graph_substrate") or {}).get("asof") or "")[:7]
-        for cand_p in (run_dir / f"future_bans_after_{cutoff}__fca36.csv", run_dir / f"future_bans_after_{cutoff}.csv"):
-            if cutoff and cand_p.exists():
+        # the FCA ruler at ANY horizon (__fca36, __fca33, ...; the second freeze runs a
+        # different horizon), then the exclusion ruler
+        cands = sorted(run_dir.glob(f"future_bans_after_{cutoff}__fca*.csv")) if cutoff else []
+        for cand_p in cands + [run_dir / f"future_bans_after_{cutoff}.csv"]:
+            if cutoff and cand_p.exists() and "TIERS" not in cand_p.name:
                 ruler_path = cand_p
                 break
     if ruler_path and Path(ruler_path).exists():
@@ -485,7 +488,7 @@ def main() -> None:
     ap.add_argument("--top-frac", type=float, default=0.01)
     ap.add_argument("--queue-size", type=int, default=60)
     ap.add_argument("--sample", type=int, default=100_000, help="rows sampled from each matrix for drift")
-    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+charged", "hard+weak"])
+    ap.add_argument("--label-tier", default="all", choices=list(__import__("src.model_a.fca_relevance", fromlist=["TIER_POLICIES"]).TIER_POLICIES))
     ap.add_argument("--exclusion-nodes", default=None)
     ap.add_argument("--tag", default=None)
     a = ap.parse_args()

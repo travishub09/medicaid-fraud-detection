@@ -303,9 +303,9 @@ def run(run_dir: Path, future_label: Path | None, spending: Path | None,
     manifest = json.loads((run_dir / "feature_manifest.json").read_text(encoding="utf-8"))
     cutoff = manifest.get("asof_cutoff") or (manifest.get("graph_substrate") or {}).get("asof")
     if future_label is None:
-        for cand in (run_dir / f"future_bans_after_{cutoff}__fca36.csv",
-                     run_dir / f"future_bans_after_{cutoff}.csv"):
-            if cutoff and cand.exists():
+        cands = sorted(run_dir.glob(f"future_bans_after_{cutoff}__fca*.csv")) if cutoff else []
+        for cand in cands + [run_dir / f"future_bans_after_{cutoff}.csv"]:
+            if cutoff and cand.exists() and "TIERS" not in cand.name:
                 future_label = cand
                 break
     if future_label is None or not Path(future_label).exists():

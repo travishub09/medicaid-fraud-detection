@@ -1009,7 +1009,7 @@ def main() -> None:
                          "(provider_priority_list.csv): every org, sorted by "
                          "fraud signal; government entities and sub-bar case "
                          "sizes are FILTERS, dollars never sort")
-    ap.add_argument("--label-tier", default="all", choices=["all", "hard", "hard+charged", "hard+weak"],
+    ap.add_argument("--label-tier", default="all", choices=list(__import__("src.model_a.fca_relevance", fromlist=["TIER_POLICIES"]).TIER_POLICIES),
                     help="training label for the production scorer: 'all' = the "
                          "in-matrix PU label (every exclusion source; ~75%% "
                          "administrative/weak events); 'hard' = only FCA-lookalike "

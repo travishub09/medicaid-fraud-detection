@@ -1572,6 +1572,27 @@ first, then paste" above every move/done block.
   data_audit.json. Run it after every download session and before every pre-registration;
   the hand-written REQUIRED_COLS in vintage_inspect is the older, partial version of the same
   check. The operator's console is the SHORT BOARD below; never paste the full page in chat.
+  THE SECOND FREEZE + THE THREE GAP-CLOSERS (2026-10-21, bundle 345; docs/FREEZE_DESIGN_NOTE
+  addendum): the second freeze is 2023-12 (horizon 33, `HORIZON` env; the ruler files carry
+  the horizon: `__fca33`), NOT 2023-06: `_file_period` now reads quarter / month tokens
+  (Q4_2023 = 2023-12, 2021Q3 = 2021-09, Nov2023 = 2023-11) and every edition the note listed
+  for 2023-06 is dated after June 2023. `model_a/freeze_inputs.py` resolves the as-of NPPES for
+  any cutoff (nppes + nppes_history; newest on/before within 12 months, else nearest later,
+  staleness recorded in freeze_inputs.json; runner step 0; `ASOF_NPPES` overrides);
+  `model_a/freeze_pair.py` = FREEZE_PAIR.md (two runs side by side: grade per book, checks
+  that HOLD ON BOTH, sources used at one freeze and skipped at the other, vintage verdicts);
+  `entity_graph/owners_archive.py` copies every All-Owners file into owners_prior/ dated
+  (idempotent) and the runner archives the month's owner-edge snapshot (rule 2, no reminder
+  needed on the VM); THE VINTAGE LEDGER (`_VINTAGE`, manifest `vintage_audit`, a table in
+  SOURCES_REPORT): every edition pick records pre_cutoff / undated_substituted /
+  post_cutoff_reference / nothing_eligible / current_day_newest, run_issues grades a
+  substitution WARN and a post-cutoff pick FAIL, `scheme_health.leak_suspect` (forward AUC
+  >= in-time AUC + 0.15 and >= 0.70) is a run_issues FAIL (rule 3). CURRENT-DAY PICKING
+  (hold_folders_to_live answered): `_asof_files(keep=)` reads the newest edition (POS, HCRIS,
+  NH tables) or the newest four quarters (PBJ) instead of pooling every file; `_asof_newest`
+  takes the newest period, not the alphabetically first name. HCRIS is as-of (audit H7). The
+  four `--label-tier` choice lists read TIER_POLICIES (audit H1: a second-freeze run could not
+  finish without it). Tests: tests/test_second_freeze_2026_10.py (1,150 pass).
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

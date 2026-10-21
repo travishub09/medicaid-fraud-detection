@@ -83,7 +83,8 @@
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
     "python -m src.entity_graph.ownership_snapshot --owned-by \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\graph\\edges\\owned_by_edges.parquet\" --snapshots-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\owner_snapshots\"",
     "python -m src.reminders --done owner_snapshot"
-   ]
+   ],
+   "note": "2026-10-21: AUTOMATIC on the VM from bundle 345 (run_frozen_night.sh step 0 archives the month's owner edges and copies every All-Owners file in preclean/owners into owners_prior/ under a dated name); the laptop line stays for months without a VM run."
   },
   {
    "key": "warn_notices",
@@ -574,19 +575,27 @@
    ]
   },
   {
-   "key": "second_freeze_2023_06",
+   "key": "second_freeze_2023_12",
    "added": "2026-10-21",
-   "what": "THE SECOND FREEZE (docs/FREEZE_DESIGN_NOTE_2026-10-21.md): a 2023-06 cutoff with a 36-month horizon (to 2026-06) where EVERY source has an edition (POS Q4 2023, PBJ 2023Q4, NH Nov2023, Order and Referring 2023-12, NADAC 2023, All Owners 2022-09 onward, the December 2023 NPPES in nppes_history/). Run it as the second ruler beside 2021-12 after v18 is read: the same runner with the cutoff 2023-06, its own as-of graph (graph_asof_2023-06_full, --asof-nppes on the 2023 NPPES file), pre-registered under the same checks (expect smaller hit counts: fewer cases resolve within 36 months of 2023-06). A model that holds on both rulers is the evidence; v19 is graded on both. Claude writes the exact pre-register + tmux lines when v18's read-out is in.",
+   "what": "THE SECOND FREEZE, BUILT 2026-10-21 (bundle 345; docs/FREEZE_DESIGN_NOTE addendum): the cutoff is 2023-12, NOT 2023-06: once the picker reads quarter / month tokens, every edition on disk (POS Q4 2023, PBJ 2023Q4, NH Nov2023, O&R 2023-12, NADAC 2023) is dated AFTER June 2023 and only 2023-12 lights them all up; the December-2023 NPPES in nppes_history is the exact as-of edition. Horizon 33 months ends 2026-09 (fully elapsed). RUN IT AFTER audit batch 1 ships and the 2021-12 v19 is read: pre-register the tag, then the runner with cutoff 2023-12 and HORIZON=33 (its own as-of graph graph_asof_2023-12_full), then freeze_pair on the two runs. The data scan's frozen_2023-12/DATA_AUDIT.md section 2 says what it reads.",
    "commands": [
-    "REM after v18 is read; Claude writes the lines then (runner: ops/vm/run_frozen_night.sh <tag> 2023-06 --rebuild-graph)"
+    "REM pre-register (same checks as the 2021-12 run; hits will be smaller: fewer cases resolve in 33 months):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister v19b --goal 'the second freeze: 2023-12, horizon 33, every source lit' --check 'hits100 >= 2' --check 'hits250 >= 4' --check 'inst_share50 <= 0.4' --check 'eval_policy = fca' --check 'frozen = True' --check 'train = hard'\"",
+    "REM start (its own tmux window; reads the as-of NPPES from nppes_history automatically):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v19b 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v19b 2023-12 --rebuild-graph'\"",
+    "REM when DONE, the two-ruler read-out (replace v19 with the 2021-12 run tag):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2021-12_v19 /data/medicaid/model_a/frozen_2023-12_v19b && cat /data/medicaid/model_a/frozen_2021-12_v19/FREEZE_PAIR.md\"",
+    "python -m src.reminders --done-task second_freeze_2023_12"
    ]
   },
   {
    "key": "hold_folders_to_live",
    "added": "2026-10-21",
-   "what": "CLAUDE check, then operator move: the dated 2026 editions parked under preclean/facility_current_hold (Hospice_Provider_May2026, NH_HealthCitations_Jul2026, pbj_daily_staffing_2025Q4) and preclean/pos_current_hold (the 2026-Q1 POS files) are the CURRENT-DAY inputs; frozen runs would skip them by date. Before they move into facility/ and pos/, confirm in code that the current-day (no cutoff) adapters take the NEWEST edition of each table rather than pooling Nov2023 + Jul2026; then write the move lines. The five undated duplicates in those folders were deleted 2026-10-21.",
+   "what": "ANSWERED 2026-10-21 (bundle 345): a current-day run used to POOL every edition in facility/ and pos/ (PBJ 2021 averaged with 2025; POS Q4 2021 beside Q1 2026) and the single-file pickers took the alphabetically first name. Fixed: a current-day run reads the newest edition (POS, HCRIS, the NH tables) or the newest four quarters (PBJ); frozen runs are unchanged (pre-cutoff only). The hold folders can move after bundle 345 is merged. Download first? No: these files are already on disk; paste the move lines, then the done line.",
    "commands": [
-    "REM no operator action until Claude writes the move lines"
+    "move \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility_current_hold\\*.csv\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\\\" && move \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos_current_hold\\*\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\\\" && dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos\"",
+    "rmdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility_current_hold\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pos_current_hold\"",
+    "python -m src.reminders --done-task hold_folders_to_live"
    ]
   },
   {

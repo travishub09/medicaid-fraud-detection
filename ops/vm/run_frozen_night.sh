@@ -41,7 +41,11 @@ PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"   # v13: dollar (shipped) or basis50 (s
 FROZEN_SKIP="${FROZEN_SKIP-}"
 MEASURE_ABLATION="${MEASURE_ABLATION:-1}"   # measure_run.sh: 0 skips the slow label/source ablations
 EXCL="$GRAPH_ASOF/nodes/exclusion_nodes.parquet"
-NPPES_ASOF="$(ls "$DATA"/preclean/nppes/npidata_pfile_*-${CUT//-/}??.csv 2>/dev/null | head -1)"
+# 2026-10-21 (the second freeze): the as-of NPPES edition for ANY cutoff comes from
+# src/model_a/freeze_inputs.py (preclean/nppes + nppes_history: the newest edition on/before
+# the cutoff when it is at most 12 months old, else the nearest later one, recorded in
+# $RUN/freeze_inputs.json and graded by run_issues); ASOF_NPPES=<path> overrides.
+HORIZON="${HORIZON:-36}"   # the ruler length in months (2023-12 freeze: 33 ends 2026-09, fully elapsed)
 # v15 (2026-10-13): the case DB plus the CIA case rows, the resolver NPIs plus the CIA
 # party NPIs, merged by step 0 into ONE file each (the originals are never modified)
 CASES_BASE="$DATA/enforcement/doj_cases_v3.csv"
@@ -86,6 +90,25 @@ if [ "${VINTAGE_INSPECT:-1}" = "1" ]; then
   fi
 fi
 
+step 0/13 "freeze inputs (as-of NPPES edition for $CUT, horizon $HORIZON) + the owner-edition archive"
+NPPES_ASOF="${ASOF_NPPES:-}"
+if [ -z "$NPPES_ASOF" ]; then
+  NPPES_ASOF="$(python -u -m src.model_a.freeze_inputs --data-root "$DATA" --cutoff "$CUT" --run-dir "$RUN" --horizon-months "$HORIZON" | tee /dev/stderr | tail -1)"
+fi
+[ -n "$NPPES_ASOF" ] && [ -f "$NPPES_ASOF" ] || { echo "[$TAG] no as-of NPPES edition for $CUT (preclean/nppes or nppes_history; names like npidata_pfile_20050523-20231210.csv)"; fail 0; }
+echo "[$TAG]   as-of NPPES: $NPPES_ASOF"
+# docs/FREEZE_DESIGN_NOTE_2026-10-21.md rule 2: build our own archive. Every All-Owners
+# file in preclean/owners is copied into owners_prior/ under a dated name (idempotent), and
+# this month's owner-edge snapshot is archived from the current graph when it is missing.
+python -u -m src.entity_graph.owners_archive --data-root "$DATA" || echo "[$TAG]   owners_archive failed (non-fatal)"
+SNAP="$DATA/owner_snapshots/owners_$(date +%Y-%m).parquet"
+if [ ! -f "$SNAP" ] && [ -f "$DATA/graph/edges/owned_by_edges.parquet" ]; then
+  python -u -m src.entity_graph.ownership_snapshot --owned-by "$DATA/graph/edges/owned_by_edges.parquet" --snapshots-dir "$DATA/owner_snapshots" \
+    || echo "[$TAG]   owner snapshot failed (non-fatal)"
+else
+  echo "[$TAG]   owner snapshot for $(date +%Y-%m): $([ -f "$SNAP" ] && echo present || echo 'no current graph edges; make graph first')"
+fi
+
 step 0/13 "the merged label inputs (case DB + CIA cases; resolver NPIs + CIA party NPIs)"
 python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
     --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0
@@ -94,7 +117,6 @@ step 1/13 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (reb
 if [ -f "$GRAPH_ASOF/nodes/exclusion_nodes.parquet" ] && [ -z "$REBUILD" ]; then
   echo "[$TAG]   reusing $GRAPH_ASOF  (pass --rebuild-graph when processed/exclusions_*.parquet changed: v15 did)"
 else
-  [ -n "$NPPES_ASOF" ] || { echo "[$TAG] MISSING the as-of NPPES edition preclean/nppes/npidata_pfile_*-${CUT//-/}xx.csv"; fail 1; }
   python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH_ASOF" --asof "$CUT" --asof-nppes "$NPPES_ASOF" \
       --max-embed-nodes 0 --light-walks-above 0 || fail 1
 fi
@@ -116,16 +138,16 @@ step 3/13 "forward labels (exclusion ruler, hard tier; FCA case ruler, 36 months
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --out "$RUN/future_bans_after_${CUT}.csv" || fail 3
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-    --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 \
-    --out "$RUN/future_bans_after_${CUT}__fca36.csv" || fail 3
+    --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
+    --out "$RUN/future_bans_after_${CUT}__fca${HORIZON}.csv" || fail 3
 if [ -f "$AFFILIATED" ]; then
   python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --affiliated "$AFFILIATED" \
-      --out "$RUN/future_bans_after_${CUT}__aff36.csv" || fail 3
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --affiliated "$AFFILIATED" \
+      --out "$RUN/future_bans_after_${CUT}__aff${HORIZON}.csv" || fail 3
 fi
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-    --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months 36 --fca-case-only --qui-tam-only \
-    --out "$RUN/future_bans_after_${CUT}__quitam36.csv" || fail 3
+    --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only --qui-tam-only \
+    --out "$RUN/future_bans_after_${CUT}__quitam${HORIZON}.csv" || fail 3
 
 step 4/13 "network A/B (size-matched) on the forward label"
 python -u -m src.model_a.network_ab --matrix "$RUN/provider_features_for_model.parquet" --manifest "$RUN/feature_manifest.json" \
@@ -139,25 +161,25 @@ python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --orde
 
 step 7/13 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
+    --horizon-months "$HORIZON" --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/13 "the large-biller book, and the broadcast A/B (weight vs mask, refit on the same matrix)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --list-name provider_priority_list_large.csv || fail 8
+    --horizon-months "$HORIZON" --list-name provider_priority_list_large.csv || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --list-name provider_priority_list_pmax.csv || fail 8    # the v17 sweep's winning order, graded as a third book (2026-10-20)
+    --horizon-months "$HORIZON" --list-name provider_priority_list_pmax.csv || fail 8    # the v17 sweep's winning order, graded as a third book (2026-10-20)
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
+    --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
+    --horizon-months "$HORIZON" --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
 # v15: the charged tier A/B (the hard arm is ab_broadcast_weight above: same matrix, same seeds, tier hard)
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier hard+charged --exclusion-nodes "$EXCL" \
-    --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md" || fail 8
+    --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md" || fail 8
 # 2026-10-14: the commercial-plan fraud A/B (source hcf_commercial, training only), run only
 # once the case DB carries such rows (research_evidence commercial-cases)
 if grep -q "hcf_commercial" "$CASES" 2>/dev/null; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier hard+commercial --exclusion-nodes "$EXCL" \
-      --horizon-months 36 --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_commercial/ACCURACY_DIAGNOSTICS.md" || fail 8
+      --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --out "$RUN/ab_tier_commercial/ACCURACY_DIAGNOSTICS.md" || fail 8
 else
   echo "[$TAG]   no hcf_commercial rows in $CASES: the commercial A/B is skipped (harvest set 'commercial', loader research_evidence commercial-cases)"
 fi
@@ -182,3 +204,4 @@ echo
 echo "[$TAG] DONE $(date '+%F %T')  -- tell Claude '$TAG finished'; then the packet:"
 echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask ab_tier_charged $(ls -d ab_tier_commercial 2>/dev/null))   # tar is always installed; zip is not"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${TAG}     # reports back to OneDrive"
+echo "  python -m src.model_a.freeze_pair --runs <the 2021-12 run> $RUN     # the two-ruler read-out (FREEZE_PAIR.md)"

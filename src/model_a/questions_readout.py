@@ -192,8 +192,10 @@ def q5_label(run_dir: Path) -> list[str]:
         L.append(f"Training label: policy {tp.get('label_tier')}, {tp.get('n_positives')} positives "
                  f"({tp.get('n_doj_positives')} DOJ-case, {tp.get('n_charged_positives', 0)} charged, "
                  f"{tp.get('n_commercial_positives', 0)} commercial).")
-    for tag, name in (("", "exclusion ruler"), ("__fca36", "FCA ruler"), ("__quitam36", "qui tam ruler"), ("__aff36", "affiliated ruler")):
-        for p in run_dir.glob(f"future_bans_after_*{tag}.csv"):
+    for tag, name in (("", "exclusion ruler"), ("__fca", "FCA ruler"), ("__quitam", "qui tam ruler"), ("__aff", "affiliated ruler")):
+        for p in run_dir.glob(f"future_bans_after_*{tag}*.csv" if tag else "future_bans_after_*.csv"):
+            if "TIERS" in p.name:
+                continue
             if tag == "" and "__" in p.name:
                 continue
             df = _csv(p)

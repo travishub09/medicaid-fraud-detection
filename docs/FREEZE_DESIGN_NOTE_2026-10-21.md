@@ -56,3 +56,44 @@ POS Q4 2023, PBJ 2023Q4, NH Nov 2023, Order and Referring 2023-12, NADAC 2023, A
 Owners 2022-09 / 2023-01 / 2023-04 / 2023-06 (SNF), 2022-11 / 2023-03 / 2023-06
 (Hospital), 2023-06 (HHA, Hospice). The runner takes the cutoff as its second
 argument (`run_frozen_night.sh v19b 2023-06`) and the ruler files follow the cutoff.
+
+## Addendum, 2026-10-21 (built the same day, bundle 345)
+
+**The second freeze is 2023-12, not 2023-06.** Making the edition picker read quarter
+and month tokens (`POS_File_Q4_2023` is 2023-12, `PBJ_2023Q4` is 2023-12,
+`NH_Ownership_Nov2023` is 2023-11, `Order and Referring 2023-12`, `NADAC 2023` is
+2023-12) shows that every edition this note listed as "on disk for 2023-06" is dated
+AFTER June 2023, so a 2023-06 freeze would skip all of them and light up nothing the
+2021-12 freeze lacks. At 2023-12 every one of them is on or before the cutoff, the
+December-2023 NPPES in nppes_history/ is the exact as-of edition, and All Owners has
+four pre-cutoff editions. A 36-month horizon from 2023-12 ends 2026-12, two months
+out; the runner's `HORIZON=33` ends it at 2026-09, fully elapsed, and the ruler files
+carry the horizon in their names (`__fca33`). The earlier `frozen_2023-12_v5` / `v6`
+runs used this cutoff already.
+
+**What was built for the three gap-closers:**
+
+1. *The second freeze as a first-class run:* `src/model_a/freeze_inputs.py` resolves
+   the as-of NPPES edition for any cutoff (newest on/before when at most 12 months old,
+   else the nearest later one, recorded with its staleness in `freeze_inputs.json` and
+   graded by run_issues); the runner reads it (step 0), takes `HORIZON`, names the
+   rulers by it; `src/model_a/freeze_pair.py` puts two frozen runs side by side
+   (grade per book and budget, the checks that HOLD ON BOTH, the sources used at one
+   freeze and skipped at the other, the vintage verdicts) -> FREEZE_PAIR.md.
+2. *Our own archive:* `src/entity_graph/owners_archive.py` copies every All-Owners
+   file in preclean/owners into owners_prior/ under a dated name (idempotent, content
+   hash); the runner calls it and archives the month's owner-edge snapshot before every
+   run, so no monthly reminder is needed on the VM.
+3. *No substitution:* every edition picker writes a row to the VINTAGE LEDGER
+   (manifest `vintage_audit`, a table in SOURCES_REPORT): pre_cutoff / undated_substituted
+   / post_cutoff_reference / nothing_eligible / current_day_newest; run_issues grades a
+   substitution WARN and a post-cutoff pick FAIL; scheme_health flags `leak_suspect`
+   when a scheme's forward-ruler AUC sits 0.15 above its in-time AUC (and at least
+   0.70), which run_issues raises as a FAIL. HCRIS now reads one cost-report year
+   on/before the freeze (it pooled every file: PLATFORM_AUDIT H7).
+
+**And the hold-folder question, answered:** a current-day run used to POOL every
+edition in a multi-file folder (PBJ 2021 with 2025, POS Q4 2021 with Q1 2026) and the
+single-file pickers returned the alphabetically first name. Now a current-day run reads
+the newest edition (POS, HCRIS, the NH tables) or the newest four quarters (PBJ), so the
+2026 editions can move out of the hold folders.
