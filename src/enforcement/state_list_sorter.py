@@ -46,6 +46,9 @@ AGENCY_TOKENS = {
     "tenncare": "TN", "scdhhs": "SC", "ncdhhs": "NC", "chfs": "KY",
 }
 _EXT = (".xlsx", ".xls", ".csv")
+# files that carry a state name but are not sanction lists (the WARN layoff notices the
+# sourcing monitor reads, Census population estimates): never listed
+_NOT_A_LIST = re.compile(r"warn|layoff|co-est20|census|population|\bpop\b", re.I)
 _DUP = re.compile(r"\s*\(\d+\)(?=\.[A-Za-z]+$)")           # "name (2).xlsx"
 _NAME_YM = re.compile(r"(20\d{2})[-_ ]?(0[1-9]|1[0-2])(?![0-9])")
 _NAME_MONTH = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-_ ]?(20\d{2})", re.I)
@@ -103,7 +106,7 @@ def plan(downloads: Path, dest: Path, today: date | None = None) -> list[dict]:
                    key=lambda p: (bool(_DUP.search(p.name)), p.name.lower()))   # originals before "(1)" copies
     for p in cands:
         st = state_of(p.name)
-        if not st:
+        if not st or _NOT_A_LIST.search(p.stem):
             continue
         row = {"file": p.name, "state": st, "edition": edition_of(p.name, today),
                "target": f"{st}_terminations_{edition_of(p.name, today)}{p.suffix.lower()}",

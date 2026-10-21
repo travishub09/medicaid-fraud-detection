@@ -50,3 +50,31 @@ def test_plan_checks_headers_collapses_duplicates_and_apply_copies(tmp_path):
     names = sorted(p.name for p in done)
     assert names == ["IL_terminations_202610.xlsx", "PA_terminations_202610.csv"]
     assert (dl / "PA_Medicheck_2026-10-21.csv").exists()                         # the download stays
+
+
+def test_big_state_headers_resolve_and_tolerant_csv_reads(tmp_path):
+    from src.enforcement.state_terminations import resolve_fields, read_state_file
+    ny = resolve_fields(['provider_name', 'license_num', 'npi_num', 'provider_type', 'exclusion_effective_date'])
+    assert ny["org_name"] == "provider_name" and ny["npi"] == "npi_num" and ny["excl_date"] == "exclusion_effective_date"
+    pa = resolve_fields(['ProviderName', 'LicenseNumber', 'Status', 'BeginDate', 'EndDate', 'CAO'])
+    assert pa["org_name"] == "ProviderName" and pa["excl_date"] == "BeginDate" and pa["reinstate_date"] == "EndDate"
+    tx = resolve_fields(['CompanyName', 'LastName', 'FirstName', 'MidInitial', 'Occupation', 'NPI', 'StartDate'])
+    assert tx["org_name"] == "CompanyName" and tx["last_name"] == "LastName" and tx["middle_name"] == "MidInitial"
+    fl = resolve_fields(['Provider', 'NPI Number', 'Provider Type', 'Sanction Date', 'Violation Code'])
+    assert fl["org_name"] == "Provider" and fl["reason"] == "Violation Code"
+    # a preamble line + an unbalanced quote: the sniffer rejects it, the tolerant reader does not
+    p = tmp_path / "ca suspended-ineligible-list.csv"
+    p.write_text('Suspended and Ineligible Provider List,,,\n'
+                 'Provider Name,NPI,Effective Date,Reason\n'
+                 '"ACME "CLINIC" INC",1234567893,2024-01-05,Medi-Cal fraud conviction\n'
+                 'BETA LLC,1245319599,2024-02-01,License revoked\n', encoding="utf-8")
+    df, fields, _ = read_state_file(p)
+    assert len(df) == 2 and fields["org_name"] == "Provider Name" and fields["reason"] == "Reason"
+
+
+def test_sorter_never_lists_warn_or_census_files(tmp_path):
+    dl = tmp_path / "dl"
+    dl.mkdir()
+    pd.DataFrame({"Company Name": ["X"], "Effective Date": ["2026-01-01"]}).to_csv(dl / "florida_warn_2026.csv", index=False)
+    pd.DataFrame({"a": [1]}).to_excel(dl / "co-est2025-pop.xlsx", index=False)
+    assert plan(dl, tmp_path / "dest", today=date(2026, 10, 21)) == []

@@ -48,23 +48,25 @@ EXCLUSION_COLS = ["npi", "entity_name", "name_key", "excl_type", "excl_date",
 # whitespace and newlines collapsed. A state's file needs SOME name column; everything
 # else is optional and reported.
 FIELD_ALIASES: dict[str, list[str]] = {
-    "npi": [r"^npi$", r"^npi/atypical id", r"^npi ", r"npi number", r"national provider"],
+    "npi": [r"^npi$", r"^npi/atypical id", r"^npi ", r"npi number", r"national provider", r"^npi num"],
     "last_name": [r"^last name", r"provider last name", r"^last name or practice name"],
     "first_name": [r"^first name", r"provider first name"],
-    "middle_name": [r"^middle name", r"provider mi name"],
+    "middle_name": [r"^middle name", r"provider mi name", r"^mid initial", r"^middle initial"],
     "org_name": [r"^business name", r"provider organization name", r"^excluded entity",
                  r"^individual//entity", r"^individual/entity", r"^name of provider",
-                 r"^provider name", r"^name$", r"^entity"],
+                 r"^provider name", r"^name$", r"^entity", r"^company name", r"^provider$",
+                 r"^facility name", r"^organization name"],
     "excl_date": [r"^sancdate", r"sanction date", r"^effective date", r"termination effective date",
                   r"^action date", r"^exclusion date", r"^suspension date", r"^date of action",
-                  r"^suspension$", r"^termination date"],
+                  r"^suspension$", r"^termination date", r"exclusion effective", r"^begin date",
+                  r"^start date", r"^date of (exclusion|termination|sanction|suspension)"],
     "reinstate_date": [r"termination end date", r"^end date", r"reinstat"],
     # NOTE: the LEIE-style "GENERAL" column is the provider CATEGORY (MEDICAL PRACTICE,
     # MD / PRIVATE CITIZEN ...), never the reason; the statute lives in EXCLTYPE.
     "reason": [r"^reason", r"reason for", r"termination reason", r"^sanction reason", r"^excltype",
                r"^excl\.? ?type", r"^exclusion type", r"^cause", r"^grounds", r"^violation", r"^offense",
                r"^category", r"^sanction type", r"^excluded/terminated", r"^action$", r"^type of action",
-               r"^basis"],
+               r"^basis", r"^action taken", r"^exclusion reason", r"^authority", r"^statute"],
     # a SECOND cause column (MS: 'Termination Reason' + 'Sanction Type' = 'F-Individual or
     # Entity Convicted of Fraud'); folded into the reason text so the tier sees both
     "reason2": [r"^sanction type", r"^sanction source", r"^type of (sanction|action)", r"^action type",
@@ -78,7 +80,14 @@ TERM_WORDS = re.compile(r"exclu|terminat|sanction|suspend|adverse|debar", re.I)
 
 
 def _clean_header(h) -> str:
-    return re.sub(r"\s+", " ", str(h)).strip().lower()
+    """Header -> lower-case words. 2026-10-21: the big-state lists spell headers
+    ``provider_name`` (NY), ``ProviderName`` / ``BeginDate`` (PA), ``CompanyName`` /
+    ``MidInitial`` (TX); underscores become spaces and a CamelCase boundary splits, so
+    the same aliases match."""
+    s = str(h).replace("_", " ")
+    s = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", s)           # ProviderName -> Provider Name
+    s = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", s)      # NPINumber -> NPI Number
+    return re.sub(r"\s+", " ", s).strip().lower()
 
 
 def _find_header_row(raw: pd.DataFrame) -> int:
@@ -128,10 +137,43 @@ def read_state_file(path: Path) -> tuple[pd.DataFrame, dict, str]:
                 best = (key, df, fields, sh)
         _, df, fields, sh = best
         return df, fields, sh
-    raw = pd.read_csv(path, header=None, nrows=80, dtype=str, encoding_errors="replace", sep=None, engine="python")
-    hdr = _find_header_row(raw)
-    df = pd.read_csv(path, header=hdr, dtype=str, encoding_errors="replace", sep=None, engine="python").dropna(how="all")
+    try:
+        raw = pd.read_csv(path, header=None, nrows=80, dtype=str, encoding_errors="replace", sep=None, engine="python")
+        hdr = _find_header_row(raw)
+        df = pd.read_csv(path, header=hdr, dtype=str, encoding_errors="replace", sep=None, engine="python").dropna(how="all")
+    except Exception as ex:  # noqa: BLE001  (ParserError, csv.Error from the python engine, a decode error)
+        if not isinstance(ex, (pd.errors.ParserError, ValueError, UnicodeDecodeError)) \
+                and type(ex).__module__ not in ("_csv", "csv"):
+            raise
+        df = _read_csv_tolerant(path)
     return df, resolve_fields(list(df.columns)), ""
+
+
+def _read_csv_tolerant(path: Path) -> pd.DataFrame:
+    """A state csv the pandas sniffer rejects (2026-10-21: California's suspended-and-
+    ineligible list opens with a preamble line, Louisiana's exclusion list and the Florida
+    provider master list carry unbalanced quotes): parse with the csv module on the
+    delimiter the first 80 lines use most, retry with quoting off on a quote error, take
+    the header row the same scorer picks, and pad or trim every data row to it."""
+    import csv
+    text = path.read_bytes().decode("utf-8-sig", errors="replace")
+    lines = text.splitlines()
+    head = lines[:80]
+    delim = max([",", "\t", "|", ";"], key=lambda d: sum(l.count(d) for l in head))
+    try:
+        rows = list(csv.reader(lines, delimiter=delim))
+    except csv.Error:
+        rows = list(csv.reader(lines, delimiter=delim, quoting=csv.QUOTE_NONE))
+    rows = [r for r in rows if any(str(c).strip() for c in r)]
+    if not rows:
+        return pd.DataFrame()
+    width = max(len(r) for r in rows[:80])
+    probe = pd.DataFrame([r + [""] * (width - len(r)) for r in rows[:80]])
+    hdr = _find_header_row(probe)
+    header = [str(c).strip() or f"col{i}" for i, c in enumerate(rows[hdr])]
+    n = len(header)
+    data = [(r + [""] * n)[:n] for r in rows[hdr + 1:]]
+    return pd.DataFrame(data, columns=header, dtype=str)
 
 
 def state_from_filename(path: Path) -> str:
