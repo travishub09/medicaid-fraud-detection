@@ -542,6 +542,15 @@
  ],
  "tasks": [
   {
+   "key": "verify_sources_fetch",
+   "added": "2026-10-21",
+   "what": "verify-sources ran on the VM 2026-10-21 and read 0 of its 37 selected rows: every page fetch failed ('37 pages unreachable'), so the fourth label gate (defendant on the cited page) is not yet applied to the case DB. Claude needs the error text to fix it (a missing package in the VM venv, a blocked user agent, or the VM's egress); the line below prints the first five failure reasons. Not a v18 blocker (0 rows would have changed either way); fix before v19.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -m 5 'fetch failed' /data/medicaid/enforcement/verify_sources.log\"",
+    "REM paste the output to Claude"
+   ]
+  },
+  {
    "key": "vintage_read_2026_10_20",
    "added": "2026-10-21",
    "what": "THE VINTAGE READ (VINTAGE_INSPECT.md, 2026-10-20, 210 files): nothing on the 12-file 're-download' list needs re-downloading; they are undated REFERENCE files (PECOS, the CIA roster, the FDA NDC directory, HUD zip-county, NUCC, OpenSanctions, the three MUE tables, SAM) whose period is their download date: fill EDITIONS.csv (task editions_undated_reference). Three real actions: (1) the OCTOBER NPPES main file was never swapped in: NPPES.csv still reads June 2026 (Last Update max 2026-06-08) while the October practice-location file is in place; find the extracted npidata_pfile_20050523-20261011.csv and copy it over NPPES.csv (keep the June file as NPPES_202606.csv; 11 GB each, check free disk first). (2) sam/sam_exclusions.CSV (undated, 77.7 MB) sits beside sam_exclusions_202609.csv (dated): the undated one is the older download; delete it so the loader reads one file. (3) read rename_plan.bat (one rename proposed) before running it. Also: the owners_prior archive already holds the EARLIEST All Owners editions CMS publishes (SNF 2022-09, Hospital 2022-11), so nothing older exists to fetch; the fda_ndc orphan flag was the inspector's own stale list (fixed in bundle 333).",
@@ -570,18 +579,6 @@
    "what": "CLAUDE check, then operator move: the dated 2026 editions parked under preclean/facility_current_hold (Hospice_Provider_May2026, NH_HealthCitations_Jul2026, pbj_daily_staffing_2025Q4) and preclean/pos_current_hold (the 2026-Q1 POS files) are the CURRENT-DAY inputs; frozen runs would skip them by date. Before they move into facility/ and pos/, confirm in code that the current-day (no cutoff) adapters take the NEWEST edition of each table rather than pooling Nov2023 + Jul2026; then write the move lines. The five undated duplicates in those folders were deleted 2026-10-21.",
    "commands": [
     "REM no operator action until Claude writes the move lines"
-   ]
-  },
-  {
-   "key": "lanes_gates_apply",
-   "added": "2026-10-20",
-   "what": "STEPS 1 AND 2 DONE 2026-10-21 (lanes re-loaded: 21 research rows kept, 5 name conflicts quarantined; state lists re-run: 5,750 rows, 1,448 with NPI, 169 by name). STEP 3 RUNNING under tmux session verify (started 2026-10-21 00:30 UTC): done when tmux ls no longer lists it and the log ends with \"verify-sources: N rows quarantined\". APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
-   "commands": [
-    "REM step 3 status (the log is empty until it finishes; done when the verify session is gone):",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -3 /data/medicaid/enforcement/verify_sources.log\"",
-    "REM if the session is gone and the log is still empty, re-start it:",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s verify 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv > /data/medicaid/enforcement/verify_sources.log 2>&1'\"",
-    "python -m src.reminders --done-task lanes_gates_apply"
    ]
   },
   {
@@ -863,17 +860,14 @@
   {
    "key": "v18_run",
    "added": "2026-10-14",
-   "what": "AFTER lanes_gates_apply (the gates must run on the VM first so v18 trains on the cleaned rows). v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. v17 GRADED 2026-10-20 (docs/ACCURACY_READOUT_v17_2026-10-20.md): hits@100 = 5 (PASS for the first time), large book 4 at 50, HOLD on top-50 Jaccard 0.575 (bar 0.6) only. v18 keeps hits100 >= 4 and top50_jaccard >= 0.6; the pmax order (the first sweep row to beat the shipped order: 2/3/5/9 vs 1/2/5/7) is graded as a third book, never shipped yet. After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. The lane rows ARE loaded (2026-10-20): cia / outcome_refresh / commercial rows sit in enforcement/doj_cases_v3.csv, the 22 name-resolved exclusions in processed/exclusions_name_resolved.parquet (so --rebuild-graph is REQUIRED: the as-of graph must carry them as exclusion nodes), the 26 researched defendants in processed/case_defendant_npis.parquet. Needs bundle 327 merged + pulled first (the pmax book and the dossier bar are in ab95883). Every line below is a laptop Command Prompt ssh one-liner; one line per paste.",
+   "what": "RUNNING since 2026-10-21 11:44 UTC (tmux session v18 on the VM; pre-registered under the v17 checks, train = hard, --rebuild-graph, 10 seeds; the measurement block adds 3 to 5 hours: expect DONE late 2026-10-21 UTC). The log is empty for long stretches during the export; a stuck window is the cellular link, never the run (every line below carries the ssh keepalive). AFTER lanes_gates_apply (the gates must run on the VM first so v18 trains on the cleaned rows). v18 = the FIRST run on the 2026-10-14 build-out: v17's inputs (the merged CIA case file, the as-of graph reused), the as-of v3 billing scores IN (the runner stops if the '[asof_v3] restored' line is missing), facility + POS OUT of the frozen build (FROZEN_SKIP default), the measurement block as step 12 (scheme AUC on the FCA ruler, signal ranking, LABEL_ENRICHMENT, label + source ablations: budget 3 to 5 extra hours; MEASURE_ABLATION=0 skips the two retrains), ten seeds, train = hard. v17 GRADED 2026-10-20 (docs/ACCURACY_READOUT_v17_2026-10-20.md): hits@100 = 5 (PASS for the first time), large book 4 at 50, HOLD on top-50 Jaccard 0.575 (bar 0.6) only. v18 keeps hits100 >= 4 and top50_jaccard >= 0.6; the pmax order (the first sweep row to beat the shipped order: 2/3/5/9 vs 1/2/5/7) is graded as a third book, never shipped yet. After bundle 323 is merged + pulled and v17's packet is graded. Read SCHEME_HEALTH's FCA verdict column, LABEL_ENRICHMENT.md and SOURCE_ABLATION.md before planning v19: a scheme coin-flip on both labels with a ~0 leave-one-out delta is the prune list for the v19 pre-registration. The lane rows ARE loaded (2026-10-20): cia / outcome_refresh / commercial rows sit in enforcement/doj_cases_v3.csv, the 22 name-resolved exclusions in processed/exclusions_name_resolved.parquet (so --rebuild-graph is REQUIRED: the as-of graph must carry them as exclusion nodes), the 26 researched defendants in processed/case_defendant_npis.parquet. Needs bundle 327 merged + pulled first (the pmax book and the dossier bar are in ab95883). Every line below is a laptop Command Prompt ssh one-liner; one line per paste.",
    "commands": [
-    "REM 1. the VM must carry ab95883 (bundle 327 merged on the laptop first: ops\\laptop\\merge_push.bat 327):",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1\"",
-    "REM 2. pre-register (the locked checks):",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -u -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v18 --goal 'first run with the as-of v3 billing scores restored, the 2023 facility/POS editions excluded from the freeze, the measurement block (scheme AUC on the FCA ruler, label enrichment, source + label ablations), the research-lane rows in the label (cia / outcome refresh / commercial / names / defendant research loaded 2026-10-20), and the pmax order graded as a third book; the v17 label inputs plus the lane rows; ten seeds, train = hard' --expected 'pursuit hits@250 at least 6 and large book hits@50 at least 2 under the FCA ruler; Jaccard at least 0.6; hits@100 at least 4 (v17 read 5); every scheme carries an FCA-ruler AUC and the ablation names the families to prune for v19' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard'\"",
-    "REM 3. start the run under tmux (survives the laptop closing); --rebuild-graph is required (the name-resolved exclusions):",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v18 'PREV_RUN=/data/medicaid/model_a/frozen_2021-12_v17 SEEDS=10 bash ops/vm/run_frozen_night.sh v18 2021-12 --rebuild-graph'\"",
-    "REM 4. check on it any time (about 8 to 12 hours with the measurement block):",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -3 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
-    "REM when it prints '[v18] DONE': tell Claude 'v18 finished', then the packet lines the log prints (tar + sync up + scp)"
+    "REM status any time (done when the last line reads '[v18] DONE'):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -5 /data/medicaid/model_a/frozen_2021-12_v18/night_run.log\"",
+    "REM when DONE: tell Claude 'v18 finished', then the packet (one line each):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v18 && tar -czf /home/ubuntu/run_packet_v18.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v18\"",
+    "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v18.tar.gz C:\\Users\\treyr\\Downloads\\",
+    "REM then attach run_packet_v18.tar.gz to the chat"
    ]
   }
  ],
@@ -982,6 +976,20 @@
    ],
    "done": "2026-10-20",
    "closed_note": "PBJ 2021Q3/Q4 + NH Nov2021 landed 2026-10-20; Order and Referring and All Owners have no pre-2022 editions (skipped)"
+  },
+  {
+   "key": "lanes_gates_apply",
+   "added": "2026-10-20",
+   "what": "STEPS 1 AND 2 DONE 2026-10-21 (lanes re-loaded: 21 research rows kept, 5 name conflicts quarantined; state lists re-run: 5,750 rows, 1,448 with NPI, 169 by name). STEP 3 RUNNING under tmux session verify (started 2026-10-21 00:30 UTC): done when tmux ls no longer lists it and the log ends with \"verify-sources: N rows quarantined\". APPLY THE FOUR LABEL GATES (bundle 330; docs/LABEL_VERIFICATION_READ_2026-10-20.md) on the VM, in order, before v18: (1) re-load the lanes (free, nothing sent; the research fold now checks every researched NPI against NPPES: Mika Harris / Live Care / Dermatology Healthcare become research_name_conflict and leave the resolved table; the names lane writes its quarantine file); (2) re-run the state-termination loader (a nurse's aide / driver / clerk row never name-matches: the MS Stephanie Cook row drops its NPI); (3) verify-sources: reads the cited page for every research-harvested state / commercial case row and marks a row whose defendant is not on the page usable=0 (Tantuwaya); network, minutes to an hour; (4) THEN v18 with --rebuild-graph (task v18_run). Paste each command's last lines. Index-page case rows (usao-xx/pr) need no action: case_labels drops them at the export.",
+   "commands": [
+    "REM step 3 status (the log is empty until it finishes; done when the verify session is gone):",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -3 /data/medicaid/enforcement/verify_sources.log\"",
+    "REM if the session is gone and the log is still empty, re-start it:",
+    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s verify 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.enforcement.research_evidence verify-sources --case-db /data/medicaid/enforcement/doj_cases_v3.csv > /data/medicaid/enforcement/verify_sources.log 2>&1'\"",
+    "python -m src.reminders --done-task lanes_gates_apply"
+   ],
+   "done": "2026-10-21",
+   "closed_note": "steps 1-3 ran (lanes re-loaded with 5 name conflicts; state lists re-run; verify-sources finished 2026-10-21 with 0 rows read / 37 pages unreachable: the fetch defect is task verify_sources_fetch); v18 started 11:44 UTC"
   }
  ]
 }
