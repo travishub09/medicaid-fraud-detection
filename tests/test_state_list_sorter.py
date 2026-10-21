@@ -110,3 +110,30 @@ def test_xlsx_sheet_xml_reads_without_the_style_records(tmp_path):
     df = _xlsx_raw(p)                      # the raw path on a healthy workbook reads the same table
     assert df is not None and len(df) == 2 and list(df.columns)[:2] == ["Provider Name", "NPI"]
     assert df.iloc[0]["Reason"] == "Medicaid fraud"
+
+
+def test_raw_xlsx_reader_takes_any_worksheet_name_and_namespace(tmp_path):
+    import zipfile
+    from src.enforcement.state_terminations import _xlsx_raw
+    p = tmp_path / "odd.xlsx"
+    ns = "http://purl.oclc.org/ooxml/spreadsheetml/main"             # strict OOXML, odd sheet name
+    with zipfile.ZipFile(p, "w") as z:
+        z.writestr("xl/workbook.xml", f'<workbook xmlns="{ns}"/>')
+        z.writestr("xl/sharedStrings.xml", f'<sst xmlns="{ns}"><si><t>Provider Name</t></si><si><t>NPI</t></si>'
+                                            '<si><t>ACME CLINIC</t></si></sst>')
+        z.writestr("xl/worksheets/Sanctions Sheet.xml",
+                   f'<worksheet xmlns="{ns}"><sheetData>'
+                   '<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+                   '<row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2"><v>1234567893</v></c></row>'
+                   '</sheetData></worksheet>')
+    df = _xlsx_raw(p)
+    assert df is not None and list(df.columns) == ["Provider Name", "NPI"] and df.iloc[0]["NPI"] == "1234567893"
+
+
+def test_sorter_skips_a_template(tmp_path):
+    dl = tmp_path / "dl"
+    dl.mkdir()
+    pd.DataFrame({"Provider Name": ["EXAMPLE"], "Termination Effective Date": ["2024-01-01"],
+                  "Termination Reason": ["example"]}).to_excel(
+        dl / "Florida Denied.Terminated.Suspended.Provider.Report.Template_12_18_2024.xlsx", index=False)
+    assert plan(dl, tmp_path / "dest", today=date(2026, 10, 21)) == []

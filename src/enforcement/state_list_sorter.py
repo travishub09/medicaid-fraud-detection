@@ -48,7 +48,7 @@ AGENCY_TOKENS = {
 _EXT = (".xlsx", ".xls", ".csv")
 # files that carry a state name but are not sanction lists (the WARN layoff notices the
 # sourcing monitor reads, Census population estimates): never listed
-_NOT_A_LIST = re.compile(r"warn|layoff|co-est20|census|population|\bpop\b", re.I)
+_NOT_A_LIST = re.compile(r"warn|layoff|co-est20|census|population|\bpop\b|template|smmc", re.I)
 _DUP = re.compile(r"\s*\(\d+\)(?=\.[A-Za-z]+$)")           # "name (2).xlsx"
 _NAME_YM = re.compile(r"(20\d{2})[-_ ]?(0[1-9]|1[0-2])(?![0-9])")
 _NAME_MONTH = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[-_ ]?(20\d{2})", re.I)

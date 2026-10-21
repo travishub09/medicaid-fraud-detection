@@ -218,12 +218,23 @@ def _xlsx_raw(path: Path) -> pd.DataFrame | None:
         z = zipfile.ZipFile(path)
     except zipfile.BadZipFile:
         return None
-    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    names = z.namelist()
+
+    def _ns_of(root) -> str:                      # transitional or strict OOXML, or none
+        m = _re.match(r"\{([^}]+)\}", root.tag)
+        return m.group(1) if m else ""
+
+    def _q(ns: str, tag: str) -> str:
+        return f"{{{ns}}}{tag}" if ns else tag
+
     shared: list[str] = []
-    if "xl/sharedStrings.xml" in z.namelist():
-        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
-            shared.append("".join(t.text or "" for t in si.iter("{%s}t" % ns["m"])))
-    sheets = [n for n in z.namelist() if _re.match(r"xl/worksheets/sheet\d+\.xml$", n)]
+    ss = next((n for n in names if n.lower().lstrip("/") == "xl/sharedstrings.xml"), None)
+    if ss:
+        sroot = ET.fromstring(z.read(ss))
+        sns = _ns_of(sroot)
+        for si in sroot.iter(_q(sns, "si")):
+            shared.append("".join(t.text or "" for t in si.iter(_q(sns, "t"))))
+    sheets = [n for n in names if _re.search(r"worksheets/[^/]+\.xml$", n.lower()) and "_rels" not in n.lower()]
     if not sheets:
         return None
     best: list[list[str]] = []
@@ -233,19 +244,20 @@ def _xlsx_raw(path: Path) -> pd.DataFrame | None:
             root = ET.fromstring(z.read(name))
         except ET.ParseError:
             continue
-        for row in root.iter("{%s}row" % ns["m"]):
+        ns = {"m": _ns_of(root)} if _ns_of(root) else {}
+        for row in root.iter(_q(ns.get("m", ""), "row")):
             cells: dict[int, str] = {}
-            for c in row.findall("m:c", ns):
+            for c in (row.findall("m:c", ns) if ns else row.findall("c")):
                 ref = c.get("r") or ""
                 col = 0
                 for ch in _re.sub(r"\d", "", ref):
                     col = col * 26 + (ord(ch.upper()) - 64)
                 t = c.get("t")
-                v = c.find("m:v", ns)
+                v = c.find("m:v", ns) if ns else c.find("v")
                 if t == "s" and v is not None and v.text is not None and v.text.isdigit():
                     val = shared[int(v.text)] if int(v.text) < len(shared) else ""
                 elif t == "inlineStr":
-                    val = "".join(x.text or "" for x in c.iter("{%s}t" % ns["m"]))
+                    val = "".join(x.text or "" for x in c.iter(_q(ns.get("m", ""), "t")))
                 else:
                     val = v.text if v is not None and v.text is not None else ""
                 cells[col or len(cells) + 1] = str(val)
