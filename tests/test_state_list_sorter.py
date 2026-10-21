@@ -99,3 +99,14 @@ def test_a_provider_roster_is_never_copied(tmp_path):
     rows = plan(dl, dest, today=date(2026, 10, 21))
     assert rows and rows[0]["note"].startswith("NO DATE AND NO REASON")
     assert apply(rows, dl, dest) == []
+
+
+def test_xlsx_sheet_xml_reads_without_the_style_records(tmp_path):
+    from src.enforcement.state_terminations import _xlsx_raw
+    p = tmp_path / "il Active Sanctions.xlsx"
+    pd.DataFrame({"Provider Name": ["ACME CLINIC", "BETA LLC"], "NPI": ["1234567893", "1245319599"],
+                  "Sanction Date": ["2024-01-05", "2024-02-01"], "Reason": ["Medicaid fraud", "License revoked"]}
+                 ).to_excel(p, index=False)
+    df = _xlsx_raw(p)                      # the raw path on a healthy workbook reads the same table
+    assert df is not None and len(df) == 2 and list(df.columns)[:2] == ["Provider Name", "NPI"]
+    assert df.iloc[0]["Reason"] == "Medicaid fraud"

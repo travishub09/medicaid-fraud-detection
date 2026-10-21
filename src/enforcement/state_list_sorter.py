@@ -166,7 +166,9 @@ def main() -> None:
     ap.add_argument("--data-root", default=os.environ.get("MEDICAID_DATA_ROOT") or str(Path.home() / "Desktop" / "data"))
     ap.add_argument("--apply", action="store_true", help="copy the files (default: dry run)")
     a = ap.parse_args()
-    downloads, dest = Path(a.downloads), Path(a.data_root) / "preclean" / "state_terminations"
+    # `set MEDICAID_DATA_ROOT=C:\...\data && python ...` keeps the space before && in the
+    # value on Windows: the 2026-10-21 apply aimed at a folder named "data " and failed
+    downloads, dest = Path(a.downloads.strip()), Path(a.data_root.strip()) / "preclean" / "state_terminations"
     rows = plan(downloads, dest)
     if not rows:
         print(f"[sorter] no state-named .xlsx/.xls/.csv under {downloads}")

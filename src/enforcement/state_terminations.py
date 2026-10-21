@@ -132,10 +132,13 @@ def read_state_file(path: Path) -> tuple[pd.DataFrame, dict, str]:
             # raised a style TypeError and Excel would not open it either): one more try
             # as an HTML table with an Excel extension, else the error names itself
             html = _html_disguised(path, force=True)
-            if html is None:
+            if html is not None:
+                return html, resolve_fields(list(html.columns)), "html"
+            raw_df = _xlsx_raw(path)                      # the sheet XML without the style records
+            if raw_df is None:
                 raise ValueError(f"not a readable workbook ({type(ex).__name__}: {str(ex)[:80]}); "
                                  "re-export it from the state site or save it as csv") from ex
-            return html, resolve_fields(list(html.columns)), "html"
+            return raw_df, resolve_fields(list(raw_df.columns)), "raw-xml"
         best = None
         for sh in xl.sheet_names:
             raw = xl.parse(sh, header=None, nrows=80, dtype=str)
@@ -200,6 +203,66 @@ def _html_tables(text: str) -> list[list[list[str]]]:
     except Exception:  # noqa: BLE001
         return []
     return [t for t in p.tables if t]
+
+
+def _xlsx_raw(path: Path) -> pd.DataFrame | None:
+    """An .xlsx whose style records the readers refuse (2026-10-21: Illinois' Active
+    Sanctions raised a Fill TypeError in openpyxl and Excel would not open it): the
+    largest worksheet's cell XML read straight from the zip (shared strings, inline
+    strings, numbers; dates stay as serials, which ``_dates`` converts), header row by
+    the same scorer. None when the file is not a zip with worksheets."""
+    import re as _re
+    import xml.etree.ElementTree as ET
+    import zipfile
+    try:
+        z = zipfile.ZipFile(path)
+    except zipfile.BadZipFile:
+        return None
+    ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    shared: list[str] = []
+    if "xl/sharedStrings.xml" in z.namelist():
+        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).findall("m:si", ns):
+            shared.append("".join(t.text or "" for t in si.iter("{%s}t" % ns["m"])))
+    sheets = [n for n in z.namelist() if _re.match(r"xl/worksheets/sheet\d+\.xml$", n)]
+    if not sheets:
+        return None
+    best: list[list[str]] = []
+    for name in sheets:
+        rows: list[list[str]] = []
+        try:
+            root = ET.fromstring(z.read(name))
+        except ET.ParseError:
+            continue
+        for row in root.iter("{%s}row" % ns["m"]):
+            cells: dict[int, str] = {}
+            for c in row.findall("m:c", ns):
+                ref = c.get("r") or ""
+                col = 0
+                for ch in _re.sub(r"\d", "", ref):
+                    col = col * 26 + (ord(ch.upper()) - 64)
+                t = c.get("t")
+                v = c.find("m:v", ns)
+                if t == "s" and v is not None and v.text is not None and v.text.isdigit():
+                    val = shared[int(v.text)] if int(v.text) < len(shared) else ""
+                elif t == "inlineStr":
+                    val = "".join(x.text or "" for x in c.iter("{%s}t" % ns["m"]))
+                else:
+                    val = v.text if v is not None and v.text is not None else ""
+                cells[col or len(cells) + 1] = str(val)
+            if cells:
+                width = max(cells)
+                rows.append([cells.get(i, "") for i in range(1, width + 1)])
+        if len(rows) > len(best):
+            best = rows
+    if not best:
+        return None
+    width = max(len(r) for r in best)
+    raw = pd.DataFrame([r + [""] * (width - len(r)) for r in best]).astype(str)
+    hdr = _find_header_row(raw)
+    header = [str(c).strip() or f"col{i}" for i, c in enumerate(raw.iloc[hdr].tolist())]
+    df = raw.iloc[hdr + 1:].reset_index(drop=True)
+    df.columns = header
+    return df.dropna(how="all")
 
 
 def _html_disguised(path: Path, force: bool = False) -> pd.DataFrame | None:
