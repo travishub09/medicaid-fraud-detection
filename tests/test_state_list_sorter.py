@@ -78,3 +78,14 @@ def test_sorter_never_lists_warn_or_census_files(tmp_path):
     pd.DataFrame({"Company Name": ["X"], "Effective Date": ["2026-01-01"]}).to_csv(dl / "florida_warn_2026.csv", index=False)
     pd.DataFrame({"a": [1]}).to_excel(dl / "co-est2025-pop.xlsx", index=False)
     assert plan(dl, tmp_path / "dest", today=date(2026, 10, 21)) == []
+
+
+def test_html_table_with_an_xlsx_extension_reads(tmp_path):
+    from src.enforcement.state_terminations import read_state_file
+    p = tmp_path / "il Active Sanctions.xlsx"
+    p.write_text("<html><body><table><tr><th>Provider Name</th><th>NPI</th><th>Sanction Date</th><th>Reason</th></tr>"
+                 "<tr><td>ACME CLINIC</td><td>1234567893</td><td>2024-01-05</td><td>Medicaid fraud</td></tr>"
+                 "<tr><td>BETA LLC</td><td>1245319599</td><td>2024-02-01</td><td>License revoked</td></tr>"
+                 "</table></body></html>", encoding="utf-8")
+    df, fields, sheet = read_state_file(p)
+    assert sheet == "html" and len(df) == 2 and fields["org_name"] == "Provider Name" and fields["npi"] == "NPI"

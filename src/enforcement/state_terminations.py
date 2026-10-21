@@ -122,7 +122,20 @@ def resolve_fields(header: list) -> dict[str, str]:
 def read_state_file(path: Path) -> tuple[pd.DataFrame, dict, str]:
     """Read the sheet that looks most like a provider list; return (frame, field map, sheet)."""
     if path.suffix.lower() in (".xlsx", ".xls"):
-        xl = pd.ExcelFile(path)
+        html = _html_disguised(path)
+        if html is not None:
+            return html, resolve_fields(list(html.columns)), "html"
+        try:
+            xl = pd.ExcelFile(path)
+        except Exception as ex:  # noqa: BLE001
+            # a workbook the reader refuses (2026-10-21: Illinois' 'Active Sanctions.xlsx'
+            # raised a style TypeError and Excel would not open it either): one more try
+            # as an HTML table with an Excel extension, else the error names itself
+            html = _html_disguised(path, force=True)
+            if html is None:
+                raise ValueError(f"not a readable workbook ({type(ex).__name__}: {str(ex)[:80]}); "
+                                 "re-export it from the state site or save it as csv") from ex
+            return html, resolve_fields(list(html.columns)), "html"
         best = None
         for sh in xl.sheet_names:
             raw = xl.parse(sh, header=None, nrows=80, dtype=str)
@@ -147,6 +160,68 @@ def read_state_file(path: Path) -> tuple[pd.DataFrame, dict, str]:
             raise
         df = _read_csv_tolerant(path)
     return df, resolve_fields(list(df.columns)), ""
+
+
+def _html_tables(text: str) -> list[list[list[str]]]:
+    """Every <table> in an HTML document as rows of cell text (html.parser, no lxml)."""
+    from html.parser import HTMLParser
+
+    class _P(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.tables: list[list[list[str]]] = []
+            self._row: list[str] | None = None
+            self._cell: list[str] | None = None
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "table":
+                self.tables.append([])
+            elif tag == "tr" and self.tables:
+                self._row = []
+            elif tag in ("td", "th") and self._row is not None:
+                self._cell = []
+
+        def handle_endtag(self, tag):
+            if tag in ("td", "th") and self._cell is not None and self._row is not None:
+                self._row.append(re.sub(r"\s+", " ", "".join(self._cell)).strip())
+                self._cell = None
+            elif tag == "tr" and self._row is not None and self.tables:
+                if self._row:
+                    self.tables[-1].append(self._row)
+                self._row = None
+
+        def handle_data(self, data):
+            if self._cell is not None:
+                self._cell.append(data)
+
+    p = _P()
+    try:
+        p.feed(text)
+    except Exception:  # noqa: BLE001
+        return []
+    return [t for t in p.tables if t]
+
+
+def _html_disguised(path: Path, force: bool = False) -> pd.DataFrame | None:
+    """A state 'spreadsheet' that is an HTML table with an .xls / .xlsx extension (several
+    state sites serve them that way): the largest table, header row picked by the same
+    scorer. None when the bytes are a real workbook (unless ``force``)."""
+    head = path.read_bytes()[:4096]
+    looks_html = b"<table" in head.lower() or head.lstrip().lower().startswith((b"<!doctype", b"<html", b"<"))
+    if not looks_html and not force:
+        return None
+    text = path.read_bytes().decode("utf-8", errors="replace")
+    tables = _html_tables(text)                  # stdlib parser: no lxml / bs4 on the laptop
+    if not tables:
+        return None
+    rows = max(tables, key=len)
+    width = max(len(r) for r in rows)
+    raw = pd.DataFrame([r + [""] * (width - len(r)) for r in rows]).astype(str)
+    hdr = _find_header_row(raw)
+    header = [str(c).strip() or f"col{i}" for i, c in enumerate(raw.iloc[hdr].tolist())]
+    df = raw.iloc[hdr + 1:].reset_index(drop=True)
+    df.columns = header
+    return df.dropna(how="all")
 
 
 def _read_csv_tolerant(path: Path) -> pd.DataFrame:
