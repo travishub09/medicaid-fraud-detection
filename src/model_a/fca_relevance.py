@@ -133,16 +133,21 @@ _TIER_RANK = {"hard": 2, "weak": 1, "excluded": 0}
 # finding, and an entry that merely mirrors a federal exclusion carries no
 # statute of its own (the LEIE row of the same NPI already sets the tier).
 STATE_TERM_RULES = [
-    # an indictment, a charge or a payment suspension on a credible allegation of fraud
-    # is an ALLEGATION, not an outcome (exclusion-source audit 2026-10-13): weak, so it
-    # never trains or grades as an FCA-shaped event while staying a graph node
+    # PLATFORM_AUDIT C.F10: a RESOLVED outcome wins over a charge mentioned in the same
+    # text ("CONVICTED OF MEDICAID FRAUD; INDICTMENT 2019" is an outcome), and the
+    # charge words are anchored so "DISCHARGED" never reads as "charged"
+    (r"\b(convict|guilty|plea|pled|sentenc|judgment|judgement|settle)[a-z]*\b.*"
+     r"(fraud|false claim|kickback|medicaid|medicare|health ?care|theft|embezzl)|"
+     r"(fraud|false claim|kickback|medicaid|medicare|health ?care|theft|embezzl).*"
+     r"\b(convict|guilty|plea|pled|sentenc|judgment|judgement|settle)[a-z]*\b", "hard",
+     "state termination on a resolved fraud-shaped outcome (conviction / plea / judgment / settlement)"),
     # an INDICTMENT or a charge for fraud = 'charged' (trains under hard+charged, never
     # grades); a payment suspension on a credible allegation (42 CFR 455.23) is a
     # referral, not a charge: weak
-    (r"(indict|charged|pending charges).*(fraud|false claim|kickback|medicaid|medicare|health ?care)|"
-     r"(fraud|false claim|kickback|medicaid|medicare|health ?care).*(indict|charged|pending charges)", "charged",
+    (r"\b(indict[a-z]*|charged|pending charges)\b.*(fraud|false claim|kickback|medicaid|medicare|health ?care)|"
+     r"(fraud|false claim|kickback|medicaid|medicare|health ?care).*\b(indict[a-z]*|charged|pending charges)\b", "charged",
      "state termination on a fraud indictment or charge (no resolved outcome yet)"),
-    (r"indict|charged|pending (charges|investigation)|credible allegation|payment suspension", "weak",
+    (r"\b(indict[a-z]*|charged|pending (charges|investigation))\b|credible allegation|payment suspension", "weak",
      "state termination on an allegation or charge of unstated kind (no resolved outcome)"),
     (r"fraud|false claim|kickback|anti-?kickback|bribe|program integrity|"
      r"mfcu|medicaid fraud control|convict|felony|guilty|plea|theft|embezzl|forg|"

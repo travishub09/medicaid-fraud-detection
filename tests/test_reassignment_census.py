@@ -123,9 +123,12 @@ def test_local_denominator_flags_implausible_per_capita():
     assert pd.isna(out.loc["org:tiny", "per_capita_rate"])
 
 
-def test_local_volume_feeds_specialty_mismatch():
+def test_local_volume_is_reserved_until_its_producer_is_wired():
+    """PLATFORM_AUDIT H8 (2026-10-21): analytics.local_denominator_plausibility has no
+    caller, so the input is RESERVED (out of the weights); a column of that name on
+    the frame changes nothing. The weight rejoins with its producer."""
     feats = pd.DataFrame({"specialty_mismatch": [0.1, 0.1],
                           "local_volume_implausibility": [0.95, 0.05]})
     subs, cov = compute_subscores(feats)
-    assert "local_volume_implausibility" in cov["specialty_mismatch"]
-    assert subs.loc[0, "subscore_specialty_mismatch"] > subs.loc[1, "subscore_specialty_mismatch"]
+    assert "local_volume_implausibility" not in cov["specialty_mismatch"]
+    assert subs.loc[0, "subscore_specialty_mismatch"] == subs.loc[1, "subscore_specialty_mismatch"]

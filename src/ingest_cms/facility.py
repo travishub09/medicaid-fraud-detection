@@ -172,6 +172,11 @@ def compute_pbj_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     df = df.assign(ccn=ccn)[ccn.notna()].copy()
     df["state"] = (df["state"] if "state" in df.columns else "")
     df["state"] = df["state"].fillna("").astype(str).str.strip().str.upper()
+    missing_hours = [c for c in ("hrs_lpn", "hrs_cna") if c not in df.columns]
+    if missing_hours:
+        # PLATFORM_AUDIT A.F-15: understaffing on RN hours alone (LPN / CNA = 0) scored
+        # every home as understaffed; the PBJ layout always carries the three
+        raise ValueError(f"PBJ file lacks {', '.join(missing_hours)} (nurse hours need RN + LPN + CNA)")
     for c in ("census", "hrs_rn", "hrs_lpn", "hrs_cna"):
         df[c] = pd.to_numeric(df.get(c, 0.0), errors="coerce").fillna(0.0)
     df["nurse_hours"] = df["hrs_rn"] + df["hrs_lpn"] + df["hrs_cna"]
@@ -351,6 +356,8 @@ def compute_nh_ownership(raw: pd.DataFrame) -> pd.DataFrame:
     df = raw.rename(columns={v: k for k, v in resolved.items()}).copy()
     df["ccn"] = _canon_ccn(df["ccn"])
     df = df[df["ccn"].notna()]
+    if "owner_name" not in df.columns:
+        raise ValueError("NH ownership file has no Owner Name column (nh_owner_count needs it)")
     owner_id = (_col(df, "owner_name").fillna("").astype(str).str.strip()
                 .str.upper())
     stake = (_col(df, "stake").fillna("").astype(str)
@@ -382,6 +389,8 @@ def compute_nh_penalties(raw: pd.DataFrame,
                       "NH penalties")
     df["ccn"] = _canon_ccn(df["ccn"])
     df = df[df["ccn"].notna()].copy()
+    if "fine" not in df.columns:
+        raise ValueError("NH penalties file has no Fine Amount column (nh_fine_total needs it)")
     df["_fine"] = pd.to_numeric(
         _col(df, "fine").astype(str).str.replace(r"[$,]", "", regex=True),
         errors="coerce").fillna(0.0)

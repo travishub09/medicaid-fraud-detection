@@ -157,11 +157,12 @@ def kickback_co_occurrence(op_raw: pd.DataFrame, partd_raw: pd.DataFrame) -> pd.
     product_cols = [c for c in op.columns
                     if str(c).startswith("product") or _PRODUCT_COL_RE.search(str(c))]
     if not product_cols:
-        # no product columns at all → the whole feature is silently zero; say so
-        import logging
-        logging.getLogger(__name__).warning(
-            "kickback_co_occurrence: no OP product columns found — "
-            "op_payment_utilization_corr will be 0 for everyone")
+        # PLATFORM_AUDIT A.F-11: the feature cannot be computed without the product
+        # columns; a 0 for everyone was scored as a fact. Raise: the export records
+        # the source as skipped with this reason (a logging.warning was invisible)
+        raise ValueError("Open Payments raw carries no product column "
+                         "(Name_of_Drug_or_Biological..._N); op_payment_utilization_corr "
+                         "cannot be computed")
 
     # Set of (npi, match-key) — a Part D row matches if any key of its drug name
     # was paid for THAT prescriber. Vectorized set-membership (see history: the

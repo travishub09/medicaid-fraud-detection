@@ -505,7 +505,11 @@ def build_exclusions(leie_pq: str, qa: QA, quarantine: list) -> pd.DataFrame:
 
     out["excl_date"] = parse("excl_date")
     out["reinstate_date"] = parse("reinstate_date")
-    out["excl_type"] = df.get("excl_type")
+    if "excl_type" not in df.columns:
+        # the statute is the label's whole tiering key: without it every LEIE row
+        # would tier "unrecognized / weak" silently (PLATFORM_AUDIT A.F-04)
+        raise ValueError("LEIE file has no EXCLTYPE column; the FCA tiering reads it")
+    out["excl_type"] = df["excl_type"]
     out["currently_active"] = out["reinstate_date"].isna().astype(int)
 
     # name_key: BUSNAME for orgs, LAST+FIRST for individuals (shared normalizer).
@@ -551,11 +555,21 @@ def merge_exclusion_sources(exclusions: pd.DataFrame,
             qa.count("exclusions_medicare_revocations", len(rev))
     if len(frames) == 1:
         return exclusions
-    out = (pd.concat(frames, ignore_index=True)
-           .drop_duplicates(subset=["npi", "name_key", "excl_type", "excl_date"])
-           .reset_index(drop=True))
+    allrows = pd.concat(frames, ignore_index=True)
+    key = ["npi", "name_key", "excl_type", "excl_date"]
+    dup = allrows[allrows.duplicated(subset=key, keep="first")].copy()
+    out = allrows.drop_duplicates(subset=key).reset_index(drop=True)
     if qa is not None:
         qa.count("exclusions_total", len(out))
+        qa.count("exclusions_duplicates_quarantined", len(dup))
+    if len(dup):
+        # rule 4, quarantine never delete: the identical rows (the same person listed
+        # twice, or a revocation that is also an LEIE row) are kept with the reason
+        dup["quarantine_reason"] = "duplicate identity + action + date"
+        merge_exclusion_sources.last_duplicates = dup
+        log(f"    [exclusions] {len(dup):,} duplicate row(s) set aside (exclusions_duplicates.parquet)")
+    else:
+        merge_exclusion_sources.last_duplicates = None
     return out
 
 
@@ -705,6 +719,9 @@ def main() -> None:
         exclusions = merge_exclusion_sources(exclusions, args.revocations, qa)
         owner_edges.to_parquet(processed / "owner_edges.parquet", index=False)
         exclusions.to_parquet(processed / "exclusions.parquet", index=False)
+        dups = getattr(merge_exclusion_sources, "last_duplicates", None)
+        if dups is not None and len(dups):
+            dups.to_parquet(processed / "exclusions_duplicates.parquet", index=False)
 
         if len(owner_edges):
             flags = build_facility_flags(owner_edges, exclusions, qa)

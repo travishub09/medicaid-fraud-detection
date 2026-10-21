@@ -105,6 +105,16 @@ def _discover_docgraph(path: Path | None, input_dir: Path | None) -> Path | None
     return path
 
 
+def docgraph_edition(path: Path | None) -> str | None:
+    """YYYY-MM the file name implies (DocGraph_Hop_Teaming_2022 -> 2022-12); None when
+    undated. The as-of build refuses an edition after the cutoff (PLATFORM_AUDIT D3:
+    the 2022 file sat inside every 2021-12 frozen graph as refers_to edges)."""
+    if path is None:
+        return None
+    from src.model_a.provider_features_export import _file_period
+    return _file_period(Path(path).name)
+
+
 def run(tables: dict[str, pd.DataFrame], out_dir: Path,
         embeddings: bool = True,
         max_component_size: int = 150_000,
@@ -338,6 +348,13 @@ def main() -> None:
         tables = _load(Path(args.input))
         docgraph_path = _discover_docgraph(
             Path(args.docgraph) if args.docgraph else None, Path(args.input))
+    if args.asof and docgraph_path is not None:
+        ed = docgraph_edition(docgraph_path)
+        cut = str(args.asof)[:7]
+        if ed is None or ed > cut:
+            log(f"    docgraph SKIPPED for the as-of build: edition {ed or 'undated'} is not on/before "
+                f"{cut} (the 2022 file inside a 2021-12 freeze was the D3 leak); refers_to edges empty")
+            docgraph_path = None
     if args.asof:
         from src.model_a.temporal_sources import point_in_time_tables
         _ex = tables.get("exclusions")

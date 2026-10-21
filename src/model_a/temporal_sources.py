@@ -34,14 +34,28 @@ SOURCE_VALID_TIME = {
 }
 
 
+PLACEHOLDER_MIN = pd.Timestamp("1900-01-01")
+PLACEHOLDER_MAX = pd.Timestamp("2090-01-01")
+
+
+def real_dates(s: pd.Series) -> pd.Series:
+    """Dates parsed with the CMS / state placeholders read as UNKNOWN (NaT): 0001-01-01
+    and 1800-01-01 stand for 'no date', 2099-12-31 / 9999-12-31 for 'open-ended'
+    (PLATFORM_AUDIT D6: a 2099 owner association date was read as FUTURE and the
+    edge dropped from every frozen graph instead of kept as undated)."""
+    vt = pd.to_datetime(s, errors="coerce")
+    return vt.where((vt >= PLACEHOLDER_MIN) & (vt < PLACEHOLDER_MAX))
+
+
 def asof_filter(frame: pd.DataFrame, asof, valid_col: str,
                 keep_undated: bool = False) -> pd.DataFrame:
     """Rows whose ``valid_col`` ≤ ``asof``. Undated rows are dropped by default
-    (can't be proven to predate the date → excluded to avoid leakage)."""
+    (can't be proven to predate the date → excluded to avoid leakage); placeholder
+    dates count as undated."""
     if frame is None or not len(frame) or valid_col not in frame.columns:
         return frame
     asof_ts = pd.Timestamp(asof)
-    vt = pd.to_datetime(frame[valid_col], errors="coerce")
+    vt = real_dates(frame[valid_col])
     keep = vt <= asof_ts
     if keep_undated:
         keep = keep | vt.isna()

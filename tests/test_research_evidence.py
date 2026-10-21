@@ -29,7 +29,10 @@ def test_state_exclusions_normalize_and_quarantine():
     assert len(excl) == 2 and len(quarantine) == 1        # nameless+bad-NPI row kept aside
     byname = excl.set_index("entity_name")
     assert byname.loc["SMITH, JOHN", "npi"] == "1588799746"
-    assert byname.loc["SMITH, JOHN", "excl_type"] == "state_term_ri:fraud conviction"
+    # one convention (PLATFORM_AUDIT H6): the state-term ruler tiers this row HARD
+    assert byname.loc["SMITH, JOHN", "excl_type"] == "state_term:RI:fraud conviction"
+    from src.model_a.fca_relevance import fca_tier
+    assert fca_tier(byname.loc["SMITH, JOHN", "excl_type"])[0] == "hard"
     assert byname.loc["ACME HOME CARE LLC", "npi"] == ""   # name-key row still usable
     assert (excl["currently_active"] == 1).all()
     assert str(excl["excl_date"].dt.year.tolist()) == "[2024, 2023]"

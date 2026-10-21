@@ -399,7 +399,7 @@ absolute value or the peer-relative rank).
 | `billing_residual` | unexplained billing after a robust per-specialty regression on volume/lines/breadth | spending | conditions OUT legitimate size — a big honest biller scores low, a small inflater high |
 | `expected_net_paid` | the model's expected billing | spending | the driver/denominator for the residual |
 | `clinical_implausibility` | $-weighted share on codes rare for the taxonomy | spending × taxonomy | a hospice billing surgical codes |
-| `local_volume_implausibility` | per-capita volume vs county population | spending × Census | phantom patients beyond what the population supports |
+| `local_volume_implausibility (RESERVED 2026-10-21: no producer in src/, out of the weights until one exists)` | per-capita volume vs county population | spending × Census | phantom patients beyond what the population supports |
 | `growth_level_shift`, `new_code_burst` | sustained billing step / burst of new codes | spending trajectory | scheme onset the YoY concept misses |
 | `consistency_flags` (+ `incons_*`) | count of cross-source incoherences (individual at institutional scale, no-tenure full-scale biller, solo billing implausibly broad codes, one-NPI org at institutional scale) | NPPES/PECOS × billing | contradictions across independent systems are hard to fake |
 

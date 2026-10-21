@@ -70,17 +70,23 @@ def compute_hcris_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     quarantined = int(ccn.isna().sum())
     df = df.assign(ccn=ccn)[ccn.notna()].copy()
     for c in ("total_costs", "total_charges", "admin_costs", "related_party_costs"):
-        # a cost column may be absent (e.g. the public flattened files carry no
-        # related-party column) — default to 0, never crash on df.get()->None
-        col = df[c] if c in df.columns else pd.Series(0.0, index=df.index)
-        df[c] = pd.to_numeric(col, errors="coerce").fillna(0.0)
+        # an absent cost column is UNOBSERVED (NaN): the ratio built on it stays NaN
+        # for every facility in that file instead of reading 0 (PLATFORM_AUDIT D4: the
+        # HHA cost report has no administrative-cost column, and admin_cost_share
+        # scored 0 for every home health agency)
+        col = df[c] if c in df.columns else pd.Series(float("nan"), index=df.index)
+        df[c] = pd.to_numeric(col, errors="coerce")
     df["state"] = (df["state"] if "state" in df.columns else
                    pd.Series("", index=df.index)).fillna("").astype(str).str.upper()
 
+    # min_count=1: an all-NaN cost column sums to NaN, not 0, so the share built on it
+    # stays unobserved (an unobserved column is never a 0-percent share)
+    def _sum(s):
+        return s.sum(min_count=1)
     g = df.groupby("ccn", as_index=False).agg(
-        total_costs=("total_costs", "sum"), total_charges=("total_charges", "sum"),
-        admin_costs=("admin_costs", "sum"),
-        related_party_costs=("related_party_costs", "sum"),
+        total_costs=("total_costs", _sum), total_charges=("total_charges", _sum),
+        admin_costs=("admin_costs", _sum),
+        related_party_costs=("related_party_costs", _sum),
         state=("state", lambda s: s.mode().iat[0] if len(s) else ""))
     g["cost_to_charge_ratio"] = (g["total_costs"] / g["total_charges"]).where(
         g["total_charges"] > 0)

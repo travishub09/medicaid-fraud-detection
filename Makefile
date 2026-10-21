@@ -75,13 +75,17 @@ model-a:
 # Per-NPI feature export for Travis's supervised model. Depends on `graph` so the
 # entity graph is ALWAYS rebuilt first — the fix for the stale-ownership sequencing
 # trap (the ownership_integrity signal is computed per-org and inherited by NPI).
+# the case labels ride along whenever the files exist (the v8 / v9 HOLD cause was an
+# export line without them; PLATFORM_AUDIT H11)
+CASE_DB_FLAGS = $(if $(wildcard $(DATA_ROOT)/enforcement/doj_cases_v3_plus_cia.csv),--case-db $(DATA_ROOT)/enforcement/doj_cases_v3_plus_cia.csv,$(if $(wildcard $(DATA_ROOT)/enforcement/doj_cases_v3.csv),--case-db $(DATA_ROOT)/enforcement/doj_cases_v3.csv,)) \
+               $(if $(wildcard $(DATA_ROOT)/processed/case_defendant_npis_plus_cia.parquet),--defendant-npis $(DATA_ROOT)/processed/case_defendant_npis_plus_cia.parquet,$(if $(wildcard $(DATA_ROOT)/processed/case_defendant_npis.parquet),--defendant-npis $(DATA_ROOT)/processed/case_defendant_npis.parquet,))
 provider-features: graph
 	$(PY) -m src.model_a.provider_features_export \
 		--graph-dir $(DATA_ROOT)/graph \
 		--leads $(DATA_ROOT)/detection/fraud_leads_v3.parquet \
 		--preclean $(DATA_ROOT)/preclean \
 		--processed $(DATA_ROOT)/processed \
-		--out $(DATA_ROOT)/model_a/provider_features $(PF_FLAGS)
+		--out $(DATA_ROOT)/model_a/provider_features $(CASE_DB_FLAGS) $(PF_FLAGS)
 	$(MAKE) pursuit-dossier RUN_DIR=$(DATA_ROOT)/model_a/provider_features
 	$(MAKE) scheme-triage RUN_DIR=$(DATA_ROOT)/model_a/provider_features
 
@@ -124,31 +128,13 @@ feature-snapshot:
 # Travis then scores the step-2 matrix against the step-3 label, WITH network
 # columns included, to see whether the graph family predicts future bans it never saw.
 frozen-package:
-	$(PY) -m src.entity_graph --input $(DATA_ROOT)/processed \
-		--out $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) --asof $(ASOF_CUTOFF) $(FROZEN_GRAPH_FLAGS)
-	$(PY) -m src.model_a.provider_features_export \
-		--graph-dir $(DATA_ROOT)/graph_asof_$(ASOF_CUTOFF) \
-		--asof-cutoff $(ASOF_CUTOFF) $(FROZEN_EXPORT_FLAGS) \
-		--leads $(DATA_ROOT)/detection/fraud_leads_v3.parquet \
-		--preclean $(DATA_ROOT)/preclean --processed $(DATA_ROOT)/processed \
-		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)
-	$(PY) -m src.model_a.prospective_label \
-		--exclusion-nodes $(DATA_ROOT)/graph/nodes/exclusion_nodes.parquet \
-		--cutoff $(ASOF_CUTOFF) \
-		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/future_bans_after_$(ASOF_CUTOFF).csv
-	$(PY) -m src.model_a.network_ab \
-		--matrix $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/provider_features_for_model.parquet \
-		--manifest $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/feature_manifest.json \
-		--future-label $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/future_bans_after_$(ASOF_CUTOFF).csv \
-		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/NETWORK_AB_REPORT.md
-	$(PY) -m src.model_a.results_digest \
-		--dir $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF) \
-		--out $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/RESULTS_DIGEST.md
-	@echo "Frozen package ready in $(DATA_ROOT)/model_a/frozen_$(ASOF_CUTOFF)/"
-	@echo "  provider_features_for_model.parquet  = as-of features (network cols INCLUDED)"
-	@echo "  future_bans_after_$(ASOF_CUTOFF).csv  = the forward label to score against"
-	@echo "  NETWORK_AB_REPORT.md                  = size-matched network A/B verdict"
-	@echo "  RESULTS_DIGEST.md                     = plain-English summary (read this first)"
+	# 2026-10-21 (PLATFORM_AUDIT H11): ONE runner definition. The Makefile's own export
+	# line carried no --case-db / --defendant-npis (the v8 / v9 HOLD cause) and no
+	# --asof-nppes on the graph (the v6 leak); ops/vm/run_frozen_night.sh carries the
+	# full set, the guards and the measurement block, so this target delegates to it.
+	#   make frozen-package TAG=v19 ASOF_CUTOFF=2021-12 [HORIZON=36] [SEEDS=10]
+	MEDICAID_DATA_ROOT=$(DATA_ROOT) HORIZON=$(if $(HORIZON),$(HORIZON),36) SEEDS=$(if $(SEEDS),$(SEEDS),10) \
+		bash ops/vm/run_frozen_night.sh $(if $(TAG),$(TAG),v0) $(ASOF_CUTOFF) $(FROZEN_RUNNER_FLAGS)
 
 # Plain-English one-page summary of any run's outputs. Point it at a directory
 # holding feature_manifest.json / signal_ranking.csv / NETWORK_AB_REPORT.md.

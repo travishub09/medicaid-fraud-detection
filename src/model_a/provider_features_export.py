@@ -69,8 +69,8 @@ GRAPH_FEATURES = ["within_2_hops_of_exclusion", "shell_score",
 # Analytics enrichments (src/analytics): growth-shock + clinical plausibility. They
 # arrive already as one-sided percentiles (the registry inputs), so they pass through
 # to the subscores exactly like the v3 concepts — never re-peer-normalized.
-ANALYTICS_FEATURES = ["clinical_implausibility", "local_volume_implausibility",
-                      "growth_level_shift", "new_code_burst"]
+ANALYTICS_FEATURES = ["clinical_implausibility",
+                      "growth_level_shift", "new_code_burst"]   # local_volume_implausibility: reserved (H8)
 
 # Every feature column the scheme registry references that is NOT a v3 concept or a
 # graph feature — i.e. comes from a CMS source adapter. These are peer-normalized to
@@ -533,6 +533,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     if cap is not None:
         m["capacity_mismatch"] = cap
         sources_used["capacity"] = ["capacity_mismatch"]
+    else:
+        print("    [capacity] skipped: capacity_mismatch needs pos_bed_count (POS via the CCN "
+              "crosswalk) and service_volume on the matrix")
 
     # --- peer-normalize the raw adapter metrics (one-sided taxonomy percentile) ---
     adapter_present = [c for c in ADAPTER_FEATURE_COLS if c in m.columns]
@@ -1246,7 +1249,8 @@ def _warn_if_graph_stale(graph_dir: Path, leads_path: Path, log) -> None:
         pass
 
 
-_NAME_DATE_RE = re.compile(r"(20\d{2})(?:[-_.]?([01]\d))?")
+# the month token is 01..12 only ("physician_shared_patient_2015_180" is 2015, not month 18)
+_NAME_DATE_RE = re.compile(r"(20\d{2})(?:[-_.]?(0[1-9]|1[0-2])(?:[0-3]\d)?)?(?!\d)")
 # 2026-10-21: quarter and month-name tokens date an edition to its month, so the
 # quarters of one year are distinct periods ("PBJ_2021Q3" is 2021-09, not 2021-12)
 # and a freeze between them picks correctly ("POS_File_Q4_2023" is AFTER 2023-06).
@@ -1450,6 +1454,16 @@ def _deactivation_file(folder: Path, log=None, label: str = "nppes_deactivation"
     return dp
 
 
+def _asof_spend_path(root: Path, asof_cutoff: str | None) -> Path | None:
+    """interim/spending_asof_<cut>.parquet when a frozen run has written it (the per-NPI
+    adapters run before the freeze step, so the file exists from the previous run of the
+    same cutoff or not at all; the enrollment per-se check then skips with a line)."""
+    if not asof_cutoff:
+        return None
+    p = root / "interim" / f"spending_asof_{asof_cutoff}.parquet"
+    return p if p.exists() else None
+
+
 def _first_existing(base: Path, *names: str) -> Path | None:
     for n in names:
         # a glob pattern (e.g. "*.csv") globs the base folder itself — so a
@@ -1607,7 +1621,8 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                       trend_years: int = 2,
                       processed: Path | None = None,
                       asof_cutoff: str | None = None,
-                      exclusion_events: pd.DataFrame | None = None) -> dict[str, pd.DataFrame]:
+                      exclusion_events: pd.DataFrame | None = None,
+                      asof_spend: Path | None = None) -> dict[str, pd.DataFrame]:
     """Run the per-NPI CMS adapters against whatever raw files are present.
 
     Each entry is (source_name, subdir/filenames, callable(raw)->npi-keyed frame).
@@ -1835,6 +1850,12 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 if kb is not None and len(kb) and "npi" in kb.columns:
                     frames["kickback"] = kb
                     log(f"    [kickback] {len(kb):,} prescribers (op_payment_utilization_corr)")
+                else:
+                    log("    [kickback] skipped: no prescriber matched a paid product")
+            else:
+                log("    [kickback] skipped: needs both the Open Payments and the Part D raw "
+                    f"(open_payments {'present' if op_raw is not None else 'absent'}, "
+                    f"partd {'present' if pd_raw is not None else 'absent'})")
         except Exception as e:
             log(f"    [kickback] skipped: {e}")
 
@@ -1843,14 +1864,19 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
     # org-grain adapter; this is the lawful name-level fallback (no claims).
     if "nadac_namegrain" in skip:
         log("    [nadac_namegrain] skipped: --skip-sources")
-        return frames
+        nadac_p = None                   # PLATFORM_AUDIT H3: a `return frames` here dropped
+    else:                                # medicaid_ndc + medicaid_enrollment silently
+        nadac_p = "pending"
     try:
+        if nadac_p is None:
+            raise StopIteration           # skipped: fall through to the next block
         nadac_p = _asof_pick(pc / "nadac", "nadac.csv",
                              asof_cutoff=(f"{max_year}-12" if max_year else None))
         if nadac_p and pd_raw is not None:
             from src.ingest_cms import nadac as nadac_mod
             from src.attempt_2.clean_data import read_csv_text
-            idx = nadac_mod.name_price_index(read_csv_text(str(nadac_p)))
+            idx = nadac_mod.name_price_index(nadac_mod.asof_rows(
+                read_csv_text(str(nadac_p)), f"{max_year}-12" if max_year else None))
             bp = nadac_mod.brand_premium_by_prescriber(pd_raw, idx)
             if len(bp):
                 frames["nadac_namegrain"] = bp
@@ -1861,6 +1887,10 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                     f"{hot:,} with >5% avoidable brand-premium dollars")
         elif nadac_p:
             log("    [nadac_namegrain] skipped: NADAC present but no Part D raw")
+        else:
+            log("    [nadac_namegrain] skipped: no NADAC edition on/before the cutoff under preclean/nadac")
+    except StopIteration:
+        pass
     except Exception as e:
         log(f"    [nadac_namegrain] skipped: {e}")
 
@@ -1972,8 +2002,14 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 # computed inside DuckDB (2026-10-11): the pandas path loaded 50.6M segment
                 # rows and died on a 386 MB allocation in v10
                 df = menr.enrollment_features_from_parquet(seg_p, asof_cutoff)
-                sp = proc / "spending_fact.parquet"
-                if len(df) and sp.exists():
+                # PLATFORM_AUDIT H5: under a freeze the per-se check reads the AS-OF fact
+                # (pre-cutoff service months only); the full fact is current-day only
+                sp = asof_spend if asof_cutoff else (proc / "spending_fact.parquet")
+                if asof_cutoff and (sp is None or not Path(sp).exists()):
+                    log("    [medicaid_enrollment] paid-after-end check skipped: no as-of spending fact "
+                        f"for {asof_cutoff} (the full fact would leak post-cutoff months)")
+                    sp = None
+                if len(df) and sp is not None and Path(sp).exists():
                     after = menr.paid_after_enrollment_end(sp, df)
                     if len(after):
                         df = df.merge(after.drop(columns=["mcd_last_end_date"]), on="npi", how="left")
@@ -2122,7 +2158,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
         nref_p = _asof_pick(pc / "nadac", "nadac.csv", asof_cutoff=asof_cutoff)
         ndc_p = _first_existing(proc, "ndc_claims.parquet")
         if nref_p and ndc_p:
-            ref = nadac.compute_nadac_reference(_read_any(nref_p))
+            ref = nadac.compute_nadac_reference(nadac.asof_rows(_read_any(nref_p), asof_cutoff))
             _emit("nadac", nadac.drug_spread_anomaly(pd.read_parquet(ndc_p), ref, npi_to_org),
                   ["drug_spread_anomaly"])
             log(f"    [nadac] reference edition: {nref_p.name}")
@@ -2399,6 +2435,8 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
         # freeze; this block pooled every file on disk (the facility / POS leak class)
         hcris_files = _asof_files(sorted((pc / "hcris").glob("*.csv")), asof_cutoff, log, "hcris",
                                   keep="newest")
+        if not hcris_files:
+            log("    [hcris] skipped: no cost-report csv on/before the freeze under preclean/hcris")
         if hcris_files:
             m, h_dropped = hc.load_hcris(hcris_files)
             log(f"    [hcris] {len(hcris_files)} files -> {len(m):,} CCN rows "
@@ -2420,6 +2458,8 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
         # POS is a snapshot: the newest eligible quarter only (its several files together)
         pos_files = _asof_files(sorted((pc / "pos").rglob("*.csv")), asof_cutoff, log, "pos",
                                 keep="newest")
+        if not pos_files:
+            log("    [pos] skipped: no POS csv on/before the freeze under preclean/pos")
         if pos_files:
             caps = []
             for pf in pos_files:
@@ -2644,6 +2684,7 @@ def main() -> None:
                                            trend_years=args.trend_years,
                                            processed=processed,
                                            asof_cutoff=args.asof_cutoff,
+                                           asof_spend=_asof_spend_path(root, args.asof_cutoff),
                                            exclusion_events=_excl_events)
         for _k, _v in cached_npi.items():
             adapter_frames.setdefault(_k, _v)
@@ -2651,9 +2692,17 @@ def main() -> None:
             # --skip-sources", so SOURCES_REPORT shows the truth
             audit(f"    [{_k}] restored from resume cache ({len(_v):,} rows)")
 
+        for _n in sorted(skip):
+            if _n not in adapter_frames:
+                audit(f"    [{_n}] skipped: --skip-sources")
+
         def _have(name: str) -> bool:
             """True (and audit it) when a frame is already present from the
-            resume cache — the block guard that turns hours into a no-op."""
+            resume cache — the block guard that turns hours into a no-op. Also
+            True for a name in --skip-sources (PLATFORM_AUDIT B.F-3: nine analytics
+            blocks never read `skip`; the audit line was written above)."""
+            if name in skip and name not in adapter_frames:
+                return True
             if name in adapter_frames:
                 audit(f"    [{name}] restored from resume cache "
                       f"({len(adapter_frames[name]):,} rows)")
@@ -2669,8 +2718,8 @@ def main() -> None:
         try:
             if "dmepos" in adapter_frames:
                 from src.ingest_cms import order_referring as _orr
-                elig_p = _first_existing(preclean / "order_referring",
-                                         "order_referring.csv", "*.csv")
+                elig_p = _asof_pick(preclean / "order_referring", "order_referring.csv",
+                                    asof_cutoff=args.asof_cutoff, label="order_referring_referrer")
                 if elig_p:
                     elig, _q = _orr.eligible_referrers(_read_any(elig_p))
                     fb = _orr.referrer_ineligible_dme(adapter_frames["dmepos"], elig)
@@ -2770,6 +2819,9 @@ def main() -> None:
             rescache.save_frames(adapter_frames)
         nucc_pg = _load_nucc_peer_groups(preclean, processed, audit)
         widened = _widened_label_from_graph(g, audit)
+        if widened is None:
+            audit("    [label] skipped: no graph exclusion_nodes.parquet with an npi column under "
+                  f"{g} (provider_on_exclusion stays 0 for every row)")
 
         # §E: smoking-gun TIME ATTRIBUTES — dated timelines for the definitional
         # flags (months/dollars billed AFTER exclusion or deactivation). These are
@@ -2922,6 +2974,9 @@ def main() -> None:
                   "labels (source doj_case absent). A training run graded on the FCA ruler "
                   "needs --case-db <enforcement/doj_cases*.csv> --defendant-npis "
                   "<processed/case_defendant_npis.parquet>; the issue ledger flags this as a FAIL.")
+        if args.case_db and org_nodes is None:
+            audit("    [doj_case] skipped: --case-db given but the graph has no org_nodes.parquet "
+                  "(the case->org->NPI resolution needs it)")
         if args.case_db and org_nodes is not None:
             from .case_labels import build_case_labels
             cdb = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")

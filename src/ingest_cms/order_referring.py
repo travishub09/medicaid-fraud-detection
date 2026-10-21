@@ -47,6 +47,10 @@ def eligible_referrers(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
                        & df["npi"].fillna("").astype(str).str.strip().ne("")).sum())
     df = df.assign(npi=npi)[npi.notna()].copy()
     out = pd.DataFrame({"npi": df["npi"]})
+    if "dme" not in df.columns:
+        # PLATFORM_AUDIT H4: a blank default made EVERY referrer "not DME-eligible"
+        raise ValueError("Order & Referring file has no DME eligibility column "
+                         f"(expected one of {ELIGIBLE_COLS['dme']}); saw {list(raw.columns)[:12]}")
     for c in ("partb", "dme", "hha", "pmd"):
         vals = (df[c] if c in df.columns
                 else pd.Series("", index=df.index)).fillna("").astype(str).str.upper()

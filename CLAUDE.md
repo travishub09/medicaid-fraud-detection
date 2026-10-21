@@ -1608,6 +1608,35 @@ first, then paste" above every move/done block.
   grading it, `_CRITICAL_ANY` (hospice end_date OR date_range), `_CRITICAL_EXEMPT` (POS lab /
   iQIES beds), json feeds and two-column reference tables. Tests:
   tests/test_data_audit_scan_fixes_2026_10.py.
+  BATCH 1 SHIPPED (2026-10-21, bundle 349; the operator delegated the plan: 'i want the best
+  possible model so its really your call'; tests/test_batch1_fixes_2026_10.py): the case label
+  freezes at month START (case_labels); `research_evidence.load_state_exclusions` writes
+  `state_term:<ST>:<action>` (the ruler tiers it; `--source mfcu` keeps `mfcu_<st>:`);
+  STATE_TERM_RULES: a resolved outcome wins, charge words anchored (\\bcharged\\b); the
+  silent-blank class RAISES (order_referring without DME, PBJ without LPN/CNA, NH owner name /
+  fine, OPAIS contract pharmacy, Open Payments product columns, LEIE EXCLTYPE) or stays NULL
+  (Part B avg_allowed, HCRIS cost columns with min_count=1 sums); the per-NPI adapter loop never
+  returns early (StopIteration pattern); the enrollment per-se check reads the AS-OF fact
+  (`_asof_spend_path`) or skips with a line; `_have()` honours --skip-sources for every block
+  and main writes one skip line per requested name; audit lines on the no-row paths (kickback,
+  hcris, pos, doj_case without org_nodes, the widened label, capacity); the referrer-grain O&R
+  file goes through `_asof_pick`; `nadac.asof_rows` filters prices by effective date on both
+  price sites; `temporal_sources.real_dates` reads 0001 / 1800 / 2099 / 9999 as UNKNOWN (owner
+  edges kept as undated, exclusions dropped as undated); the enrollment SQL nulls a start
+  before 1900; `integrate.merge_exclusion_sources` quarantines the duplicate rows
+  (processed/exclusions_duplicates.parquet: the 537 LEIE rows named); `entity_graph.
+  docgraph_edition` + the as-of build refuses a DocGraph edition after the cutoff (D3: the 2022
+  file sat inside every 2021-12 graph); `_file_period`'s month token is 01..12 with an optional
+  day; the three producer-less scheme inputs are RESERVED (out of the weights; the catalog in
+  RUNBOOK_TRAVIS 5.4 lists them as reserved); the runner's step 2b rebuilds the CURRENT-DAY graph
+  when an exclusion source is newer than it (REBUILD_CURRENT=1 forces); `make frozen-package`
+  DELEGATES to ops/vm/run_frozen_night.sh (TAG= ASOF_CUTOFF= HORIZON= SEEDS=) and
+  `make provider-features` carries --case-db / --defendant-npis when the files exist;
+  src/backtest/backtest_results.csv + backtest_report.json untracked (a test refuses any tracked
+  csv / parquet / xlsx). DECISIONS: `src/model` (Travis's track) is RETIRED TO REFERENCE (never
+  run by a runner; the production scorer is company_list + network_ab._fit_predict); the
+  Windows .bat runners are retired, ops/vm/run_frozen_night.sh is THE runner. v19 = the first
+  run on this code (new pre-registration, task v19_run); batch 2 (v20 semantics) next.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

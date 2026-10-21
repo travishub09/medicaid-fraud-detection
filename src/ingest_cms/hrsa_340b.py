@@ -140,6 +140,10 @@ def covered_entities(raw: pd.DataFrame,
             keep &= term.isna() | (term > cut)
         df = df[keep].copy()
     df["name_key"] = df["name"].map(norm_org_name)
+    if "contract_pharmacy" not in df.columns:
+        # PLATFORM_AUDIT A.F-14: no pharmacy column = concentration 0 for every entity
+        raise ValueError("OPAIS report has no Contract Pharmacy Name column "
+                         f"(expected one of {OPAIS_COLS['contract_pharmacy']})")
     for c in ("entity_id", "entity_type", "state", "contract_pharmacy"):
         if c not in df.columns:
             df[c] = ""

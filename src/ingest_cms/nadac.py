@@ -31,7 +31,24 @@ NADAC_COLS = {
     "per_unit": ["NADAC Per Unit", "nadac_per_unit", "NADAC_Per_Unit"],
     "classification": ["Classification for Rate Setting", "classification",
                        "Pharmacy Type Indicator"],
+    "effective_date": ["Effective_Date", "Effective Date", "effective_date", "As of Date", "As_of_Date"],
 }
+
+
+def asof_rows(raw: pd.DataFrame, asof_cutoff: str | None) -> pd.DataFrame:
+    """NADAC rows whose effective date is on/before the freeze (a 'nadac_2021' edition
+    carries prices effective into January 2022; the data scan of 2026-10-21). No
+    cutoff, or no date column: unchanged."""
+    if not asof_cutoff:
+        return raw
+    resolved = _resolve_columns(list(raw.columns), NADAC_COLS)
+    col = resolved.get("effective_date")
+    if not col:
+        return raw
+    cut = str(asof_cutoff)[:7]
+    cut_ts = pd.Timestamp(cut + "-01") + pd.offsets.MonthEnd(0)
+    eff = pd.to_datetime(raw[col], errors="coerce")
+    return raw[eff.isna() | (eff <= cut_ts)]
 
 
 def compute_nadac_reference(raw: pd.DataFrame,

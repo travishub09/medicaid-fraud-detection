@@ -479,7 +479,10 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         # or before the cutoff month; undated announcements are dropped too (strict).
         if "announced_date" in cases.columns and len(df):
             ann = pd.to_datetime(df["case_ids"].astype(str).map(cases["announced_date"]), errors="coerce")
-            cut_ts = pd.Timestamp(f"{str(asof_cutoff)[:7]}-01") + pd.offsets.MonthEnd(0)
+            # PLATFORM_AUDIT H2: month START, like every other freeze (the as-of graph,
+            # the tier label, both rulers, the billing fact); month END let a case
+            # announced inside the cutoff month be a training AND a forward positive
+            cut_ts = pd.Timestamp(f"{str(asof_cutoff)[:7]}-01")
             n_post = int(((ann > cut_ts) | ann.isna()).sum())
             df = df[ann.notna() & (ann <= cut_ts)]
             if n_post:

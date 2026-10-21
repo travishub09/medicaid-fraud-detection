@@ -134,6 +134,19 @@ for s in servicing mue sector_schemes medicaid_enrollment billing_lm graph_embed
   fi
 done
 
+# 2026-10-21 (PLATFORM_AUDIT B.F-8 / D7): the forward rulers read the CURRENT-DAY graph
+# ($DATA/graph), the only merge point of processed/exclusions_*.parquet; it was never
+# rebuilt by a runner, so label rows loaded after its build date never reached a ruler.
+step 2b/13 "the current-day graph (rebuilt when an exclusion source is newer than it; REBUILD_CURRENT=1 forces)"
+CUR="$DATA/graph/nodes/exclusion_nodes.parquet"
+NEWER=$(find "$DATA/processed" -maxdepth 1 -name 'exclusions*.parquet' -newer "$CUR" 2>/dev/null | head -5)
+if [ ! -f "$CUR" ] || [ -n "$NEWER" ] || [ "${REBUILD_CURRENT:-0}" = "1" ]; then
+  echo "[$TAG]   rebuilding $DATA/graph (newer exclusion sources: ${NEWER:-none / forced})"
+  python -u -m src.entity_graph --input "$DATA/processed" --out "$DATA/graph" --max-embed-nodes 0 --light-walks-above 0 || fail 2b
+else
+  echo "[$TAG]   current-day graph is newer than every exclusion source: reused"
+fi
+
 step 3/13 "forward labels (exclusion ruler, hard tier; FCA case ruler, 36 months)"
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --out "$RUN/future_bans_after_${CUT}.csv" || fail 3

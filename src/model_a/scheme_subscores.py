@@ -71,9 +71,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
                            # data-derived clinical plausibility (A5); absent
                            # until spending + taxonomy are attached, then blends
                            "clinical_implausibility": 0.3,
-                           # A5 second half: per-capita volume vs county pop
-                           # (Census denominator); absent until ZIP→county lands
-                           "local_volume_implausibility": 0.2},
+                           # A5 second half, local_volume_implausibility (per-capita
+                           # volume vs county pop) is RESERVED: analytics.
+                           # local_denominator_plausibility has no caller
+                           # (PLATFORM_AUDIT H8); it rejoins the weights with its producer
+                           },
     "rapid_ramp": {"temporal": 0.6,
                    # growth-shock signals from src/analytics/growth.py (A4):
                    # absent until spending-derived features are attached
@@ -101,7 +103,8 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # and-service PUF does not carry (they need the line-level/BETOS or a timed
     # source). Skip-missing keeps the scheme silent (never mis-fires) until that
     # data lands; do not interpret its absence as "no impossible-day risk".
-    "impossible_day": {"bene_per_day_p95": 0.6, "time_minutes_per_day": 0.4,
+    # bene_per_day_p95 is RESERVED (no producer anywhere in src/; PLATFORM_AUDIT H8)
+    "impossible_day": {"time_minutes_per_day": 0.4,
                        # rendering-grain peak (model_a/servicing_grain.py): the busiest
                        # month's claim lines on THIS clinician's NPI, across every
                        # organization that billed for them — a producer this scheme
@@ -135,7 +138,8 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
                      "drug_markup_anomaly": 0.4},
     # dme_ordering_md_concentration needs supplier×ordering-MD pairs (not in the
     # by-referring-provider PUF) — dormant by data; the other two are produced.
-    "dme_ring": {"dme_high_cost_item_share": 0.4, "dme_ordering_md_concentration": 0.4,
+    # dme_ordering_md_concentration is RESERVED (no producer; PLATFORM_AUDIT H8)
+    "dme_ring": {"dme_high_cost_item_share": 0.4,
                  # orders from referrers not eligible to order DME (sweep 2.6)
                  "ineligible_referral_share": 0.4,
                  # referrer-grain fallback from the public DMEPOS detail file:

@@ -156,6 +156,9 @@ def _asof_frame(segments: pd.DataFrame, asof_cutoff: str | None) -> pd.DataFrame
     s = segments.copy()
     s["npi"] = s["npi"].astype(str)
     s["start_date"] = pd.to_datetime(s["start_date"], errors="coerce")
+    # a placeholder start (0001-01-01 in the CMS file) is UNKNOWN, not the year 1
+    # (PLATFORM_AUDIT D6); the row cannot carry a tenure and is set aside below
+    s["start_date"] = s["start_date"].where(s["start_date"] >= pd.Timestamp("1900-01-01"))
     s["end_date"] = pd.to_datetime(s["end_date"], errors="coerce")
     s = s[s["npi"].str.fullmatch(r"\d{10}").fillna(False) & s["start_date"].notna()].copy()
     # a placeholder end (9999-12-31, or any end after today) is an OPEN-ENDED row
@@ -582,7 +585,7 @@ def enrollment_features_from_parquet(seg_parquet, asof_cutoff: str | None = None
     df = con.execute(f"""
         with s0 as (
             select cast(npi as varchar) as npi, upper(cast(state as varchar)) as state,
-                   cast(start_date as date) as start_date,
+                   case when cast(start_date as date) < date '1900-01-01' then null else cast(start_date as date) end as start_date,
                    case when cast(end_date as date) > current_date then null else cast(end_date as date) end as end_date,
                    trim(coalesce(cast(status as varchar), '') || ' | ' || coalesce(cast(reason as varchar), ''), ' |') as txt
             from read_parquet('{p}')
@@ -657,7 +660,7 @@ def termination_events_from_parquet(seg_parquet, asof_cutoff: str | None = None,
     df = con.execute(f"""
         with s0 as (
             select cast(npi as varchar) as npi, upper(coalesce(cast(state as varchar), '')) as state,
-                   cast(start_date as date) as start_date,
+                   case when cast(start_date as date) < date '1900-01-01' then null else cast(start_date as date) end as start_date,
                    case when cast(end_date as date) > current_date then null else cast(end_date as date) end as end_date,
                    trim(coalesce(cast(status as varchar), '') || ' | ' || coalesce(cast(reason as varchar), ''), ' |') as txt,
                    trim(coalesce(cast(provider_type as varchar), '')) as ptype

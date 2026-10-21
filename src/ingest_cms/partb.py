@@ -49,11 +49,11 @@ def compute_partb_metrics(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     df = df.assign(npi=npi)[npi.notna()].copy()
 
     df["hcpcs"] = df["hcpcs"].fillna("").astype(str).str.strip().str.upper()
-    for c in ["services", "avg_allowed"]:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
-        else:
-            df[c] = 0.0
+    df["services"] = pd.to_numeric(df["services"], errors="coerce").fillna(0.0)
+    # avg_allowed absent = UNOBSERVED (NaN), never 0: a 0 scored allowed_per_bene =
+    # 0 for every provider and payment_outlier on a constant (PLATFORM_AUDIT A.F-10)
+    df["avg_allowed"] = (pd.to_numeric(df["avg_allowed"], errors="coerce")
+                         if "avg_allowed" in df.columns else float("nan"))
     # benes keeps NaN where blank: CMS suppresses small counts, and a suppressed
     # cell is "unobserved", not zero. The per-bene ratios below pair numerator
     # and denominator over the SAME observed rows so a partially-suppressed

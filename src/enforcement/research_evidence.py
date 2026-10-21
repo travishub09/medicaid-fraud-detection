@@ -216,12 +216,21 @@ def load_state_exclusions(table: pd.DataFrame, state: str,
     npi = canonicalize_series(d.get("npi", pd.Series("", index=d.index)).fillna(""))
     action = (d.get("excl_type", pd.Series("", index=d.index)).fillna("")
               .astype(str).str.strip().str.lower().str.slice(0, 60))
-    tag = f"{source}_{st.lower()}"
+    # PLATFORM_AUDIT H6: ONE convention for state rows. `state_term:<ST>:<action>` is
+    # what fca_relevance.STATE_TERM_RULES tiers (fraud-shaped = hard); the old
+    # `state_term_<st>:<action>` form hit the state_term prefix branch with an empty
+    # body and tiered every research-harvested state row WEAK "no reason recorded".
+    # A non-default source keeps the `<source>_<st>:<action>` form the ruler's
+    # `<letters>_<st>` branch reads.
+    if source == "state_term":
+        tag = f"state_term:{st}"
+    else:
+        tag = f"{source}_{st.lower()}"
     out = pd.DataFrame({
         "npi": npi.fillna(""),
         "entity_name": full,
         "name_key": full.map(norm_org_name),
-        "excl_type": (tag + ":" + action).where(action != "", tag),
+        "excl_type": (tag + ":" + action).where(action != "", tag + ":unspecified"),
         "excl_date": pd.to_datetime(d.get("excl_date"), errors="coerce"),
         "reinstate_date": pd.to_datetime(d.get("reinstate_date"), errors="coerce"),
     })

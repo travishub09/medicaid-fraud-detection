@@ -281,6 +281,19 @@ operator says go per batch. Batch 1 is small and blocks any run; batch 2 changes
 semantics and is v19's pre-registration; batch 3 is structure and can proceed in
 parallel with runs.
 
+**Batch 1 SHIPPED 2026-10-21 (bundle 349, tests/test_batch1_fixes_2026_10.py; the operator
+delegated the plan: "i want the best possible model so its really your call").** Also
+decided there: `src/model` (Travis's track) is RETIRED TO REFERENCE (no tests, its own
+label column, hard-coded paths; the production scorer is `company_list` +
+`network_ab._fit_predict`, the one the runners grade), and the Windows `.bat` runners
+are retired: `ops/vm/run_frozen_night.sh` is the single runner definition and
+`make frozen-package` now delegates to it. Items 6 (B.F-10, the five org blocks that
+log a USED line before the skip decision) and the stage-one reject count (H10, batch
+2) stay open. Added from the scan: the NADAC effective-date filter, the current-day
+graph step in the runner (D7), the placeholder dates (D6), the LEIE duplicate
+quarantine (D8), DocGraph's edition on the as-of graph (D3), and a `_file_period`
+month token that no longer reads "_180" as month 18.
+
 **Batch 1, before any run (one bundle, a day):**
 1. H1 the tier choice lists; H3 the `return frames`; the runner guard fails on a MISSING
    SOURCES_REPORT row (B.F-11 blind spot).
