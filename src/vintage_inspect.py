@@ -450,7 +450,10 @@ def write_outputs(rows: list[dict], data_root: Path) -> Path:
                                   # (capacity check / --asof-nppes), raw HCRIS zips
                                   "state_terminations", "state_capacity", "nppes",
                                   "nppes_history", "hcris", "cia", "state_rates",
-                                  "medicaid_ndc", "medicaid_enrollment"}
+                                  "medicaid_ndc", "medicaid_enrollment",
+                                  # wired 2026-10-10: the FDA NDC Directory (ingest_cms/fda_ndc,
+                                  # labeler -> manufacturer key + DEA schedule for the NDC block)
+                                  "fda_ndc", "order_referring", "docgraph", "pos"}
     for r in rows_s:
         top = r["file"].split("/")[0]
         if "/" in r["file"] and top not in known and "_hold" not in top:
