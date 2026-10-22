@@ -1836,6 +1836,13 @@ first, then paste" above every move/done block.
   training (never negatives), a source whose rows never train under the policy has no
   minus_ row; measure_run.sh passes TRAIN_TIER (default hard). v19's ablation under
   policy 'all' had "found" what the hard policy already did.
+  LAPTOP IS NOT A COMPUTE SEAT (operator 2026-10-22, after the data scan and the capacity
+  check took the 16 GB laptop to 15.6 GB / 100 percent disk): the laptop does merges,
+  browser downloads, reminders and reading ONLY. The data scan (`ops/vm/data_audit.sh`),
+  the licensed-roster load (`ingest_cms.licensed_capacity`) and the capacity check
+  (`model_a.capacity`) run on the VM after the preclean sync (tasks post_download_checks
+  and capacity_on_vm carry the ssh lines); run_licensed_capacity.bat / run_capacity_v3.bat
+  are retired. Never hand the operator a laptop line that reads the spending fact.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);
