@@ -76,15 +76,25 @@ def _source_sets(matrix: pd.DataFrame) -> dict[str, np.ndarray]:
 
 
 def label_variants(matrix: pd.DataFrame,
-                   only: set[str] | None = None) -> dict[str, dict]:
+                   only: set[str] | None = None,
+                   y_base: np.ndarray | None = None,
+                   policy_name: str = "all") -> dict[str, dict]:
     """Training-label variants: the shipped union, minus each source, and the
     LEIE-only floor. A provider labeled by two sources stays positive when one
-    is dropped — removal means removing EVIDENCE, not providers."""
-    y_all = _to_num(matrix["provider_on_exclusion"]).astype(int)
+    is dropped — removal means removing EVIDENCE, not providers.
+
+    ``y_base`` (batch 3, 2026-10-22): the SHIPPED training label under the tier
+    policy (company_list._training_label) instead of the raw union column, so the
+    ablation says something about the model that ships: under policy 'all' the v19
+    ablation "found" that dropping the weak enrollment / state / deactivation rows
+    helped, which the hard policy had already done."""
+    y_all = (np.asarray(y_base).astype(int) if y_base is not None
+             else np.asarray(_to_num(matrix["provider_on_exclusion"])).astype(int))
     masks = _source_sets(matrix)
     variants: dict[str, dict] = {
         "all": {"y": y_all,
-                "note": "the shipped union label (baseline)"}}
+                "note": ("the shipped union label (baseline)" if policy_name == "all"
+                         else f"the shipped training label under policy '{policy_name}' (baseline)")}}
     for src, mask in sorted(masks.items()):
         n_src = int(mask.sum())
         if n_src < MIN_SOURCE_POSITIVES:
@@ -94,14 +104,16 @@ def label_variants(matrix: pd.DataFrame,
             if o != src:
                 others |= om
         y = (y_all.astype(bool) & (others | ~mask)).astype(int)
+        if y_base is not None and int(y.sum()) == int(y_all.sum()):
+            continue                       # the source's rows never train under this policy
         variants[f"minus_{src}"] = {
             "y": y, "note": f"drop the {n_src:,} {src}-labeled positives "
                             f"(kept where another source also labels them)"}
     if "leie" in masks:
         variants["leie_only"] = {
-            "y": masks["leie"].astype(int),
+            "y": (masks["leie"] & y_all.astype(bool)).astype(int),
             "note": "the original single-source label — the floor everything "
-                    "widened from"}
+                    "widened from" + ("" if y_base is None else " (within the policy)")}
     if only:
         variants = {k: v for k, v in variants.items()
                     if k == "all" or k in only}
@@ -155,11 +167,14 @@ def _forward_eval(matrix: pd.DataFrame, future_label: pd.DataFrame):
 
 
 def _oof_scores_trained_on(matrix, y_train, cols, groups,
-                           n_splits=5, seed=RANDOM_STATE):
+                           n_splits=5, seed=RANDOM_STATE, train_mask=None):
     """Out-of-fold scores where the TRAINING label is a variant, not the eval
     label. Folds are grouped and IDENTICAL across variants (same seed/groups),
     so two variants' scores for one provider come from models trained on the
-    same rows with different labels — the delta isolates the label."""
+    same rows with different labels — the delta isolates the label.
+    ``train_mask`` (rows allowed to train; the shipped scorer's mask-not-negate
+    rule: a provider the union label calls positive but the tier policy does not
+    keep is ambiguous, held out of training, still scored)."""
     from sklearn.model_selection import GroupKFold, KFold
     X = _numeric_frame(matrix, cols)
     oof = np.full(len(X), np.nan)
@@ -169,6 +184,8 @@ def _oof_scores_trained_on(matrix, y_train, cols, groups,
         it = KFold(n_splits=n_splits, shuffle=True,
                    random_state=seed).split(X)
     for tr, te in it:
+        if train_mask is not None:
+            tr = tr[np.asarray(train_mask)[tr]]
         if int(y_train[tr].sum()) == 0:      # a fold with no positives can't fit
             continue
         oof[te] = _fit_predict(X.iloc[tr].to_numpy(), y_train[tr],
@@ -179,17 +196,26 @@ def _oof_scores_trained_on(matrix, y_train, cols, groups,
 def run_label_ablation(matrix: pd.DataFrame, manifest: dict,
                        future_label: pd.DataFrame,
                        n_splits: int = 5, n_boot: int = 400,
-                       only: set[str] | None = None) -> dict:
+                       only: set[str] | None = None,
+                       y_base: np.ndarray | None = None,
+                       policy_name: str = "all") -> dict:
     m = matrix.reset_index(drop=True)
     m["npi"] = m["npi"].astype(str)
     y_fwd, eval_mask = _forward_eval(m, future_label)
-    variants = label_variants(m, only=only)
+    variants = label_variants(m, only=only, y_base=y_base, policy_name=policy_name)
     groups = (m["group_id"].to_numpy() if "group_id" in m.columns else None)
     cols, leaked = _screened_features(m, manifest, variants["all"]["y"])
+    # mask-not-negate under a tier policy: union-positive rows the policy drops are
+    # ambiguous, never negatives (the shipped scorer's rule)
+    train_mask = None
+    if y_base is not None and "provider_on_exclusion" in m.columns:
+        amb = (np.asarray(_to_num(m["provider_on_exclusion"])) > 0) & (np.asarray(y_base) == 0)
+        train_mask = ~amb
 
     res: dict = {"n": int(len(m)), "n_features": len(cols),
                  "screened_out": leaked, "n_splits": n_splits,
-                 "n_boot": n_boot,
+                 "n_boot": n_boot, "label_policy": policy_name,
+                 "ambiguous_masked": int((~train_mask).sum()) if train_mask is not None else 0,
                  "eval_n": int(eval_mask.sum()),
                  "eval_positives": int(y_fwd[eval_mask].sum()),
                  "variants": {}}
@@ -197,7 +223,7 @@ def run_label_ablation(matrix: pd.DataFrame, manifest: dict,
     scores: dict[str, np.ndarray] = {}
     for name, v in variants.items():
         y_tr = np.asarray(v["y"])
-        p = _oof_scores_trained_on(m, y_tr, cols, groups, n_splits=n_splits)
+        p = _oof_scores_trained_on(m, y_tr, cols, groups, n_splits=n_splits, train_mask=train_mask)
         scores[name] = p
         ok = eval_mask & ~np.isnan(p)
         ye, pe = y_fwd[ok], p[ok]
@@ -255,6 +281,17 @@ def to_markdown(res: dict) -> str:
              f"{res['n_features']} screened features, {res['n_splits']} "
              f"grouped folds, {res['n_boot']} cluster-bootstrap draws._")
     L.append("")
+    pol = res.get("label_policy", "all")
+    if pol != "all":
+        L.append(f"_Training label policy: **{pol}** (the shipped scorer's tier label; "
+                 f"{res.get('ambiguous_masked', 0):,} union-positive rows the policy does not "
+                 f"keep are masked from training, never negatives). A source whose rows never "
+                 f"train under this policy has no minus_ row: there is nothing to remove._")
+    else:
+        L.append("_Training label policy: **all** (the raw union column). If the shipped scorer "
+                 "trains under a tier policy, re-run with --label-tier so the rows say something "
+                 "about the model that ships._")
+    L.append("")
     if res.get("screened_out"):
         L.append("Screened out as single-column leaks (AUC > 0.985 vs the "
                  "union label): "
@@ -304,14 +341,31 @@ def main() -> None:
                     help="comma-separated variant names to run (besides 'all', "
                          "always run), e.g. 'minus_doj_case,minus_opensanctions'"
                          " — default runs every source with enough positives")
+    ap.add_argument("--label-tier", default="all",
+                    choices=list(__import__("src.model_a.fca_relevance", fromlist=["TIER_POLICIES"]).TIER_POLICIES),
+                    help="the SHIPPED training-label policy (batch 3, 2026-10-22): the baseline is "
+                         "company_list._training_label under this tier, ambiguous rows masked")
+    ap.add_argument("--exclusion-nodes", default=None,
+                    help="for --label-tier (default: the run folder's as-of graph via default_exclusion_nodes)")
+    ap.add_argument("--cutoff", default=None, help="YYYY-MM for the tier label (default: manifest asof_cutoff)")
     args = ap.parse_args()
     matrix = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     fl = pd.read_csv(args.future_label, dtype=str)
     only = ({v.strip() for v in args.variants.split(",") if v.strip()}
             if args.variants else None)
+    y_base = None
+    if args.label_tier != "all":
+        from src.model_a.company_list import _training_label, default_exclusion_nodes, set_label_policy
+        ex = args.exclusion_nodes or default_exclusion_nodes(Path(args.matrix).parent)
+        cutoff = args.cutoff or manifest.get("asof_cutoff")
+        set_label_policy(args.label_tier, ex, cutoff=cutoff)
+        y_base = np.asarray(_training_label(matrix, "provider_on_exclusion"))
+        print(f"[label_ablation] training label policy {args.label_tier} from {ex} "
+              f"({int(y_base.sum()):,} positives)")
     res = run_label_ablation(matrix, manifest, fl, n_splits=args.splits,
-                             n_boot=args.boot, only=only)
+                             n_boot=args.boot, only=only, y_base=y_base,
+                             policy_name=args.label_tier)
     Path(args.out).write_text(to_markdown(res), encoding="utf-8")
     print(f"[label_ablation] {len(res['variants'])} variants on "
           f"{res['eval_positives']:,} forward positives -> {args.out}")

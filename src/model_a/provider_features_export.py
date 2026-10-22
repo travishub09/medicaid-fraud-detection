@@ -1489,19 +1489,35 @@ def _asof_newest(base: Path, patterns: tuple, asof_cutoff: str | None, log=None,
     return max(elig, key=lambda p: _file_period(p.name) or "")
 
 
-def _deactivation_file(folder: Path, log=None, label: str = "nppes_deactivation") -> Path | None:
-    """The newest deactivation report (nppes_deactivation.pick_deactivation_file) with a
-    vintage-ledger row; the cumulative file is right for every cutoff (rows are
-    date-filtered by the adapter)."""
+def _deactivation_file(folder: Path, log=None, label: str = "nppes_deactivation",
+                       asof_cutoff: str | None = None) -> Path | None:
+    """The deactivation report for this run (nppes_deactivation.pick_deactivation_file)
+    with a vintage-ledger row. Under a freeze the pre-cutoff edition is read when one
+    exists (verdict pre_cutoff); when only later editions are on disk the newest is read
+    as a post_cutoff_reference (the file is cumulative and the adapter filters rows by
+    deactivation date, but reactivations / corrections recorded after the freeze ride
+    along: batch 3, 2026-10-22 — v10..v20 read the newest edition under every freeze);
+    a current-day run reads the newest edition (current_day_newest)."""
     from src.ingest_cms.nppes_deactivation import pick_deactivation_file
-    dp, ed, listing = pick_deactivation_file(folder)
+    dp, ed, listing = pick_deactivation_file(folder, asof_cutoff=asof_cutoff)
     if dp is None:
         return None
     others = [n for n, _ in listing if n != dp.name]
-    _vintage(label, None, dp, others, "current_day_newest" if ed else "undated_substituted",
-             f"edition {ed or 'unknown'} (cumulative report; rows date-filtered)")
-    if log and others:
-        log(f"    [{label}] newest edition {ed or 'unknown'}: {dp.name}; set aside: {', '.join(others)}")
+    cut = str(asof_cutoff)[:7] if asof_cutoff else None
+    if not ed:
+        verdict, note = "undated_substituted", "no readable edition (cumulative report; rows date-filtered)"
+    elif not cut:
+        verdict, note = "current_day_newest", f"edition {ed} (cumulative report; rows date-filtered)"
+    elif ed[:7] <= cut:
+        verdict, note = "pre_cutoff", f"edition {ed} on/before the freeze {cut}"
+    else:
+        verdict, note = "post_cutoff_reference", (f"edition {ed} is the earliest on disk, after the freeze {cut}: "
+                                                  f"rows date-filtered, but reactivations / corrections after the "
+                                                  f"freeze ride along; procure the pre-cutoff edition")
+    _vintage(label, cut, dp, others, verdict, note)
+    if log:
+        log(f"    [{label}] edition {ed or 'unknown'} ({verdict}): {dp.name}"
+            + (f"; set aside: {', '.join(others)}" if others else ""))
     return dp
 
 
@@ -1968,7 +1984,8 @@ def _run_npi_adapters(preclean: Path, log, skip: set | None = None,
                 deact = None
                 try:
                     from src.ingest_cms import nppes_deactivation as nd
-                    dp = _deactivation_file(pc / "nppes_deactivation", log, "medicaid_ndc/deactivation")
+                    dp = _deactivation_file(pc / "nppes_deactivation", log, "medicaid_ndc/deactivation",
+                                            asof_cutoff=asof_cutoff)
                     if dp:
                         deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
                 except Exception:
@@ -2166,7 +2183,7 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     # --- post-deactivation billing (spending + deactivated NPIs + npi_to_org) ---
     try:
         from src.ingest_cms import nppes_deactivation as nd
-        dp = _deactivation_file(pc / "nppes_deactivation", log)
+        dp = _deactivation_file(pc / "nppes_deactivation", log, asof_cutoff=asof_cutoff)
         if dp and spending_p:
             deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
             spend = _spending_for_npis(spending_p, deact["npi"].tolist())
@@ -2907,7 +2924,8 @@ def main() -> None:
                     ex = ex[ex["npi"].str.len() >= 10]
                     cuts.append(("excl", ex.rename(columns={dcol: "cutoff_date"})
                                  [["npi", "cutoff_date"]]))
-            dp = _deactivation_file(preclean / "nppes_deactivation", None, "smoking_gun_timeline/deactivation")
+            dp = _deactivation_file(preclean / "nppes_deactivation", None, "smoking_gun_timeline/deactivation",
+                                    asof_cutoff=args.asof_cutoff)
             if dp:
                 from src.ingest_cms import nppes_deactivation as nd
                 deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))

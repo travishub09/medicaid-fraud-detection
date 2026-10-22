@@ -77,7 +77,10 @@ python -u -m src.model_a.data_refresh --run-dir "$RUN" --data-root "$DATA" --rem
 
 if [ "$MEASURE_ABLATION" = "1" ]; then
   m 4/5 "label ablation (one label source removed at a time, forward delta + CI)"
+  # batch 3 (2026-10-22): the ablation trains under the SHIPPED tier policy (TRAIN_TIER,
+  # default hard) so its rows describe the model that ships, not the raw union label
   python -u -m src.model_a.label_ablation --matrix "$MATRIX" --manifest "$MANIFEST" --future-label "$FCA" \
+      --label-tier "${TRAIN_TIER:-hard}" --exclusion-nodes "$EXCL" --cutoff "$CUT" \
       --out "$RUN/LABEL_ABLATION.md" --splits 5 --boot 200 || mfail 4
   m 5/5 "source ablation OOF on the forward ruler (core vs full vs leave-one-family-out; the slow one)"
   python -u -m src.model_a.source_ablation --matrix "$MATRIX" --manifest "$MANIFEST" --future-label "$FCA" \

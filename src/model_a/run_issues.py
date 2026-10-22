@@ -230,6 +230,23 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
                                  "freeze_inputs.json"))
 
     # --- vintage audit (SCHEME_TRIAGE) -----------------------------------------------
+    # The triage reads the FILES ON DISK; the ledger above reads what the picker
+    # actually USED. From bundle 324 the multi-edition blocks read only pre-cutoff
+    # editions, so a 2023 file sitting beside the 2021 one is not a leak — yet this
+    # block kept grading it FAIL for ten runs (v19 read-out, batch 3). A triage
+    # POST-CUTOFF row whose source the ledger covers is an INFO ("on disk, not
+    # read"); without a ledger row it stays the FAIL it always was.
+    ledger_srcs = [str(v.get("source") or "").lower() for v in ((man.get("vintage_audit") or []) if man else [])]
+
+    def _ledger_covers(src: str) -> bool:
+        s = src.lower().strip("`")
+        toks = {t for t in re.split(r"[^a-z0-9]+", s) if len(t) >= 3}
+        for ls in ledger_srcs:
+            ltoks = {t for t in re.split(r"[^a-z0-9]+", ls) if len(t) >= 3}
+            if s and (s in ls or ls in s or (toks and toks & ltoks)):
+                return True
+        return False
+
     tri = d / "SCHEME_TRIAGE.md"
     if tri.exists():
         for line in _read(tri).splitlines():
@@ -239,6 +256,13 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
             src, vint, verdict = (x.strip() for x in m.groups())
             v = verdict.upper()
             if "POST" in v or "LEAK" in v:
+                if _ledger_covers(src):
+                    issues.append(_issue("vintage", src, "post_cutoff_on_disk", "INFO",
+                                         f"a {vint} edition sits on disk after the freeze; the vintage ledger "
+                                         f"(manifest vintage_audit) records which edition the export read",
+                                         "none if the ledger row for the source reads pre_cutoff; otherwise the "
+                                         "ledger row above is the finding", "SCHEME_TRIAGE.md"))
+                    continue
                 issues.append(_issue("vintage", src, "post_cutoff_edition", "FAIL",
                                      f"edition {vint} is dated after the freeze",
                                      "procure the pre-cutoff edition or exclude the source from frozen builds",

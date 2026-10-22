@@ -84,7 +84,7 @@ def load_deactivation(path: str | Path) -> pd.DataFrame:
 
 _EDITION_RES = (
     re.compile(r"(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])"),        # 20260914
-    re.compile(r"_(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(2\d)_", re.I),   # CMS: _091426_ (MMDDYY)
+    re.compile(r"_(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(2\d)(?=[_.])", re.I),   # CMS: _091426_ or _091426. (MMDDYY)
 )
 _BANNER_RE = re.compile(r"as of\s+([A-Za-z]{3})[a-z]*\s+(\d{1,2}),?\s+(20\d{2})", re.I)
 _MON = {m: i + 1 for i, m in enumerate(("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))}
@@ -130,10 +130,15 @@ def edition_of(path: str | Path) -> str | None:
     return None
 
 
-def pick_deactivation_file(folder: str | Path) -> tuple[Path | None, str | None, list]:
-    """The NEWEST deactivation report in the folder (the file is cumulative, so the
-    newest edition is right for a current-day AND a frozen run: the adapter filters
-    rows by deactivation date). Returns (path, edition, [(name, edition), ...])."""
+def pick_deactivation_file(folder: str | Path, asof_cutoff: str | None = None
+                           ) -> tuple[Path | None, str | None, list]:
+    """The deactivation report to read: under a freeze (``asof_cutoff`` YYYY-MM) the
+    NEWEST edition dated on/before the cutoff month (the pre-cutoff edition: a later
+    cumulative file would also carry reactivations and corrections recorded after the
+    freeze), else the newest edition on disk (current-day, or a frozen run with no
+    pre-cutoff edition: the adapter still filters rows by deactivation date, and the
+    export's vintage ledger records the substitution). Returns
+    (path, edition, [(name, edition), ...])."""
     d = Path(folder)
     if not d.is_dir():
         return None, None, []
@@ -141,11 +146,18 @@ def pick_deactivation_file(folder: str | Path) -> tuple[Path | None, str | None,
              and not q.name.endswith(".bak")]
     dated = [(q, edition_of(q)) for q in cands]
     known = [(q, e) for q, e in dated if e]
+    listing = [(x.name, y) for x, y in dated]
     if known:
+        if asof_cutoff:
+            cut = str(asof_cutoff)[:7]
+            eligible = [(q, e) for q, e in known if e[:7] <= cut]
+            if eligible:
+                q, e = max(eligible, key=lambda t: t[1])
+                return q, e, listing
         q, e = max(known, key=lambda t: t[1])
-        return q, e, [(x.name, y) for x, y in dated]
+        return q, e, listing
     if cands:
-        return cands[0], None, [(x.name, y) for x, y in dated]
+        return cands[0], None, listing
     return None, None, []
 
 

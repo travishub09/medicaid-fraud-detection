@@ -1755,6 +1755,21 @@ first, then paste" above every move/done block.
   Mix shares are of the LAB dollars (NULL without lab dollars; an observed 0 is real).
   ORDER: v20 reads out -> ab_class_priors grade read (hits vs the hard arm) -> v21
   pre-registers the winner + the lab scheme + the prune list (14 coin-flip schemes).
+  BATCH 3 (2026-10-22, the three fixes the v19 read-out named; tests/test_batch3_fixes_
+  2026_10.py): (1) `nppes_deactivation.pick_deactivation_file(asof_cutoff=)` reads the
+  newest edition on/before the cutoff month under a freeze (v10..v20 read the newest
+  file under every freeze: reactivations / corrections recorded after the freeze rode
+  along); `_deactivation_file(asof_cutoff=)` at all three call sites writes the ledger
+  verdict pre_cutoff / post_cutoff_reference / current_day_newest; the CMS MMDDYY stamp
+  is read before `.` as well as `_`. (2) run_issues: a SCHEME_TRIAGE POST-CUTOFF row is
+  the file ON DISK; when the manifest's vintage ledger covers the source (token match)
+  it is INFO `post_cutoff_on_disk` (the ledger row says what was read), else the FAIL
+  stands (the ten-run facility / PBJ / POS false FAIL). (3) `label_ablation --label-tier
+  --exclusion-nodes --cutoff`: the baseline is the SHIPPED tier label
+  (company_list._training_label), union-positive rows the policy drops are masked from
+  training (never negatives), a source whose rows never train under the policy has no
+  minus_ row; measure_run.sh passes TRAIN_TIER (default hard). v19's ablation under
+  policy 'all' had "found" what the hard policy already did.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);
