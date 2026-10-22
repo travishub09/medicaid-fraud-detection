@@ -570,11 +570,11 @@
   },
   {
    "key": "home_health_compare",
-   "what": "Home Health Care Compare agency file (data.cms.gov provider data: quality-of-patient-care star rating, timely initiation, hospitalization / ED-use measures, DTC/PPR) = the SECTOR FILE for the v22 home_health_intensity scheme (docs/SCHEME_DEEP_DIVE 2026-10-22 finding 4: the schemes that validate read a sector quality file, not a billing ratio). Adapter ingest_cms/home_health_compare (bundle 375); joins CCN -> NPI through the crosswalk.",
+   "what": "Home Health Care Compare agency file (data.cms.gov provider data: quality-of-patient-care star rating, timely initiation, hospitalization / ED-use measures, DTC/PPR) = the SECTOR FILE for the v22 home_health_intensity scheme (docs/SCHEME_DEEP_DIVE 2026-10-22 finding 4: the schemes that validate read a sector quality file, not a billing ratio). Adapter ingest_cms/home_health_compare (bundle 375); joins CCN -> NPI through the crosswalk. DONE 2026-10-22: HH_Provider_Oct2026.csv (current) + HH_Provider_Jan2022.csv (the 2021-12 freeze edition, from the Jan-2022 archive zip) in preclean/home_health/.",
    "where": "preclean/home_health/HH_Provider_<MonYYYY>.csv (keep the CMS name; the adapter dates it from the name)",
    "url": "https://data.cms.gov/provider-data/topics/home-health-services",
    "every_months": 3,
-   "last_done": null,
+   "last_done": "2026-10-22",
    "proof": [
     "preclean/home_health/HH_Provider*.csv"
    ],
@@ -592,11 +592,11 @@
   },
   {
    "key": "dialysis_compare",
-   "what": "Dialysis Facility Compare facility listing (data.cms.gov provider data: stations, chain / ownership, star ratings, hospitalization and transfusion measures) = the sector file for a future dialysis_quality scheme (the dialysis-facility settlements are a standing FCA line; no scheme reads the sector today). Download only; the adapter is queued behind home_health_compare.",
+   "what": "Dialysis Facility Compare facility listing (data.cms.gov provider data: stations, chain / ownership, star ratings, hospitalization and transfusion measures) = the sector file for a future dialysis_quality scheme (the dialysis-facility settlements are a standing FCA line; no scheme reads the sector today). Download only; the adapter is queued behind home_health_compare. DONE 2026-10-22: DFC_FACILITY.csv (July 2026 release) in preclean/dialysis/; rename to DFC_FACILITY_Jul2026.csv so the edition picker can date it.",
    "where": "preclean/dialysis/DFC_FACILITY_<MonYYYY>.csv",
    "url": "https://data.cms.gov/provider-data/topics/dialysis-facilities",
    "every_months": 6,
-   "last_done": null,
+   "last_done": "2026-10-22",
    "proof": [
     "preclean/dialysis/DFC_FACILITY*.csv"
    ],
