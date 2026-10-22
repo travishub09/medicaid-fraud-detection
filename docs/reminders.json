@@ -757,11 +757,12 @@
   },
   {
    "key": "post_download_checks",
-   "what": "New files landed (LEIE 2026-10) - run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
+   "what": "DEFERRED TO THE VM (2026-10-22): the laptop data scan hit 15.6 of 16 GB and a 100 percent disk (killed). Run it on the VM after v21 prints DONE and the preclean sync (down-preclean) has brought over the 2026-10-22 downloads (home_health/, dialysis/, state_capacity/): it grades every preclean file against its adapter, dates it, and places it under the freeze. Paste the summary lines (the DATA_AUDIT.md head).",
    "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.vintage_inspect --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
-    "python -m src.model_a.scheme_discovery --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "REM after [v21] DONE: the preclean sync (never a full down after a lanes load), then the scan:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s sync4 'bash ops/vm/sync_data.sh down-preclean > /data/medicaid/sync_preclean.log 2>&1'\"",
+    "REM when tmux ls shows no sync4:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && bash ops/vm/data_audit.sh 2021-12 && head -40 /data/medicaid/preclean/DATA_AUDIT.md\"",
     "python -m src.reminders --done-task post_download_checks"
    ],
    "added": "2026-10-21"
