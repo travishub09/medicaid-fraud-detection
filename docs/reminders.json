@@ -637,12 +637,14 @@
   {
    "key": "lanes_dispatch_2",
    "added": "2026-10-20",
-   "what": "GATED ON THE OPERATOR SAYING GO (spends Manus credits; never run from a reminder nag, never by Claude). SECOND LANE CYCLE when Manus credits allow (the first cycle spent 212 tasks; un-dispatched prompts: cia 8, names 21, outcome_refresh 114 (398 charged rows still pending an outcome), commercial 72, defendant_research 1,896; the 32 errored tasks of cycle 1 are re-sent as new tasks by --dispatch since --poll could not revive them). --dispatch SENDS (credits); --poll / --load are free. Budget line below = 120 tasks across four lanes, outcome_refresh and names first (each answer is a label row or a charge converted to hard). Not before the lanes_review read: a loader rule learned from the quarantine applies to the new answers too.",
+   "what": "DISPATCHED 2026-10-21 (operator's go; 150 tasks at the budget: cia 40 (the residue rebuilt after the 10-20 loads), names 21, outcome_refresh 89 of 129 with 42 prompts still unsent). NOT LOADED YET: the load rewrites the case DB that v19's grading steps read, so it runs after [v19] DONE and after the VM pulls bundle 363 (the CIA name gate + page verification live there). Order on the VM: pull -> verify-sources -> this load -> preclean sync -> v20. The 42 unsent outcome prompts are the next dispatch (operator's go, credits).",
    "commands": [
-    "REM DO NOT RUN until you decide to spend credits. SENDS 120 tasks:",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --lanes outcome_refresh,names,cia,commercial --dispatch --max-new 40 --total-budget 120\"",
-    "REM a few hours later, free:",
-    "ssh -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.manus_lanes --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2021-12_v17 --poll --load && cat /data/medicaid/processed/manus_lanes/MANUS_LANES.md\"",
+    "REM after [v19] DONE and the VM pull (bundle 363+): poll up to 2 h, load through the gates, the report:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s lanesload 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -u -m src.model_a.manus_lanes --data-root /data/medicaid --lanes cia,names,outcome_refresh --poll --wait-minutes 120 --poll-every 600 --load && python -u -m src.model_a.manus_lanes --data-root /data/medicaid --report > /data/medicaid/processed/manus_lanes/load2.log 2>&1'\"",
+    "REM later: the tally (loaded / quarantined per lane); paste it to Claude:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -20 /data/medicaid/processed/manus_lanes/load2.log; sed -n 1,40p /data/medicaid/processed/manus_lanes/MANUS_LANES.md\"",
+    "REM the 42 unsent outcome prompts (credits; only on the operator's go):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -u -m src.model_a.manus_lanes --data-root /data/medicaid --lanes outcome_refresh --dispatch --max-new 50 --total-budget 50\"",
     "python -m src.reminders --done-task lanes_dispatch_2"
    ]
   },
