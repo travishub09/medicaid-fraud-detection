@@ -1843,6 +1843,29 @@ first, then paste" above every move/done block.
   (`model_a.capacity`) run on the VM after the preclean sync (tasks post_download_checks
   and capacity_on_vm carry the ssh lines); run_licensed_capacity.bat / run_capacity_v3.bat
   are retired. Never hand the operator a laptop line that reads the spending fact.
+  THE WESLEYAN RESIDENT'S LEDGER (2026-10-22; the read-out and the 40 transcribed
+  therapy lines went to the operator as chat files for `<data_root>/enforcement/
+  pi_reports/wesleyan/`, NEVER git; the resident, her account number and the facility
+  user who printed the report are named nowhere in the repo): nine photos of the
+  facility's own "Transaction Report by Effective Date" (Jan 2025 to Sep 2026, UHC
+  Managed Medicaid): care level HIGH billed every day against her "not high care since
+  end of 2023"; PT in Jan 2025 (two Sundays) and OT in May and Sep 2025 (an eval then
+  fifteen straight weekdays) she says never happened, every $50 line offset to zero
+  (therapy is inside the per diem, so the damages theory is the MDS / case-mix level,
+  never the lines); a $30/day private-room incentive to verify; cafeteria charges to
+  a Medicaid resident. The model cannot see any of it (no HCPCS on a per diem), so it
+  is a document-and-witness lead. BUILT: `ingest_cms/pbj_therapy.py` (the PBJ Daily
+  NON-Nurse Staffing file's OT / PT / SLP hours per facility-day, DuckDB-filtered on
+  the CCN so the laptop may run it; `--sessions` puts the ledger dates against them;
+  the ONE verdict is a session on a day the home reported ZERO hours of that
+  discipline = a contradiction between the facility's two filings; innocent
+  explanations listed first) and `ingest_cms/ccn_lookup.py` (every row for one CCN
+  across a folder of CMS CSVs: citations, penalties, ownership). Reminder
+  `pbj_nonnurse_2025` (the three 2025 quarters, proof glob) + task
+  `wesleyan_ledger_check` carry the order: PBJ check, counsel's record request
+  (therapy notes + MDS Section O / GG, level-of-care authorizations, UHC claims), the
+  Ohio cost-report request, the Care Compare rows. Weekend therapy on a long-stay
+  Medicaid resident is a question, not a finding.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

@@ -609,6 +609,26 @@
     "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\dialysis\"",
     "python -m src.reminders --done dialysis_compare"
    ]
+  },
+  {
+   "key": "pbj_nonnurse_2025",
+   "what": "PBJ Daily NON-Nurse Staffing, the three 2025 quarters (one-time, for the Wesleyan resident's ledger check): the therapist hours (Hrs_OT / Hrs_PT / Hrs_SLP) the facility reported to CMS per day. src.ingest_cms.pbj_therapy puts the resident's disputed therapy dates against them: a session on a day the home reported zero OT hours is a contradiction between the facility's own two filings.",
+   "where": "preclean/pbj_nonnurse/PBJ_Daily_Non-Nurse_Staffing_2025Q1.csv (+ _2025Q2, _2025Q3)",
+   "url": "https://data.cms.gov/quality-of-care/payroll-based-journal-daily-non-nurse-staffing",
+   "every_months": null,
+   "last_done": null,
+   "steps": [
+    "Open the page (url above) -> 'Data' / version list -> download the CSV for 2025 Q1 (Jan-Mar 2025), 2025 Q2 (Apr-Jun) and 2025 Q3 (Jul-Sep). This IS the non-nurse file (the therapist columns Hrs_OT, Hrs_PT, Hrs_SLP); the nurse file is the other one.",
+    "Save each as C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pbj_nonnurse\\PBJ_Daily_Non-Nurse_Staffing_<yyyyQq>.csv (make the folder). About 500 MB to 1 GB per quarter; the check reads them through DuckDB with a WHERE on the CCN, so it runs on the laptop in seconds without touching the spending fact."
+   ],
+   "commands": [
+    "REM download first, then paste:",
+    "python -m src.reminders --done pbj_nonnurse_2025"
+   ],
+   "proof": [
+    "preclean/pbj_nonnurse/*.csv"
+   ],
+   "proof_recent_days": 365
   }
  ],
  "tasks": [
@@ -621,6 +641,20 @@
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/frozen_2021-12_v21/night_run.log; tail -4 /data/medicaid/model_a/frozen_2021-12_v21/night_run.log\"",
     "REM 4. when the log prints [v21] DONE: paste the last 30 lines to Claude (packet, read-out, the three arms)",
     "python -m src.reminders --done-task v21_run"
+   ]
+  },
+  {
+   "key": "wesleyan_ledger_check",
+   "added": "2026-10-22",
+   "what": "The Wesleyan Village (CCN 365162) resident's own transaction ledger (nine photos, read 2026-10-22; the read-out + the 40 transcribed therapy lines are in the bundle-376 chat files, saved under data\\enforcement\\pi_reports\\wesleyan\\, NEVER git; no name anywhere): care level HIGH billed every day Jan 2025 to Sep 2026 against her 'not high care since end of 2023'; PT Jan 2025 (two Sundays) and OT May + Sep 2025 (eval then fifteen straight weekdays) she says never happened, each $50 line offset to zero (therapy is inside the per diem, so the damages theory is the MDS / case-mix level, not the lines); $30/day private-room incentive to verify; cafeteria charges to a Medicaid resident. ORDER: (1) download the 2025 non-nurse PBJ quarters (reminder pbj_nonnurse_2025) and run the therapy-hours check below; (2) counsel requests her records (therapy notes + MDS Section O / GG 2024-2026, care plan, the plan's level-of-care authorizations, UHC claims history); (3) send the Ohio cost-report records request (task ohio_medicaid_cost_report_request, same facility); (4) print the Care Compare citation rows for 365162 from preclean/facility NH_HealthCitations (assessment accuracy F636 / F641). Close when the PBJ report is in the PI file and counsel has the memo.",
+   "commands": [
+    "REM 1. after the three PBJ files are saved (laptop is fine: a CCN filter, not the spending fact):",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.ingest_cms.pbj_therapy --pbj-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pbj_nonnurse\" --ccn 365162 --start 2025-01-01 --end 2025-09-30 --sessions \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\wesleyan\\wesleyan_ledger_sessions.csv\" --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\wesleyan\\PBJ_THERAPY_365162.md\"",
+    "REM 2. paste the last 3 lines (the session tally) to Claude; the .md and the .sessions.csv stay in the PI file",
+    "REM 3. the citation rows for the CCN (any Care Compare edition in preclean\\facility):",
+    "python -m src.ingest_cms.ccn_lookup --dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\facility\" --ccn 365162 --out \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\wesleyan\\CARE_COMPARE_365162.md\"",
+    "python -m src.reminders --done-task wesleyan_ledger_check"
    ]
   },
   {
