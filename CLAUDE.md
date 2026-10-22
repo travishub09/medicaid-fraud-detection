@@ -1770,6 +1770,15 @@ first, then paste" above every move/done block.
   (run_frozen_night: $PREV_RUN; regrade_from: the source run), a comma list overrides,
   empty skips. v21 pre-registers `prune = <list>` only if ab_prune holds the deep
   budgets against the hard arm.
+  V20 KILLED FOR v21 (2026-10-22, operator: "why not kill v20 and just do v21 now?"):
+  about five hours into v20 (the embeddings), with the lab scheme needing a full export
+  anyway and the priors / prune arms graded inside any run, v21 starts about six hours
+  sooner at the cost of the batch-2-only baseline. The runner now takes the SHIPPED
+  policy from env: CLASS_PRIORS (e.g. taxonomy,entity -> the export's --class-priors)
+  and DROP_SCHEMES (-> --drop-schemes); when CLASS_PRIORS is set, step 8 grades
+  ab_no_priors/ (--class-priors '') instead of ab_class_priors/, so the counterfactual
+  always exists. v21 ships priors taxonomy,entity, NOT the prune list (ab_prune/ only),
+  under the v20 checks + `priors = taxonomy,entity` + `prune = none` (task v21_run).
   BATCH 3 (2026-10-22, the three fixes the v19 read-out named; tests/test_batch3_fixes_
   2026_10.py): (1) `nppes_deactivation.pick_deactivation_file(asof_cutoff=)` reads the
   newest edition on/before the cutoff month under a freeze (v10..v20 read the newest

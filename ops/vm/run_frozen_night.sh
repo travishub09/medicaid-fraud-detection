@@ -32,6 +32,13 @@ GRAPH_ASOF="$DATA/graph_asof_${CUT}_full"
 # call below carries it; the registry records it as train_policy ("train = hard").
 TRAIN_TIER="${TRAIN_TIER:-hard}"
 PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"   # v13: dollar (shipped) or basis50 (ship only when the v12 sweep says it wins)
+# v21 (2026-10-22): the SHIPPED training policy's class priors (CLASS_PRIORS, e.g.
+# taxonomy,entity; empty = none, the v9..v20 scorer) and prune list (DROP_SCHEMES,
+# empty = none). Written into the manifest by the export; the registry reads them as
+# `priors` / `prune`. When the shipped policy carries priors, step 8 grades a NO-priors
+# arm (ab_no_priors/) instead of ab_class_priors/, so a counterfactual always exists.
+CLASS_PRIORS="${CLASS_PRIORS:-}"
+DROP_SCHEMES="${DROP_SCHEMES:-}"
 # 2026-10-14 (docs/MODEL_QUESTIONS §2): the facility (Care Compare + PBJ, one source) and
 # POS files on the data root are 2023 editions, information from AFTER a 2021-12 freeze;
 # eight runs carried them as a ledger FAIL. Bundle 324: the PBJ / POS / NH blocks now read
@@ -121,10 +128,11 @@ else
       --max-embed-nodes 0 --light-walks-above 0 || fail 1
 fi
 
-step 2/13 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS, as-of v3 scores, skip=${FROZEN_SKIP:-none})"
+step 2/13 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS, as-of v3 scores, priors=${CLASS_PRIORS:-none}, prune=${DROP_SCHEMES:-none}, skip=${FROZEN_SKIP:-none})"
 python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH_ASOF" --asof-cutoff "$CUT" --with-analytics \
     --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
-    --group-policy case_cluster --leads "$DATA/detection/fraud_leads_v3.parquet" --preclean "$DATA/preclean" \
+    --group-policy case_cluster --class-priors "$CLASS_PRIORS" --drop-schemes "$DROP_SCHEMES" \
+    --leads "$DATA/detection/fraud_leads_v3.parquet" --preclean "$DATA/preclean" \
     --processed "$DATA/processed" --out "$RUN" ${FROZEN_SKIP:+--skip-sources "$FROZEN_SKIP"} || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }
 grep -q "\[asof_v3\] restored" "$RUN/night_run.log" || { echo "[$TAG] the as-of v3 scores were NOT restored (no '[asof_v3] restored' line) -- stop"; fail 2; }
@@ -209,7 +217,11 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES
 # v19 LABEL_ENRICHMENT lesson) target-encoded out-of-fold inside every training fold; the
 # hard arm without priors is ab_broadcast_weight above (same matrix, seeds, tier). Env
 # CLASS_PRIORS_AB (default taxonomy,entity; empty skips). Graded, never shipped from here.
-if [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
+if [ -n "$CLASS_PRIORS" ]; then
+  # the shipped policy carries priors: the counterfactual is the NO-priors refit
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "" --out "$RUN/ab_no_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
+elif [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
@@ -259,6 +271,6 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:
 
 echo
 echo "[$TAG] DONE $(date '+%F %T')  -- tell Claude '$TAG finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask ab_tier_charged $(ls -d ab_tier_commercial ab_class_priors ab_prune 2>/dev/null))   # tar is always installed; zip is not"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${TAG}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask ab_tier_charged $(ls -d ab_tier_commercial ab_class_priors ab_no_priors ab_prune 2>/dev/null))   # tar is always installed; zip is not"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${TAG}     # reports back to OneDrive"
 echo "  python -m src.model_a.freeze_pair --runs <the 2021-12 run> $RUN     # the two-ruler read-out (FREEZE_PAIR.md)"
