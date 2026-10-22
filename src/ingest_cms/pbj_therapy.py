@@ -185,7 +185,7 @@ def facility_days(files: list[str | Path], ccn: str, start: str | None = None,
         h = out[f"{disc}_hours"]
         out[f"{disc}_per_100"] = (h / out["census"] * 100).where(out["census"] > 0)
     out["weekday"] = out["date"].dt.day_name()
-    out["is_weekend"] = out["date"].dt.dayofweek >= 5
+    out["is_weekend"] = out["date"].dt.day_of_week >= 5
     return out.reset_index(drop=True)
 
 
@@ -245,7 +245,7 @@ def summarize(days: pd.DataFrame, cmp: pd.DataFrame | None) -> dict:
         out["sessions_no_hours"] = int((cmp["verdict"] == "no_hours_reported").sum())
         out["sessions_day_not_reported"] = int((cmp["verdict"] == "day_not_reported").sum())
         out["sessions_hours_reported"] = int((cmp["verdict"] == "hours_reported").sum())
-        out["sessions_weekend"] = int(cmp["date"].dt.dayofweek.ge(5).sum())
+        out["sessions_weekend"] = int(cmp["date"].dt.day_of_week.ge(5).sum())
     return out
 
 

@@ -71,11 +71,19 @@ def robust_z_within(df: pd.DataFrame, col: str, grp: str, scorable: pd.Series) -
     """Robust z = 1.4826*(x-median)/MAD computed within peer group over the
     scorable baseline only. MAD==0 or absent ⇒ NaN (no signal)."""
     base = df.loc[scorable, [grp, col]].dropna(subset=[col])
+    if base.empty:                      # nothing scorable: no signal anywhere
+        return pd.Series(np.nan, index=df.index, dtype="float64")
     med = base.groupby(grp)[col].median()
-    ad = (base[col] - base[grp].map(med)).abs()
+
+    def _num(s: pd.Series) -> pd.Series:
+        # pandas 3.1: Series.map on an EMPTY str-dtype series keeps the str dtype,
+        # and float - str raises; coerce every mapped lookup to float explicitly
+        return pd.to_numeric(s, errors="coerce").astype("float64")
+
+    ad = (base[col] - _num(base[grp].map(med))).abs()
     mad = ad.groupby(base[grp]).median()
-    m = df[grp].map(med)
-    a = df[grp].map(mad).replace(0, np.nan)
+    m = _num(df[grp].map(med))
+    a = _num(df[grp].map(mad)).replace(0, np.nan)
     # Clip: a near-zero MAD would otherwise turn a tiny deviation into an absurd
     # z that swamps the composite. Capping keeps signals firing but bounded.
     return (1.4826 * (df[col] - m) / a).clip(-ROBUST_Z_CLIP, ROBUST_Z_CLIP)

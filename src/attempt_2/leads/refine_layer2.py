@@ -235,8 +235,12 @@ def write_report(rep: list[str], df: pd.DataFrame, out_dir: Path) -> None:
     near0 = 0
     for f in rate_feats:
         g = df.loc[sc, [f, "primary_taxonomy"]].dropna()
+        if g.empty:                 # nothing scorable (a tiny book): no degenerate cells
+            continue
         med = g.groupby("primary_taxonomy")[f].median()
-        mad = (g[f] - g["primary_taxonomy"].map(med)).abs().groupby(g["primary_taxonomy"]).median()
+        # pandas 3.1: map on an EMPTY str series keeps the str dtype (float - str raises)
+        med_of = pd.to_numeric(g["primary_taxonomy"].map(med), errors="coerce").astype("float64")
+        mad = (g[f] - med_of).abs().groupby(g["primary_taxonomy"]).median()
         near0 += int(((mad > 0) & (mad < 1e-6 * (med.abs() + 1))).sum())
 
     old_rare = (df["rare_for_taxonomy_paid_share"] > 0).sum()

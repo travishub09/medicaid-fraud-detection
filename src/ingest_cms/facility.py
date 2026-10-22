@@ -421,7 +421,7 @@ def compute_pbj_weekend_gap(raw: pd.DataFrame) -> pd.DataFrame:
     d = pd.to_datetime(df["workdate"].astype(str), errors="coerce",
                        format="mixed")
     df = df[d.notna()].copy()
-    df["_weekend"] = d[d.notna()].dt.dayofweek >= 5
+    df["_weekend"] = d[d.notna()].dt.day_of_week >= 5
     for c in ("census", "hrs_rn", "hrs_lpn", "hrs_cna"):
         df[c] = pd.to_numeric(_col(df, c, 0.0), errors="coerce").fillna(0.0)
     df["nurse_hours"] = df["hrs_rn"] + df["hrs_lpn"] + df["hrs_cna"]
