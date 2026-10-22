@@ -616,7 +616,7 @@
    "where": "preclean/pbj_nonnurse/PBJ_Daily_Non_Nurse_Staffing_Q1_2025.zip (+ Q2, Q3; the CMS zip as downloaded, no unzipping)",
    "url": "https://data.cms.gov/quality-of-care/payroll-based-journal-daily-non-nurse-staffing",
    "every_months": null,
-   "last_done": null,
+   "last_done": "2026-10-22",
    "steps": [
     "Open the page (url above) -> 'Data' / version list -> download 2025 Q1 (Jan-Mar 2025), 2025 Q2 (Apr-Jun) and 2025 Q3 (Jul-Sep). This IS the non-nurse file (the therapist columns Hrs_OT, Hrs_PT, Hrs_SLP); the nurse file is the other one. The zip is fine as is: the check extracts it.",
     "Move the zips from Downloads into C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\pbj_nonnurse\\ (the move block in the task wesleyan_ledger_check does it)."

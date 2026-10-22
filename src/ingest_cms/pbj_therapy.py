@@ -165,7 +165,8 @@ def facility_days(files: list[str | Path], ccn: str, start: str | None = None,
         df = con.execute(q, [f, ccn]).df()
         df["source_file"] = Path(f).name
         print(f"[pbj_therapy] {Path(f).name}: {len(df)} days for CCN {ccn}; therapy columns "
-              + ", ".join(f"{d}={ther[d]}" for d in ther))
+              + ", ".join(f"{d}={ther[d]}" for d in ther)
+              + "".join(f"; {d}: no column in this file" for d in DISCIPLINES if d not in ther))
         frames.append(df)
     if not frames:
         return pd.DataFrame(columns=["date", "census", "ot_hours", "pt_hours", "slp_hours", "source_file"])
@@ -229,6 +230,7 @@ def summarize(days: pd.DataFrame, cmp: pd.DataFrame | None) -> dict:
     for disc in DISCIPLINES:
         h = days[f"{disc}_hours"] if len(days) else pd.Series(dtype=float)
         c = days["census"] if len(days) else pd.Series(dtype=float)
+        out[f"{disc}_in_file"] = bool(len(h) and h.notna().any())
         out[f"{disc}_days_zero"] = int((h.fillna(0) <= 0).sum()) if len(h) else 0
         out[f"{disc}_hours_total"] = float(h.fillna(0).sum()) if len(h) else 0.0
         out[f"{disc}_hours_per_resident_day"] = (
@@ -259,6 +261,9 @@ def to_markdown(ccn: str, days: pd.DataFrame, cmp: pd.DataFrame | None, summ: di
     def _n(v, fmt):
         return "" if v is None else format(v, fmt)
     for disc in DISCIPLINES:
+        if not summ.get(disc + "_in_file", True):
+            L.append(f"| {disc.upper()} | not in file | | | | |")
+            continue
         L.append(f"| {disc.upper()} | {summ[disc + '_hours_total']:.1f} | "
                  f"{_n(summ.get(disc + '_hours_per_resident_day'), '.3f')} | {summ[disc + '_days_zero']} | "
                  f"{_n(summ.get(disc + '_weekday_mean'), '.1f')} | "

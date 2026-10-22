@@ -108,3 +108,14 @@ def test_utf8_and_latin1_editions_both_read(tmp_path):
     base.to_csv(tmp_path / "latin1.csv", index=False, encoding="latin-1")   # a CP1252-style byte that fails UTF-8
     assert len(facility_days([tmp_path / "utf8.csv"], "365162")) == 4
     assert len(facility_days([tmp_path / "latin1.csv"], "365162")) == 4
+
+
+def test_missing_discipline_reads_not_in_file(tmp_path):
+    from src.ingest_cms.pbj_therapy import facility_days, summarize, to_markdown
+    raw = pd.read_csv(_nonnurse_csv(tmp_path / "base.csv"), dtype=str).drop(columns=["Hrs_SLP"])
+    raw.to_csv(tmp_path / "noslp.csv", index=False)
+    days = facility_days([tmp_path / "noslp.csv"], "365162")
+    s = summarize(days, None)
+    assert s["slp_in_file"] is False and s["ot_in_file"] is True
+    md = to_markdown("365162", days, None, s)
+    assert "| SLP | not in file |" in md
