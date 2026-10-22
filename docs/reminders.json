@@ -1141,6 +1141,14 @@
    "added": "2026-10-21",
    "closed": "2026-10-22",
    "closed_by": "run printed [v19] DONE 2026-10-22 03:30 UTC (operator paste)"
+  },
+  {
+   "key": "v20_run",
+   "added": "2026-10-21",
+   "what": "v20 = the first run on batch 2 (bundles 350-366) with the pursuit book under pmax_basis50. Started 2026-10-22 10:57 UTC, pre-registered under 14 checks; KILLED at the embeddings (about five hours in) on the operator's call in favour of v21, which carries the v19 lessons (class priors shipped, the lab scheme, the prune A/B) plus batch 2 and 3. No result; the batch-2-only baseline was the cost.",
+   "commands": [],
+   "closed": "2026-10-22",
+   "closed_by": "operator kill line pasted (tmux ls: no server running); v21 pre-registered 11:41 UTC"
   }
  ]
 }
