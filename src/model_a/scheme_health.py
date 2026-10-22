@@ -156,6 +156,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
         cov, constant, tie_flood = None, None, None
         label_auc, n_pos, direction = None, None, ""
         fca_auc, n_fca_pos = None, None
+        split: dict = {"fca_auc_ind": None, "n_fca_pos_ind": None, "fca_auc_org": None, "n_fca_pos_org": None}
         if sub in cols:
             s = pd.to_numeric(matrix[sub], errors="coerce")
             covered = s.dropna()
@@ -180,6 +181,19 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
                 fauc, fpos = _label_auc(y_fca[keep_fca], sv)
                 n_fca_pos = int(fpos)
                 fca_auc = None if np.isnan(fauc) else round(fauc, 3)
+                # THE POPULATION SPLIT (docs/SCHEME_DEEP_DIVE_2026-10-22, finding 1): a
+                # scheme computed on Medicare physician files is scored on individuals
+                # while the FCA ruler is 82% organizations, so one AUC cannot say whether
+                # a coin flip is "wrong population" or "no separation". The forward AUC
+                # per NPPES entity type (1 individual / 2 organization) says which.
+                if "entity_type" in cols:
+                    et = matrix["entity_type"].astype(str).str.strip().str.replace(r"\.0$", "", regex=True)
+                    for key, val in (("ind", "1"), ("org", "2")):
+                        msk = (et.to_numpy() == val)[keep_fca]
+                        if msk.sum() >= 20:
+                            a, p_ = _label_auc(y_fca[keep_fca][msk], sv[msk])
+                            split[f"fca_auc_{key}"] = None if np.isnan(a) else round(a, 3)
+                            split[f"n_fca_pos_{key}"] = int(p_)
         # status
         if sub not in cols or not present_inputs:
             status = "DORMANT"
@@ -208,6 +222,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
             "fca_verdict": (fca_verdict(fca_auc, n_fca_pos) if y_fca is not None
                             and sub in cols and not constant else ""),
             "leak_suspect": leak_suspect(label_auc, fca_auc, n_pos, n_fca_pos),
+            **split,
         })
     order = {"BROKEN": 0, "CHECK_DIRECTION": 1, "DEGRADED": 2, "DORMANT": 3,
              "HEALTHY": 4}
@@ -278,8 +293,13 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
                  "BOTH labels with 20+ positives on each is a prune candidate for the next "
                  "pre-registration; a scheme thin on the FCA ruler is unjudged, not noise._")
         L.append("")
-        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | missing inputs |")
-        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|---|")
+        L.append("_FCA AUC ind / org = the same forward AUC on individual (entity type 1) and organization "
+                 "(entity type 2) providers separately (docs/SCHEME_DEEP_DIVE_2026-10-22 finding 1): a "
+                 "scheme that separates one population and not the other is aimed at the wrong "
+                 "population, not noise._")
+        L.append("")
+        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | FCA AUC ind (pos) | FCA AUC org (pos) | missing inputs |")
+        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|--:|--:|---|")
     else:
         L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | missing inputs |")
         L.append("|---|---|--:|--:|--:|--:|:-:|---|")
@@ -296,6 +316,11 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
             line += (f"{fa if fa is not None and fa == fa else '-'} | "
                      f"{int(fp) if fp is not None and fp == fp else '-'} | "
                      f"{getattr(r, 'fca_verdict', '') or ''} | ")
+            for key in ("ind", "org"):
+                a_ = getattr(r, f"fca_auc_{key}", None)
+                p_ = getattr(r, f"n_fca_pos_{key}", None)
+                ok = a_ is not None and a_ == a_
+                line += (f"{a_} ({int(p_)})" if ok else "-") + " | "
         L.append(line + f"{r.missing_inputs} |")
     return "\n".join(L)
 

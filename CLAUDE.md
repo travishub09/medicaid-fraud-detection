@@ -1779,6 +1779,29 @@ first, then paste" above every move/done block.
   ab_no_priors/ (--class-priors '') instead of ab_class_priors/, so the counterfactual
   always exists. v21 ships priors taxonomy,entity, NOT the prune list (ab_prune/ only),
   under the v20 checks + `priors = taxonomy,entity` + `prune = none` (task v21_run).
+  SCHEME DEEP DIVE (2026-10-22, operator: "why are the non-signal schemes not working:
+  calculated wrong, missing data, or not a real indicator; what undocumented schemes is
+  the model picking up; what has the industry got that we have not wired";
+  `docs/SCHEME_DEEP_DIVE_2026-10-22.md`, read before any prune or scheme design): per
+  scheme a diagnosis class (A calc / design defect, B inputs missing, C wrong
+  population, D not an indicator as built, E unjudged, F signal) from the v19 packet's
+  four instruments read together. FINDINGS: half the coin-flip schemes are class C (the
+  Medicare physician files score INDIVIDUALS, the FCA ruler is 82% organizations:
+  pharma_kickback's top decile is DEPLETED of cases, lift 0.26; single_service_mill is
+  inverted because the ruler's population is diversified); seven inputs are near-
+  constant flags whose percentile is a tie block (class A); the validated schemes are
+  SECTOR schemes with a sector file (worthless_services 0.94 on proven cases, hospice
+  0.84); the model's unnamed signal = labs (now lab_testing), org size / breadth (the
+  class priors), the billing-embedding dimensions (undecoded), the servicing spread,
+  and sector codes with no scheme (T1015 FQHC, H2015 / S9480 community behavioral,
+  G0299 home health, A4253 diabetic DME, U0003 COVID). FOURTEEN unwired schemes ranked
+  (personal_care_hcbs first: the code family exists for damages scoping and no scheme
+  reads it; T1019 is NOT on the DOJ ruler because MFCUs prosecute it, so its ruler is
+  the state lists). BUILT: `scheme_health` reports `fca_auc_ind` / `fca_auc_org` (+ the
+  positives) per scheme so v21's packet says class C vs D before any prune
+  (tests/test_scheme_health_population_split_2026_10.py). Order: measure (v21), fix
+  the class-A flags, wire batch one (personal care, home health, lab unbundling,
+  psychotherapy duration) as a pre-registration graded on its own ruler.
   BATCH 3 (2026-10-22, the three fixes the v19 read-out named; tests/test_batch3_fixes_
   2026_10.py): (1) `nppes_deactivation.pick_deactivation_file(asof_cutoff=)` reads the
   newest edition on/before the cutoff month under a freeze (v10..v20 read the newest
