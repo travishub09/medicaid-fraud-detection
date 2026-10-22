@@ -21,6 +21,7 @@ import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns
 from src.attempt_2.duck import connect as _duck_connect
+from .pbj_therapy import _csv_encoding
 
 CCN_COLS = {"ccn": ["CMS Certification Number (CCN)", "cms_certification_number_ccn",
                     "Federal Provider Number", "federal_provider_number", "PROVNUM",
@@ -32,13 +33,14 @@ def rows_for_ccn(path: str | Path, ccn: str, con=None) -> pd.DataFrame | None:
     has no CCN column. CCNs compare zero-padded to 6 and with spaces removed."""
     con = con or _duck_connect()
     path = str(path)
+    enc = _csv_encoding(con, path)
     hdr = [r[0] for r in con.execute(
-        "DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='latin-1')", [path]).fetchall()]
+        f"DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}')", [path]).fetchall()]
     col = _resolve_columns(hdr, CCN_COLS).get("ccn")
     if not col:
         return None
     want = str(ccn).strip().replace(" ", "").zfill(6)
-    q = (f"SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='latin-1') "
+    q = (f"SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}') "
          f"WHERE lpad(replace(trim(\"{col}\"), ' ', ''), 6, '0') = ?")
     return con.execute(q, [path, want]).df()
 

@@ -109,9 +109,22 @@ def _materialize(path: str, tmp_dir: Path | None) -> str:
         return str(target)
 
 
-def _header(con, path: str) -> list[str]:
+def _csv_encoding(con, path: str) -> str:
+    """UTF-8 first, Latin-1 fallback (the shared raw-CSV convention): the 2025
+    PBJ editions are UTF-8 and DuckDB refuses a forced Latin-1 read of them,
+    while older CMS files carry stray CP1252 bytes that fail UTF-8."""
+    for enc in ("utf-8", "latin-1"):
+        try:
+            con.execute(f"SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}') LIMIT 1", [path]).fetchall()
+            return enc
+        except Exception:  # noqa: BLE001
+            continue
+    raise ValueError(f"{Path(path).name}: readable as neither UTF-8 nor Latin-1")
+
+
+def _header(con, path: str, enc: str) -> list[str]:
     rows = con.execute(
-        "DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='latin-1')", [path]
+        f"DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}')", [path]
     ).fetchall()
     return [r[0] for r in rows]
 
@@ -129,7 +142,8 @@ def facility_days(files: list[str | Path], ccn: str, start: str | None = None,
     frames = []
     for f in files:
         f = _materialize(str(f), Path(tmp_dir) if tmp_dir else None)
-        hdr = _header(con, f)
+        enc = _csv_encoding(con, f)
+        hdr = _header(con, f, enc)
         keys = _resolve_columns(hdr, KEY_COLS)
         ther = discover_therapy_columns(hdr)
         if "ccn" not in keys or "workdate" not in keys:
@@ -146,7 +160,7 @@ def facility_days(files: list[str | Path], ccn: str, start: str | None = None,
                 sel.append(" + ".join(f'COALESCE(TRY_CAST("{c}" AS DOUBLE), 0)' for c in cols) + f" AS {disc}_hours")
             else:
                 sel.append(f"NULL AS {disc}_hours")
-        q = (f"SELECT {', '.join(sel)} FROM read_csv_auto(?, all_varchar=true, encoding='latin-1') "
+        q = (f"SELECT {', '.join(sel)} FROM read_csv_auto(?, all_varchar=true, encoding='{enc}') "
              f"WHERE lpad(trim(\"{keys['ccn']}\"), 6, '0') = ?")
         df = con.execute(q, [f, ccn]).df()
         df["source_file"] = Path(f).name

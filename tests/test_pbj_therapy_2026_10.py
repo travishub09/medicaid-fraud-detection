@@ -97,3 +97,14 @@ def test_zip_download_is_read(tmp_path):
     r = subprocess.run([sys.executable, "-m", "src.ingest_cms.pbj_therapy", "--pbj-dir", str(tmp_path), "--ccn", "365162"],
                        capture_output=True, text=True)
     assert r.returncode == 0 and "reported days" in r.stdout
+
+
+def test_utf8_and_latin1_editions_both_read(tmp_path):
+    from src.ingest_cms.pbj_therapy import facility_days
+    base = pd.read_csv(_nonnurse_csv(tmp_path / "base.csv"), dtype=str)
+    base["PROVNAME"] = "HOME é 2025"                       # a multibyte UTF-8 name (the 2025 editions)
+    base.to_csv(tmp_path / "utf8.csv", index=False, encoding="utf-8")
+    base["PROVNAME"] = "HOME é 2021"
+    base.to_csv(tmp_path / "latin1.csv", index=False, encoding="latin-1")   # a CP1252-style byte that fails UTF-8
+    assert len(facility_days([tmp_path / "utf8.csv"], "365162")) == 4
+    assert len(facility_days([tmp_path / "latin1.csv"], "365162")) == 4
