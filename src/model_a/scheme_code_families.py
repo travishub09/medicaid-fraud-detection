@@ -53,6 +53,13 @@ SCHEME_FAMILIES: dict[str, tuple[str, object]] = {
     # named families — conservative)
     "lab_testing": ("codes", __import__("src.ingest_cms.sector_schemes",
                                         fromlist=["lab_code_set"]).lab_code_set()),
+    # v22 batch one (evv_personal_care already above: the BROAD_HCPCS_CODES family)
+    "home_health_intensity": ("codes", __import__("src.ingest_cms.sector_schemes",
+                                                  fromlist=["HH_CODES"]).HH_CODES),
+    "lab_unbundling": ("codes", __import__("src.ingest_cms.sector_schemes",
+                                           fromlist=["LAB_UNBUNDLING_CODES"]).LAB_UNBUNDLING_CODES),
+    "session_inflation": ("codes", __import__("src.ingest_cms.sector_schemes",
+                                              fromlist=["SESSION_INFLATION_CODES"]).SESSION_INFLATION_CODES),
 }
 DEFAULT_FAMILY: tuple[str, object] = ("all", None)
 

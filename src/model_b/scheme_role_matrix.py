@@ -44,6 +44,24 @@ SCHEME_ROLE_LINE_OF_SIGHT: dict[str, dict[str, list[str]]] = {
         "high": ["scheduler", "coordinator", "billing"],
         "medium": ["aide"],
     },
+    # Model A's v21 / v22 scheme names (lab_testing, the deep dive's batch one): the
+    # roles with line of sight mirror the nearest typology above
+    "lab_testing": {
+        "high": ["sales_rep", "order_coordination", "lab_director"],
+        "medium": ["client_services", "billing"],
+    },
+    "lab_unbundling": {
+        "high": ["billing", "coder", "revenue_integrity"],
+        "medium": ["lab_director", "client_services"],
+    },
+    "home_health_intensity": {
+        "high": ["field_rn", "home_health_aide", "case_manager", "scheduler"],
+        "medium": ["intake", "billing"],
+    },
+    "session_inflation": {
+        "high": ["billing", "coder", "office_manager"],
+        "medium": ["therapist", "front_desk"],
+    },
     "cost_report_fraud": {
         "high": ["controller", "reimbursement_analyst", "cfo"],
         "medium": ["finance_staff"],

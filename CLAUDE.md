@@ -1802,6 +1802,25 @@ first, then paste" above every move/done block.
   (tests/test_scheme_health_population_split_2026_10.py). Order: measure (v21), fix
   the class-A flags, wire batch one (personal care, home health, lab unbundling,
   psychotherapy duration) as a pre-registration graded on its own ruler.
+  BATCH ONE OF THE UNWIRED SCHEMES (2026-10-22, v22 semantics = new pre-registration;
+  tests/test_batch_one_schemes_2026_10.py): four of the deep dive's fourteen, all from
+  the spending fact in `ingest_cms/sector_schemes.py` (one SQL pass with the NEMT / BH
+  / lab metrics): `evv_personal_care` (the BROAD_HCPCS_CODES T1019 family: pc_paid_share
+  / pc_lines_per_patient_month / pc_paid_per_patient_month; patient-months =
+  SUM(patients) over months, so lines over it is the units-per-patient-month proxy),
+  `home_health_intensity` (HH_CODES: G0299 / G0300, G0151-G0162, S9122-S9124, T1021 /
+  T1022, T1030 / T1031: hh_* the same three), `lab_unbundling` (lab_component_share =
+  component dollars over component + panel dollars on the chemistry-panel family;
+  lab_draw_per_test = venipuncture lines per non-draw lab line), `session_inflation`
+  (psy_60min_share 90837 / 90838 of 90832-90838; em_prolonged_share 99354-99359 /
+  99415-99417 / G2212 per E/M line; psy_interactive_share 90785). NULL without the
+  family (the row is absent), an observed 0 on a share is real. Registered in the
+  weights, code families, sector priors, dossier narratives, case_validation (sectors
+  personal_care / home_health / lab / behavioral; conduct phantom_billing / upcoding /
+  medical_necessity), RUNBOOK_TRAVIS 5.4, and Model B's role matrix (line-of-sight
+  roles for the new names + lab_testing). RULER NOTE: personal care is prosecuted by the
+  state MFCUs, so its grade comes from the state-termination / MFCU rulers; a coin flip
+  on the DOJ ruler there is a ruler fact, not a scheme fact.
   BATCH 3 (2026-10-22, the three fixes the v19 read-out named; tests/test_batch3_fixes_
   2026_10.py): (1) `nppes_deactivation.pick_deactivation_file(asof_cutoff=)` reads the
   newest edition on/before the cutoff month under a freeze (v10..v20 read the newest

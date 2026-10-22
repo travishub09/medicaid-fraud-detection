@@ -76,6 +76,10 @@ SCHEME_EXPOSURE_BASIS: dict[str, str] = {
     "nemt_fraud": "own_billing",
     "behavioral_health": "own_billing",
     "lab_testing": "own_billing",
+    "evv_personal_care": "own_billing",
+    "home_health_intensity": "own_billing",
+    "lab_unbundling": "own_billing",
+    "session_inflation": "own_billing",
     "dme_ring": "influenced_dollars",
     "pharma_kickback": "influenced_dollars",
     "ownership_integrity": "ring_aggregate",
@@ -95,6 +99,10 @@ SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {
     "nemt_fraud": 0.50,          # phantom trips/mileage: most of the billing is the scheme
     "behavioral_health": 0.40,
     "lab_testing": 0.40,         # unnecessary definitive / genetic / panel testing: the lab dollars at issue
+    "evv_personal_care": 0.50,   # hours not worked: most of the family's billing is the scheme
+    "home_health_intensity": 0.35,
+    "lab_unbundling": 0.30,      # the component-minus-panel difference, not the whole test
+    "session_inflation": 0.25,   # the duration / add-on increment over the plain session
     "single_service_mill": 0.50,
     "ownership_integrity": 0.40,
     "payment_outlier": 0.30,

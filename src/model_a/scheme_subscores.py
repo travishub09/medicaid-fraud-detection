@@ -135,6 +135,21 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "lab_testing": {"lab_paid_share": 0.3, "lab_lines_per_patient": 0.5,
                     "lab_definitive_drug_share": 0.5, "lab_genetic_share": 0.5,
                     "lab_resp_panel_share": 0.3},
+    # BATCH ONE OF THE DEEP DIVE'S UNWIRED SCHEMES (v22, 2026-10-22; docs/SCHEME_DEEP_
+    # DIVE section 5; ingest_cms/sector_schemes.py): personal-care hours not worked
+    # (units and dollars per patient-month on the T1019 family; the Medicaid-specific
+    # sector the state MFCUs prosecute, so its ruler is the state lists), home-health
+    # visit intensity per patient-month, chemistry-panel unbundling (component dollars
+    # where the panel applies, venipuncture per test), and session inflation (the
+    # 60-minute psychotherapy share, prolonged add-ons per E/M visit, interactive-
+    # complexity add-ons per session). v22 semantics: new pre-registration.
+    "evv_personal_care": {"pc_paid_share": 0.3, "pc_lines_per_patient_month": 0.6,
+                          "pc_paid_per_patient_month": 0.5},
+    "home_health_intensity": {"hh_paid_share": 0.3, "hh_lines_per_patient_month": 0.6,
+                              "hh_paid_per_patient_month": 0.5},
+    "lab_unbundling": {"lab_component_share": 0.7, "lab_draw_per_test": 0.3},
+    "session_inflation": {"psy_60min_share": 0.5, "em_prolonged_share": 0.5,
+                          "psy_interactive_share": 0.3},
     "drug_outlier": {"controlled_substance_share": 0.4, "high_cost_drug_share": 0.4,
                      # NADAC markup/spread anomaly (B4); absent until NDC claims load
                      "drug_spread_anomaly": 0.3,

@@ -39,10 +39,11 @@ import pandas as pd
 # DOJ conduct types takes the UNION of their proven NPIs (one row per subscore).
 DOJ_TO_SUBSCHEME = {
     "kickback": ["pharma_kickback", "dme_ring"],
-    "upcoding": ["upcoding"],
+    "upcoding": ["upcoding", "session_inflation", "lab_unbundling"],
     "medical_necessity": ["overutilization", "worthless_services",
-                          "hospice_ineligibility", "lab_testing"],
-    "phantom_billing": ["single_service_mill", "nemt_fraud", "behavioral_health"],
+                          "hospice_ineligibility", "lab_testing", "home_health_intensity"],
+    "phantom_billing": ["single_service_mill", "nemt_fraud", "behavioral_health",
+                        "evv_personal_care", "home_health_intensity"],
     "eligibility": ["invalid_identity", "dme_ring"],
     "worthless_services": ["worthless_services"],
     "pill_mill": ["pill_mill", "drug_outlier"],
@@ -55,10 +56,12 @@ DOJ_TO_SUBSCHEME = {
 SECTOR_TO_SUBSCHEME = {
     "hospice": ["hospice_ineligibility"],
     "dme": ["dme_ring"],
-    "behavioral": ["behavioral_health"],
+    "behavioral": ["behavioral_health", "session_inflation"],
     "snf": ["worthless_services"],
     "pharmacy": ["drug_outlier", "contract_pharmacy"],
-    "lab": ["lab_testing"],              # v21: toxicology / genetic / panel mills
+    "lab": ["lab_testing", "lab_unbundling"],   # v21 / v22: testing mills, panel unbundling
+    "home_health": ["home_health_intensity"],   # v22
+    "personal_care": ["evv_personal_care"],     # v22 (its main ruler is the state lists)
     "telehealth": ["dme_ring", "lab_testing"],   # telefraud cases are DME/testing-driven
     "managed_care": ["upcoding"],        # risk-adjustment fraud IS upcoding
 }

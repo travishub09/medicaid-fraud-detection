@@ -317,6 +317,27 @@ in three steps:
   one-sided against peers and blended (`ingest_cms/sector_schemes.py`). A provider
   with no lab dollars is unscored (NULL), never zero; a lab that bills no toxicology
   reads 0 on that share, a real observation. Feeding files: Spending.
+- **`evv_personal_care`** (v22, 2026-10-22) — *detects* personal-care and attendant hours
+  billed that were not worked (T1019 / T1020 / S5125 / S5126 / T2025 / H2014), the
+  largest Medicaid-specific fraud sector. *How:* the family's share of the provider's
+  own dollars, lines (15-minute units) per patient-month and dollars per patient-month
+  against peer agencies. The state Medicaid fraud units prosecute this sector, so its
+  ruler is the state termination and MFCU lists more than DOJ outcomes. Feeding files:
+  Spending.
+- **`home_health_intensity`** (v22) — *detects* skilled-nursing, therapy and aide visits
+  beyond plausible need (G0299 / G0300, G0151 to G0162, S9122 to S9124, T1021 / T1022,
+  T1030 / T1031; G0299 is enriched 3.2x on the FCA ruler). *How:* the family's share of
+  own dollars, visits per patient-month and dollars per patient-month against peers.
+  Feeding files: Spending.
+- **`lab_unbundling`** (v22) — *detects* chemistry-panel components (82040, 82247, 82310,
+  82374, 82435, 82565, 82947, 84075, 84132 …) billed separately where the panel code
+  (80047 to 80076) applies, and venipuncture (36415 / 36416) on far more tests than
+  peers. *How:* component dollars over component-plus-panel dollars; draw lines per lab
+  line. Feeding files: Spending.
+- **`session_inflation`** (v22) — *detects* inflated sessions: the 60-minute psychotherapy
+  share (90837 / 90838 of 90832 to 90838), prolonged-service add-ons (99354 to 99359,
+  99415 to 99417, G2212) per E/M visit, and interactive-complexity add-ons (90785) per
+  session. *How:* the three shares against peers. Feeding files: Spending.
 
 #### Ownership / identity schemes — the signals not in the claims file
 - **`ownership_integrity`** *(leakage-adjacent)* — *detects* concealment structure.

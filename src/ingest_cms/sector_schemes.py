@@ -77,6 +77,64 @@ _LAB_PRED = f"({_LAB_DRUG_DEF} OR {_LAB_DRUG_PRES} OR {_LAB_GENETIC} OR {_LAB_RE
 LAB_METRICS = ("lab_paid_share", "lab_lines_per_patient", "lab_definitive_drug_share",
                "lab_genetic_share", "lab_resp_panel_share")
 
+# --- batch one of the deep dive's unwired schemes (v22, 2026-10-22) -------------
+# docs/SCHEME_DEEP_DIVE_2026-10-22 section 5: four typologies computable from the
+# spending fact that no scheme named. Each metric is a SIZE (share of own dollars)
+# or an INTENSITY (lines or dollars per patient-month: the fact is provider x code x
+# month with patients per row, so SUM(patients) over months is patient-months and
+# lines over it is the units-per-patient-month proxy the OIG audits use).
+#
+#   evv_personal_care      personal-care / attendant / waiver services (the
+#                          BROAD_HCPCS_CODES family used for damages scoping since
+#                          day one; hours billed that were not worked is the largest
+#                          Medicaid-specific fraud sector, prosecuted mostly by the
+#                          state MFCUs: its ruler is the state lists, not DOJ)
+#   home_health_intensity  skilled nursing / therapy / aide visits per patient-month
+#                          (G0299 is enriched 3.2x on the FCA ruler already)
+#   lab_unbundling         the components of a chemistry panel billed separately
+#                          where the panel code applies, and venipuncture per test
+#   session_inflation      the 60-minute psychotherapy share, prolonged-service
+#                          add-ons per E/M visit, interactive-complexity add-ons
+from src.attempt_2.clean_data import BROAD_HCPCS_CODES as _PC_CODES
+
+HH_CODES = frozenset({"G0299", "G0300", "G0151", "G0152", "G0153", "G0155", "G0156", "G0157",
+                      "G0158", "G0159", "G0160", "G0161", "G0162", "S9122", "S9123", "S9124",
+                      "T1021", "T1022", "T1030", "T1031"})
+LAB_PANEL_CODES = frozenset({"80047", "80048", "80050", "80051", "80053", "80061", "80069", "80074", "80076"})
+LAB_COMPONENT_CODES = frozenset({"82040", "82247", "82248", "82310", "82330", "82374", "82435", "82465",
+                                 "82565", "82947", "83718", "84075", "84132", "84155", "84295",
+                                 "84450", "84460", "84478", "84520"})
+LAB_DRAW_CODES = frozenset({"36415", "36416"})
+PSY_60_CODES = frozenset({"90837", "90838"})
+PSY_ALL_CODES = frozenset({"90832", "90833", "90834", "90836", "90837", "90838"})
+PSY_INTERACTIVE_CODES = frozenset({"90785"})
+PROLONGED_CODES = frozenset({"99354", "99355", "99356", "99357", "99358", "99359", "99415", "99416",
+                             "99417", "G2212"})
+EM_CODES = frozenset({"99202", "99203", "99204", "99205", "99211", "99212", "99213", "99214", "99215"})
+LAB_UNBUNDLING_CODES = LAB_PANEL_CODES | LAB_COMPONENT_CODES | LAB_DRAW_CODES
+SESSION_INFLATION_CODES = PSY_60_CODES | PROLONGED_CODES | PSY_INTERACTIVE_CODES
+
+
+def _in(codes) -> str:
+    return "(hcpcs IN (" + ",".join(f"'{c}'" for c in sorted(codes)) + "))"
+
+
+_PC_PRED = _in(_PC_CODES)
+_HH_PRED = _in(HH_CODES)
+_LAB_PANEL_PRED = _in(LAB_PANEL_CODES)
+_LAB_COMP_PRED = _in(LAB_COMPONENT_CODES)
+_LAB_DRAW_PRED = _in(LAB_DRAW_CODES)
+_PSY_PRED = _in(PSY_ALL_CODES)
+_PSY60_PRED = _in(PSY_60_CODES)
+_PSY_INT_PRED = _in(PSY_INTERACTIVE_CODES)
+_PROLONGED_PRED = _in(PROLONGED_CODES)
+_EM_PRED = _in(EM_CODES)
+
+BATCH_ONE_METRICS = ("pc_paid_share", "pc_lines_per_patient_month", "pc_paid_per_patient_month",
+                     "hh_paid_share", "hh_lines_per_patient_month", "hh_paid_per_patient_month",
+                     "lab_component_share", "lab_draw_per_test",
+                     "psy_60min_share", "em_prolonged_share", "psy_interactive_share")
+
 
 def lab_code_set() -> frozenset[str]:
     """The explicit HCPCS set behind _LAB_PRED (for scheme_code_families' dollars-at-
@@ -123,7 +181,22 @@ def sector_metrics_from_parquet(spending_path: str | Path,
                SUM(CASE WHEN {_LAB_PRED} THEN patients ELSE 0 END)  AS lab_patients,
                SUM(CASE WHEN {_LAB_DRUG_DEF} THEN paid ELSE 0 END)  AS lab_def_paid,
                SUM(CASE WHEN {_LAB_GENETIC} THEN paid ELSE 0 END)   AS lab_gen_paid,
-               SUM(CASE WHEN {_LAB_RESP} THEN paid ELSE 0 END)      AS lab_resp_paid
+               SUM(CASE WHEN {_LAB_RESP} THEN paid ELSE 0 END)      AS lab_resp_paid,
+               SUM(CASE WHEN {_PC_PRED} THEN paid ELSE 0 END)       AS pc_paid,
+               SUM(CASE WHEN {_PC_PRED} THEN lines ELSE 0 END)      AS pc_lines,
+               SUM(CASE WHEN {_PC_PRED} THEN patients ELSE 0 END)   AS pc_patient_months,
+               SUM(CASE WHEN {_HH_PRED} THEN paid ELSE 0 END)       AS hh_paid,
+               SUM(CASE WHEN {_HH_PRED} THEN lines ELSE 0 END)      AS hh_lines,
+               SUM(CASE WHEN {_HH_PRED} THEN patients ELSE 0 END)   AS hh_patient_months,
+               SUM(CASE WHEN {_LAB_PANEL_PRED} THEN paid ELSE 0 END) AS lab_panel_paid,
+               SUM(CASE WHEN {_LAB_COMP_PRED} THEN paid ELSE 0 END)  AS lab_comp_paid,
+               SUM(CASE WHEN {_LAB_DRAW_PRED} THEN lines ELSE 0 END) AS lab_draw_lines,
+               SUM(CASE WHEN ({_LAB_PRED} OR {_LAB_COMP_PRED}) AND NOT {_LAB_DRAW_PRED} THEN lines ELSE 0 END) AS lab_test_lines,
+               SUM(CASE WHEN {_PSY_PRED} THEN lines ELSE 0 END)     AS psy_lines,
+               SUM(CASE WHEN {_PSY60_PRED} THEN lines ELSE 0 END)   AS psy60_lines,
+               SUM(CASE WHEN {_PSY_INT_PRED} THEN lines ELSE 0 END) AS psy_int_lines,
+               SUM(CASE WHEN {_EM_PRED} THEN lines ELSE 0 END)      AS em_lines,
+               SUM(CASE WHEN {_PROLONGED_PRED} THEN lines ELSE 0 END) AS prolonged_lines
         FROM b GROUP BY npi
     """).df()
     out = pd.DataFrame({"npi": df["npi"].astype(str)})
@@ -146,6 +219,30 @@ def sector_metrics_from_parquet(spending_path: str | Path,
     out["lab_definitive_drug_share"] = (df["lab_def_paid"] / df["lab_paid"]).where(has_lab)
     out["lab_genetic_share"] = (df["lab_gen_paid"] / df["lab_paid"]).where(has_lab)
     out["lab_resp_panel_share"] = (df["lab_resp_paid"] / df["lab_paid"]).where(has_lab)
+    # batch one (v22): personal care / home health intensity (per patient-month),
+    # lab unbundling (component share of panel-family dollars; draws per lab test),
+    # session inflation (60-minute share, prolonged add-ons per E/M, interactive
+    # add-ons per session). NULL where the provider has no dollars / lines on the
+    # family; an observed 0 on a mix share is a real observation.
+    has_pc = (df["total_paid"] > 0) & (df["pc_paid"] > 0)
+    out["pc_paid_share"] = (df["pc_paid"] / df["total_paid"]).where(has_pc)
+    out["pc_lines_per_patient_month"] = (df["pc_lines"] / df["pc_patient_months"]).where(
+        has_pc & (df["pc_patient_months"] > 0))
+    out["pc_paid_per_patient_month"] = (df["pc_paid"] / df["pc_patient_months"]).where(
+        has_pc & (df["pc_patient_months"] > 0))
+    has_hh = (df["total_paid"] > 0) & (df["hh_paid"] > 0)
+    out["hh_paid_share"] = (df["hh_paid"] / df["total_paid"]).where(has_hh)
+    out["hh_lines_per_patient_month"] = (df["hh_lines"] / df["hh_patient_months"]).where(
+        has_hh & (df["hh_patient_months"] > 0))
+    out["hh_paid_per_patient_month"] = (df["hh_paid"] / df["hh_patient_months"]).where(
+        has_hh & (df["hh_patient_months"] > 0))
+    fam = df["lab_panel_paid"] + df["lab_comp_paid"]
+    out["lab_component_share"] = (df["lab_comp_paid"] / fam).where(fam > 0)
+    out["lab_draw_per_test"] = (df["lab_draw_lines"] / df["lab_test_lines"]).where(df["lab_test_lines"] > 0)
+    has_psy = df["psy_lines"] > 0
+    out["psy_60min_share"] = (df["psy60_lines"] / df["psy_lines"]).where(has_psy)
+    out["psy_interactive_share"] = (df["psy_int_lines"] / df["psy_lines"]).where(has_psy)
+    out["em_prolonged_share"] = (df["prolonged_lines"] / df["em_lines"]).where(df["em_lines"] > 0)
 
     # impossible-day approximation: needs the public code→minutes map
     if minutes_csv and Path(minutes_csv).exists():

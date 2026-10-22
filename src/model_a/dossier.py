@@ -59,6 +59,18 @@ SCHEME_NARRATIVES = {
         "a laboratory book skewed toward definitive drug testing, genetic panels or "
         "respiratory panels, or far more tests per patient than peer laboratories — "
         "the medically-unnecessary-testing shape"),
+    "evv_personal_care": ("a personal-care hours concern",
+        "personal-care or attendant units and dollars per patient-month far above peer "
+        "agencies — the hours-not-worked shape the state Medicaid fraud units prosecute"),
+    "home_health_intensity": ("a home-health intensity concern",
+        "skilled-nursing, therapy or aide visits per patient-month far above peer "
+        "agencies — the unnecessary-visit shape"),
+    "lab_unbundling": ("a panel-unbundling concern",
+        "chemistry-panel components billed separately where the panel code applies, or "
+        "venipuncture billed on far more tests than peers — the unbundling shape"),
+    "session_inflation": ("a session-inflation concern",
+        "a 60-minute psychotherapy share, prolonged-service add-ons or interactive-"
+        "complexity add-ons far above peers — the inflated-session shape"),
 }
 
 # concept percentile column → plain-English description of what it measures
