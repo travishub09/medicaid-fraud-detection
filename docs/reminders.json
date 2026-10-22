@@ -768,6 +768,19 @@
    "added": "2026-10-21"
   },
   {
+   "key": "capacity_on_vm",
+   "added": "2026-10-22",
+   "what": "RULE (operator 2026-10-22: the laptop tools crashed the machine): the capacity check and the licensed-roster load run on the VM, never the laptop (run_licensed_capacity.bat / run_capacity_v3.bat are retired). After v21 DONE and the preclean sync (task post_download_checks): rebuild the licensed capacity from the rosters (NY / NJ in preclean/state_capacity), then the capacity check on v21's matrix; the report lands in the run folder (capacity/CAPACITY.md) and comes back in the packet.",
+   "commands": [
+    "REM after the preclean sync (tmux ls shows no sync4):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.ingest_cms.licensed_capacity --rosters /data/medicaid/preclean/state_capacity --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/processed/licensed_capacity.parquet\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s cap21 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -u -m src.model_a.capacity --spending /data/medicaid/processed/spending_fact.parquet --matrix /data/medicaid/model_a/frozen_2021-12_v21/provider_features_for_model.parquet --min-paid 2000000 --provider-dim /data/medicaid/processed/provider_dim.parquet --graph-dir /data/medicaid/graph --pos-dir /data/medicaid/preclean/pos --ccn-crosswalk /data/medicaid/processed/ccn_npi_crosswalk.parquet --licensed-capacity /data/medicaid/processed/licensed_capacity_by_npi.parquet --minutes /data/medicaid/preclean/hcpcs_time/hcpcs_minutes.csv --out /data/medicaid/model_a/frozen_2021-12_v21/capacity > /data/medicaid/model_a/frozen_2021-12_v21/capacity.log 2>&1'\"",
+    "REM a few minutes later:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -8 /data/medicaid/model_a/frozen_2021-12_v21/capacity.log\"",
+    "python -m src.reminders --done-task capacity_on_vm"
+   ]
+  },
+  {
    "key": "pursuit_dossier__frozen_2021-12_v19",
    "what": "The runner already built PURSUIT_DOSSIER.md (step 10). DISPATCH is gated: no Manus credits on a HOLD run (operator policy 2026-10-11); it runs only if the registry verdict is PROMOTE or the operator says go.",
    "added": "2026-10-22",
