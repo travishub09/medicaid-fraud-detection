@@ -571,27 +571,10 @@
  ],
  "tasks": [
   {
-   "key": "v20_run",
-   "what": "KILL IN FAVOUR OF v21 (operator's call 2026-10-22, about 5 h into the run at the embeddings): v20 differed from v19 by batch 2 + inputs only; the lab scheme needs a full export anyway and the priors / prune arms are graded inside any run, so v21 carries everything about six hours sooner at the cost of the batch-2-only baseline. Close this task when the kill line has been pasted; v21 is task v21_run.",
-   "added": "2026-10-21",
-   "commands": [
-    "REM 1. kill v20 (the embeddings process is src.entity_graph):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux kill-session -t v20; pkill -f run_frozen_night; pkill -f src.model_a; pkill -f src.entity_graph; sleep 2; tmux ls; tail -3 /data/medicaid/model_a/frozen_2021-12_v20/night_run.log\"",
-    "python -m src.reminders --done-task v20_run"
-   ]
-  },
-  {
    "key": "v21_run",
    "added": "2026-10-22",
-   "what": "v21 = the first run with the v19 lessons SHIPPED: class priors (taxonomy + entity type base rates, target-encoded out-of-fold inside every training fold) in the shipped scorer with ab_no_priors/ as the counterfactual; the lab_testing scheme (new, from the spending fact); the prune list graded in ab_prune/ ONLY (v19's 14 coin-flip schemes held out of a refit); batch 2 + batch 3 fixes; the post-v19 inputs. 16 checks = the v20 fourteen + priors = taxonomy,entity + prune = none. ORDER: kill v20 (task v20_run) -> merge bundle 372 on the laptop -> VM pull -> pre-register -> start with --rebuild-graph (v20's half-built as-of graph is overwritten) -> status. About eleven hours.",
+   "what": "RUNNING since 2026-10-22 11:42 UTC (tmux v21; CLASS_PRIORS=taxonomy,entity, PREV_RUN=v19, PURSUIT_ORDER=pmax_basis50, SEEDS=10, --rebuild-graph; pre-registered 11:41 UTC under 16 checks: the v20 fourteen + priors = taxonomy,entity + prune = none). v20 was killed at the embeddings for it. While it runs: no git pull on the VM, no lanes load, no full data sync. About eleven hours; paste the last 30 lines at [v21] DONE.",
    "commands": [
-    "REM 0. laptop: merge the bundle (cumulative), then the VM pull:",
-    "cd C:\\Users\\treyr\\medicaid-fraud-detection && ops\\laptop\\merge_push.bat 372",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && git log --oneline -1; tmux ls\"",
-    "REM 1. pre-register (16 checks on ONE --check):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v21 --expected 'pursuit book under pmax_basis50 with the class priors shipped: hits at 50/100/250 and large at 50 above random under the FCA ruler; Jaccard >= 0.6; ab_no_priors and ab_prune graded beside it' --goal 'v21 = batch 2 + batch 3 + the v19 lessons: class priors (taxonomy,entity) SHIPPED, the lab_testing scheme, the prune list as an A/B arm only; the post-v19 inputs (2021 HCRIS, 17 state lists, the verify re-check, the CIA and outcome-refresh loads)' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = taxonomy,entity' 'prune = none'\"",
-    "REM 2. start (own tmux window; priors shipped; PREV_RUN = v19 for the drift, the scheme-health baseline and the prune list):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v21 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && CLASS_PRIORS=taxonomy,entity PREV_RUN=/data/medicaid/model_a/frozen_2021-12_v19 PURSUIT_ORDER=pmax_basis50 SEEDS=10 bash ops/vm/run_frozen_night.sh v21 2021-12 --rebuild-graph'\"",
     "REM 3. status any time:",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/frozen_2021-12_v21/night_run.log; tail -4 /data/medicaid/model_a/frozen_2021-12_v21/night_run.log\"",
     "REM 4. when the log prints [v21] DONE: paste the last 30 lines to Claude (packet, read-out, the three arms)",
