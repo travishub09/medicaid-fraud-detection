@@ -375,7 +375,10 @@ def poll_research(registry_path: Path, out_path: Path, transport=None) -> dict:
             env = transport.get(tid)
             results[oid] = {"status": env.get("status"),
                             "output": env.get("output"),
-                            "attachments": env.get("attachments") or []}
+                            "attachments": env.get("attachments") or [],
+                            # the service's own reason for a failure ("You don't have
+                            # enough credits ..."), so a tally can say WHY
+                            "error_detail": env.get("error_detail")}
         except Exception as e:
             results[oid] = {"status": "error", "output": str(e)}
     out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False,

@@ -620,3 +620,37 @@ def test_article_relevance_check():
     assert out["query"] == {"task": "article_relevance_check", "n": 2}
     assert "https://x/2" in t._prompt and "1205822277" in t._prompt
     assert "do not speculate" in t._prompt.lower()
+
+
+def test_error_status_followed_by_agent_progress_is_still_running(monkeypatch):
+    """2026-10-22: the agent's research fan-out emits an agent_status 'error' status_update
+    for a rejected sub-step and keeps working; 104 outcome-refresh tasks read as failed while
+    their newest message was a progress note. An error status with no error_message entry
+    and a NEWER assistant_message is running; with an error_message, or with nothing newer,
+    it stays terminal."""
+    payload = {"ok": True, "task_id": "T1", "messages": [
+        {"id": "s1", "type": "status_update", "timestamp": "100", "status_update": {"agent_status": "running"}},
+        {"id": "s2", "type": "status_update", "timestamp": "200", "status_update": {"agent_status": "error"}},
+        {"id": "a1", "type": "assistant_message", "timestamp": "300",
+         "assistant_message": {"content": "The research fan-out was rejected; I'm rerunning it with corrected labels."}},
+    ]}
+
+    class _R:
+        status_code = 200
+        def raise_for_status(self): pass
+        def json(self): return payload
+
+    monkeypatch.setattr("requests.get", lambda url, params=None, headers=None, timeout=None: _R())
+    t = ManusTransport(api_key="k")
+    assert t.get("T1")["status"] == "running"
+    # the error is the newest thing the task said: terminal
+    payload["messages"] = payload["messages"][:2]
+    assert t.get("T1")["status"] == "error"
+    # a service error_message makes it terminal whatever follows
+    payload["messages"] = [
+        {"id": "s2", "type": "status_update", "timestamp": "200", "status_update": {"agent_status": "error"}},
+        {"id": "e1", "type": "error_message", "timestamp": "250", "error_message": {"content": "You don't have enough credits"}},
+        {"id": "a1", "type": "assistant_message", "timestamp": "300", "assistant_message": {"content": "sorry"}},
+    ]
+    out = t.get("T1")
+    assert out["status"] == "error" and "credits" in out["error_detail"]

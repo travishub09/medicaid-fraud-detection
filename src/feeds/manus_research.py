@@ -148,6 +148,22 @@ class ManusTransport:
         answer_msg = _newest("assistant_message")
         am = (answer_msg or {}).get("assistant_message") or {}
         err_msg = _newest("error_message")
+
+        def _ts(m):
+            try:
+                return float((m or {}).get("timestamp") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        # 2026-10-22: the agent's research fan-out emits an agent_status "error"
+        # status_update for a rejected sub-step ("one task label exceeded a tooling
+        # limit; I'm rerunning it") and then KEEPS WORKING; 104 outcome-refresh tasks
+        # read as failed while their newest message was a progress note. An error
+        # status with no error_message entry is only terminal when nothing newer
+        # from the agent follows it; otherwise the task is still running.
+        if status in ("error", "errored", "failed") and err_msg is None \
+                and answer_msg is not None and _ts(answer_msg) > _ts(status_msg):
+            status = "running"
         return {"task_id": str(payload.get("task_id") or task_id),
                 "status": status, "output": am.get("content"),
                 # agents often deliver the payload as an attached file with a
