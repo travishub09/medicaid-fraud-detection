@@ -39,6 +39,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -87,6 +89,26 @@ def discover_therapy_columns(header: list[str]) -> dict[str, list[str]]:
     return out
 
 
+def _materialize(path: str, tmp_dir: Path | None) -> str:
+    """A .zip download (the CMS page serves the quarter zipped) is extracted
+    to tmp_dir and the inner CSV's path returned; a .csv is returned as is."""
+    if not path.lower().endswith(".zip"):
+        return path
+    import zipfile
+    tmp_dir = Path(tmp_dir or tempfile.mkdtemp(prefix="pbj_therapy_"))
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(path) as zf:
+        members = [m for m in zf.namelist() if m.lower().endswith(".csv")]
+        if not members:
+            raise ValueError(f"{Path(path).name}: no CSV inside the zip")
+        target = tmp_dir / (Path(path).stem + ".csv")
+        if not target.exists():
+            with zf.open(members[0]) as src, open(target, "wb") as dst:
+                shutil.copyfileobj(src, dst, 1 << 20)
+        print(f"[pbj_therapy] extracted {members[0]} from {Path(path).name}")
+        return str(target)
+
+
 def _header(con, path: str) -> list[str]:
     rows = con.execute(
         "DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='latin-1')", [path]
@@ -95,8 +117,9 @@ def _header(con, path: str) -> list[str]:
 
 
 def facility_days(files: list[str | Path], ccn: str, start: str | None = None,
-                  end: str | None = None, con=None) -> pd.DataFrame:
-    """Per-day therapy hours for ONE CCN across the given PBJ files.
+                  end: str | None = None, con=None, tmp_dir: str | Path | None = None) -> pd.DataFrame:
+    """Per-day therapy hours for ONE CCN across the given PBJ files (.csv or the
+    CMS .zip download).
 
     Columns: date, census, ot_hours, pt_hours, slp_hours, <disc>_per_100 (hours
     per 100 residents), weekday, is_weekend, source_file. Files whose header
@@ -105,7 +128,7 @@ def facility_days(files: list[str | Path], ccn: str, start: str | None = None,
     ccn = str(ccn).strip().zfill(6)
     frames = []
     for f in files:
-        f = str(f)
+        f = _materialize(str(f), Path(tmp_dir) if tmp_dir else None)
         hdr = _header(con, f)
         keys = _resolve_columns(hdr, KEY_COLS)
         ther = discover_therapy_columns(hdr)
@@ -252,8 +275,9 @@ def to_markdown(ccn: str, days: pd.DataFrame, cmp: pd.DataFrame | None, summ: di
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--pbj-dir", default=None, help="folder of PBJ Non-Nurse Staffing CSVs (every *.csv is tried; nurse files skip themselves)")
-    ap.add_argument("--files", default=None, help="comma-separated CSV paths instead of --pbj-dir")
+    ap.add_argument("--pbj-dir", default=None, help="folder of PBJ Non-Nurse Staffing downloads (every *.csv and *.zip is tried; nurse files skip themselves)")
+    ap.add_argument("--files", default=None, help="comma-separated CSV / zip paths instead of --pbj-dir")
+    ap.add_argument("--tmp-dir", default=None, help="where a zip's CSV is extracted (default: <pbj-dir>/_extracted, reused on a rerun)")
     ap.add_argument("--ccn", required=True)
     ap.add_argument("--start", default=None, help="YYYY-MM-DD")
     ap.add_argument("--end", default=None, help="YYYY-MM-DD")
@@ -263,12 +287,14 @@ def main() -> None:
     if args.files:
         files = [p.strip() for p in args.files.split(",") if p.strip()]
     elif args.pbj_dir:
-        files = sorted(str(p) for p in Path(args.pbj_dir).glob("*.csv"))
+        files = sorted(str(p) for p in Path(args.pbj_dir).iterdir()
+                       if p.is_file() and p.suffix.lower() in (".csv", ".zip"))
     else:
         ap.error("give --pbj-dir or --files")
     if not files:
-        ap.error("no CSV files found")
-    days = facility_days(files, args.ccn, args.start, args.end)
+        ap.error("no CSV / zip files found")
+    tmp_dir = args.tmp_dir or (str(Path(args.pbj_dir) / "_extracted") if args.pbj_dir else None)
+    days = facility_days(files, args.ccn, args.start, args.end, tmp_dir=tmp_dir)
     cmp = None
     if args.sessions:
         cmp = compare_sessions(days, pd.read_csv(args.sessions, dtype=str))

@@ -83,3 +83,17 @@ def test_ccn_lookup_rows(tmp_path):
     r = subprocess.run([sys.executable, "-m", "src.ingest_cms.ccn_lookup", "--dir", str(tmp_path), "--ccn", "365162"],
                        capture_output=True, text=True)
     assert r.returncode == 0 and "NH_HealthCitations_Oct2026.csv — 2 rows" in r.stdout
+
+
+def test_zip_download_is_read(tmp_path):
+    import zipfile
+    from src.ingest_cms.pbj_therapy import facility_days
+    csv = _nonnurse_csv(tmp_path / "inner.csv")
+    z = tmp_path / "PBJ_Daily_Non_Nurse_Staffing_Q3_2025.zip"
+    with zipfile.ZipFile(z, "w") as zf:
+        zf.write(csv, "PBJ_Daily_Non_Nurse_Staffing_Q3_2025.csv")
+    days = facility_days([z], "365162", tmp_dir=tmp_path / "_extracted")
+    assert len(days) == 4 and (tmp_path / "_extracted" / "PBJ_Daily_Non_Nurse_Staffing_Q3_2025.csv").exists()
+    r = subprocess.run([sys.executable, "-m", "src.ingest_cms.pbj_therapy", "--pbj-dir", str(tmp_path), "--ccn", "365162"],
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and "reported days" in r.stdout
