@@ -79,13 +79,27 @@ BROADCAST_BASES = ("org_billing", "affiliated_individual")
 #                   v19 lesson that the scorer could not see "clinical laboratory"
 #                   (v21 A/B; a CLI override is an A/B on the same matrix, never
 #                   the ship)
+#   drop_schemes    [] (default) or scheme names whose subscore_<s> (and
+#                   evidence_n_<s>) columns are held OUT of the scorer: the prune
+#                   A/B (v21). The scheme's raw INPUTS stay (the question is whether
+#                   the composite helps, not whether its facts do).
 BROADCAST_BASES = ("org_billing", "affiliated_individual")
-_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None}
+_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None, "drop_schemes": None}
+
+
+def parse_schemes(spec) -> list[str]:
+    """'pill_mill, upcoding' -> ['pill_mill', 'upcoding']; None / '' / 'none' -> []."""
+    if spec is None:
+        return []
+    items = ([str(s) for s in spec] if isinstance(spec, (list, tuple))
+             else str(spec).split(","))
+    items = [s.strip().lower() for s in items]
+    return list(dict.fromkeys(s for s in items if s and s != "none"))
 
 
 def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None,
-                        class_priors=None) -> None:
-    """None = no override for that key (class_priors='' overrides to NO priors)."""
+                        class_priors=None, drop_schemes=None) -> None:
+    """None = no override for that key ('' overrides class_priors / drop_schemes to none)."""
     from .class_priors import parse_spec
     if broadcast is not None and broadcast not in ("weight", "mask"):
         raise ValueError(f"unknown broadcast policy {broadcast!r} (weight | mask)")
@@ -93,7 +107,8 @@ def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None
         raise ValueError("n_seeds must be >= 1")
     _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
                             broadcast=broadcast,
-                            class_priors=(parse_spec(class_priors) if class_priors is not None else None))
+                            class_priors=(parse_spec(class_priors) if class_priors is not None else None),
+                            drop_schemes=(parse_schemes(drop_schemes) if drop_schemes is not None else None))
 
 
 def training_policy(manifest: dict | None) -> dict:
@@ -104,9 +119,28 @@ def training_policy(manifest: dict | None) -> dict:
     broadcast = _TRAINING_POLICY["broadcast"] or str(tp.get("broadcast_rows") or "weight")
     priors = (_TRAINING_POLICY["class_priors"] if _TRAINING_POLICY["class_priors"] is not None
               else parse_spec(tp.get("class_priors")))
+    drop = (_TRAINING_POLICY["drop_schemes"] if _TRAINING_POLICY["drop_schemes"] is not None
+            else parse_schemes(tp.get("drop_schemes")))
     return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
             "group_policy": str(tp.get("group_policy") or "org"),
-            "class_priors": list(priors)}
+            "class_priors": list(priors), "drop_schemes": list(drop)}
+
+
+def apply_drop_schemes(cols: list[str], pol: dict, log=print) -> list[str]:
+    """The prune A/B: remove subscore_<s> / evidence_n_<s> for every scheme in the
+    policy's drop_schemes (logged by name; a scheme with no column is reported, not
+    an error, since a dormant scheme has none)."""
+    drop = pol.get("drop_schemes") or []
+    if not drop:
+        return list(cols)
+    banned = {f"subscore_{s}" for s in drop} | {f"evidence_n_{s}" for s in drop}
+    kept = [c for c in cols if c not in banned]
+    gone = [c for c in cols if c in banned]
+    absent = [s for s in drop if f"subscore_{s}" not in cols]
+    if log:
+        log(f"[company_list] prune policy: {len(gone)} subscore column(s) held out of the scorer "
+            f"({', '.join(gone) or 'none'})" + (f"; no column for: {', '.join(absent)}" if absent else ""))
+    return kept
 
 
 def fold_design(X: np.ndarray, matrix: pd.DataFrame, y, pol: dict, tr: np.ndarray, te: np.ndarray,
@@ -405,6 +439,7 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
         | set(manifest.get("leakage_hard", []) or [])
     cols = [c for c in full_feature_list(partition_features(manifest))
             if c in matrix.columns and c not in banned]
+    cols = apply_drop_schemes(cols, training_policy(manifest))     # the prune A/B (v21)
     # mechanical leak screen: the ban list is curated, but any single column
     # that near-perfectly separates the PU label on its own IS the label in
     # disguise, whatever it's called. Drop it and say so.
@@ -472,7 +507,8 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     from src.model_a.network_ab import SCORER_PARAMS
     print(f"[company_list] scorer: LightGBM {', '.join(f'{k}={v}' for k, v in SCORER_PARAMS.items())}")
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
-          f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}")
+          f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}, "
+          f"drop_schemes={pol['drop_schemes'] or 'none'}")
     keys = prior_keys_for(matrix, pol)
     if keys is not None:
         from .class_priors import rate_table

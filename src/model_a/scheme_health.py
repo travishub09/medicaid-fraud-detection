@@ -326,11 +326,34 @@ def write_health(matrix: pd.DataFrame, manifest: dict, out_dir: Path,
             "regressions": regressions}
 
 
+def prune_candidates(data: dict) -> list[str]:
+    """The ONE prune rule (run_issues and the runners' ab_prune arm read it): a scheme
+    coin-flip or inverted on the FCA ruler AND below 0.58 on the exclusion label with
+    20+ positives on the latter, status HEALTHY or DEGRADED. A scheme thin on the FCA
+    ruler is unjudged, never pruned; a prune ships only through a pre-registration."""
+    out: list[str] = []
+    for s in (data or {}).get("schemes") or []:
+        st = str(s.get("status", ""))
+        auc, npos = s.get("label_auc"), s.get("n_label_pos")
+        fv = s.get("fca_verdict")
+        try:
+            ok = (fv in ("coin-flip", "inverted") and auc is not None and npos
+                  and float(npos) >= 20 and float(auc) < 0.58 and st in ("HEALTHY", "DEGRADED"))
+        except (TypeError, ValueError):
+            ok = False
+        if ok:
+            out.append(str(s.get("scheme")))
+    return sorted(dict.fromkeys(out))
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--matrix", required=True)
-    ap.add_argument("--manifest", required=True)
+    ap.add_argument("--prune-list", default=None, metavar="SCHEME_HEALTH_JSON",
+                    help="print the comma-separated prune candidates of a scheme_health.json "
+                         "(the runners' ab_prune arm; no matrix needed) and exit")
+    ap.add_argument("--matrix", required=False)
+    ap.add_argument("--manifest", required=False)
     ap.add_argument("--baseline", default=None,
                     help="prior scheme_health.json for the regression alarm")
     ap.add_argument("--out", default="SCHEME_HEALTH.md")
@@ -340,6 +363,13 @@ def main() -> None:
     ap.add_argument("--json-out", default=None,
                     help="also write the table as json (the runner's scheme_health.json refresh)")
     args = ap.parse_args()
+    if args.prune_list:
+        p = Path(args.prune_list)
+        data = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+        print(",".join(prune_candidates(data)))
+        return
+    if not args.matrix or not args.manifest:
+        ap.error("--matrix and --manifest are required (or --prune-list <scheme_health.json>)")
     m = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
     fl = pd.read_csv(args.future_label, dtype=str) if args.future_label else None

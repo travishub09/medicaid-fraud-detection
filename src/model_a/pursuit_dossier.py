@@ -1033,6 +1033,9 @@ def main() -> None:
     ap.add_argument("--class-priors", default=None,
                     help="training policy override (v21 A/B): comma list of class_priors.PRIOR_KEYS "
                          "(taxonomy,family,entity,state); '' = none; default = the manifest's")
+    ap.add_argument("--drop-schemes", default=None,
+                    help="training policy override (the prune A/B, v21): comma list of schemes whose "
+                         "subscore columns are held out of the scorer; '' = none; default = the manifest's")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="broadcast-row training policy override (default: the manifest's)")
     ap.add_argument("--order", default="dollar", choices=list(PURSUIT_ORDERS),
@@ -1047,11 +1050,14 @@ def main() -> None:
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
-    if args.seeds is not None or args.broadcast_rows is not None or args.class_priors is not None:
+    if (args.seeds is not None or args.broadcast_rows is not None or args.class_priors is not None
+            or args.drop_schemes is not None):
         from .company_list import set_training_policy
-        set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors)
+        set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors,
+                            drop_schemes=args.drop_schemes)
         print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, "
-              f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}")
+              f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}, "
+              f"drop_schemes={args.drop_schemes}")
     if args.label_tier != "all":
         from .company_list import default_exclusion_nodes, set_label_policy
         ex = Path(args.exclusion_nodes) if args.exclusion_nodes else \

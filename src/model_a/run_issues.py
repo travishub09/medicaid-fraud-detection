@@ -166,8 +166,8 @@ def collect_issues(run_dir: str | Path, prereg: dict | None = None,
             # that is coin-flip on BOTH labels with 20+ positives on each is a prune
             # candidate; the next pre-registration decides, never this ledger
             fv, fauc, fpos = s.get("fca_verdict"), s.get("fca_auc"), s.get("n_fca_pos")
-            if fv in ("coin-flip", "inverted") and auc is not None and npos and float(npos) >= 20 \
-                    and float(auc) < 0.58 and st in ("HEALTHY", "DEGRADED"):
+            from src.model_a.scheme_health import prune_candidates
+            if name in prune_candidates({"schemes": [s]}):           # the ONE rule (scheme_health)
                 issues.append(_issue("scheme", name, "prune_candidate", "WARN",
                                      f"FCA-ruler AUC {fauc} on {fpos} forward positives ({fv}); exclusion-label "
                                      f"AUC {auc} on {npos}: no separation on either label",

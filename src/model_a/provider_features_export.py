@@ -359,6 +359,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           n_seeds: int = 1,
                           broadcast_rows: str = "weight",
                           class_priors: str | list | None = None,
+                          drop_schemes: str | list | None = None,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
 
@@ -944,6 +945,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             # the scorer could not see "clinical laboratory". [] = the v9..v20 scorer;
             # the A/B lives in ab_class_priors/ until a pre-registration ships it.
             "class_priors": __import__("src.model_a.class_priors", fromlist=["parse_spec"]).parse_spec(class_priors),
+            # v21: schemes whose subscore columns the SHIPPED scorer holds out (the prune
+            # list a pre-registration commits to; [] until one does — the A/B is ab_prune/).
+            # The subscores stay ON the matrix and in the dossier's drivers; only training skips them.
+            "drop_schemes": __import__("src.model_a.company_list", fromlist=["parse_schemes"]).parse_schemes(drop_schemes),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2634,6 +2639,10 @@ def main() -> None:
                          "(taxonomy,family,entity,state) the SHIPPED scorer target-encodes "
                          "out-of-fold per training fold; default '' = none (v9..v20 semantics; "
                          "the runner grades the A/B in ab_class_priors/ before this ever ships)")
+    ap.add_argument("--drop-schemes", default="",
+                    help="training policy (v21): comma list of schemes whose subscore columns the "
+                         "SHIPPED scorer holds out (the prune list a pre-registration commits to); "
+                         "default '' = none (the runners grade the A/B in ab_prune/ first)")
     ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
@@ -3238,7 +3247,7 @@ def main() -> None:
         nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls,
         graph_substrate=graph_substrate, min_peer=(2 if args.fixture else 30),
         group_policy=args.group_policy, n_seeds=args.seeds, broadcast_rows=args.broadcast_rows,
-        class_priors=args.class_priors)
+        class_priors=args.class_priors, drop_schemes=args.drop_schemes)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

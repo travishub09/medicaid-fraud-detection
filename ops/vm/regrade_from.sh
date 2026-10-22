@@ -104,6 +104,20 @@ if [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
+# v21: the prune A/B (PRUNE_AB=auto reads the SOURCE run's scheme_health.json; a list overrides; empty skips)
+PRUNE_LIST=""
+case "${PRUNE_AB:-auto}" in
+  "") ;;
+  auto) [ -f "$SRC_RUN/scheme_health.json" ] && PRUNE_LIST="$(python -m src.model_a.scheme_health --prune-list "$SRC_RUN/scheme_health.json")" ;;
+  *) PRUNE_LIST="$PRUNE_AB" ;;
+esac
+if [ -n "$PRUNE_LIST" ]; then
+  echo "[$NEW] prune A/B: holding out $PRUNE_LIST"
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --drop-schemes "$PRUNE_LIST" --out "$RUN/ab_prune/ACCURACY_DIAGNOSTICS.md" || fail 8
+else
+  echo "[$NEW] prune A/B skipped (no prune list)"
+fi
 
 step 9/12 "results digest + pursuit dossier (operator book, national chains set aside; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
@@ -123,5 +137,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-
 
 echo
 echo "[$NEW] DONE $(date '+%F %T')  -- tell Claude '$NEW finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask $(ls -d ab_class_priors 2>/dev/null))   # tar; zip is not installed"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask $(ls -d ab_class_priors ab_prune 2>/dev/null))   # tar; zip is not installed"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${NEW}"

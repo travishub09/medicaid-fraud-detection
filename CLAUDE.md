@@ -1755,6 +1755,21 @@ first, then paste" above every move/done block.
   Mix shares are of the LAB dollars (NULL without lab dollars; an observed 0 is real).
   ORDER: v20 reads out -> ab_class_priors grade read (hits vs the hard arm) -> v21
   pre-registers the winner + the lab scheme + the prune list (14 coin-flip schemes).
+  THE PRUNE A/B (2026-10-22, the third v21 ingredient; tests/test_prune_ab_2026_10.py):
+  `scheme_health.prune_candidates` is the ONE prune rule (coin-flip or inverted on the
+  FCA ruler AND label AUC < 0.58 on 20+ positives, HEALTHY or DEGRADED; thin = unjudged);
+  run_issues reads it; `scheme_health --prune-list <scheme_health.json>` prints the
+  comma list for the runners. Training policy `drop_schemes` (`company_list.
+  parse_schemes` / `apply_drop_schemes`: subscore_<s> + evidence_n_<s> held out of the
+  scorer in oof_scores and the diagnostics' `_screened_columns`; the scheme's raw
+  INPUTS stay, the subscores stay on the matrix and in the dossier's drivers);
+  `--drop-schemes` on pursuit_dossier / accuracy_diagnostics (the A/B) and the export
+  (manifest training_policy.drop_schemes, the list a pre-registration commits to);
+  registry `drop_schemes` (alias `prune`). Both runners grade `ab_prune/`: PRUNE_AB=auto
+  (default) takes the candidates from the PREVIOUS run's scheme_health.json
+  (run_frozen_night: $PREV_RUN; regrade_from: the source run), a comma list overrides,
+  empty skips. v21 pre-registers `prune = <list>` only if ab_prune holds the deep
+  budgets against the hard arm.
   BATCH 3 (2026-10-22, the three fixes the v19 read-out named; tests/test_batch3_fixes_
   2026_10.py): (1) `nppes_deactivation.pick_deactivation_file(asof_cutoff=)` reads the
   newest edition on/before the cutoff month under a freeze (v10..v20 read the newest

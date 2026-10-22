@@ -243,11 +243,12 @@ def eval_frame(matrix: pd.DataFrame, ruler: pd.DataFrame, cutoff: str,
 
 def _screened_columns(matrix: pd.DataFrame, manifest: dict, y_screen: np.ndarray) -> list[str]:
     from .label_ablation import _screened_features
+    from .company_list import apply_drop_schemes, training_policy
     cols, leaked = _screened_features(matrix, manifest, y_screen)
     if leaked:
         print("[accuracy_diagnostics] auto-dropped label-leaking feature(s): "
               + ", ".join(f"{c} (AUC {a})" for c, a in leaked))
-    return cols
+    return apply_drop_schemes(cols, training_policy(manifest))       # the prune A/B (v21)
 
 
 def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_train: np.ndarray,
@@ -1206,6 +1207,10 @@ def main() -> None:
                     help="training policy override (v21 A/B): comma list of class_priors.PRIOR_KEYS "
                          "(taxonomy,family,entity,state) target-encoded out-of-fold per training "
                          "fold; '' = no priors; default = the manifest's training_policy.class_priors")
+    ap.add_argument("--drop-schemes", default=None,
+                    help="training policy override (the prune A/B, v21): comma list of schemes whose "
+                         "subscore columns are held out of the refit (scheme_health --prune-list "
+                         "prints the candidates); '' = none; default = the manifest's")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="refit only: the broadcast-row policy (default: the manifest's; 'mask' holds "
                          "broadcast-only case positives out of training for the v9 A/B)")
@@ -1232,11 +1237,13 @@ def main() -> None:
             ap.error(f"--label-tier {a.label_tier} needs exclusion nodes; not found at {ex} (pass --exclusion-nodes)")
         set_label_policy(a.label_tier, ex, cutoff=cutoff)
         print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
-    if a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None:
+    if (a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None
+            or a.drop_schemes is not None):
         from .company_list import set_training_policy
-        set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors)
+        set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors,
+                            drop_schemes=a.drop_schemes)
         print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, "
-              f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}")
+              f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}, drop_schemes={a.drop_schemes}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:

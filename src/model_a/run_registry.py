@@ -126,6 +126,7 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             # v21: the class priors the SHIPPED scorer trained with ("none" until a
             # pre-registration ships them; the A/B folder is ab_class_priors/)
             row["class_priors"] = ",".join(tp.get("class_priors") or []) or "none"
+            row["drop_schemes"] = ",".join(tp.get("drop_schemes") or []) or "none"
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
             # referral edges entered the graph, which is CORE, so the
@@ -406,7 +407,7 @@ CHECK_ALIASES = {
     "train_charged": "train_charged",
     "train_commercial": "train_commercial",
     "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
-    "priors": "class_priors",
+    "priors": "class_priors", "prune": "drop_schemes",
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
     # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)
     "hits50": "acc_org_hits50", "hits16": "acc_org_hits16",
