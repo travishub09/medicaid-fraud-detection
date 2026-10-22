@@ -567,6 +567,48 @@
    "proof": [
     "preclean/saturation/*Archive*2018-2019*.csv"
    ]
+  },
+  {
+   "key": "home_health_compare",
+   "what": "Home Health Care Compare agency file (data.cms.gov provider data: quality-of-patient-care star rating, timely initiation, hospitalization / ED-use measures, DTC/PPR) = the SECTOR FILE for the v22 home_health_intensity scheme (docs/SCHEME_DEEP_DIVE 2026-10-22 finding 4: the schemes that validate read a sector quality file, not a billing ratio). Adapter ingest_cms/home_health_compare (bundle 375); joins CCN -> NPI through the crosswalk.",
+   "where": "preclean/home_health/HH_Provider_<MonYYYY>.csv (keep the CMS name; the adapter dates it from the name)",
+   "url": "https://data.cms.gov/provider-data/topics/home-health-services",
+   "every_months": 3,
+   "last_done": null,
+   "proof": [
+    "preclean/home_health/HH_Provider*.csv"
+   ],
+   "steps": [
+    "Open https://data.cms.gov/provider-data/topics/home-health-services -> the dataset 'Home Health Care - Agencies' (file HH_Provider_<Mon><Year>.csv) -> Download CSV (it lands in Downloads)",
+    "For the 2021-12 freeze the run needs an edition dated on/before December 2021: the same topic's ARCHIVE (https://data.cms.gov/provider-data/archived-data/home-health-services) -> the Dec 2021 or Jan 2022 snapshot's HH_Provider file; save it beside the current one (the export picks the edition on/before the freeze from the name; a newer-only folder is skipped under a freeze, never substituted)",
+    "'Home Health Care - Zip Codes' is NOT needed; skip it"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\home_health\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\HH_Provider*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\home_health\\\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\home_health\"",
+    "python -m src.reminders --done home_health_compare"
+   ]
+  },
+  {
+   "key": "dialysis_compare",
+   "what": "Dialysis Facility Compare facility listing (data.cms.gov provider data: stations, chain / ownership, star ratings, hospitalization and transfusion measures) = the sector file for a future dialysis_quality scheme (the dialysis-facility settlements are a standing FCA line; no scheme reads the sector today). Download only; the adapter is queued behind home_health_compare.",
+   "where": "preclean/dialysis/DFC_FACILITY_<MonYYYY>.csv",
+   "url": "https://data.cms.gov/provider-data/topics/dialysis-facilities",
+   "every_months": 6,
+   "last_done": null,
+   "proof": [
+    "preclean/dialysis/DFC_FACILITY*.csv"
+   ],
+   "steps": [
+    "Open https://data.cms.gov/provider-data/topics/dialysis-facilities -> 'Dialysis Facility - Listing by Facility' (DFC_FACILITY.csv) -> Download CSV"
+   ],
+   "commands": [
+    "mkdir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\dialysis\"",
+    "for %f in (\"%USERPROFILE%\\Downloads\\DFC_FACILITY*.csv\") do copy /y \"%f\" \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\dialysis\\\"",
+    "dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\dialysis\"",
+    "python -m src.reminders --done dialysis_compare"
+   ]
   }
  ],
  "tasks": [

@@ -277,7 +277,7 @@ def join_m1(left: pd.DataFrame, right: pd.DataFrame, source: str, on: str = "npi
 # (facility_peer_percentiles, saturation's state-county ranking, hcris_anomaly); the export
 # re-ranked them across taxonomy peers (a percentile of a percentile, PLATFORM_AUDIT B.F-9).
 # They now pass through like the analytics percentiles. v20 semantics.
-PRE_RANKED_PREFIXES = ("pbj_", "deficiency_", "nh_", "hospice_")
+PRE_RANKED_PREFIXES = ("pbj_", "deficiency_", "nh_", "hospice_", "hhq_")
 PRE_RANKED_INPUTS = {"market_saturation_index", "hcris_cost_anomaly"}
 
 
@@ -2508,6 +2508,28 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
             _emit("facility", org, [c for c in org.columns if c != "org_node_id"])
     except Exception as e:
         log(f"    [facility] skipped: {e}")
+    # Home Health Care Compare (v22, 2026-10-22): the sector quality panel beside the
+    # home_health_intensity billing metrics (deep dive finding 4). One agency per CCN;
+    # the edition is dated from the CMS file name (HH_Provider_Oct2026.csv) and picked
+    # on/before the freeze like every other snapshot (nothing eligible = skipped with
+    # a ledger row, never the newest file under a freeze).
+    try:
+        hh_p = _asof_newest(pc / "home_health", ("HH_Provider*.csv", "*Provider*.csv", "*.csv"),
+                            asof_cutoff, log, "home_health_compare")
+        if hh_p:
+            from src.ingest_cms import home_health_compare as hhc
+            m, q = hhc.compute_hh_quality(_read_any(hh_p))
+            cols = [c for c in hhc.HHQ_METRICS if c in m.columns]
+            log(f"    [home_health_compare] {hh_p.name}: {len(m):,} agencies, measures "
+                f"{', '.join(cols)}; {q:,} non-numeric scores quarantined")
+            pct = fac.facility_peer_percentiles(m, cols)
+            org = fac.rollup_ccn_to_org(pct, ccn_to_npi, npi_to_org)
+            _emit("home_health_compare", org, [c for c in org.columns if c != "org_node_id"])
+        else:
+            log("    [home_health_compare] skipped: needs preclean/home_health/HH_Provider_<MonYYYY>.csv "
+                "(data.cms.gov provider data, Home Health Care - Agencies) dated on/before the cutoff")
+    except Exception as e:
+        log(f"    [home_health_compare] skipped: {e}")
     # HCRIS cost-report anomaly — ALL vintage files (hospital/HHA/SNF), not just
     # the alphabetically first one: load_hcris resolves each layout separately.
     try:

@@ -146,7 +146,13 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     "evv_personal_care": {"pc_paid_share": 0.3, "pc_lines_per_patient_month": 0.6,
                           "pc_paid_per_patient_month": 0.5},
     "home_health_intensity": {"hh_paid_share": 0.3, "hh_lines_per_patient_month": 0.6,
-                              "hh_paid_per_patient_month": 0.5},
+                              "hh_paid_per_patient_month": 0.5,
+                              # the sector quality panel (ingest_cms/home_health_compare,
+                              # CCN -> org; pre-ranked facility percentiles, hhq_ prefix):
+                              # a low star rating, late starts of care, hospitalizations
+                              # and preventable readmissions beside the visit intensity
+                              "hhq_star_deficit": 0.3, "hhq_hospitalization_rate": 0.3,
+                              "hhq_timely_gap": 0.2, "hhq_ppr_rate": 0.2},
     "lab_unbundling": {"lab_component_share": 0.7, "lab_draw_per_test": 0.3},
     "session_inflation": {"psy_60min_share": 0.5, "em_prolonged_share": 0.5,
                           "psy_interactive_share": 0.3},

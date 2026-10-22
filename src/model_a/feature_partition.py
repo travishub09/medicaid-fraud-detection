@@ -39,7 +39,7 @@ EXTRA_SOURCE_GROUPS = {
     "opioid": {"opioid"},
     "hrsa_340b": {"hrsa_340b"},
     "saturation": {"saturation"},
-    "facility_quality": {"facility", "pbj"},
+    "facility_quality": {"facility", "pbj", "home_health_compare"},
     "hcris": {"hcris"},
     "pos": {"pos"},
     "deactivation": {"nppes_deactivation"},
