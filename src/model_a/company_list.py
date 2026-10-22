@@ -73,25 +73,59 @@ def label_policy() -> dict:
 #                   folds and scored out-of-fold (the bag-label reading: the
 #                   case says "someone at this org", not "this member")
 BROADCAST_BASES = ("org_billing", "affiliated_individual")
-_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None}
+#   class_priors    [] (default) or a list of class_priors.PRIOR_KEYS: the class
+#                   base rate (taxonomy / family / entity / state) target-encoded
+#                   OUT-OF-FOLD inside every training fold and appended to X — the
+#                   v19 lesson that the scorer could not see "clinical laboratory"
+#                   (v21 A/B; a CLI override is an A/B on the same matrix, never
+#                   the ship)
+BROADCAST_BASES = ("org_billing", "affiliated_individual")
+_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None}
 
 
-def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None) -> None:
+def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None,
+                        class_priors=None) -> None:
+    """None = no override for that key (class_priors='' overrides to NO priors)."""
+    from .class_priors import parse_spec
     if broadcast is not None and broadcast not in ("weight", "mask"):
         raise ValueError(f"unknown broadcast policy {broadcast!r} (weight | mask)")
     if n_seeds is not None and int(n_seeds) < 1:
         raise ValueError("n_seeds must be >= 1")
     _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
-                            broadcast=broadcast)
+                            broadcast=broadcast,
+                            class_priors=(parse_spec(class_priors) if class_priors is not None else None))
 
 
 def training_policy(manifest: dict | None) -> dict:
     """The effective policy: CLI override, else the manifest, else v8 defaults."""
+    from .class_priors import parse_spec
     tp = (manifest or {}).get("training_policy") or {}
     n_seeds = _TRAINING_POLICY["n_seeds"] or int(tp.get("n_seeds") or 1)
     broadcast = _TRAINING_POLICY["broadcast"] or str(tp.get("broadcast_rows") or "weight")
+    priors = (_TRAINING_POLICY["class_priors"] if _TRAINING_POLICY["class_priors"] is not None
+              else parse_spec(tp.get("class_priors")))
     return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
-            "group_policy": str(tp.get("group_policy") or "org")}
+            "group_policy": str(tp.get("group_policy") or "org"),
+            "class_priors": list(priors)}
+
+
+def fold_design(X: np.ndarray, matrix: pd.DataFrame, y, pol: dict, tr: np.ndarray, te: np.ndarray,
+                keys: pd.DataFrame | None) -> tuple[np.ndarray, np.ndarray]:
+    """The fold's (Xtr, Xte) with the class-prior columns appended when the policy
+    asks for them — encoded from THIS fold's training rows only (class_priors.encode_fold)."""
+    if keys is None or not len(keys.columns):
+        return X[tr], X[te]
+    from .class_priors import encode_fold
+    etr, ete = encode_fold(keys, y, tr, te)
+    return np.hstack([X[tr], etr]), np.hstack([X[te], ete])
+
+
+def prior_keys_for(matrix: pd.DataFrame, pol: dict) -> pd.DataFrame | None:
+    """The key frame for the policy's class priors (None when the policy has none)."""
+    if not pol.get("class_priors"):
+        return None
+    from .class_priors import prior_keys
+    return prior_keys(matrix, pol["class_priors"])
 
 
 def broadcast_only_mask(matrix: pd.DataFrame) -> np.ndarray:
@@ -438,13 +472,23 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     from src.model_a.network_ab import SCORER_PARAMS
     print(f"[company_list] scorer: LightGBM {', '.join(f'{k}={v}' for k, v in SCORER_PARAMS.items())}")
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
-          f"groups={pol['group_policy']}")
+          f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}")
+    keys = prior_keys_for(matrix, pol)
+    if keys is not None:
+        from .class_priors import rate_table
+        rt = rate_table(keys, y)
+        for kname in keys.columns:
+            top = rt[(rt["key"] == kname) & (rt["n"] >= 50)].head(5)
+            print(f"[company_list] class prior '{kname}' (base rate {rt.attrs['base_rate']:.4%}): "
+                  + "; ".join(f"{r.value} {r.shrunk_rate:.3%} (n {r.n:,}, lift {r.lift:.1f})"
+                              for r in top.itertuples()))
     scores = np.zeros(len(matrix))
     for k, (tr, te) in enumerate(fold_assignments(y, groups, n_splits)):
         tr = tr[~ambiguous[tr]]
+        Xtr, Xte = fold_design(X, matrix, y, pol, tr, te, keys)
         acc = np.zeros(len(te))
         for s in range(pol["n_seeds"]):                # seed bagging (v9)
-            acc += _fit_predict(X[tr], y[tr], X[te], seed=RANDOM_STATE + k + 1000 * s,
+            acc += _fit_predict(Xtr, y[tr], Xte, seed=RANDOM_STATE + k + 1000 * s,
                                 sample_weight=(w[tr] if w is not None else None))
         scores[te] = acc / pol["n_seeds"]
     # collapse guard (hard-fail, rule #2): a real probability ranking over a

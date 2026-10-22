@@ -1030,6 +1030,9 @@ def main() -> None:
     ap.add_argument("--seeds", type=int, default=None,
                     help="LightGBM fits averaged per fold for the production scorer (default: the "
                          "manifest's training_policy.n_seeds, else 1)")
+    ap.add_argument("--class-priors", default=None,
+                    help="training policy override (v21 A/B): comma list of class_priors.PRIOR_KEYS "
+                         "(taxonomy,family,entity,state); '' = none; default = the manifest's")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="broadcast-row training policy override (default: the manifest's)")
     ap.add_argument("--order", default="dollar", choices=list(PURSUIT_ORDERS),
@@ -1044,10 +1047,11 @@ def main() -> None:
     args = ap.parse_args()
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
-    if args.seeds is not None or args.broadcast_rows is not None:
+    if args.seeds is not None or args.broadcast_rows is not None or args.class_priors is not None:
         from .company_list import set_training_policy
-        set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows)
-        print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, broadcast={args.broadcast_rows}")
+        set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors)
+        print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, "
+              f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}")
     if args.label_tier != "all":
         from .company_list import default_exclusion_nodes, set_label_policy
         ex = Path(args.exclusion_nodes) if args.exclusion_nodes else \

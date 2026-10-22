@@ -75,6 +75,7 @@ SCHEME_EXPOSURE_BASIS: dict[str, str] = {
     "impossible_day": "own_billing",
     "nemt_fraud": "own_billing",
     "behavioral_health": "own_billing",
+    "lab_testing": "own_billing",
     "dme_ring": "influenced_dollars",
     "pharma_kickback": "influenced_dollars",
     "ownership_integrity": "ring_aggregate",
@@ -93,6 +94,7 @@ SCHEME_EXPOSURE_BASIS: dict[str, str] = {
 SCHEME_RECOVERY_MULTIPLIER: dict[str, float] = {
     "nemt_fraud": 0.50,          # phantom trips/mileage: most of the billing is the scheme
     "behavioral_health": 0.40,
+    "lab_testing": 0.40,         # unnecessary definitive / genetic / panel testing: the lab dollars at issue
     "single_service_mill": 0.50,
     "ownership_integrity": 0.40,
     "payment_outlier": 0.30,

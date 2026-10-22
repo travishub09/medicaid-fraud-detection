@@ -358,6 +358,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           group_policy: str = "case_cluster",
                           n_seeds: int = 1,
                           broadcast_rows: str = "weight",
+                          class_priors: str | list | None = None,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
 
@@ -938,6 +939,11 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             "broadcast_rows": broadcast_rows,
             "group_policy": group_policy,
             "n_case_clusters": int(n_case_clusters),
+            # v21 (2026-10-22): the class base rate (taxonomy / family / entity / state)
+            # target-encoded out-of-fold inside every training fold — the v19 lesson that
+            # the scorer could not see "clinical laboratory". [] = the v9..v20 scorer;
+            # the A/B lives in ab_class_priors/ until a pre-registration ships it.
+            "class_priors": __import__("src.model_a.class_priors", fromlist=["parse_spec"]).parse_spec(class_priors),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2606,6 +2612,11 @@ def main() -> None:
                     help="training policy for org_billing / affiliated case positives: 'weight' "
                          "trains them at label_weight (the per-case budget); 'mask' holds "
                          "broadcast-only positives out of training folds (bag-label reading)")
+    ap.add_argument("--class-priors", default="",
+                    help="training policy (v21): comma list of class_priors.PRIOR_KEYS "
+                         "(taxonomy,family,entity,state) the SHIPPED scorer target-encodes "
+                         "out-of-fold per training fold; default '' = none (v9..v20 semantics; "
+                         "the runner grades the A/B in ab_class_priors/ before this ever ships)")
     ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
@@ -3208,7 +3219,8 @@ def main() -> None:
         adapter_npi_frames=adapter_frames, org_grain_frames=org_grain,
         nucc_peer_groups=nucc_pg, widened_label=widened, case_labels=case_lbls,
         graph_substrate=graph_substrate, min_peer=(2 if args.fixture else 30),
-        group_policy=args.group_policy, n_seeds=args.seeds, broadcast_rows=args.broadcast_rows)
+        group_policy=args.group_policy, n_seeds=args.seeds, broadcast_rows=args.broadcast_rows,
+        class_priors=args.class_priors)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

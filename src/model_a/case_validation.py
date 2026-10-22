@@ -41,7 +41,7 @@ DOJ_TO_SUBSCHEME = {
     "kickback": ["pharma_kickback", "dme_ring"],
     "upcoding": ["upcoding"],
     "medical_necessity": ["overutilization", "worthless_services",
-                          "hospice_ineligibility"],
+                          "hospice_ineligibility", "lab_testing"],
     "phantom_billing": ["single_service_mill", "nemt_fraud", "behavioral_health"],
     "eligibility": ["invalid_identity", "dme_ring"],
     "worthless_services": ["worthless_services"],
@@ -58,7 +58,8 @@ SECTOR_TO_SUBSCHEME = {
     "behavioral": ["behavioral_health"],
     "snf": ["worthless_services"],
     "pharmacy": ["drug_outlier", "contract_pharmacy"],
-    "telehealth": ["dme_ring"],          # telefraud cases are DME/testing-driven
+    "lab": ["lab_testing"],              # v21: toxicology / genetic / panel mills
+    "telehealth": ["dme_ring", "lab_testing"],   # telefraud cases are DME/testing-driven
     "managed_care": ["upcoding"],        # risk-adjustment fraud IS upcoding
 }
 

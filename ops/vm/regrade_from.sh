@@ -99,6 +99,11 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES
     --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
+# v21: the class-prior A/B (taxonomy + entity base rates encoded out-of-fold; CLASS_PRIORS_AB env, empty skips)
+if [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
+fi
 
 step 9/12 "results digest + pursuit dossier (operator book, national chains set aside; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
@@ -118,5 +123,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-
 
 echo
 echo "[$NEW] DONE $(date '+%F %T')  -- tell Claude '$NEW finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask)   # tar; zip is not installed"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask $(ls -d ab_class_priors 2>/dev/null))   # tar; zip is not installed"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${NEW}"

@@ -55,6 +55,10 @@ SCHEME_NARRATIVES = {
         "billing tied to a deactivated or deceased identifier"),
     "cost_report_fraud": ("a cost-report concern",
         "cost ratios out of line with peer facilities"),
+    "lab_testing": ("a laboratory-testing concern",
+        "a laboratory book skewed toward definitive drug testing, genetic panels or "
+        "respiratory panels, or far more tests per patient than peer laboratories — "
+        "the medically-unnecessary-testing shape"),
 }
 
 # concept percentile column → plain-English description of what it measures

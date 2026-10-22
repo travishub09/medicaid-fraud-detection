@@ -304,6 +304,19 @@ in three steps:
 - **`rapid_ramp`** — *detects* a scheme spinning up. *How:* we look at the monthly
   billing trajectory for a sudden sustained jump and for a burst of newly-billed
   codes, rank both, and score high when billing ramps or the code mix pivots abruptly.
+- **`lab_testing`** (v21, 2026-10-22) — *detects* the medically-unnecessary-testing
+  shape: definitive toxicology mills, genetic-testing mills, respiratory panels
+  bundled onto swabs, standing-order chemistry panels. *Why it exists:* the v19
+  label-enrichment read found the forward False Claims Act cases concentrated in
+  clinical laboratories (taxonomy 291U, lift 26) and on one family of codes no scheme
+  named (G0480–G0483 lift 19–32, genetic 81420/81406/81220 lift 52–85, bilirubin
+  82247/82248 lift 95–120, HbA1c 83036 as a dominant code lift 229). *How:* from the
+  spending file, five numbers — the lab share of the provider's own dollars, lab
+  lines per patient (panel breadth), and the definitive-drug-testing, genetic and
+  respiratory-panel shares OF the lab dollars (the mix, not the size) — each ranked
+  one-sided against peers and blended (`ingest_cms/sector_schemes.py`). A provider
+  with no lab dollars is unscored (NULL), never zero; a lab that bills no toxicology
+  reads 0 on that share, a real observation. Feeding files: Spending.
 
 #### Ownership / identity schemes — the signals not in the claims file
 - **`ownership_integrity`** *(leakage-adjacent)* — *detects* concealment structure.

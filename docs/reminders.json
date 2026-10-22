@@ -582,6 +582,18 @@
    ]
   },
   {
+   "key": "v21_prereg",
+   "added": "2026-10-22",
+   "what": "v21 = the two v19 lessons, graded before they ship (bundle 369, built while v20 ran): (1) CLASS PRIORS \u2014 the class base rate (taxonomy + entity type) target-encoded out-of-fold inside every training fold (the scorer could not see 'clinical laboratory'); the v20 runner did NOT carry it (it started before the code), so the A/B runs as a REGRADE of v20's matrix: `CLASS_PRIORS_AB=taxonomy,entity bash ops/vm/regrade_from.sh v20p v20 2021-12` writes ab_class_priors/ next to ab_broadcast_weight/ (the hard arm); read hits at 16/50/100/250 side by side; a win at 100 and 250 ships `--class-priors taxonomy,entity` on the v21 export line. (2) LAB TESTING scheme (subscore_lab_testing from the spending fact: definitive toxicology, genetic, respiratory panels; v21 export computes it automatically). (3) the prune list: 14 schemes coin-flip on both labels (QUESTIONS_READOUT 1) \u2014 prune only with SOURCE_ABLATION's per-group delta in hand. v21 is ONE new pre-registration (the v20 checks, train = hard, seeds 10, class_priors as the A/B says). Do nothing here until v20 prints DONE and is read out.",
+   "commands": [
+    "REM after v20 DONE + read-out + the laptop merge of bundle 369 + the VM pull:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v20p 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && CLASS_PRIORS_AB=taxonomy,entity bash ops/vm/regrade_from.sh v20p v20 2021-12'\"",
+    "REM when it finishes: the A/B side by side (hard arm vs class priors), paste to Claude:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -h 'acc_org_hits' /data/medicaid/model_a/frozen_2021-12_v20p/ab_broadcast_weight/accuracy_diagnostics.json /data/medicaid/model_a/frozen_2021-12_v20p/ab_class_priors/accuracy_diagnostics.json | grep -v '_all\\|_qui' ; head -20 /data/medicaid/model_a/frozen_2021-12_v20p/ab_class_priors/class_prior_rates.csv\"",
+    "python -m src.reminders --done-task v21_prereg"
+   ]
+  },
+  {
    "key": "second_freeze_2023_12",
    "added": "2026-10-21",
    "what": "THE SECOND FREEZE, BUILT 2026-10-21 (bundle 345; docs/FREEZE_DESIGN_NOTE addendum): the cutoff is 2023-12, NOT 2023-06: once the picker reads quarter / month tokens, every edition on disk (POS Q4 2023, PBJ 2023Q4, NH Nov2023, O&R 2023-12, NADAC 2023) is dated AFTER June 2023 and only 2023-12 lights them all up; the December-2023 NPPES in nppes_history is the exact as-of edition. Horizon 33 months ends 2026-09 (fully elapsed). RUN IT AFTER audit batch 1 ships and the 2021-12 v19 is read: pre-register the tag, then the runner with cutoff 2023-12 and HORIZON=33 (its own as-of graph graph_asof_2023-12_full), then freeze_pair on the two runs. The data scan's frozen_2023-12/DATA_AUDIT.md section 2 says what it reads.",

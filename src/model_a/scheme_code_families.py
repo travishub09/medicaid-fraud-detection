@@ -48,6 +48,11 @@ SCHEME_FAMILIES: dict[str, tuple[str, object]] = {
     "contract_pharmacy": ("prefixes", ("J",)),
     "invalid_identity": ("all", None),       # all post-deactivation/post-death dollars at issue
     "cost_report_fraud": ("all", None),      # cost-report fraud is org-wide, not code-scoped
+    # v21 laboratory testing: the explicit lab code set (sector_schemes.lab_code_set;
+    # the PLA 0xxxU pattern is not enumerable, so the dollars-at-issue scope is the
+    # named families — conservative)
+    "lab_testing": ("codes", __import__("src.ingest_cms.sector_schemes",
+                                        fromlist=["lab_code_set"]).lab_code_set()),
 }
 DEFAULT_FAMILY: tuple[str, object] = ("all", None)
 

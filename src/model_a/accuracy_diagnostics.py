@@ -257,14 +257,16 @@ def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_trai
     repeat as salt before GroupKFold, which is otherwise deterministic)."""
     from sklearn.model_selection import GroupKFold, KFold
     from .network_ab import _fit_predict
-    from .company_list import broadcast_only_mask, training_policy, training_weights
+    from .company_list import (broadcast_only_mask, fold_design, prior_keys_for, training_policy,
+                               training_weights)
     X = matrix[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
     groups = matrix["group_id"].astype(str).to_numpy() if "group_id" in matrix.columns else None
     # the same training policy as the shipped scorer (v9): label_weight as the
     # sample weight, seed bagging, and the broadcast-row policy from the manifest
-    # or the CLI override
+    # or the CLI override; the class priors (v21 A/B) encoded per fold
     w = training_weights(matrix)
     pol = training_policy(manifest)
+    keys = prior_keys_for(matrix, pol)
     if pol["broadcast"] == "mask":
         ambiguous = ambiguous | (broadcast_only_mask(matrix) & (np.asarray(y_train) == 1))
     scores = np.zeros(len(matrix))
@@ -282,9 +284,10 @@ def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_trai
         it = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE + repeat).split(X)
     for k, (tr, te) in enumerate(it):
         tr = tr[~ambiguous[tr]]
+        Xtr, Xte = fold_design(X, matrix, y_train, pol, tr, te, keys)
         acc = np.zeros(len(te))
         for s in range(pol["n_seeds"]):
-            acc += _fit_predict(X[tr], y_train[tr], X[te], seed=RANDOM_STATE + k + 100 * repeat + 1000 * s,
+            acc += _fit_predict(Xtr, y_train[tr], Xte, seed=RANDOM_STATE + k + 100 * repeat + 1000 * s,
                                 sample_weight=(w[tr] if w is not None else None))
         scores[te] = acc / pol["n_seeds"]
         fold[te] = k
@@ -1199,6 +1202,10 @@ def main() -> None:
     ap.add_argument("--seeds", type=int, default=None,
                     help="refit only: LightGBM fits averaged per fold (default: the manifest's "
                          "training_policy.n_seeds, else 1)")
+    ap.add_argument("--class-priors", default=None,
+                    help="training policy override (v21 A/B): comma list of class_priors.PRIOR_KEYS "
+                         "(taxonomy,family,entity,state) target-encoded out-of-fold per training "
+                         "fold; '' = no priors; default = the manifest's training_policy.class_priors")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="refit only: the broadcast-row policy (default: the manifest's; 'mask' holds "
                          "broadcast-only case positives out of training for the v9 A/B)")
@@ -1225,10 +1232,11 @@ def main() -> None:
             ap.error(f"--label-tier {a.label_tier} needs exclusion nodes; not found at {ex} (pass --exclusion-nodes)")
         set_label_policy(a.label_tier, ex, cutoff=cutoff)
         print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
-    if a.seeds is not None or a.broadcast_rows is not None:
+    if a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None:
         from .company_list import set_training_policy
-        set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows)
-        print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, broadcast={a.broadcast_rows}")
+        set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors)
+        print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, "
+              f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:
@@ -1298,6 +1306,23 @@ def main() -> None:
     suffix = output_suffix(a.list_name)
     out = Path(a.out) if a.out else run_dir / f"ACCURACY_DIAGNOSTICS{suffix}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
+    # v21 class priors: the rate table the refit encoded from (explainability, rule 5:
+    # a reader can audit "clinical laboratories 1.2% vs 0.3% overall" beside the grade)
+    try:
+        from .company_list import _training_label, prior_keys_for, training_policy
+        from .class_priors import rate_table
+        pol_eff = training_policy(manifest)
+        keys = prior_keys_for(matrix, pol_eff)
+        if keys is not None:
+            lab = manifest.get("label") or "provider_on_exclusion"
+            rt = rate_table(keys, _training_label(matrix, lab))
+            rt.to_csv(out.parent / f"class_prior_rates{suffix}.csv", index=False)
+            res["class_priors"] = pol_eff["class_priors"]
+            res["class_prior_base_rate"] = rt.attrs.get("base_rate")
+            print(f"[accuracy_diagnostics] class priors {pol_eff['class_priors']} -> "
+                  f"{out.parent / f'class_prior_rates{suffix}.csv'}")
+    except Exception as e:                                       # never fail a grade over the audit table
+        print(f"[accuracy_diagnostics] class-prior rate table not written: {e}")
     top_rows = res.pop("_top_rows", None)
     tie = res.pop("_tie_block", None)
     if tie is not None and len(tie):

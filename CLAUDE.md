@@ -1723,6 +1723,38 @@ first, then paste" above every move/done block.
   `_NATIONAL_NAMES` (the dossier named them). Not dispatched. v20 = batch 2 + the post-v19 inputs
   (2021 HCRIS, the saturation archive, 17 state lists, the verify re-check, the CIA entity load),
   pre-registered under the v19 checks with the pursuit book under pmax_basis50.
+  V21 BUILD FROM THE v19 LESSONS (2026-10-22, built while v20 ran; v21 semantics =
+  new pre-registration; tests/test_class_priors_and_lab_scheme_2026_10.py): (1) CLASS
+  PRIORS (`model_a/class_priors.py`): the v19 LABEL_ENRICHMENT read showed the forward
+  FCA cases concentrated in clinical labs (taxonomy 291U, lift 26), organizations
+  (entity type 2) and large orgs, while the matrix files primary_taxonomy / entity_type
+  / practice_state as IDENTIFIERS and every billing metric is a within-taxonomy
+  percentile, so the scorer could not see the class base rate at all. `prior_keys`
+  (taxonomy / family / entity / state) + `encode_fold` (m-estimate target encoding,
+  M_SMOOTH 50, computed INSIDE each training fold: test rows from the fold's training
+  statistics, training rows leave-one-out, so no row's own label reaches its feature)
+  + `rate_table` (the auditable "clinical laboratories 1.2% vs 0.3%" record, written as
+  class_prior_rates.csv beside the diagnostics). Threaded as training policy:
+  `company_list.set_training_policy(class_priors=)` / `training_policy()['class_priors']`
+  / `fold_design` + `prior_keys_for` shared by oof_scores and the diagnostics'
+  oof_with_folds; CLI `--class-priors` on pursuit_dossier / accuracy_diagnostics (an
+  A/B on the same matrix) and on the export (writes manifest
+  training_policy.class_priors, default none = v9..v20 semantics); the registry row
+  carries `class_priors` (alias `priors`); both runners grade `ab_class_priors/`
+  (env CLASS_PRIORS_AB, default taxonomy,entity; empty skips) beside the hard arm.
+  `state` is enforcement density as much as fraud density: A/B it alone, never by
+  default. (2) LAB TESTING SCHEME (`ingest_cms/sector_schemes.py` lab families ->
+  lab_paid_share / lab_lines_per_patient / lab_definitive_drug_share /
+  lab_genetic_share / lab_resp_panel_share; `scheme_subscores` `lab_testing`): the
+  enriched codes were one typology no scheme named (definitive toxicology G0480-83,
+  genetic 81xxx + PLA, respiratory panels 87xxx / U000x, chemistry panels, bilirubin,
+  HbA1c, venipuncture). Registered in scheme_code_families (`lab_code_set`),
+  sector_priors (own_billing, 0.40), dossier narratives, case_validation (sector lab
+  + telehealth, conduct medical_necessity), RUNBOOK_TRAVIS 5.4; ADAPTER_FEATURE_COLS
+  derives from the weight table so the five metrics are peer-normalized by the export.
+  Mix shares are of the LAB dollars (NULL without lab dollars; an observed 0 is real).
+  ORDER: v20 reads out -> ab_class_priors grade read (hits vs the hard arm) -> v21
+  pre-registers the winner + the lab scheme + the prune list (14 coin-flip schemes).
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

@@ -126,6 +126,15 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # computed straight from the spending fact (ingest_cms/sector_schemes.py)
     "nemt_fraud": {"nemt_paid_share": 0.5, "nemt_lines_per_patient": 0.5},
     "behavioral_health": {"bh_paid_share": 0.4, "bh_lines_per_patient": 0.6},
+    # LABORATORY TESTING (v21, 2026-10-22; ingest_cms/sector_schemes.py): the scheme
+    # the v19 LABEL_ENRICHMENT read asked for — forward FCA cases concentrate in
+    # clinical labs (lift 26) and on definitive toxicology / genetic / respiratory-
+    # panel codes no scheme named. Size (lab share of own dollars, panel breadth per
+    # patient) and MIX (definitive drug testing, genetic, respiratory shares OF the
+    # lab dollars), each peer-ranked one-sided. v21 semantics: new pre-registration.
+    "lab_testing": {"lab_paid_share": 0.3, "lab_lines_per_patient": 0.5,
+                    "lab_definitive_drug_share": 0.5, "lab_genetic_share": 0.5,
+                    "lab_resp_panel_share": 0.3},
     "drug_outlier": {"controlled_substance_share": 0.4, "high_cost_drug_share": 0.4,
                      # NADAC markup/spread anomaly (B4); absent until NDC claims load
                      "drug_spread_anomaly": 0.3,
