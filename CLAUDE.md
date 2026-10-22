@@ -1706,6 +1706,23 @@ first, then paste" above every move/done block.
   (operator, same day): every state row is tiered from its stated reason by STATE_TERM_RULES;
   an unknown reason is WEAK and never trains under `--label-tier hard`; the report's "reasons
   the tier table does not know" list is read before any rule is added.
+  V19 READ-OUT (2026-10-22, `docs/ACCURACY_READOUT_v19_2026-10-22.md`): the first run on batch
+  1 + the as-of v3 scores + the 2021 editions + the October inputs (train 1,712 hard, ruler 610).
+  HOLD on three shallow checks: large hits@50 1 (v17 4), pursuit hits@100 2 (v17 5), large
+  prec50_lo < base; the deep budgets held or improved (pursuit 1 / 2 / 2 / 8, the best 250 of the
+  series; large 1 / 1 / 4 / 6; Jaccard 0.62 passes; NPI top-1% lift 7.5). Cause = the head
+  re-ordered under three planned changes (the as-of v3 scores restored: three subscores from 25%
+  to 73% coverage; the 2021 facility / PBJ / POS editions replacing the 2023 ones; the label +167),
+  plus the saturation leak still in this run. THE ORDER SWEEP HELD ON THE SECOND MATRIX: pmax with
+  basis-backed rows first in the top 50 read 1 / 3 / 4 / 8 vs the shipped 1 / 2 / 2 / 8 (v17: 2 /
+  3 / 5 / 9 vs 1 / 2 / 5 / 7), so v20 SHIPS `PURSUIT_ORDER=pmax_basis50` (the dossier picks from it;
+  the dollar order stays a graded book). The label ablation trains on policy `all` and said the
+  weak enrollment / state / deactivation rows hurt: confirmation of the hard policy, not a change
+  (batch 3: `label_ablation --label-tier`). hospice_ineligibility's leak_suspect reads as a
+  selection effect (hospices only, every input pre-cutoff). Inova and Invitae joined
+  `_NATIONAL_NAMES` (the dossier named them). Not dispatched. v20 = batch 2 + the post-v19 inputs
+  (2021 HCRIS, the saturation archive, 17 state lists, the verify re-check, the CIA entity load),
+  pre-registered under the v19 checks with the pursuit book under pmax_basis50.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

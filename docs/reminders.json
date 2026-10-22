@@ -572,16 +572,16 @@
  "tasks": [
   {
    "key": "v20_run",
-   "what": "v20 = the FIRST run on batch 2 (bundle 350: v20 semantics, NEW pre-registration; the v19 checks carried, train = hard, ten seeds, three books). ORDER: v19 prints [v19] DONE -> packet + read-out (task v19_run) -> merge the latest bundle on the laptop -> pull on the VM FIRST (the saturation folder now holds the 2014-2019 archive files and the old code would read the alphabetically first one as THE file) -> THEN sync preclean (the 2021 cost reports + the saturation archive) -> pre-register -> start. Never pull while v19 runs. Each line is a laptop Command Prompt ssh one-liner.",
+   "what": "v20 = the FIRST run on batch 2 (bundles 350-365: v20 semantics, NEW pre-registration; the v19 checks carried, train = hard, ten seeds, three books) with the pursuit book SHIPPED under pmax_basis50 (the sweep held on v17 and v19: PURSUIT_ORDER=pmax_basis50 in the start line). ORDER: v19 prints [v19] DONE -> packet + read-out (task v19_run) -> merge the latest bundle on the laptop -> pull on the VM FIRST (the saturation folder now holds the 2014-2019 archive files and the old code would read the alphabetically first one as THE file) -> THEN sync preclean (the 2021 cost reports + the saturation archive) -> pre-register -> start. Never pull while v19 runs. Each line is a laptop Command Prompt ssh one-liner.",
    "added": "2026-10-21",
    "commands": [
     "REM 0. only after [v19] DONE and bundle 350 merged on the laptop (ops\\laptop\\merge_push.bat 350):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v20 --expected 'pursuit hits at 100/250 and large at 50 above random under the FCA ruler; Jaccard >= 0.6; the affiliated ruler graded' --goal 'first run on batch 2: asserted joins, the label gates on every path, Luhn everywhere, assessable enforced, the ablation fence, the death cut' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only origin claude/happy-mccarthy-3skrn3 && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v20 --expected 'pursuit hits at 100/250 and large at 50 above random under the FCA ruler; Jaccard >= 0.6; the affiliated ruler graded' --goal 'first run on batch 2 (asserted joins, the label gates, Luhn, assessable, the saturation fix) + the post-v19 inputs (2021 HCRIS, 17 state lists, the verify re-check, the CIA load); the pursuit book shipped under pmax_basis50' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard'\"",
     "REM 0b. after the pull: bring the new downloads (2021 cost reports, saturation archive) to the VM (preclean only; never a full down after a lanes load):",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s sync3 'bash ops/vm/sync_data.sh down-preclean > /data/medicaid/sync_preclean.log 2>&1'\"",
     "REM wait for the sync to finish (tmux ls shows no sync3), then step 1",
     "REM 1. start (its own tmux window; PREV_RUN = v19 so the scheme-health baseline and the drift read against v19):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v20 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=/data/medicaid/model_a/frozen_2021-12_v19 SEEDS=10 bash ops/vm/run_frozen_night.sh v20 2021-12 --rebuild-graph'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v20 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && PREV_RUN=/data/medicaid/model_a/frozen_2021-12_v19 PURSUIT_ORDER=pmax_basis50 SEEDS=10 bash ops/vm/run_frozen_night.sh v20 2021-12 --rebuild-graph'\"",
     "REM 2. status any time (done at [v20] DONE):",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -5 /data/medicaid/model_a/frozen_2021-12_v20/night_run.log\"",
     "REM 3. when DONE: tell Claude \"v20 finished\", then the packet:",
@@ -752,12 +752,9 @@
   },
   {
    "key": "run_packet__frozen_2021-12_v19",
-   "what": "Send the v19 run packet (every report + json + the three A/B folders, zero raw data): the tar on the VM, scp to Downloads, attach in chat. This IS the run's arrival for Claude.",
+   "what": "DONE 2026-10-22 (run_packet_v19.tar.gz attached in chat and read). Close it.",
    "added": "2026-10-22",
    "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v19 && tar -czf /home/ubuntu/run_packet_v19.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask ab_tier_charged && bash /home/ubuntu/medicaid-fraud-detection/ops/vm/sync_data.sh up frozen_2021-12_v19\"",
-    "scp -o ServerAliveInterval=10 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v19.tar.gz C:\\Users\\treyr\\Downloads\\",
-    "REM attach run_packet_v19.tar.gz in chat, then:",
     "python -m src.reminders --done-task run_packet__frozen_2021-12_v19"
    ]
   },
@@ -782,8 +779,11 @@
   },
   {
    "key": "registry_verdict__frozen_2021-12_v19",
-   "what": "Open until Claude reads the v19 packet and returns the registry verdict (PROMOTE / HOLD) + the read-out docs/ACCURACY_READOUT_v19. Known going in: v19 ran on the batch-1 code, so its market_saturation_index carries the rolling-window leak (window ending 2022-09) and its case labels predate the verify-sources re-check; both fixed for v20.",
-   "added": "2026-10-22"
+   "what": "VERDICT WRITTEN 2026-10-22: HOLD on three shallow checks (large hits@50 1, pursuit hits@100 2, large prec50_lo < base); deep budgets held (pursuit 1/2/2/8, large 1/1/4/6, Jaccard 0.62). Read-out docs/ACCURACY_READOUT_v19_2026-10-22.md (bundle 366). The pmax_basis50 order held on the second matrix (1/3/4/8 vs 1/2/2/8): v20 ships it. Close once read.",
+   "added": "2026-10-22",
+   "commands": [
+    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v19"
+   ]
   }
  ],
  "closed": [

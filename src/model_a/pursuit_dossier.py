@@ -506,6 +506,8 @@ _NATIONAL_NAMES = (
     "VISITING NURSE ASSOCIATION", "VISITING NURSE SERVICE", "VNA OF", "PLANNED PARENTHOOD",
     # v15 dossier (2026-10-14): a Wisconsin hospital system and a national transplant-testing lab
     "AURORA HEALTH CARE", "ADVOCATE AURORA", "CAREDX",
+    # v19 dossier (2026-10-22): a Virginia hospital system and a national genetic-testing lab
+    "INOVA", "INVITAE",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 
