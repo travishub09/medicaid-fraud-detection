@@ -1895,6 +1895,19 @@ first, then paste" above every move/done block.
   read as the institutional selection effect (every pick pre_cutoff). v22 = re-grade
   of v21's matrix (the re-score runs the new encoder; no export), pre-registered
   under the v21 sixteen + npi_lift1pct. Not dispatched.
+  THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
+  Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
+  BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy
+  Guidelines: 'payment according to the standard fees that physicians normally receive; no
+  duplication or increase in charges solely because an RPA provided assistance'); the duty is
+  disclosure (the claim must indicate the services rendered by or with the RPA, the RPA's name
+  and Medicaid ID; the PA in the rendering field with the physician as supervising; PAs enrolled
+  as non-billing; at most six RPAs per physician in private practice). So 'many clinicians
+  billed under one physician's NPI' is a claim-content defect with NO rate damages on NY FFS;
+  the money theories that survive are unlicensed / unenrolled renderers, supervision ratios,
+  and the managed-care plans' own rendering rules (unverified). RULE for the capacity cards: an
+  individual-NPI hours flag on a GROUP practice is a records question (PA rule, state by state)
+  before it is a PI card; card 1 of packet v11 is a desk question for counsel, not a visit.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);
