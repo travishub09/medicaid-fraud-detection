@@ -16,6 +16,10 @@ set -euo pipefail
 NEW="${1:?new tag, e.g. v14}"
 SRC="${2:?source tag whose matrix is reused, e.g. v13}"
 CUT="${3:?freeze month, e.g. 2021-12}"
+# the ruler horizon in months (36 for the 2021-12 freeze, 33 for 2023-12); the ruler
+# files carry it in their names and every diagnostics call passes it (set -u: it was
+# never defined here and the v22 launch died at the copy list, 2026-10-23)
+HORIZON="${HORIZON:-36}"
 
 DATA="${MEDICAID_DATA_ROOT:-/data/medicaid}"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
