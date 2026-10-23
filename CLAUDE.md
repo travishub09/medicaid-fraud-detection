@@ -1866,6 +1866,35 @@ first, then paste" above every move/done block.
   (therapy notes + MDS Section O / GG, level-of-care authorizations, UHC claims), the
   Ohio cost-report request, the Care Compare rows. Weekend therapy on a long-stay
   Medicaid resident is a question, not a finding.
+  V21 READ-OUT (2026-10-23, `docs/ACCURACY_READOUT_v21_2026-10-23.md`): the first run
+  with class priors shipped. Pursuit book, FCA ruler: 3 / 3 / 4 / 8 at 16 / 50 / 100 /
+  250 (random 0.1 / 0.4 / 0.7 / 1.8; the best 16 and 50 of the series), large 3 / 3 / 5
+  / 6, lead 24 mo, inst share 0, zero capped_no_basis in the top 50. HOLD on ONE check
+  (15 of 16): top-50 Jaccard 0.247 (bar 0.6). The priors did it, twice: the taxonomy
+  prior gave a 199-NPI hematology class a 24.6% training rate (49 positives from ONE
+  broadcast settlement, lift 70) and the NPI-grain top 1% filled with the high-prior
+  classes (NPI lift 0.0 against 8.7 on the no-priors arm; the first 6,000 NPIs hold
+  none of 611 forward positives), and the per-fold encoding of thin classes
+  re-shuffles the top 50 between draws (9 orgs in every draw). FIXED (v22 semantics):
+  `class_priors.encode_fold(w=, min_n=)` counts positives by the per-case
+  `label_weight` and sends a class under `MIN_CLASS_N` (300) training rows to the
+  global rate; `rate_table` records `weighted_positives` / `below_min_n`;
+  `company_list.fold_design` passes `training_weights`. Also: the lab mix shares are
+  clipped (refund months read -0.0002); hospital-licensed members (NUCC 27xxxx /
+  28xxxx: `pursuit_dossier.hospital_org_ids`) make an org institutional for the
+  dossier pick and a `hospital_licensed` flag column, never a filter on the graded
+  book (the v21 pick named Kingman Healthcare, Owensboro Health, SVMC, Park Nicollet);
+  "HEALTH PLAN" is a cue word. `regrade_from.sh` copies the aff / quitam rulers,
+  grades `ab_no_priors/` when the source manifest ships priors, and packs the csv
+  files and every arm. RULE: every pre-registration from v22 carries
+  `npi_lift1pct >= 3` (the NPI grain collapsed while every org check but Jaccard
+  passed). The arms (single refits, main list): priors +1/+1/+1 over none; prune
+  mixed (stays none); charged +1/+1 over hard (re-run on v22); mask over weight this
+  run (noise). The order sweep: shipped pmax_basis50 wins 16 and 50, plain pmax wins
+  100 (6 vs 4); sort stays. cost_report_fraud (0.90) and hospice (0.83) leak_suspect
+  read as the institutional selection effect (every pick pre_cutoff). v22 = re-grade
+  of v21's matrix (the re-score runs the new encoder; no export), pre-registered
+  under the v21 sixteen + npi_lift1pct. Not dispatched.
   SHORT BOARD (2026-10-21, operator: the full page after every --done was unreadable
   in a command window): `python -m src.reminders` and every state change print
   `render_board` (one line per due item and queued task, no steps or commands);

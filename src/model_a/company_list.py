@@ -150,7 +150,7 @@ def fold_design(X: np.ndarray, matrix: pd.DataFrame, y, pol: dict, tr: np.ndarra
     if keys is None or not len(keys.columns):
         return X[tr], X[te]
     from .class_priors import encode_fold
-    etr, ete = encode_fold(keys, y, tr, te)
+    etr, ete = encode_fold(keys, y, tr, te, w=training_weights(matrix))    # v22: weighted + size floor
     return np.hstack([X[tr], etr]), np.hstack([X[te], ete])
 
 

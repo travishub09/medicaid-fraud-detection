@@ -1316,13 +1316,13 @@ def main() -> None:
     # v21 class priors: the rate table the refit encoded from (explainability, rule 5:
     # a reader can audit "clinical laboratories 1.2% vs 0.3% overall" beside the grade)
     try:
-        from .company_list import _training_label, prior_keys_for, training_policy
+        from .company_list import _training_label, prior_keys_for, training_policy, training_weights
         from .class_priors import rate_table
         pol_eff = training_policy(manifest)
         keys = prior_keys_for(matrix, pol_eff)
         if keys is not None:
             lab = manifest.get("label") or "provider_on_exclusion"
-            rt = rate_table(keys, _training_label(matrix, lab))
+            rt = rate_table(keys, _training_label(matrix, lab), w=training_weights(matrix))
             rt.to_csv(out.parent / f"class_prior_rates{suffix}.csv", index=False)
             res["class_priors"] = pol_eff["class_priors"]
             res["class_prior_base_rate"] = rt.attrs.get("base_rate")

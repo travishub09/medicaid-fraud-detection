@@ -56,7 +56,10 @@ echo "[$NEW] started $(date '+%F %T')  (re-grade of $SRC's matrix under $(git -C
 step 0/7 "copy the matrix, manifest, labels and OOF scores from $SRC_RUN (no retrain)"
 for f in provider_features_for_model.parquet feature_manifest.json provider_oof_scores.parquet \
          future_bans_after_${CUT}.csv future_bans_after_${CUT}.TIERS.md future_bans_after_${CUT}__fca${HORIZON}.csv \
-         future_bans_after_${CUT}__fca${HORIZON}.TIERS.md PROVIDER_FEATURES_EXPORT_REPORT.md PROVIDER_FEATURES_DICTIONARY.md \
+         future_bans_after_${CUT}__fca${HORIZON}.TIERS.md future_bans_after_${CUT}__aff${HORIZON}.csv \
+         future_bans_after_${CUT}__aff${HORIZON}.TIERS.md future_bans_after_${CUT}__quitam${HORIZON}.csv \
+         future_bans_after_${CUT}__quitam${HORIZON}.TIERS.md freeze_inputs.json training_label_policy.json \
+         PROVIDER_FEATURES_EXPORT_REPORT.md PROVIDER_FEATURES_DICTIONARY.md \
          SOURCES_REPORT.md EXPECTATIONS_REPORT.md CASE_VALIDATION.md SCHEME_HEALTH.md scheme_health.json \
          SCHEME_TRIAGE.md NETWORK_AB_REPORT.md; do
   [ -e "$SRC_RUN/$f" ] && cp -a "$SRC_RUN/$f" "$RUN/$f"
@@ -99,8 +102,23 @@ python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES
     --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" --score-source refit --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
-# v21: the class-prior A/B (taxonomy + entity base rates encoded out-of-fold; CLASS_PRIORS_AB env, empty skips)
-if [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
+# v21: the class-prior A/B. v22: when the SOURCE manifest ships class priors (its
+# training_policy.class_priors), the counterfactual is the no-priors arm (ab_no_priors/),
+# as in run_frozen_night.sh; otherwise CLASS_PRIORS_AB (default taxonomy,entity; empty skips)
+# grades priors as an arm. NOTE: the re-score itself (step 6) runs the CURRENT encoder on the
+# manifest's policy, so a code change to class_priors.py (v22: weights + size floor) lands
+# here without an export.
+SHIPPED_PRIORS="$(python - "$RUN/feature_manifest.json" <<'PY'
+import json, sys
+pol = json.load(open(sys.argv[1])).get("training_policy") or {}
+print(",".join(pol.get("class_priors") or []))
+PY
+)"
+if [ -n "$SHIPPED_PRIORS" ]; then
+  echo "[$NEW] shipped priors = $SHIPPED_PRIORS: grading the no-priors counterfactual (ab_no_priors/)"
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "" --out "$RUN/ab_no_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
+elif [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
@@ -137,5 +155,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-
 
 echo
 echo "[$NEW] DONE $(date '+%F %T')  -- tell Claude '$NEW finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json ab_broadcast_weight ab_broadcast_mask $(ls -d ab_class_priors ab_prune 2>/dev/null))   # tar; zip is not installed"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask $(ls -d ab_tier_charged ab_tier_commercial ab_class_priors ab_no_priors ab_prune 2>/dev/null))   # tar; zip is not installed"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${NEW}"

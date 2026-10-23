@@ -39,6 +39,13 @@ import numpy as np
 import pandas as pd
 
 M_SMOOTH = 50.0
+# v22 (the v21 read-out): a class with fewer training rows than this takes the
+# global rate. v21's taxonomy prior put a 199-NPI hematology class at a 24.6%
+# training rate (49 positives, one broadcast settlement) and lift 70, and the
+# NPI-grain top 1% filled with the high-prior classes (zero forward positives;
+# NPI lift 0.0 against 8.7 without priors). Thin classes are where one case
+# masquerades as a base rate.
+MIN_CLASS_N = 300
 
 PRIOR_KEYS: dict[str, str] = {
     "taxonomy": "primary_taxonomy",
@@ -87,27 +94,38 @@ def prior_keys(matrix: pd.DataFrame, which: list[str]) -> pd.DataFrame:
 
 
 def encode_fold(keys: pd.DataFrame, y, tr: np.ndarray, te: np.ndarray,
-                m: float = M_SMOOTH) -> tuple[np.ndarray, np.ndarray]:
+                m: float = M_SMOOTH, w=None, min_n: int = MIN_CLASS_N) -> tuple[np.ndarray, np.ndarray]:
     """Out-of-fold target encoding for one fold.
 
     Training rows: leave-one-out (their own label is subtracted); test rows: the
     full training-fold statistics. Returns (Xtr_extra, Xte_extra), one column per
-    key, in keys.columns order."""
+    key, in keys.columns order.
+
+    v22: ``w`` (the scorer's sample weights = the per-case label budget) weights
+    every positive, so forty-nine NPIs of one broadcast settlement count as that
+    case's budget, not as forty-nine independent offenders; a class with fewer
+    than ``min_n`` training ROWS takes the global rate on both sides of the fold
+    (a thin class is where one case masquerades as a base rate)."""
     y = np.asarray(y, dtype=float)
-    ytr = y[tr]
-    g = float(ytr.mean()) if len(ytr) else 0.0
+    w = np.ones(len(y), dtype=float) if w is None else np.asarray(w, dtype=float)
+    ytr, wtr = y[tr], w[tr]
+    g = float((wtr * ytr).sum() / wtr.sum()) if len(ytr) and wtr.sum() > 0 else 0.0
     cols_tr, cols_te = [], []
     for k in keys.columns:
         kv = keys[k].to_numpy()
         ktr = pd.Series(kv[tr])
-        stats = pd.DataFrame({"k": ktr.to_numpy(), "y": ytr}).groupby("k")["y"].agg(["sum", "count"])
-        pos = ktr.map(stats["sum"]).to_numpy(dtype=float)
-        n = ktr.map(stats["count"]).to_numpy(dtype=float)
-        loo = (pos - ytr + m * g) / np.maximum(n - 1 + m, 1e-9)
+        st = (pd.DataFrame({"k": ktr.to_numpy(), "wy": wtr * ytr, "w": wtr, "one": 1.0})
+              .groupby("k").agg(pos=("wy", "sum"), n=("w", "sum"), rows=("one", "sum")))
+        thin = st["rows"] < min_n
+        pos = ktr.map(st["pos"]).to_numpy(dtype=float)
+        n = ktr.map(st["n"]).to_numpy(dtype=float)
+        loo = (pos - wtr * ytr + m * g) / np.maximum(n - wtr + m, 1e-9)
+        loo = np.where(ktr.map(thin).fillna(True).to_numpy(dtype=bool), g, loo)
         kte = pd.Series(kv[te])
-        pos_te = kte.map(stats["sum"]).fillna(0.0).to_numpy(dtype=float)
-        n_te = kte.map(stats["count"]).fillna(0.0).to_numpy(dtype=float)
+        pos_te = kte.map(st["pos"]).fillna(0.0).to_numpy(dtype=float)
+        n_te = kte.map(st["n"]).fillna(0.0).to_numpy(dtype=float)
         full = (pos_te + m * g) / (n_te + m)
+        full = np.where(kte.map(thin).fillna(True).to_numpy(dtype=bool), g, full)
         cols_tr.append(loo)
         cols_te.append(full)
     if not cols_tr:
@@ -115,20 +133,25 @@ def encode_fold(keys: pd.DataFrame, y, tr: np.ndarray, te: np.ndarray,
     return np.column_stack(cols_tr), np.column_stack(cols_te)
 
 
-def rate_table(keys: pd.DataFrame, y, m: float = M_SMOOTH) -> pd.DataFrame:
+def rate_table(keys: pd.DataFrame, y, m: float = M_SMOOTH, w=None, min_n: int = MIN_CLASS_N) -> pd.DataFrame:
     """The whole-universe rate per class (the explainability record a reader can
-    audit: n, positives, raw rate, shrunk rate, lift over the base rate)."""
+    audit: n, positives, weighted positives, raw rate, the shrunk rate the encoder
+    uses, lift over the base rate, and whether the class is under the size floor)."""
     y = np.asarray(y, dtype=float)
-    g = float(y.mean()) if len(y) else 0.0
+    w = np.ones(len(y), dtype=float) if w is None else np.asarray(w, dtype=float)
+    g = float((w * y).sum() / w.sum()) if len(y) and w.sum() > 0 else 0.0
     rows = []
     for k in keys.columns:
-        st = pd.DataFrame({"k": keys[k].to_numpy(), "y": y}).groupby("k")["y"].agg(["sum", "count"])
+        st = (pd.DataFrame({"k": keys[k].to_numpy(), "y": y, "wy": w * y, "w": w})
+              .groupby("k").agg(sum=("y", "sum"), count=("y", "size"), wpos=("wy", "sum"), wn=("w", "sum")))
         for val, r in st.iterrows():
-            shrunk = (r["sum"] + m * g) / (r["count"] + m)
+            thin = bool(r["count"] < min_n)
+            shrunk = g if thin else (r["wpos"] + m * g) / (r["wn"] + m)
             rows.append({"key": k, "value": val, "n": int(r["count"]), "positives": int(r["sum"]),
+                         "weighted_positives": float(r["wpos"]), "below_min_n": thin,
                          "rate": float(r["sum"] / r["count"]) if r["count"] else float("nan"),
                          "shrunk_rate": float(shrunk),
                          "lift": float(shrunk / g) if g > 0 else float("nan")})
-    out = pd.DataFrame(rows, columns=["key", "value", "n", "positives", "rate", "shrunk_rate", "lift"])
+    out = pd.DataFrame(rows, columns=["key", "value", "n", "positives", "weighted_positives", "below_min_n", "rate", "shrunk_rate", "lift"])
     out.attrs["base_rate"] = g
     return out.sort_values(["key", "shrunk_rate"], ascending=[True, False]).reset_index(drop=True)

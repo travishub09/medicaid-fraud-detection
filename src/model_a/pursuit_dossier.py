@@ -474,7 +474,27 @@ def government_mask(names: pd.Series) -> pd.Series:
 _INSTITUTIONAL_RE = (r"\b(?:HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|"
                      r"HEALTHCARE SYSTEM|UNIVERSITY|COLLEGE|INFIRMARY|"
                      r"MEDICAL GROUP|PHYSICIANS NETWORK|HEALTH CENTER|"
-                     r"HEALTH CENTERS|NEIGHBORHOOD HEALTH)\b")
+                     r"HEALTH CENTERS|NEIGHBORHOOD HEALTH|HEALTH PLAN)\b")
+
+# HOSPITAL-LICENSED NPIs (v22, the v21 dossier named Kingman Healthcare, Owensboro
+# Health, SVMC Holdings and Park Nicollet: hospitals and systems enrolled under one
+# billing NPI with no cue word and no national-list entry). NUCC codes 28xxxx are
+# hospitals (general acute, psychiatric, rehabilitation, long-term care, military,
+# special) and 27xxxx are hospital units (psychiatric / rehab units, swing beds);
+# an organization with a member in either class is institutional by licence, not
+# by name. Same role as the national list: the do-not-send-a-PI class for the
+# dossier pick and a flag for the reader; NEVER a filter on the graded book.
+_HOSPITAL_TAXONOMY_PREFIXES = ("27", "28")
+
+
+def hospital_org_ids(matrix) -> set:
+    """org_node_ids with at least one member whose primary taxonomy is a hospital
+    or hospital-unit code (27xxxx / 28xxxx)."""
+    if "primary_taxonomy" not in matrix.columns or "org_node_id" not in matrix.columns:
+        return set()
+    tax = matrix["primary_taxonomy"].fillna("").astype(str).str.strip().str.upper()
+    hosp = tax.str.startswith(_HOSPITAL_TAXONOMY_PREFIXES)
+    return set(matrix.loc[hosp, "org_node_id"].astype(str))
 
 # NATIONAL NAMES (2026-10-13, the v12 operator-book dossier named Mayo Clinic
 # Arizona, SSM Health, Sutter VNA, Assurex, Ameritox and Alere): hospital systems,
@@ -610,6 +630,7 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
         names = orgs["org_name"].astype(str)
         inst = (names.map(lambda s: bool(re.search(_INSTITUTIONAL_RE, s)))
                 | names.map(is_national_name)        # v13: Mayo / SSM / Sutter / Assurex / Ameritox / Alere
+                | orgs["org_id"].astype(str).isin(hospital_org_ids(matrix))   # v22: hospital-licensed NPIs
                 | (pd.to_numeric(orgs["n_providers"], errors="coerce").fillna(1) >= 25))
         gov = government_mask(names)
         solo = pd.Series(False, index=orgs.index)
@@ -861,6 +882,11 @@ def build_priority_list(run_dir: str | Path,
                .fillna(1) >= 25)
             | (out["screening_cautions"].astype(str).str.len() > 0))
     seg[inst] = "institutional"
+    # v22: hospital-licensed (27xxxx / 28xxxx taxonomy) is institutional by licence;
+    # like the national list it is a flag for the reader and the dossier pick, so it
+    # is written as its own column and NOT folded into entity_segment (which the
+    # graded pursuit book filters on: v13 moved five hits out of the book that way)
+    out["hospital_licensed"] = out["org_id"].astype(str).isin(hospital_org_ids(matrix))
     seg[out["org_id"].astype(str).isin(solo_person)] = "individual"
     out["entity_segment"] = seg
     out["national_chain"] = out["org_name"].astype(str).map(is_national_name)

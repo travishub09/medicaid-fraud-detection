@@ -636,9 +636,27 @@
   {
    "key": "v21_run",
    "added": "2026-10-22",
-   "what": "FINISHED 2026-10-23 00:51 UTC (17 step lines; the DONE banner printed). Close once the packet is uploaded (task run_packet__frozen_2021-12_v21).",
+   "what": "FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close.",
    "commands": [
     "python -m src.reminders --done-task v21_run"
+   ]
+  },
+  {
+   "key": "v22_run",
+   "added": "2026-10-23",
+   "what": "v22 = the RE-GRADE of v21's matrix under the fixes in bundle 383 (the re-score runs the weighted, size-floored prior encoder on the same policy; no export; about 2 to 3 hours): pursuit under pmax_basis50, the no-priors counterfactual, prune, charged, commercial and broadcast arms, the measurement block, registry, ledger. Pre-registered under the v21 sixteen + npi_lift1pct >= 3. ORDER: merge 383 on the laptop, pull on the VM (v21 is finished, the VM is idle), pre-register, launch under tmux, status any time, paste the last 30 lines at [v22] DONE. The data scan and the capacity check (tasks post_download_checks, capacity_on_vm) wait until v22 is DONE (same box).",
+   "commands": [
+    "REM 1. laptop merge, then the VM pull (v21 is finished; nothing runs on the VM):",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection && ops\\laptop\\merge_push.bat 383",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && git log --oneline -1\"",
+    "REM 2. pre-register (the sixteen + npi_lift1pct):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v22 --expected 'v21 matrix re-scored with the weighted, size-floored class priors: the org books hold (pursuit 3/3/4/8, large 3/3/5/6), the NPI grain comes back (lift >= 3) and the top-50 Jaccard recovers to 0.6' --goal 'v22 = re-grade of v21 under the v21 read-out fixes: class priors counted by the per-case label budget with a 300-row class floor, hospital-licensed orgs out of the dossier pick, lab shares clipped; no export, the same label and ruler' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'npi_lift1pct >= 3' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = taxonomy,entity' 'prune = none'\"",
+    "REM 3. launch (tmux v22; PURSUIT_ORDER=pmax_basis50; PREV_RUN=v21 for the drift / scheme-health baseline):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v22 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && PURSUIT_ORDER=pmax_basis50 TRAIN_TIER=hard bash ops/vm/regrade_from.sh v22 v21 2021-12 > /data/medicaid/model_a/regrade_v22.log 2>&1'\"",
+    "REM 4. status any time:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/regrade_v22.log; tail -4 /data/medicaid/model_a/regrade_v22.log\"",
+    "REM 5. at [v22] DONE: paste the last 30 lines; the packet line is printed by the runner (tar + scp as for v21)",
+    "python -m src.reminders --done-task v22_run"
    ]
   },
   {
@@ -845,29 +863,12 @@
    ]
   },
   {
-   "key": "pursuit_dossier__frozen_2021-12_v21",
-   "what": "GATED on the registry verdict: the runner already built PURSUIT_DOSSIER.md in the run folder; --dispatch spends Manus credits and runs only on the operator's go after Claude reads the packet (no credits on a HOLD run). Dispatch happens on the VM (the key lives in ~/.medicaid_env), not the laptop.",
-   "added": "2026-10-23",
-   "commands": [
-    "REM only after the verdict says PROMOTE and you say go:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v21 --operator-book --dispatch\"",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v21"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v21",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v21 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-10-23",
-   "commands": [
-    "REM about 30 min after a dispatch (free, read-only at the service):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v21 --poll\"",
-    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v21"
-   ]
-  },
-  {
    "key": "registry_verdict__frozen_2021-12_v21",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v21 \u2014 close only when you have them",
-   "added": "2026-10-23"
+   "what": "VERDICT DELIVERED 2026-10-23 (docs/ACCURACY_READOUT_v21_2026-10-23.md): HOLD on one of sixteen checks (top-50 Jaccard 0.247, bar 0.6); pursuit 3/3/4/8, large 3/3/5/6, the best head of the series; the class priors emptied the NPI-grain top 1% (lift 0.0) and destabilised the head; fixed in bundle 383 (weighted, size-floored priors); v22 = the re-grade. Close with the line below once you have read it.",
+   "added": "2026-10-23",
+   "commands": [
+    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v21"
+   ]
   }
  ],
  "closed": [
@@ -1275,6 +1276,30 @@
    "commands": [],
    "closed": "2026-10-22",
    "closed_by": "operator kill line pasted (tmux ls: no server running); v21 pre-registered 11:41 UTC"
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v21",
+   "what": "GATED on the registry verdict: the runner already built PURSUIT_DOSSIER.md in the run folder; --dispatch spends Manus credits and runs only on the operator's go after Claude reads the packet (no credits on a HOLD run). Dispatch happens on the VM (the key lives in ~/.medicaid_env), not the laptop.",
+   "added": "2026-10-23",
+   "commands": [
+    "REM only after the verdict says PROMOTE and you say go:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v21 --operator-book --dispatch\"",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v21"
+   ],
+   "closed": "2026-10-23",
+   "closed_how": "skipped: v21 registered HOLD (Jaccard 0.247); no Manus credits on a HOLD run"
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v21",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v21 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-10-23",
+   "commands": [
+    "REM about 30 min after a dispatch (free, read-only at the service):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v21 --poll\"",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v21"
+   ],
+   "closed": "2026-10-23",
+   "closed_how": "skipped: v21 registered HOLD (Jaccard 0.247); no Manus credits on a HOLD run"
   }
  ]
 }

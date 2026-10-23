@@ -56,7 +56,7 @@ def test_encode_fold_is_leave_one_out_and_shrinks_thin_classes():
     keys = cp.prior_keys(m, ["taxonomy"])
     idx = np.arange(len(m))
     tr, te = idx[: 300], idx[300:]
-    etr, ete = cp.encode_fold(keys, y, tr, te, m=10.0)
+    etr, ete = cp.encode_fold(keys, y, tr, te, m=10.0, min_n=0)      # min_n=0: the v21 encoder (no size floor)
     assert etr.shape == (300, 1) and ete.shape == (100, 1)
     # the lab class reads far above the physician class on the test side
     lab_te = ete[(keys["taxonomy"].to_numpy()[te] == "291U00000X"), 0]
@@ -74,14 +74,14 @@ def test_encode_fold_is_leave_one_out_and_shrinks_thin_classes():
     keys2 = keys.copy()
     keys2.loc[tr[0], "taxonomy"] = "SOLO"
     y2 = y.copy(); y2[tr[0]] = 1
-    etr2, _ = cp.encode_fold(keys2, y2, tr, te, m=50.0)
+    etr2, _ = cp.encode_fold(keys2, y2, tr, te, m=50.0, min_n=0)
     base = y2[tr].mean()
     assert abs(etr2[0, 0] - base) < 0.02          # (1 - 1 + 50 g) / (0 + 50) = g
 
 
 def test_rate_table_lists_every_class_with_lift():
     m, y = _keys_and_labels()
-    rt = cp.rate_table(cp.prior_keys(m, ["taxonomy", "entity"]), y)
+    rt = cp.rate_table(cp.prior_keys(m, ["taxonomy", "entity"]), y, min_n=0)     # min_n=0: the v21 table (no size floor)
     assert set(rt["key"]) == {"taxonomy", "entity"}
     lab = rt[(rt["key"] == "taxonomy") & (rt["value"] == "291U00000X")].iloc[0]
     assert lab["lift"] > 3 and lab["positives"] > 0

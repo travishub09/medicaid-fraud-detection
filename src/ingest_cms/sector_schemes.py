@@ -216,9 +216,11 @@ def sector_metrics_from_parquet(spending_path: str | Path,
     out["lab_paid_share"] = (df["lab_paid"] / df["total_paid"]).where(has_lab)
     out["lab_lines_per_patient"] = (df["lab_lines"] / df["lab_patients"]).where(
         has_lab & (df["lab_patients"] > 0))
-    out["lab_definitive_drug_share"] = (df["lab_def_paid"] / df["lab_paid"]).where(has_lab)
-    out["lab_genetic_share"] = (df["lab_gen_paid"] / df["lab_paid"]).where(has_lab)
-    out["lab_resp_panel_share"] = (df["lab_resp_paid"] / df["lab_paid"]).where(has_lab)
+    # clipped: a refund month can carry a sub-family's net dollars below zero (v21 read
+    # two shares at -0.0002); a share is a share of what was paid, never negative
+    out["lab_definitive_drug_share"] = (df["lab_def_paid"] / df["lab_paid"]).where(has_lab).clip(0, 1)
+    out["lab_genetic_share"] = (df["lab_gen_paid"] / df["lab_paid"]).where(has_lab).clip(0, 1)
+    out["lab_resp_panel_share"] = (df["lab_resp_paid"] / df["lab_paid"]).where(has_lab).clip(0, 1)
     # batch one (v22): personal care / home health intensity (per patient-month),
     # lab unbundling (component share of panel-family dollars; draws per lab test),
     # session inflation (60-minute share, prolonged add-ons per E/M, interactive
