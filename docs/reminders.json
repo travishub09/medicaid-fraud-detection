@@ -636,11 +636,8 @@
   {
    "key": "v21_run",
    "added": "2026-10-22",
-   "what": "RUNNING since 2026-10-22 11:42 UTC (tmux v21; CLASS_PRIORS=taxonomy,entity, PREV_RUN=v19, PURSUIT_ORDER=pmax_basis50, SEEDS=10, --rebuild-graph; pre-registered 11:41 UTC under 16 checks: the v20 fourteen + priors = taxonomy,entity + prune = none). v20 was killed at the embeddings for it. While it runs: no git pull on the VM, no lanes load, no full data sync. About eleven hours; paste the last 30 lines at [v21] DONE.",
+   "what": "FINISHED 2026-10-23 00:51 UTC (17 step lines; the DONE banner printed). Close once the packet is uploaded (task run_packet__frozen_2021-12_v21).",
    "commands": [
-    "REM 3. status any time:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/frozen_2021-12_v21/night_run.log; tail -4 /data/medicaid/model_a/frozen_2021-12_v21/night_run.log\"",
-    "REM 4. when the log prints [v21] DONE: paste the last 30 lines to Claude (packet, read-out, the three arms)",
     "python -m src.reminders --done-task v21_run"
    ]
   },
@@ -832,6 +829,45 @@
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v19 --poll\"",
     "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v19"
    ]
+  },
+  {
+   "key": "run_packet__frozen_2021-12_v21",
+   "what": "v21 finished 2026-10-23 00:51 UTC on the VM (17 step lines, every stage ran). Build the packet ON THE VM (tar: every report + audit file + the A/B arms, zero raw data), copy it to the laptop, upload it to the chat: Claude cannot see the run finished, so the packet IS the run's arrival. The dossier is NOT dispatched until the registry verdict is read (no Manus credits on a HOLD run).",
+   "added": "2026-10-23",
+   "commands": [
+    "REM 1. the packet on the VM (about a minute):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v21 && tar -czf /home/ubuntu/run_packet_v21.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask ab_tier_charged $(ls -d ab_tier_commercial ab_class_priors ab_no_priors ab_prune 2>/dev/null) && ls -la /home/ubuntu/run_packet_v21.tar.gz\"",
+    "REM 2. copy it down, then upload run_packet_v21.tar.gz to the chat:",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v21.tar.gz C:\\Users\\treyr\\Downloads\\",
+    "REM 3. the reports back to OneDrive (optional, background):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && bash ops/vm/sync_data.sh up frozen_2021-12_v21\"",
+    "python -m src.reminders --done-task run_packet__frozen_2021-12_v21"
+   ]
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v21",
+   "what": "GATED on the registry verdict: the runner already built PURSUIT_DOSSIER.md in the run folder; --dispatch spends Manus credits and runs only on the operator's go after Claude reads the packet (no credits on a HOLD run). Dispatch happens on the VM (the key lives in ~/.medicaid_env), not the laptop.",
+   "added": "2026-10-23",
+   "commands": [
+    "REM only after the verdict says PROMOTE and you say go:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v21 --operator-book --dispatch\"",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v21"
+   ]
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v21",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v21 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-10-23",
+   "commands": [
+    "REM about 30 min after a dispatch (free, read-only at the service):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v21 --poll\"",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v21"
+   ]
+  },
+  {
+   "key": "registry_verdict__frozen_2021-12_v21",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v21 \u2014 close only when you have them",
+   "added": "2026-10-23"
   }
  ],
  "closed": [
