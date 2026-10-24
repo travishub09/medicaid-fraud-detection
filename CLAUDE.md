@@ -1934,6 +1934,31 @@ first, then paste" above every move/done block.
   re-grade copies the SOURCE manifest, so v23's row reads the encoder 0 / off from v21's
   manifest while its lists were built under 300 / 0 (the launch line is the record for
   v23). tests/test_bundle389_arm_flags_2026_10.py.
+  V23 READ-OUT + THE PRIOR LEAK (2026-10-24, `docs/ACCURACY_READOUT_v23_2026-10-24.md`):
+  v21's matrix under the floor-only encoder read EXACTLY like v21 (pursuit 1 / 3 / 5 / 8,
+  large 2 / 3 / 6 / 6, Jaccard 0.240, NPI lift 0.0; HOLD on two) while the weighted arm
+  read like v22 (NPI lift 19.3, books collapsed): the floor changed nothing, which exposed
+  the defect. `class_priors.encode_fold` encoded TRAINING rows leave-one-out, so inside a
+  class every positive sat exactly one count below every negative and LightGBM read the
+  prior column as the label (synthetic twin: training AUC 1.000, OOF 0.589 vs 0.664 without
+  priors, median score down 20x); at test time every row carries the fold's full rate, lands
+  on the negatives' side of the split, and the model predicts "negative" for nearly everyone
+  (the v21 / v23 books' median raw score 0.0000016 against a base rate of 0.0028). EVERY
+  class-prior result v21..v23 and every ab_class_priors / ab_no_priors / ab_prior_* arm is
+  contaminated; the v21 / v22 read-outs described the leak's expression. FIX (v24
+  semantics): training rows encoded NESTED from a deterministic inner five-fold
+  (`encode_fold(inner_folds=)`, `PRIOR_INNER_FOLDS` 5; 0 = the LOO path, a gradable arm,
+  never a default: on the twin nested priors beat no priors, 0.698 vs 0.664); policy knob
+  `prior_inner_folds` (manifest, export / dossier / diagnostics `--prior-inner-folds`,
+  `set_training_policy`, `prior_encoder_args` + `rate_table_args`, registry alias
+  `prior_inner`), runners `PRIOR_INNER=5` in `$PRIOR_FLAGS`, `PRIOR_ARMS` now
+  name:min_n:weighted:inner with default `loo_v22:300:1:0 nested_unweighted:300:0:5`.
+  RULES: a target encoding fed to trees is never leave-one-out; a model whose median raw
+  score sits far below the label base rate is broken before any hit is read (add the check
+  to the diagnostics); v24 = v21's matrix re-graded nested, pre-registered under the v23
+  seventeen + `prior_inner >= 5` + `prior_floor = 300` + `prior_weighted = True`, graded
+  against the no-priors arm (operator book 0 / 1 / 3 / 4); if nested does not beat it, v25
+  ships without class priors. tests/test_prior_encoder_leak_2026_10.py. Not dispatched.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy

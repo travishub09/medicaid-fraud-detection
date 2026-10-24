@@ -64,7 +64,7 @@ def test_label_weight_counts_a_broadcast_case_as_its_budget():
 def test_fold_design_passes_the_scorer_weights(monkeypatch):
     from src.model_a import company_list as cl
     seen = {}
-    def fake_encode(keys, y, tr, te, m=50.0, w=None, min_n=300):
+    def fake_encode(keys, y, tr, te, m=50.0, w=None, min_n=300, inner_folds=5):
         seen["w"] = w
         return np.zeros((len(tr), 1)), np.zeros((len(te), 1))
     monkeypatch.setattr(cp, "encode_fold", fake_encode)

@@ -85,7 +85,7 @@ BROADCAST_BASES = ("org_billing", "affiliated_individual")
 #                   the composite helps, not whether its facts do).
 BROADCAST_BASES = ("org_billing", "affiliated_individual")
 _TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None, "drop_schemes": None,
-                          "prior_min_n": None, "prior_weighted": None}
+                          "prior_min_n": None, "prior_weighted": None, "prior_inner_folds": None}
 
 
 def _parse_bool(v) -> bool:
@@ -106,13 +106,16 @@ def parse_schemes(spec) -> list[str]:
 
 def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None,
                         class_priors=None, drop_schemes=None,
-                        prior_min_n: int | None = None, prior_weighted=None) -> None:
+                        prior_min_n: int | None = None, prior_weighted=None,
+                        prior_inner_folds: int | None = None) -> None:
     """None = no override for that key ('' overrides class_priors / drop_schemes to none).
 
     v23: ``prior_min_n`` (the class-size floor of the prior encoder; 0 = none, the v21
     encoder) and ``prior_weighted`` (positives counted by the per-case label_weight;
     False = the v21 encoder) are policy too, so the three encoders (v21: 0 / unweighted;
-    floor: 300 / unweighted; v22: 300 / weighted) are A/B arms on one matrix."""
+    floor: 300 / unweighted; v22: 300 / weighted) are A/B arms on one matrix.
+    v24: ``prior_inner_folds`` (training rows encoded from an inner K-fold; 0 = the
+    leave-one-out encoder of v21 .. v23, the leak the v23 read-out found)."""
     from .class_priors import parse_spec
     if broadcast is not None and broadcast not in ("weight", "mask"):
         raise ValueError(f"unknown broadcast policy {broadcast!r} (weight | mask)")
@@ -120,12 +123,15 @@ def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None
         raise ValueError("n_seeds must be >= 1")
     if prior_min_n is not None and int(prior_min_n) < 0:
         raise ValueError("prior_min_n must be >= 0")
+    if prior_inner_folds is not None and (int(prior_inner_folds) < 0 or int(prior_inner_folds) == 1):
+        raise ValueError("prior_inner_folds must be 0 (leave-one-out) or >= 2")
     _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
                             broadcast=broadcast,
                             class_priors=(parse_spec(class_priors) if class_priors is not None else None),
                             drop_schemes=(parse_schemes(drop_schemes) if drop_schemes is not None else None),
                             prior_min_n=(int(prior_min_n) if prior_min_n is not None else None),
-                            prior_weighted=(_parse_bool(prior_weighted) if prior_weighted is not None else None))
+                            prior_weighted=(_parse_bool(prior_weighted) if prior_weighted is not None else None),
+                            prior_inner_folds=(int(prior_inner_folds) if prior_inner_folds is not None else None))
 
 
 def training_policy(manifest: dict | None) -> dict:
@@ -143,17 +149,32 @@ def training_policy(manifest: dict | None) -> dict:
            else int(tp["prior_min_n"]) if tp.get("prior_min_n") is not None else MIN_CLASS_N)
     pw = (_TRAINING_POLICY["prior_weighted"] if _TRAINING_POLICY["prior_weighted"] is not None
           else _parse_bool(tp.get("prior_weighted", True)))
+    # v24: the nested encoder is the default even for a manifest that predates the key
+    # (the leave-one-out path is a gradable arm, never a default again)
+    from .class_priors import PRIOR_INNER_FOLDS
+    pif = (_TRAINING_POLICY["prior_inner_folds"] if _TRAINING_POLICY["prior_inner_folds"] is not None
+           else int(tp["prior_inner_folds"]) if tp.get("prior_inner_folds") is not None else PRIOR_INNER_FOLDS)
     return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
             "group_policy": str(tp.get("group_policy") or "org"),
             "class_priors": list(priors), "drop_schemes": list(drop),
-            "prior_min_n": int(pmn), "prior_weighted": bool(pw)}
+            "prior_min_n": int(pmn), "prior_weighted": bool(pw), "prior_inner_folds": int(pif)}
 
 
 def prior_encoder_args(matrix: pd.DataFrame, pol: dict) -> dict:
-    """The encode_fold / rate_table keywords the policy implies (shared by the scorer,
-    the diagnostics' refit and the audit table so all three encode the same way)."""
+    """The encode_fold keywords the policy implies (shared by the scorer and the
+    diagnostics' refit so both encode the same way); ``rate_table`` takes the same
+    dict without ``inner_folds`` (see rate_table_args)."""
+    from .class_priors import PRIOR_INNER_FOLDS
     return {"w": (training_weights(matrix) if pol.get("prior_weighted", True) else None),
-            "min_n": int(pol.get("prior_min_n", 300))}
+            "min_n": int(pol.get("prior_min_n", 300)),
+            "inner_folds": int(pol.get("prior_inner_folds", PRIOR_INNER_FOLDS))}
+
+
+def rate_table_args(matrix: pd.DataFrame, pol: dict) -> dict:
+    """The audit table's keywords (whole-universe rates: no folds, so no inner_folds)."""
+    a = prior_encoder_args(matrix, pol)
+    a.pop("inner_folds", None)
+    return a
 
 
 def apply_drop_schemes(cols: list[str], pol: dict, log=print) -> list[str]:
@@ -545,11 +566,11 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
           f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}, "
           f"drop_schemes={pol['drop_schemes'] or 'none'}, prior_min_n={pol['prior_min_n']}, "
-          f"prior_weighted={pol['prior_weighted']}")
+          f"prior_weighted={pol['prior_weighted']}, prior_inner_folds={pol['prior_inner_folds']}")
     keys = prior_keys_for(matrix, pol)
     if keys is not None:
         from .class_priors import rate_table
-        rt = rate_table(keys, y, **prior_encoder_args(matrix, pol))
+        rt = rate_table(keys, y, **rate_table_args(matrix, pol))
         for kname in keys.columns:
             top = rt[(rt["key"] == kname) & (rt["n"] >= 50)].head(5)
             print(f"[company_list] class prior '{kname}' (base rate {rt.attrs['base_rate']:.4%}): "

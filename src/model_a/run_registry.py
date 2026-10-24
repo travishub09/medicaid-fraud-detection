@@ -130,6 +130,8 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             # v23: the prior encoder (floor / weighted); absent on v21 manifests = the v21 encoder
             row["prior_min_n"] = int(tp.get("prior_min_n")) if tp.get("prior_min_n") is not None else 0
             row["prior_weighted"] = bool(tp.get("prior_weighted")) if tp.get("prior_weighted") is not None else False
+            # v24: the inner-fold encoder; absent (v21..v23 manifests) = leave-one-out = 0
+            row["prior_inner_folds"] = int(tp.get("prior_inner_folds")) if tp.get("prior_inner_folds") is not None else 0
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
             # referral edges entered the graph, which is CORE, so the
@@ -202,6 +204,8 @@ def parse_run_dir(run_dir: str | Path) -> dict:
                     row["prior_min_n"] = int(etp["prior_min_n"])
                 if etp.get("prior_weighted") is not None:
                     row["prior_weighted"] = bool(etp["prior_weighted"])
+                if etp.get("prior_inner_folds") is not None:
+                    row["prior_inner_folds"] = int(etp["prior_inner_folds"])
         except Exception:
             pass
 
@@ -430,7 +434,7 @@ CHECK_ALIASES = {
     "train_commercial": "train_commercial",
     "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
     "priors": "class_priors", "prune": "drop_schemes",
-    "prior_floor": "prior_min_n", "prior_weighted": "prior_weighted",
+    "prior_floor": "prior_min_n", "prior_weighted": "prior_weighted", "prior_inner": "prior_inner_folds",
     # v23: the refit arms' operator book under the shipped order
     "refit_pursuit_hits16": "acc_pursuit_hits16", "refit_pursuit_hits50": "acc_pursuit_hits50",
     "refit_pursuit_hits100": "acc_pursuit_hits100", "refit_pursuit_hits250": "acc_pursuit_hits250",
@@ -444,6 +448,7 @@ CHECK_ALIASES = {
     "base50": "acc_base50", "p50_vs_random": "acc_org_p50_vs_random",
     "lift50_vs_dollar": "acc_org_lift50_vs_dollar",
     "npi_prec1pct": "acc_npi_prec1pct", "npi_lift1pct": "acc_npi_lift1pct",
+    "score_scale": "acc_score_scale",                     # v24: median score / base rate (>= 0.1 or the scorer is degenerate)
     "lead_median": "acc_lead_median_mo", "lead_ge_gap": "acc_hits_lead_ge_gap_share",
     "inst_share50": "acc_inst_share50", "known_share50": "acc_known_share50",
     "ece_top": "acc_ece_top1000", "top50_jaccard": "acc_top50_jaccard",

@@ -1079,6 +1079,8 @@ def main() -> None:
                     help="prior encoder class-size floor override (0 = none, the v21 encoder)")
     ap.add_argument("--prior-weighted", default=None, choices=["0", "1"],
                     help="prior positives counted by label_weight (1) or by row (0); default = the manifest's")
+    ap.add_argument("--prior-inner-folds", type=int, default=None,
+                    help="training rows' prior from an inner K-fold (default 5); 0 = leave-one-out (v21..v23, the leak)")
     ap.add_argument("--order", default="dollar", choices=list(PURSUIT_ORDERS),
                     help="pursuit-book sort: dollar (v7-settled, default) or basis50 "
                          "(basis-backed rows fill the first 50, dollar-weighted below; "
@@ -1092,11 +1094,12 @@ def main() -> None:
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
     if (args.seeds is not None or args.broadcast_rows is not None or args.class_priors is not None
-            or args.drop_schemes is not None or args.prior_min_n is not None or args.prior_weighted is not None):
+            or args.drop_schemes is not None or args.prior_min_n is not None or args.prior_weighted is not None
+            or args.prior_inner_folds is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors,
                             drop_schemes=args.drop_schemes, prior_min_n=args.prior_min_n,
-                            prior_weighted=args.prior_weighted)
+                            prior_weighted=args.prior_weighted, prior_inner_folds=args.prior_inner_folds)
         print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, "
               f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}, "
               f"drop_schemes={args.drop_schemes}")

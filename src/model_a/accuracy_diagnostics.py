@@ -858,6 +858,22 @@ def sanity(ev: pd.DataFrame, scores: np.ndarray | None, fold: np.ndarray | None,
 # orchestration
 # --------------------------------------------------------------------------- #
 
+def score_scale(scores, y, floor: float = 0.1) -> dict:
+    """The v23 lesson as a check (2026-10-24): a calibrated-ish classifier's MEDIAN score sits
+    near the label base rate; the leave-one-out prior leak made the shipped scorer predict
+    "negative" for nearly everyone (median 0.0000016 against a base rate of 0.0028, ratio
+    0.0006) while its org books still read hits. ratio = median(score) / base rate;
+    below ``floor`` the model is degenerate and no hit on it is a model result."""
+    s = np.asarray(scores, dtype=float)
+    s = s[np.isfinite(s)]
+    yy = np.asarray(y, dtype=float)
+    base = float(np.nanmean(yy)) if len(yy) else float("nan")
+    med = float(np.median(s)) if len(s) else float("nan")
+    ratio = (med / base) if base and base > 0 and np.isfinite(med) else float("nan")
+    verdict = "degenerate" if np.isfinite(ratio) and ratio < floor else ("ok" if np.isfinite(ratio) else "n/a")
+    return {"median_score": med, "base_rate": base, "ratio": ratio, "floor": floor, "verdict": verdict}
+
+
 def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.DataFrame], cutoff: str,
                     priority_list: pd.DataFrame | None = None, score_source: str = "refit", refit_pursuit_order: str = "pmax_basis50",
                     budgets_org=DEFAULT_ORG_BUDGETS, budgets_npi=DEFAULT_NPI_BUDGETS, top_fracs=DEFAULT_TOP_FRACS,
@@ -951,6 +967,18 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
     if repeats and cols:
         res["stability"] = stability(matrix, manifest, cols, ev_by, repeats, min_damages=min_damages,
                                      base=(scores, fold) if scores is not None else None)
+    if scores is not None:
+        # v24: the score-scale sanity check (a degenerate scorer is caught before any hit is read)
+        try:
+            from .company_list import _training_label
+            label_col = manifest.get("label") or ("provider_on_exclusion" if "provider_on_exclusion" in matrix.columns
+                                                  else "provider_on_leie")
+            res["score_scale"] = score_scale(scores, _training_label(matrix, label_col))
+            sc = res["score_scale"]
+            _log(f"score scale: median {sc['median_score']:.3g} / base rate {sc['base_rate']:.3g} = "
+                 f"{sc['ratio']:.3g} ({sc['verdict']})")
+        except Exception as e:
+            _log(f"score scale not computed ({e})")
     _log("done")
     tie = res.pop("_tie_block", None)
     res["kpis"] = kpi_block(res)
@@ -964,6 +992,10 @@ def kpi_block(res: dict) -> dict:
     h = res.get("headline_ruler")
     out = {"acc_eval_policy": h, "acc_horizon_mo": res.get("horizon_months"),
            "acc_score_source": res.get("score_source"), "acc_n_orgs_listed": res.get("n_orgs_listed")}
+    sc = res.get("score_scale") or {}
+    if sc:
+        out["acc_score_scale"] = sc.get("ratio")                       # median score / base rate (v24; < 0.1 = degenerate)
+        out["acc_score_scale_verdict"] = sc.get("verdict")
 
     def _b(name, k):
         rows = res["rulers"].get(name, {}).get("org_budgets", [])
@@ -1184,6 +1216,12 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
         s = b.get("sanity", {})
         if s:
             L.append(f"- {name}: " + ", ".join(f"{k} {v}" for k, v in s.items()))
+    sc = res.get("score_scale")
+    if sc:
+        L.append(f"- score scale: median refit score {_f(sc['median_score'], '{:.3g}')} against a training base rate of "
+                 f"{_f(sc['base_rate'], '{:.3g}')} (ratio {_f(sc['ratio'], '{:.3g}')}, floor {sc['floor']}): **{sc['verdict']}**"
+                 + (": a model that predicts 'negative' for nearly everyone is ranking inside the noise; no hit on it is a "
+                    "model result (the v21..v23 prior leak read 0.0006 here)" if sc["verdict"] == "degenerate" else ""))
     L += ["", "## 11. KPI block (accuracy_diagnostics.json)", "", "```"]
     for k, v in res["kpis"].items():
         L.append(f"{k} = {_f(v, '{:.4f}') if isinstance(v, float) else v}")
@@ -1259,6 +1297,9 @@ def main() -> None:
     ap.add_argument("--prior-weighted", default=None, choices=["0", "1"],
                     help="training policy override (v23 A/B): count prior positives by the per-case "
                          "label_weight (1, the v22 encoder) or by row (0); default = the manifest's")
+    ap.add_argument("--prior-inner-folds", type=int, default=None,
+                    help="training policy override (v24 A/B): training rows' prior encoded from an inner "
+                         "K-fold (default 5); 0 = the leave-one-out encoder of v21..v23 (the leak)")
     ap.add_argument("--list-name", default="provider_priority_list.csv",
                     help="which shipped list to grade: provider_priority_list.csv (default), "
                          "provider_priority_list_pursuit.csv (the operator book) or "
@@ -1283,14 +1324,16 @@ def main() -> None:
         set_label_policy(a.label_tier, ex, cutoff=cutoff)
         print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
     if (a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None
-            or a.drop_schemes is not None or a.prior_min_n is not None or a.prior_weighted is not None):
+            or a.drop_schemes is not None or a.prior_min_n is not None or a.prior_weighted is not None
+            or a.prior_inner_folds is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors,
                             drop_schemes=a.drop_schemes, prior_min_n=a.prior_min_n,
-                            prior_weighted=a.prior_weighted)
+                            prior_weighted=a.prior_weighted, prior_inner_folds=a.prior_inner_folds)
         print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, "
               f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}, drop_schemes={a.drop_schemes}, "
-              f"prior_min_n={a.prior_min_n}, prior_weighted={a.prior_weighted}")
+              f"prior_min_n={a.prior_min_n}, prior_weighted={a.prior_weighted}, "
+              f"prior_inner_folds={a.prior_inner_folds}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:
@@ -1369,7 +1412,7 @@ def main() -> None:
         keys = prior_keys_for(matrix, pol_eff)
         if keys is not None:
             lab = manifest.get("label") or "provider_on_exclusion"
-            rt = rate_table(keys, _training_label(matrix, lab), **prior_encoder_args(matrix, pol_eff))
+            rt = rate_table(keys, _training_label(matrix, lab), **rate_table_args(matrix, pol_eff))
             rt.to_csv(out.parent / f"class_prior_rates{suffix}.csv", index=False)
             res["class_priors"] = pol_eff["class_priors"]
             res["class_prior_base_rate"] = rt.attrs.get("base_rate")

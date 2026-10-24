@@ -642,6 +642,26 @@
    ]
   },
   {
+   "key": "v24_run",
+   "added": "2026-10-24",
+   "what": "v24 = the RE-GRADE of v21's matrix under bundle 390: the NESTED class-prior encoder (the v23 read-out found that v21..v23 encoded training rows leave-one-out and LightGBM read the prior column as the label; every prior result so far is contaminated). Ship PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1, order pmax_basis50, train hard; arms ab_prior_loo_v22/ (the leaking v22 encoder on the same matrix) and ab_prior_nested_unweighted/, plus the usual broadcast / prune / no_priors arms, every arm under the shipped flags. The grade that matters: the pursuit book against the no-priors arm (v23: 0/1/3/4 on the operator book), NPI lift above 3, a Jaccard that is not fold noise. About 3 to 4 hours. ORDER: merge 390 on the laptop (389 first if not yet), pull on the VM (idle), pre-register (twenty checks), launch under tmux v24, status, paste the last 30 lines at [v24] DONE, then the packet. If nested priors do not beat no priors on the operator book, v25 ships without class priors.",
+   "commands": [
+    "REM 1. laptop merge (389 then 390 if 389 is not merged yet), then the VM pull:",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection && ops\\laptop\\merge_push.bat 390",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && git log --oneline -1\"",
+    "REM 2. pre-register (the v23 seventeen + the three encoder checks):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v24 --expected 'v21 matrix re-scored with the NESTED class-prior encoder (inner five-fold for training rows; the v21..v23 leave-one-out encoder leaked the label): the pursuit book beats the no-priors arm at 50/100/250, the NPI grain holds above 3, the head is no longer fold noise' --goal 'v24 = the leak fixed as policy (prior_inner_folds 5, floor 300, label-weighted); arms = the v22 encoder on the same matrix and nested-unweighted; every arm under the shipped flags; no export, same label and ruler' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'npi_lift1pct >= 3' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = taxonomy,entity' 'prune = none' 'prior_inner >= 5' 'prior_floor = 300' 'prior_weighted = True'\"",
+    "REM 3. launch (tmux v24):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v24 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1 PURSUIT_ORDER=pmax_basis50 TRAIN_TIER=hard bash ops/vm/regrade_from.sh v24 v21 2021-12 > /data/medicaid/model_a/regrade_v24.log 2>&1'\"",
+    "REM 4. status any time:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/regrade_v24.log; grep 'step ' /data/medicaid/model_a/regrade_v24.log | tail -1; tail -3 /data/medicaid/model_a/regrade_v24.log\"",
+    "REM 5. at [v24] DONE: the tail, the packet, the scp, then upload run_packet_v24.tar.gz to the chat:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -30 /data/medicaid/model_a/regrade_v24.log\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v24 && tar -czf /home/ubuntu/run_packet_v24.tar.gz *.md *.json *.csv $(ls -d ab_* 2>/dev/null)\"",
+    "scp -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v24.tar.gz C:\\Users\\treyr\\Downloads\\"
+   ]
+  },
+  {
    "key": "v23_run",
    "added": "2026-10-24",
    "what": "v23 = the RE-GRADE of v21's matrix under bundle 388 (the prior encoder as policy): the floor-only encoder SHIPPED (PRIOR_MIN_N=300 PRIOR_WEIGHTED=0), the v21 (0/0) and weighted (300/1) encoders as refit arms ab_prior_v21/ and ab_prior_weighted/, each graded on the main list AND the operator book under pmax_basis50 (acc_pursuit_*). About 3 to 4 hours (two extra refits). ORDER: merge 388 on the laptop, pull on the VM, pre-register, launch under tmux (OVERWRITE=1 is not needed: v23 is a new folder), status, paste the last 30 lines at [v23] DONE. The data scan and capacity check wait until v23 is DONE. BUNDLE 389 (built while v23 ran, NOT on the VM until DONE): every refit arm and graded book now inherits the shipped encoder ($PRIOR_FLAGS), and the shipped list records its effective policy for the registry. READ v23 WITH THIS IN MIND: its broadcast / prune / charged arms refit under the WEIGHTED encoder (the manifest default), not the floor-only ship, so only ab_prior_v21 / ab_prior_weighted vs the shipped grade are a clean comparison; its registry row reads the encoder as 0 / off (v21's copied manifest), while the ship was 300 / 0 from the launch line. After DONE and the packet: merge 389 on the laptop, pull on the VM.",
@@ -915,29 +935,12 @@
    ]
   },
   {
-   "key": "pursuit_dossier__frozen_2021-12_v23",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v23 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-   "added": "2026-10-24",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v23\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v23"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v23",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v23 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-10-24",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v23\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v23"
-   ]
-  },
-  {
    "key": "registry_verdict__frozen_2021-12_v23",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v23 \u2014 close only when you have them",
-   "added": "2026-10-24"
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v23 \u2014 close only when you have them VERDICT (2026-10-24): HOLD on two of seventeen (top50_jaccard 0.240, npi_lift1pct 0.0; pursuit 1/3/5/8, large 2/3/6/6). CAUSE = a code defect: the class-prior encoder leaked the training label (leave-one-out) in every prior run v21..v23; docs/ACCURACY_READOUT_v23_2026-10-24.md. Close with the line below once read.",
+   "added": "2026-10-24",
+   "commands": [
+    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v23"
+   ]
   }
  ],
  "closed": [
@@ -1393,6 +1396,30 @@
    ],
    "closed": "2026-10-24",
    "closed_how": "skipped: v22 registered HOLD (five of seventeen); no Manus credits on a HOLD run"
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v23",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v23 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "added": "2026-10-24",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v23\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v23"
+   ],
+   "closed": "2026-10-24",
+   "closed_as": "skipped: v23 HOLD (the prior encoder leaked the training label; no Manus credits on a HOLD run)"
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v23",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v23 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-10-24",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v23\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v23"
+   ],
+   "closed": "2026-10-24",
+   "closed_as": "skipped: v23 HOLD (the prior encoder leaked the training label; no Manus credits on a HOLD run)"
   }
  ]
 }

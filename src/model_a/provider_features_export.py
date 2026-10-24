@@ -360,6 +360,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           broadcast_rows: str = "weight",
                           class_priors: str | list | None = None,
                           prior_min_n: int = 300, prior_weighted: bool = True,
+                          prior_inner_folds: int = 5,
                           drop_schemes: str | list | None = None,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
@@ -954,6 +955,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             # the NPI grain and broke the pursuit book; the three encoders are A/B arms)
             "prior_min_n": int(prior_min_n),
             "prior_weighted": bool(prior_weighted),
+            # v24: training rows encoded from an inner K-fold (0 = the v21..v23 leave-one-out leak)
+            "prior_inner_folds": int(prior_inner_folds),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2674,6 +2677,9 @@ def main() -> None:
                     help="training policy (v23): the prior encoder's class-size floor (0 = none)")
     ap.add_argument("--prior-weighted", default="1", choices=["0", "1"],
                     help="training policy (v23): prior positives counted by label_weight (1) or by row (0)")
+    ap.add_argument("--prior-inner-folds", type=int, default=5,
+                    help="training policy (v24): training rows' prior from an inner K-fold; 0 = leave-one-out "
+                         "(the v21..v23 encoder, a label leak: arm only)")
     ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
@@ -3279,7 +3285,8 @@ def main() -> None:
         graph_substrate=graph_substrate, min_peer=(2 if args.fixture else 30),
         group_policy=args.group_policy, n_seeds=args.seeds, broadcast_rows=args.broadcast_rows,
         class_priors=args.class_priors, drop_schemes=args.drop_schemes,
-        prior_min_n=args.prior_min_n, prior_weighted=(args.prior_weighted == "1"))
+        prior_min_n=args.prior_min_n, prior_weighted=(args.prior_weighted == "1"),
+        prior_inner_folds=args.prior_inner_folds)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

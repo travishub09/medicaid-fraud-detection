@@ -14,10 +14,24 @@ This module turns those identifiers into out-of-fold TARGET-ENCODED rates:
     prior_<key> = (positives in the class + m * global rate) / (n in the class + m)
 
 computed INSIDE each training fold from that fold's training rows only (a test row
-never sees its own label; a training row is encoded leave-one-out so its own label
-never reaches its feature). m = M_SMOOTH pulls thin classes toward the global rate
+never sees its own label). m = M_SMOOTH pulls thin classes toward the global rate
 (an m-estimate / empirical-Bayes shrinkage), so a two-provider taxonomy with one
 positive reads near the base rate, not 50%.
+
+THE v23 LESSON (2026-10-24, the leave-one-out leak): v21 .. v23 encoded a TRAINING
+row leave-one-out (its own label subtracted). Inside a class that gives every positive
+a value exactly one count below every negative, and gradient-boosted trees read that
+two-valued signature as the label: training AUC 1.000, the model memorises the prior
+column, and at test time (where every row carries the fold's full rate, a third value
+that sits on the negatives' side of the split) it predicts "negative" for nearly
+everyone. The shipped lists read a median raw score of 0.0000016 against a base rate
+of 0.0028, the NPI grain emptied, the top 50 re-shuffled between fold draws, and the
+no-priors arm beat the priors on a synthetic twin (OOF AUC 0.589 vs 0.664). The fix
+is the textbook one: training rows are encoded NESTED, from an inner K-fold over the
+training rows (``inner_folds``, default PRIOR_INNER_FOLDS), so no row's own label
+reaches its feature AND positives and negatives in a class draw from the same value
+set. Nested priors beat no priors on the same twin (0.698; top-1% lift 6.1 vs 5.0).
+``inner_folds=0`` keeps the leave-one-out path as a gradable arm, never a default.
 
 Keys (``--class-priors taxonomy,entity``):
     taxonomy   the NUCC code (primary_taxonomy)
@@ -46,6 +60,9 @@ M_SMOOTH = 50.0
 # NPI lift 0.0 against 8.7 without priors). Thin classes are where one case
 # masquerades as a base rate.
 MIN_CLASS_N = 300
+# v24 (the v23 read-out): training rows are encoded from an inner K-fold over the
+# training rows (0 = the leave-one-out encoder of v21 .. v23, the defect)
+PRIOR_INNER_FOLDS = 5
 
 PRIOR_KEYS: dict[str, str] = {
     "taxonomy": "primary_taxonomy",
@@ -93,13 +110,48 @@ def prior_keys(matrix: pd.DataFrame, which: list[str]) -> pd.DataFrame:
     return out
 
 
+def _class_stats(kv: np.ndarray, y: np.ndarray, w: np.ndarray) -> pd.DataFrame:
+    """Per class: weighted positives, weighted n, and the raw row count."""
+    return (pd.DataFrame({"k": kv, "wy": w * y, "w": w, "one": 1.0})
+            .groupby("k").agg(pos=("wy", "sum"), n=("w", "sum"), rows=("one", "sum")))
+
+
+def _rate_from(st: pd.DataFrame, g: float, kv: np.ndarray, m: float, min_n: int) -> np.ndarray:
+    """The shrunk class rate for rows ``kv`` from statistics ``st`` the rows did not
+    contribute to; an unseen or thin (< min_n rows) class reads the global rate."""
+    ks = pd.Series(kv)
+    pos = ks.map(st["pos"]).fillna(0.0).to_numpy(dtype=float)
+    n = ks.map(st["n"]).fillna(0.0).to_numpy(dtype=float)
+    thin = ks.map(st["rows"] < min_n).fillna(True).to_numpy(dtype=bool)
+    return np.where(thin, g, (pos + m * g) / (n + m))
+
+
+def _inner_splits(y: np.ndarray, k: int, seed: int = 0) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Deterministic inner folds over the training rows: stratified on the label when
+    both classes allow it, plain shuffled folds otherwise."""
+    from sklearn.model_selection import KFold, StratifiedKFold
+    n_pos, n_neg = int((y > 0).sum()), int((y <= 0).sum())
+    k = int(min(k, len(y)))
+    if k < 2:
+        return [(np.arange(len(y)), np.arange(len(y)))]
+    if n_pos >= k and n_neg >= k:
+        return list(StratifiedKFold(n_splits=k, shuffle=True, random_state=seed).split(np.zeros(len(y)), (y > 0).astype(int)))
+    return list(KFold(n_splits=k, shuffle=True, random_state=seed).split(np.zeros(len(y))))
+
+
 def encode_fold(keys: pd.DataFrame, y, tr: np.ndarray, te: np.ndarray,
-                m: float = M_SMOOTH, w=None, min_n: int = MIN_CLASS_N) -> tuple[np.ndarray, np.ndarray]:
+                m: float = M_SMOOTH, w=None, min_n: int = MIN_CLASS_N,
+                inner_folds: int = PRIOR_INNER_FOLDS) -> tuple[np.ndarray, np.ndarray]:
     """Out-of-fold target encoding for one fold.
 
-    Training rows: leave-one-out (their own label is subtracted); test rows: the
-    full training-fold statistics. Returns (Xtr_extra, Xte_extra), one column per
-    key, in keys.columns order.
+    Test rows: the full training-fold statistics. Training rows: NESTED (v24) — an
+    inner ``inner_folds``-fold over the training rows, each inner slice encoded from
+    the other slices' statistics, so no row's own label reaches its feature and the
+    positives and negatives of a class draw from the same set of values (no label
+    signature a tree can read). ``inner_folds=0`` is the leave-one-out encoder of
+    v21 .. v23 (positives one count below negatives inside every class: the leak the
+    module docstring describes), kept only as a gradable arm. Returns
+    (Xtr_extra, Xte_extra), one column per key, in keys.columns order.
 
     v22: ``w`` (the scorer's sample weights = the per-case label budget) weights
     every positive, so forty-nine NPIs of one broadcast settlement count as that
@@ -110,24 +162,27 @@ def encode_fold(keys: pd.DataFrame, y, tr: np.ndarray, te: np.ndarray,
     w = np.ones(len(y), dtype=float) if w is None else np.asarray(w, dtype=float)
     ytr, wtr = y[tr], w[tr]
     g = float((wtr * ytr).sum() / wtr.sum()) if len(ytr) and wtr.sum() > 0 else 0.0
+    inner = _inner_splits(ytr, int(inner_folds or 0)) if int(inner_folds or 0) >= 2 else None
     cols_tr, cols_te = [], []
     for k in keys.columns:
         kv = keys[k].to_numpy()
-        ktr = pd.Series(kv[tr])
-        st = (pd.DataFrame({"k": ktr.to_numpy(), "wy": wtr * ytr, "w": wtr, "one": 1.0})
-              .groupby("k").agg(pos=("wy", "sum"), n=("w", "sum"), rows=("one", "sum")))
-        thin = st["rows"] < min_n
-        pos = ktr.map(st["pos"]).to_numpy(dtype=float)
-        n = ktr.map(st["n"]).to_numpy(dtype=float)
-        loo = (pos - wtr * ytr + m * g) / np.maximum(n - wtr + m, 1e-9)
-        loo = np.where(ktr.map(thin).fillna(True).to_numpy(dtype=bool), g, loo)
-        kte = pd.Series(kv[te])
-        pos_te = kte.map(st["pos"]).fillna(0.0).to_numpy(dtype=float)
-        n_te = kte.map(st["n"]).fillna(0.0).to_numpy(dtype=float)
-        full = (pos_te + m * g) / (n_te + m)
-        full = np.where(kte.map(thin).fillna(True).to_numpy(dtype=bool), g, full)
-        cols_tr.append(loo)
-        cols_te.append(full)
+        kvtr = kv[tr]
+        st = _class_stats(kvtr, ytr, wtr)
+        if inner is None:
+            # leave-one-out (v21 .. v23): the row's own label subtracted — the defect
+            ktr = pd.Series(kvtr)
+            pos = ktr.map(st["pos"]).to_numpy(dtype=float)
+            n = ktr.map(st["n"]).to_numpy(dtype=float)
+            enc_tr = (pos - wtr * ytr + m * g) / np.maximum(n - wtr + m, 1e-9)
+            enc_tr = np.where(ktr.map(st["rows"] < min_n).fillna(True).to_numpy(dtype=bool), g, enc_tr)
+        else:
+            enc_tr = np.empty(len(tr), dtype=float)
+            for itr, ite in inner:
+                wi, yi = wtr[itr], ytr[itr]
+                gi = float((wi * yi).sum() / wi.sum()) if len(yi) and wi.sum() > 0 else g
+                enc_tr[ite] = _rate_from(_class_stats(kvtr[itr], yi, wi), gi, kvtr[ite], m, min_n)
+        cols_tr.append(enc_tr)
+        cols_te.append(_rate_from(st, g, kv[te], m, min_n))
     if not cols_tr:
         return np.zeros((len(tr), 0)), np.zeros((len(te), 0))
     return np.column_stack(cols_tr), np.column_stack(cols_te)

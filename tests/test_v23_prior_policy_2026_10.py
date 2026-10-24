@@ -38,11 +38,11 @@ def test_prior_encoder_args_and_fold_design_follow_the_policy(monkeypatch):
                       "primary_taxonomy": ["291U00000X"] * 10 + ["207Q00000X"] * 10, "entity_type": "2",
                       "practice_state": "TX", "label_weight": [0.5] * 20})
     y = np.array([1, 0] * 10)
-    assert cl.prior_encoder_args(m, {"prior_weighted": False, "prior_min_n": 7}) == {"w": None, "min_n": 7}
+    assert cl.prior_encoder_args(m, {"prior_weighted": False, "prior_min_n": 7}) == {"w": None, "min_n": 7, "inner_folds": 5}
     args = cl.prior_encoder_args(m, {"prior_weighted": True, "prior_min_n": 300})
     assert args["min_n"] == 300 and args["w"] is not None and float(args["w"][0]) == 0.5
     seen = {}
-    def fake_encode(keys, y, tr, te, m=50.0, w=None, min_n=300):
+    def fake_encode(keys, y, tr, te, m=50.0, w=None, min_n=300, inner_folds=5):
         seen.update(w=w, min_n=min_n); return np.zeros((len(tr), 1)), np.zeros((len(te), 1))
     monkeypatch.setattr(cp, "encode_fold", fake_encode)
     keys = cp.prior_keys(m, ["taxonomy"]); idx = np.arange(20)
@@ -105,7 +105,7 @@ def test_registry_and_runners_carry_the_encoder_and_the_arms():
     from pathlib import Path
     for f in ("ops/vm/regrade_from.sh", "ops/vm/run_frozen_night.sh"):
         s = Path(f).read_text()
-        assert 'PRIOR_ARMS="v21:0:0 floor:300:0 weighted:300:1"' in s and "ab_prior_${name}" in s
-        assert "$PRIOR_FLAGS" in s
+        assert 'PRIOR_ARMS="${PRIOR_ARMS:-loo_v22:300:1:0 nested_unweighted:300:0:5}"' in s and "ab_prior_${name}" in s
+        assert "$PRIOR_FLAGS" in s and "--prior-inner-folds" in s
     export = Path("src/model_a/provider_features_export.py").read_text()
     assert '"prior_min_n": int(prior_min_n)' in export and "--prior-weighted" in export
