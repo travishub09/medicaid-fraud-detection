@@ -183,6 +183,25 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             # 0 under 'hard', the A/B's count under 'hard+charged'
             row["train_charged"] = tj.get("n_charged_positives")
             row["train_commercial"] = tj.get("n_commercial_positives")
+            # bundle 389: the EFFECTIVE policy the shipped list was built under (CLI
+            # override, else the manifest) wins over the manifest's training_policy. A
+            # re-grade copies the SOURCE run's manifest, so v23's manifest (v21's) had no
+            # encoder keys while its lists were built under floor 300 / unweighted: the
+            # row read 0 / False and a --check "prior_floor = 300" would have failed falsely.
+            etp = tj.get("training_policy") or {}
+            if etp:
+                if etp.get("n_seeds") is not None:
+                    row["n_seeds"] = int(etp["n_seeds"])
+                if etp.get("broadcast"):
+                    row["broadcast_rows"] = str(etp["broadcast"])
+                if etp.get("class_priors") is not None:
+                    row["class_priors"] = ",".join(etp["class_priors"] or []) or "none"
+                if etp.get("drop_schemes") is not None:
+                    row["drop_schemes"] = ",".join(etp["drop_schemes"] or []) or "none"
+                if etp.get("prior_min_n") is not None:
+                    row["prior_min_n"] = int(etp["prior_min_n"])
+                if etp.get("prior_weighted") is not None:
+                    row["prior_weighted"] = bool(etp["prior_weighted"])
         except Exception:
             pass
 

@@ -843,7 +843,7 @@ def build_priority_list(run_dir: str | Path,
     # the TRAINING label policy of the shipped list, for the registry (--check "train = hard"):
     # the forward ruler's policy is a different thing and is recorded separately
     from .company_list import training_label_summary
-    tls = training_label_summary(matrix)
+    tls = training_label_summary(matrix, manifest=manifest)
     (d / "training_label_policy.json").write_text(json.dumps(tls, indent=1), encoding="utf-8")
     print(f"[pursuit_dossier] training label policy {tls['label_tier']}: {tls['n_positives']:,} positives "
           f"({tls['n_doj_positives']:,} DOJ-case; in-matrix label {tls['n_in_matrix_label']:,})")

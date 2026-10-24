@@ -268,10 +268,15 @@ def default_exclusion_nodes(run_dir: str | Path, data_root: str | Path | None = 
     return root / "graph" / "nodes" / "exclusion_nodes.parquet"
 
 
-def training_label_summary(matrix: pd.DataFrame, label_col: str = "provider_on_exclusion") -> dict:
+def training_label_summary(matrix: pd.DataFrame, label_col: str = "provider_on_exclusion",
+                           manifest: dict | None = None) -> dict:
     """What the production scorer trained on, for the run folder and the registry:
     the label policy (all / hard / hard+weak), the exclusion nodes + cutoff it was
-    resolved against, and the positive count (DOJ-case rows counted separately)."""
+    resolved against, the positive count (DOJ-case rows counted separately), and
+    (bundle 389) the EFFECTIVE training policy the shipped list was built under
+    (``training_policy(manifest)``: CLI override, else the manifest). A re-grade
+    copies the source run's manifest, so the manifest's encoder keys describe the
+    source export, not the list; the registry prefers this block."""
     pol = label_policy()
     if label_col not in matrix.columns:
         for cand in ("provider_on_exclusion", "provider_on_leie"):
@@ -299,7 +304,8 @@ def training_label_summary(matrix: pd.DataFrame, label_col: str = "provider_on_e
             "cutoff": pol.get("cutoff"), "label_col": label_col,
             "n_positives": int(np.asarray(y).sum()), "n_doj_positives": n_doj,
             "n_charged_positives": n_charged, "n_commercial_positives": n_comm,
-            "n_in_matrix_label": int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0}
+            "n_in_matrix_label": int(_to_num(matrix[label_col]).sum()) if label_col in matrix.columns else 0,
+            "training_policy": training_policy(manifest)}
 
 
 def tier_label(matrix: pd.DataFrame, exclusion_nodes: str | Path | pd.DataFrame,

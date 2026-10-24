@@ -1923,6 +1923,17 @@ first, then paste" above every move/done block.
   with the floor-only encoder shipped (PRIOR_WEIGHTED=0), v21 and weighted as arms,
   under the seventeen checks. The runner DONE banner's packet hint listed the arms from
   the repo cwd (none): `$(cd $RUN && ls -d ab_*)` now. Not dispatched.
+  ARMS INHERIT THE SHIP (bundle 389, 2026-10-24, built while v23 ran): every
+  `--score-source refit` arm (broadcast weight / mask, no_priors, prune, charged,
+  commercial) and every graded book line in both runners carries `$PRIOR_FLAGS`, so an
+  arm is the shipped policy plus ONE change (v23's broadcast / prune / charged arms
+  refit under the manifest-default WEIGHTED encoder while the ship was floor-only; only
+  its ab_prior_* arms are a clean comparison). `training_label_summary(manifest=)` writes
+  the EFFECTIVE `training_policy` (CLI override, else manifest) into
+  training_label_policy.json and `run_registry` prefers it over the manifest's keys: a
+  re-grade copies the SOURCE manifest, so v23's row reads the encoder 0 / off from v21's
+  manifest while its lists were built under 300 / 0 (the launch line is the record for
+  v23). tests/test_bundle389_arm_flags_2026_10.py.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy
