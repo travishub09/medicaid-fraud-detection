@@ -311,13 +311,15 @@ def refit_scores(matrix: pd.DataFrame, manifest: dict, repeat: int = 0,
 
 
 def org_table_from_refit(matrix: pd.DataFrame, scores: np.ndarray, min_damages: float = 10_000_000.0,
-                         include_government: bool = False) -> pd.DataFrame:
+                         include_government: bool = False, probs: np.ndarray | None = None) -> pd.DataFrame:
     """Reproduce pursuit_dossier.build_priority_list's order from a score vector:
-    rollup(drop_excluded) -> case size -> government mask -> damages bar -> sort."""
+    rollup(drop_excluded) -> case size -> government mask -> damages bar -> sort.
+    With ``probs`` (calibrate_oof) the rollup carries score_p_max / score_p_any, so the
+    operator book below can take the shipped pmax order."""
     from .company_list import rollup
     from .case_size import org_case_size
     from .pursuit_dossier import government_mask
-    orgs = rollup(matrix, scores, drop_excluded=True)
+    orgs = rollup(matrix, scores, drop_excluded=True, probs=probs)
     cs = org_case_size(matrix)
     orgs = orgs.merge(cs, on="org_id", how="left") if len(cs) else orgs.assign(case_size_yr=0.0, case_size_capped=False)
     orgs["case_size_yr"] = pd.to_numeric(orgs["case_size_yr"], errors="coerce").fillna(0.0)
@@ -331,6 +333,24 @@ def org_table_from_refit(matrix: pd.DataFrame, scores: np.ndarray, min_damages: 
     orgs.insert(0, "priority_rank", orgs.index + 1)
     orgs.attrs["sort_key"] = "score_dollar_weighted"
     return orgs
+
+
+def operator_book_from_refit(orgs: pd.DataFrame, matrix: pd.DataFrame, order: str = "pmax_basis50") -> pd.DataFrame:
+    """The refit's OPERATOR book, the way build_priority_list writes the pursuit companion:
+    entity_segment == operator (the shared pursuit_dossier.entity_segments rule), ordered by
+    the shipped pursuit order. v22 lesson: every A/B arm graded the MAIN list only, and the
+    main list and the pursuit book moved in opposite directions (main 1/2/4/4, pursuit
+    0/1/1/1), so an arm that cannot grade the pursuit book cannot pick a policy."""
+    from .pursuit_dossier import entity_segments, pursuit_order
+    seg, hosp, nat = entity_segments(orgs, matrix)
+    book = orgs[seg.to_numpy() == "operator"].copy()
+    book["entity_segment"] = "operator"
+    book["hospital_licensed"] = hosp.loc[book.index].to_numpy()
+    book["national_chain"] = nat.loc[book.index].to_numpy()
+    book = pursuit_order(book, order).reset_index(drop=True)
+    book["priority_rank"] = np.arange(1, len(book) + 1)
+    book.attrs["sort_key"] = "score_p_max" if order.startswith("pmax") and "score_p_max" in book.columns else "score_dollar_weighted"
+    return book
 
 
 def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") -> pd.DataFrame | None:
@@ -839,7 +859,7 @@ def sanity(ev: pd.DataFrame, scores: np.ndarray | None, fold: np.ndarray | None,
 # --------------------------------------------------------------------------- #
 
 def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.DataFrame], cutoff: str,
-                    priority_list: pd.DataFrame | None = None, score_source: str = "refit",
+                    priority_list: pd.DataFrame | None = None, score_source: str = "refit", refit_pursuit_order: str = "pmax_basis50",
                     budgets_org=DEFAULT_ORG_BUDGETS, budgets_npi=DEFAULT_NPI_BUDGETS, top_fracs=DEFAULT_TOP_FRACS,
                     horizons=DEFAULT_HORIZONS, horizon_months: int | None = None, gap_months: int = 6,
                     active_within: int = 12, min_damages: float = 10_000_000.0, repeats: int = 0,
@@ -862,11 +882,23 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
     # scores
     scores = fold = None
     cols: list[str] = []
+    pursuit_refit = None
     if score_source == "refit" or priority_list is None:
         _log("refit: out-of-fold scores (5 grouped folds, LightGBM)")
         scores, fold, cols = refit_scores(matrix, manifest)
         _log("refit: rolling up to organizations the dossier's way (minutes on a national matrix)")
-        orgs = org_table_from_refit(matrix, scores, min_damages=min_damages)
+        probs = None
+        try:
+            from .company_list import calibrate_oof
+            probs = calibrate_oof(matrix, scores)
+        except Exception as e:                                   # the main-list grade never waits on it
+            _log(f"refit: calibration skipped ({e}); the operator book takes the dollar order")
+        orgs = org_table_from_refit(matrix, scores, min_damages=min_damages, probs=probs)
+        try:
+            pursuit_refit = operator_book_from_refit(orgs, matrix, order=refit_pursuit_order)
+            _log(f"refit: operator book {len(pursuit_refit):,} orgs under {refit_pursuit_order}")
+        except Exception as e:
+            _log(f"refit: operator book not built ({e})")
         res["org_list_source"] = "refit (company_list policy, rolled up like the dossier)"
     else:
         orgs = priority_list
@@ -886,6 +918,9 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
         block = res["rulers"][name]
         oh = org_outcomes(orgs, ev)
         block["org_budgets"] = budget_rows_org(oh, budgets_org)
+        if pursuit_refit is not None and len(pursuit_refit):
+            # v23: the refit's operator book under the shipped order (acc_pursuit_* KPIs)
+            block["pursuit_budgets"] = budget_rows_org(org_outcomes(pursuit_refit, ev), budgets_org)
         block["order_sweep"] = order_sweep(oh, budgets_org)
         block["lead_time"] = lead_time_rows(oh, horizons, k=min(50, len(oh)) or 1, gap_months=gap_months)
         block["visibility"] = visibility(ev, matrix, cutoff, active_within)
@@ -938,6 +973,10 @@ def kpi_block(res: dict) -> dict:
         # where an 8-hit pool can tell a model from chance (v11: 4 at 100 and 6 at 250 at
         # p 0.001 while 50 sat at 1 vs 0.3), so a pre-registration can hold them
         for k in (16, 50, 100, 250):
+            pr = next((x for x in res["rulers"].get(name, {}).get("pursuit_budgets", []) if x["budget"] == k), None)
+            if pr:                                                 # v23: the refit's operator book
+                out[f"acc_pursuit_hits{k}_{name}"] = pr["hits"]
+                out[f"acc_pursuit_p{k}_vs_random_{name}"] = pr["random_p"]
             r = _b(name, k)
             if r:
                 out[f"acc_org_hits{k}_{name}"] = r["hits"]
@@ -1214,6 +1253,12 @@ def main() -> None:
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="refit only: the broadcast-row policy (default: the manifest's; 'mask' holds "
                          "broadcast-only case positives out of training for the v9 A/B)")
+    ap.add_argument("--prior-min-n", type=int, default=None,
+                    help="training policy override (v23 A/B): the prior encoder's class-size floor "
+                         "(0 = none, the v21 encoder; default = the manifest's, else 300)")
+    ap.add_argument("--prior-weighted", default=None, choices=["0", "1"],
+                    help="training policy override (v23 A/B): count prior positives by the per-case "
+                         "label_weight (1, the v22 encoder) or by row (0); default = the manifest's")
     ap.add_argument("--list-name", default="provider_priority_list.csv",
                     help="which shipped list to grade: provider_priority_list.csv (default), "
                          "provider_priority_list_pursuit.csv (the operator book) or "
@@ -1238,12 +1283,14 @@ def main() -> None:
         set_label_policy(a.label_tier, ex, cutoff=cutoff)
         print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
     if (a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None
-            or a.drop_schemes is not None):
+            or a.drop_schemes is not None or a.prior_min_n is not None or a.prior_weighted is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors,
-                            drop_schemes=a.drop_schemes)
+                            drop_schemes=a.drop_schemes, prior_min_n=a.prior_min_n,
+                            prior_weighted=a.prior_weighted)
         print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, "
-              f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}, drop_schemes={a.drop_schemes}")
+              f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}, drop_schemes={a.drop_schemes}, "
+              f"prior_min_n={a.prior_min_n}, prior_weighted={a.prior_weighted}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:
@@ -1316,13 +1363,13 @@ def main() -> None:
     # v21 class priors: the rate table the refit encoded from (explainability, rule 5:
     # a reader can audit "clinical laboratories 1.2% vs 0.3% overall" beside the grade)
     try:
-        from .company_list import _training_label, prior_keys_for, training_policy, training_weights
+        from .company_list import _training_label, prior_keys_for, training_policy, prior_encoder_args
         from .class_priors import rate_table
         pol_eff = training_policy(manifest)
         keys = prior_keys_for(matrix, pol_eff)
         if keys is not None:
             lab = manifest.get("label") or "provider_on_exclusion"
-            rt = rate_table(keys, _training_label(matrix, lab), w=training_weights(matrix))
+            rt = rate_table(keys, _training_label(matrix, lab), **prior_encoder_args(matrix, pol_eff))
             rt.to_csv(out.parent / f"class_prior_rates{suffix}.csv", index=False)
             res["class_priors"] = pol_eff["class_priors"]
             res["class_prior_base_rate"] = rt.attrs.get("base_rate")

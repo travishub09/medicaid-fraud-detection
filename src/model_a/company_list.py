@@ -84,7 +84,14 @@ BROADCAST_BASES = ("org_billing", "affiliated_individual")
 #                   A/B (v21). The scheme's raw INPUTS stay (the question is whether
 #                   the composite helps, not whether its facts do).
 BROADCAST_BASES = ("org_billing", "affiliated_individual")
-_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None, "drop_schemes": None}
+_TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None, "drop_schemes": None,
+                          "prior_min_n": None, "prior_weighted": None}
+
+
+def _parse_bool(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
 
 
 def parse_schemes(spec) -> list[str]:
@@ -98,17 +105,27 @@ def parse_schemes(spec) -> list[str]:
 
 
 def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None,
-                        class_priors=None, drop_schemes=None) -> None:
-    """None = no override for that key ('' overrides class_priors / drop_schemes to none)."""
+                        class_priors=None, drop_schemes=None,
+                        prior_min_n: int | None = None, prior_weighted=None) -> None:
+    """None = no override for that key ('' overrides class_priors / drop_schemes to none).
+
+    v23: ``prior_min_n`` (the class-size floor of the prior encoder; 0 = none, the v21
+    encoder) and ``prior_weighted`` (positives counted by the per-case label_weight;
+    False = the v21 encoder) are policy too, so the three encoders (v21: 0 / unweighted;
+    floor: 300 / unweighted; v22: 300 / weighted) are A/B arms on one matrix."""
     from .class_priors import parse_spec
     if broadcast is not None and broadcast not in ("weight", "mask"):
         raise ValueError(f"unknown broadcast policy {broadcast!r} (weight | mask)")
     if n_seeds is not None and int(n_seeds) < 1:
         raise ValueError("n_seeds must be >= 1")
+    if prior_min_n is not None and int(prior_min_n) < 0:
+        raise ValueError("prior_min_n must be >= 0")
     _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
                             broadcast=broadcast,
                             class_priors=(parse_spec(class_priors) if class_priors is not None else None),
-                            drop_schemes=(parse_schemes(drop_schemes) if drop_schemes is not None else None))
+                            drop_schemes=(parse_schemes(drop_schemes) if drop_schemes is not None else None),
+                            prior_min_n=(int(prior_min_n) if prior_min_n is not None else None),
+                            prior_weighted=(_parse_bool(prior_weighted) if prior_weighted is not None else None))
 
 
 def training_policy(manifest: dict | None) -> dict:
@@ -121,9 +138,22 @@ def training_policy(manifest: dict | None) -> dict:
               else parse_spec(tp.get("class_priors")))
     drop = (_TRAINING_POLICY["drop_schemes"] if _TRAINING_POLICY["drop_schemes"] is not None
             else parse_schemes(tp.get("drop_schemes")))
+    from .class_priors import MIN_CLASS_N
+    pmn = (_TRAINING_POLICY["prior_min_n"] if _TRAINING_POLICY["prior_min_n"] is not None
+           else int(tp["prior_min_n"]) if tp.get("prior_min_n") is not None else MIN_CLASS_N)
+    pw = (_TRAINING_POLICY["prior_weighted"] if _TRAINING_POLICY["prior_weighted"] is not None
+          else _parse_bool(tp.get("prior_weighted", True)))
     return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
             "group_policy": str(tp.get("group_policy") or "org"),
-            "class_priors": list(priors), "drop_schemes": list(drop)}
+            "class_priors": list(priors), "drop_schemes": list(drop),
+            "prior_min_n": int(pmn), "prior_weighted": bool(pw)}
+
+
+def prior_encoder_args(matrix: pd.DataFrame, pol: dict) -> dict:
+    """The encode_fold / rate_table keywords the policy implies (shared by the scorer,
+    the diagnostics' refit and the audit table so all three encode the same way)."""
+    return {"w": (training_weights(matrix) if pol.get("prior_weighted", True) else None),
+            "min_n": int(pol.get("prior_min_n", 300))}
 
 
 def apply_drop_schemes(cols: list[str], pol: dict, log=print) -> list[str]:
@@ -150,7 +180,7 @@ def fold_design(X: np.ndarray, matrix: pd.DataFrame, y, pol: dict, tr: np.ndarra
     if keys is None or not len(keys.columns):
         return X[tr], X[te]
     from .class_priors import encode_fold
-    etr, ete = encode_fold(keys, y, tr, te, w=training_weights(matrix))    # v22: weighted + size floor
+    etr, ete = encode_fold(keys, y, tr, te, **prior_encoder_args(matrix, pol))   # v22/v23: policy-driven
     return np.hstack([X[tr], etr]), np.hstack([X[te], ete])
 
 
@@ -508,11 +538,12 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     print(f"[company_list] scorer: LightGBM {', '.join(f'{k}={v}' for k, v in SCORER_PARAMS.items())}")
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
           f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}, "
-          f"drop_schemes={pol['drop_schemes'] or 'none'}")
+          f"drop_schemes={pol['drop_schemes'] or 'none'}, prior_min_n={pol['prior_min_n']}, "
+          f"prior_weighted={pol['prior_weighted']}")
     keys = prior_keys_for(matrix, pol)
     if keys is not None:
         from .class_priors import rate_table
-        rt = rate_table(keys, y)
+        rt = rate_table(keys, y, **prior_encoder_args(matrix, pol))
         for kname in keys.columns:
             top = rt[(rt["key"] == kname) & (rt["n"] >= 50)].head(5)
             print(f"[company_list] class prior '{kname}' (base rate {rt.attrs['base_rate']:.4%}): "

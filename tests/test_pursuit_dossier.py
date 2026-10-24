@@ -432,8 +432,10 @@ def test_national_names_are_institutional_and_pursuit_order_basis50():
     # settles a qui tam case is a case (v13 lost 5 of 8 FCA hits to this rule)
     import inspect
     from src.model_a import pursuit_dossier as pdm
-    src_build = inspect.getsource(pdm.build_priority_list)
-    assert "national_chain" in src_build and "map(is_national_name)\n" not in src_build.split("inst = (")[1].split("seg[inst]")[0]
+    # v23: the segment rule lives in entity_segments (shared with the diagnostics' refit arms)
+    src_seg = inspect.getsource(pdm.entity_segments)
+    assert "national_chain" in inspect.getsource(pdm.build_priority_list)
+    assert "map(is_national_name)" not in src_seg.split("inst = (")[1].split("seg[inst]")[0]
     n = 120
     book = pd.DataFrame({"org_id": [f"org:{i}" for i in range(n)],
                          "score_dollar_weighted": np.linspace(1.0, 0.0, n),

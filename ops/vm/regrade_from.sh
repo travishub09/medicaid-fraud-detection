@@ -40,6 +40,11 @@ DEFENDANTS="$DATA/processed/case_defendant_npis_plus_cia.parquet"
 REBUILD_RULERS="${REBUILD_RULERS:-}"
 TRAIN_TIER="${TRAIN_TIER:-hard}"
 PURSUIT_ORDER="${PURSUIT_ORDER:-dollar}"
+# v23: the shipped prior encoder (see the arms at step 8); the manifest's value is the
+# fallback the scorer reads when the CLI passes nothing, so these are passed explicitly
+PRIOR_MIN_N="${PRIOR_MIN_N:-300}"
+PRIOR_WEIGHTED="${PRIOR_WEIGHTED:-1}"
+PRIOR_FLAGS="--prior-min-n $PRIOR_MIN_N --prior-weighted $PRIOR_WEIGHTED"
 export MEDICAID_DUCKDB_TMP="${MEDICAID_DUCKDB_TMP:-$DATA/interim/duckdb_tmp}"
 export MEDICAID_DUCKDB_MEM="${MEDICAID_DUCKDB_MEM:-$(awk '/MemTotal/ {printf "%dGB", int($2/1024/1024*0.4)}' /proc/meminfo)}"
 
@@ -56,7 +61,7 @@ exec > >(tee -a "$LOG") 2>&1
 step() { echo; echo "[$NEW] step $1: $2   ($(date '+%F %T'))"; }
 fail() { echo; echo "[$NEW] FAILED at step $1  ($(date '+%F %T'))  -- paste the last 40 lines of $LOG to Claude"; exit 1; }
 
-echo "[$NEW] started $(date '+%F %T')  (re-grade of $SRC's matrix under $(git -C "$REPO" rev-parse --short HEAD); order=$PURSUIT_ORDER tier=$TRAIN_TIER)"
+echo "[$NEW] started $(date '+%F %T')  (re-grade of $SRC's matrix under $(git -C "$REPO" rev-parse --short HEAD); order=$PURSUIT_ORDER tier=$TRAIN_TIER prior_min_n=$PRIOR_MIN_N prior_weighted=$PRIOR_WEIGHTED)"
 step 0/7 "copy the matrix, manifest, labels and OOF scores from $SRC_RUN (no retrain)"
 for f in provider_features_for_model.parquet feature_manifest.json provider_oof_scores.parquet \
          future_bans_after_${CUT}.csv future_bans_after_${CUT}.TIERS.md future_bans_after_${CUT}__fca${HORIZON}.csv \
@@ -91,11 +96,11 @@ else
 fi
 
 step 6/12 "priority list + pursuit book + large-biller book (the restored book definition)"
-python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
+python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" $PRIOR_FLAGS || fail 6
 
 step 7/12 "accuracy diagnostics on the PURSUIT book"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
-    --horizon-months "$HORIZON" --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
+    --horizon-months "$HORIZON" $PRIOR_FLAGS --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/12 "the large-biller book, and the broadcast A/B"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
@@ -126,6 +131,18 @@ elif [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
+# v23: the prior-encoder A/B (the v22 read-out: floor + weights fixed the NPI grain and broke
+# the pursuit book). The SHIPPED encoder is PRIOR_MIN_N / PRIOR_WEIGHTED (default 300 / 1 = v22);
+# every other encoder of the three (v21 = 0 / 0, floor = 300 / 0, weighted = 300 / 1) is graded
+# as a refit arm, main list AND the operator book under the shipped order (acc_pursuit_*).
+PRIOR_ARMS="v21:0:0 floor:300:0 weighted:300:1"
+for arm in $PRIOR_ARMS; do
+  name="${arm%%:*}"; rest="${arm#*:}"; mn="${rest%%:*}"; wt="${rest#*:}"
+  if [ "$mn" = "$PRIOR_MIN_N" ] && [ "$wt" = "$PRIOR_WEIGHTED" ]; then continue; fi
+  echo "[$NEW] prior A/B arm $name (min_n $mn, weighted $wt)"
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --prior-min-n "$mn" --prior-weighted "$wt" --out "$RUN/ab_prior_${name}/ACCURACY_DIAGNOSTICS.md" || fail 8
+done
 # v21: the prune A/B (PRUNE_AB=auto reads the SOURCE run's scheme_health.json; a list overrides; empty skips)
 PRUNE_LIST=""
 case "${PRUNE_AB:-auto}" in
@@ -143,7 +160,7 @@ fi
 
 step 9/12 "results digest + pursuit dossier (operator book, national chains set aside; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
-python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 9
+python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" $PRIOR_FLAGS || fail 9
 
 step 10/12 "register the run against the locked pre-registration"
 python -u -m src.model_a.run_registry --data-root "$DATA" --run-dir "$RUN" || fail 10
@@ -159,5 +176,5 @@ python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" --prev-
 
 echo
 echo "[$NEW] DONE $(date '+%F %T')  -- tell Claude '$NEW finished'; then the packet:"
-echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask $(ls -d ab_tier_charged ab_tier_commercial ab_class_priors ab_no_priors ab_prune 2>/dev/null))   # tar; zip is not installed"
+echo "  (cd $RUN && tar -czf /home/ubuntu/run_packet_${NEW}.tar.gz *.md *.json *.csv ab_broadcast_weight ab_broadcast_mask $(cd $RUN && ls -d ab_tier_charged ab_tier_commercial ab_class_priors ab_no_priors ab_prune ab_prior_* 2>/dev/null))   # tar; zip is not installed"
 echo "  bash $REPO/ops/vm/sync_data.sh up frozen_${CUT}_${NEW}"

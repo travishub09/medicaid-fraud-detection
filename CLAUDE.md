@@ -1895,6 +1895,34 @@ first, then paste" above every move/done block.
   read as the institutional selection effect (every pick pre_cutoff). v22 = re-grade
   of v21's matrix (the re-score runs the new encoder; no export), pre-registered
   under the v21 sixteen + npi_lift1pct. Not dispatched.
+  V22 READ-OUT (2026-10-24, `docs/ACCURACY_READOUT_v22_2026-10-24.md`): v21's matrix
+  re-scored under the corrected priors (label-weighted positives + the 300-row class
+  floor). HOLD on five of seventeen: pursuit 0 / 1 / 1 / 1 (v21 3 / 3 / 4 / 8), large
+  0 / 1 / 1 / 4, Jaccard 0.009 (0 orgs in every draw); NPI top-1% lift 19.3 (v21 0.0,
+  the best ever) and the main list 1 / 2 / 4 / 4 (v21 0 / 1 / 2 / 4). THE LESSON: the
+  fix moved the signal from organizations to individuals. v21's prior-dominated scorer
+  ranked the settlement classes (national labs, health systems under one NPI: LabCorp,
+  Cleveland Clinic, Genomic Health, Providence, Medline, BioReference = the hits) to the
+  head; v22's feature-dominated scorer ranks home-care / HCBS / group-home agencies
+  (raw member scores 0.57 to 0.69, no FCA case) there, and the labs fell to ranks 45 to
+  1,136. The calibrated score_p_max is a 296-way plateau (0.010853) at the top of the
+  book, so the pmax order inside it is fold noise. The lab / hospital priors barely
+  moved (1.16% to 1.09%, 2.15% to 1.97%); 590 of 775 classes fell under the floor.
+  BUILT (v23 semantics): the prior ENCODER is training policy (`prior_min_n` /
+  `prior_weighted` in the manifest, export `--prior-min-n` / `--prior-weighted`,
+  CLI overrides on the dossier and the diagnostics, `company_list.prior_encoder_args`
+  the one reader, registry aliases `prior_floor` / `prior_weighted`); the three
+  encoders (v21 = 0 / off, floor = 300 / off, weighted = 300 / on) are refit arms
+  `ab_prior_<name>/` in both runners (PRIOR_MIN_N / PRIOR_WEIGHTED env = the ship, that
+  one skipped); EVERY refit arm now grades the OPERATOR book under the shipped order
+  (`accuracy_diagnostics.operator_book_from_refit` on a rollup carrying calibrated
+  probabilities + the shared `pursuit_dossier.entity_segments` rule -> `acc_pursuit_
+  hits16/50/100/250`, aliases `refit_pursuit_hits*`): v22's arms graded the main list
+  only while the main list and the pursuit book moved in opposite directions. RULE: an
+  arm that cannot grade the pursuit book cannot pick a policy. v23 = re-grade of v21
+  with the floor-only encoder shipped (PRIOR_WEIGHTED=0), v21 and weighted as arms,
+  under the seventeen checks. The runner DONE banner's packet hint listed the arms from
+  the repo cwd (none): `$(cd $RUN && ls -d ab_*)` now. Not dispatched.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy

@@ -532,6 +532,38 @@ _NATIONAL_NAMES = (
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 
 
+def entity_segments(out: pd.DataFrame, matrix: pd.DataFrame) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """The two-books lens for an org table: (entity_segment, hospital_licensed, national_chain).
+
+    institutional = a cue word in the name, 25+ providers, or a screening caution;
+    individual = a solo org whose one member is an individual NPI; operator = the rest.
+    NOTE (v13, 2026-10-13): the curated national-name list is NOT applied to the
+    segment. It moved 43 orgs out of the graded pursuit book and five of v12's eight
+    FCA hits with them: national home-health / DME / lab chains ARE qui tam defendants
+    (an employee relator, a settlement), they are only not a PI visit. The list, like
+    the v22 hospital-licence flag, filters the dossier's PI target pick and is written
+    as a flag column so the reader can see it. Computes screening_cautions when the
+    table lacks them (the diagnostics' refit tables do)."""
+    mkey = matrix["org_node_id"].astype(str)
+    solo_person = set()
+    if "entity_type" in matrix.columns:
+        solo_person = set(matrix.loc[~mkey.duplicated(keep=False)
+                                     & (matrix["entity_type"].astype(str) == "1"), "org_node_id"].astype(str))
+    if "screening_cautions" in out.columns:
+        cautions = out["screening_cautions"].astype(str)
+    else:
+        cautions = pd.Series([" | ".join(screening_cautions(r, matrix)) for _, r in out.iterrows()], index=out.index)
+    seg = pd.Series("operator", index=out.index)
+    inst = (out["org_name"].astype(str).str.contains(_INSTITUTIONAL_RE, na=False)
+            | (pd.to_numeric(out["n_providers"], errors="coerce").fillna(1) >= 25)
+            | (cautions.str.len() > 0))
+    seg[inst] = "institutional"
+    seg[out["org_id"].astype(str).isin(solo_person)] = "individual"
+    hosp = out["org_id"].astype(str).isin(hospital_org_ids(matrix))
+    nat = out["org_name"].astype(str).map(is_national_name)
+    return seg, hosp, nat
+
+
 def is_national_name(name: str) -> bool:
     """True when the org name carries a curated hospital-system / national-lab /
     national-chain name (the do-not-send class the cue words miss)."""
@@ -863,33 +895,12 @@ def build_priority_list(run_dir: str | Path,
         " | ".join(screening_cautions(r, matrix)) for _, r in out.iterrows()]
 
     # entity_segment — the two-books triage lens (institutional vs operator
-    # vs individual). Labels rows; never touches score or rank.
-    solo_person = set()
-    if "entity_type" in matrix.columns:
-        solo_person = set(
-            matrix.loc[~mkey.duplicated(keep=False)
-                       & (matrix["entity_type"].astype(str) == "1"),
-                       "org_node_id"].astype(str))
-    seg = pd.Series("operator", index=out.index)
-    # NOTE (v13, 2026-10-13): the curated national-name list is NOT applied here.
-    # It moved 43 orgs out of the graded pursuit book and five of v12's eight FCA
-    # hits with them: national home-health / DME / lab chains ARE qui tam
-    # defendants (an employee relator, a settlement), they are only not a PI
-    # visit. The list filters the dossier's PI target pick (below) and is
-    # written here as a flag column so the reader can see it.
-    inst = (out["org_name"].astype(str).str.contains(_INSTITUTIONAL_RE, na=False)
-            | (pd.to_numeric(out["n_providers"], errors="coerce")
-               .fillna(1) >= 25)
-            | (out["screening_cautions"].astype(str).str.len() > 0))
-    seg[inst] = "institutional"
-    # v22: hospital-licensed (27xxxx / 28xxxx taxonomy) is institutional by licence;
-    # like the national list it is a flag for the reader and the dossier pick, so it
-    # is written as its own column and NOT folded into entity_segment (which the
-    # graded pursuit book filters on: v13 moved five hits out of the book that way)
-    out["hospital_licensed"] = out["org_id"].astype(str).isin(hospital_org_ids(matrix))
-    seg[out["org_id"].astype(str).isin(solo_person)] = "individual"
+    # vs individual). Labels rows; never touches score or rank. ONE definition
+    # (entity_segments) shared with the diagnostics' refit arms (v23).
+    seg, hosp, nat = entity_segments(out, matrix)
+    out["hospital_licensed"] = hosp
     out["entity_segment"] = seg
-    out["national_chain"] = out["org_name"].astype(str).map(is_national_name)
+    out["national_chain"] = nat
 
     out = out.sort_values(["score_dollar_weighted", "score_max"],
                           ascending=False).reset_index(drop=True)
@@ -1064,6 +1075,10 @@ def main() -> None:
                          "subscore columns are held out of the scorer; '' = none; default = the manifest's")
     ap.add_argument("--broadcast-rows", default=None, choices=["weight", "mask"],
                     help="broadcast-row training policy override (default: the manifest's)")
+    ap.add_argument("--prior-min-n", type=int, default=None,
+                    help="prior encoder class-size floor override (0 = none, the v21 encoder)")
+    ap.add_argument("--prior-weighted", default=None, choices=["0", "1"],
+                    help="prior positives counted by label_weight (1) or by row (0); default = the manifest's")
     ap.add_argument("--order", default="dollar", choices=list(PURSUIT_ORDERS),
                     help="pursuit-book sort: dollar (v7-settled, default) or basis50 "
                          "(basis-backed rows fill the first 50, dollar-weighted below; "
@@ -1077,10 +1092,11 @@ def main() -> None:
     from .run_registry import resolve_run_dir
     args.run_dir = resolve_run_dir(args.run_dir)
     if (args.seeds is not None or args.broadcast_rows is not None or args.class_priors is not None
-            or args.drop_schemes is not None):
+            or args.drop_schemes is not None or args.prior_min_n is not None or args.prior_weighted is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors,
-                            drop_schemes=args.drop_schemes)
+                            drop_schemes=args.drop_schemes, prior_min_n=args.prior_min_n,
+                            prior_weighted=args.prior_weighted)
         print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, "
               f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}, "
               f"drop_schemes={args.drop_schemes}")

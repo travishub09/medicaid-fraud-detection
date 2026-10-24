@@ -127,6 +127,9 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             # pre-registration ships them; the A/B folder is ab_class_priors/)
             row["class_priors"] = ",".join(tp.get("class_priors") or []) or "none"
             row["drop_schemes"] = ",".join(tp.get("drop_schemes") or []) or "none"
+            # v23: the prior encoder (floor / weighted); absent on v21 manifests = the v21 encoder
+            row["prior_min_n"] = int(tp.get("prior_min_n")) if tp.get("prior_min_n") is not None else 0
+            row["prior_weighted"] = bool(tp.get("prior_weighted")) if tp.get("prior_weighted") is not None else False
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
             # referral edges entered the graph, which is CORE, so the
@@ -408,6 +411,10 @@ CHECK_ALIASES = {
     "train_commercial": "train_commercial",
     "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
     "priors": "class_priors", "prune": "drop_schemes",
+    "prior_floor": "prior_min_n", "prior_weighted": "prior_weighted",
+    # v23: the refit arms' operator book under the shipped order
+    "refit_pursuit_hits16": "acc_pursuit_hits16", "refit_pursuit_hits50": "acc_pursuit_hits50",
+    "refit_pursuit_hits100": "acc_pursuit_hits100", "refit_pursuit_hits250": "acc_pursuit_hits250",
     "hard_visible": "hard_visible_share", "hard_positives": "hard_in_universe",
     # accuracy_diagnostics KPIs (headline ruler unless suffixed _<ruler>)
     "hits50": "acc_org_hits50", "hits16": "acc_org_hits16",
