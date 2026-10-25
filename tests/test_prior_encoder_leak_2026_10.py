@@ -142,3 +142,29 @@ def test_score_scale_flags_a_degenerate_scorer_and_reaches_the_kpis():
     assert k["acc_score_scale_verdict"] == "degenerate" and CHECK_ALIASES["score_scale"] == "acc_score_scale"
     assert not eval_check("score_scale >= 0.1", k)["ok"]
     assert eval_check("score_scale >= 0.1", kpi_block({**res, "score_scale": score_scale(sane, y)}))["ok"]
+
+
+def test_rate_table_is_written_with_the_policy_args_and_the_regrade_takes_a_class_priors_override():
+    """v24's packet carried no class_prior_rates csv: the diagnostics imported prior_encoder_args
+    but called rate_table_args, and the try/except swallowed the NameError."""
+    import src.model_a.company_list as cl
+    from pathlib import Path
+    src = Path("src/model_a/accuracy_diagnostics.py").read_text()
+    assert "training_policy, rate_table_args" in src and "**rate_table_args(matrix, pol_eff)" in src
+    m = pd.DataFrame({"npi": [str(1000000000 + i) for i in range(40)],
+                      "primary_taxonomy": ["291U00000X"] * 20 + ["207Q00000X"] * 20, "entity_type": "2",
+                      "label_weight": 1.0})
+    y = np.array([1, 0, 0, 0] * 10)
+    keys = cp.prior_keys(m, ["taxonomy", "entity"])
+    rt = cp.rate_table(keys, y, **cl.rate_table_args(m, cl.training_policy({"training_policy": {"class_priors": ["taxonomy", "entity"]}})))
+    assert set(rt["key"]) == {"taxonomy", "entity"} and len(rt) >= 3
+    sh = Path("ops/vm/regrade_from.sh").read_text()
+    assert '--class-priors ${CLASS_PRIORS:-none}' in sh and 'SHIPPED_PRIORS="$CLASS_PRIORS"' in sh
+    assert cp.parse_spec("none") == []                                   # the word the override sends for 'no priors'
+
+
+def test_fqhc_members_make_an_org_institutional_for_the_dossier_pick():
+    from src.model_a.pursuit_dossier import hospital_org_ids
+    m = pd.DataFrame({"npi": ["1", "2", "3"], "org_node_id": ["org:a", "org:b", "org:c"],
+                      "primary_taxonomy": ["261QF0400X", "282N00000X", "207Q00000X"]})
+    assert hospital_org_ids(m) == {"org:a", "org:b"}          # the FQHC and the hospital; the physician group stays

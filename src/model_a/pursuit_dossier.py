@@ -485,15 +485,20 @@ _INSTITUTIONAL_RE = (r"\b(?:HOSPITAL|HOSPITALS|MEDICAL CENTER|HEALTH SYSTEM|"
 # by name. Same role as the national list: the do-not-send-a-PI class for the
 # dossier pick and a flag for the reader; NEVER a filter on the graded book.
 _HOSPITAL_TAXONOMY_PREFIXES = ("27", "28")
+# v25 (the v24 dossier pick named JWCH Institute and North East Medical Services, two
+# FQHCs with no cue word): a Federally Qualified Health Center is the institutional
+# class for the PI pick (grant-funded, board-governed, the clean-anchor class), a
+# flag on the list, never a filter on the graded book
+_INSTITUTIONAL_TAXONOMY_CODES = ("261QF0400X",)
 
 
 def hospital_org_ids(matrix) -> set:
     """org_node_ids with at least one member whose primary taxonomy is a hospital
-    or hospital-unit code (27xxxx / 28xxxx)."""
+    or hospital-unit code (27xxxx / 28xxxx) or an FQHC (261QF0400X)."""
     if "primary_taxonomy" not in matrix.columns or "org_node_id" not in matrix.columns:
         return set()
     tax = matrix["primary_taxonomy"].fillna("").astype(str).str.strip().str.upper()
-    hosp = tax.str.startswith(_HOSPITAL_TAXONOMY_PREFIXES)
+    hosp = tax.str.startswith(_HOSPITAL_TAXONOMY_PREFIXES) | tax.isin(_INSTITUTIONAL_TAXONOMY_CODES)
     return set(matrix.loc[hosp, "org_node_id"].astype(str))
 
 # NATIONAL NAMES (2026-10-13, the v12 operator-book dossier named Mayo Clinic
@@ -1100,7 +1105,8 @@ def main() -> None:
         set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors,
                             drop_schemes=args.drop_schemes, prior_min_n=args.prior_min_n,
                             prior_weighted=args.prior_weighted, prior_inner_folds=args.prior_inner_folds)
-        print(f"[pursuit_dossier] training policy override: seeds={args.seeds}, "
+        print(f"[pursuit_dossier] training policy override: prior_min_n={args.prior_min_n}, "
+              f"prior_weighted={args.prior_weighted}, prior_inner_folds={args.prior_inner_folds}, seeds={args.seeds}, "
               f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}, "
               f"drop_schemes={args.drop_schemes}")
     if args.label_tier != "all":

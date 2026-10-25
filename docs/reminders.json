@@ -642,6 +642,26 @@
    ]
   },
   {
+   "key": "v25_run",
+   "added": "2026-10-25",
+   "what": "v25 = the RE-GRADE of v21's matrix WITHOUT class priors (bundle 391): the v24 arms showed honest priors add nothing (the nested-prior refit and the no-priors refit read the same operator book 0/1/3/4; no-priors has the better NPI grain), so the rule written before v24 applies. CLASS_PRIORS='' overrides the source manifest on every ship and arm line; the nested priors are graded as ab_class_priors/ (CLASS_PRIORS_AB default taxonomy,entity); PRIOR_ARMS='' (no encoder arms: nothing to encode); prune and broadcast arms stay. Pre-registered under the twenty with priors = none and the new score_scale >= 0.1. About nine hours (v23 and v24 each took nine). A pass = the first PROMOTE candidate; the dossier dispatch is then the operator's call. ORDER: merge 391, pull on the VM (idle), pre-register, launch under tmux v25, status, the tail-30 and the packet at [v25] DONE.",
+   "commands": [
+    "REM 1. laptop merge, then the VM pull:",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection && ops\\laptop\\merge_push.bat 391",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && git log --oneline -1\"",
+    "REM 2. pre-register:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2021-12_v25 --expected 'v21 matrix re-scored WITHOUT class priors (the v24 arms: honest priors add nothing measurable); the pursuit book holds 3 / 4 / 7 at 50 / 100 / 250 with the NPI grain above 3 and a top-50 Jaccard at or above 0.6 (v19, the last no-prior run, read 0.618)' --goal 'v25 = the simpler model on the same matrix: no class priors shipped, nested priors graded as ab_class_priors, prune and broadcast arms; no export, same label and ruler; a pass is the first PROMOTE candidate' --check 'large_hits50 >= 2' 'large_prec50_lo > large_base50' 'hits100 >= 4' 'hits250 >= 6' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'npi_lift1pct >= 3' 'score_scale >= 0.1' 'eval_policy = fca' 'horizon = 36' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = none' 'prune = none' 'prior_inner >= 5'\"",
+    "REM 3. launch (tmux v25):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v25 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && CLASS_PRIORS= PRIOR_ARMS= PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1 PURSUIT_ORDER=pmax_basis50 TRAIN_TIER=hard bash ops/vm/regrade_from.sh v25 v21 2021-12 > /data/medicaid/model_a/regrade_v25.log 2>&1'\"",
+    "REM 4. status any time:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/regrade_v25.log; grep 'step ' /data/medicaid/model_a/regrade_v25.log | tail -1; tail -3 /data/medicaid/model_a/regrade_v25.log\"",
+    "REM 5. at [v25] DONE: the tail, the packet, the scp, then upload run_packet_v25.tar.gz to the chat:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -30 /data/medicaid/model_a/regrade_v25.log\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2021-12_v25 && tar -czf /home/ubuntu/run_packet_v25.tar.gz *.md *.json *.csv $(ls -d ab_* 2>/dev/null)\"",
+    "scp -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v25.tar.gz C:\\Users\\treyr\\Downloads\\"
+   ]
+  },
+  {
    "key": "v24_run",
    "added": "2026-10-24",
    "what": "v24 = the RE-GRADE of v21's matrix under bundle 390: the NESTED class-prior encoder (the v23 read-out found that v21..v23 encoded training rows leave-one-out and LightGBM read the prior column as the label; every prior result so far is contaminated). Ship PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1, order pmax_basis50, train hard; arms ab_prior_loo_v22/ (the leaking v22 encoder on the same matrix) and ab_prior_nested_unweighted/, plus the usual broadcast / prune / no_priors arms, every arm under the shipped flags. The grade that matters: the pursuit book against the no-priors arm (v23: 0/1/3/4 on the operator book), NPI lift above 3, a Jaccard that is not fold noise. About 3 to 4 hours. ORDER: merge 390 on the laptop (389 first if not yet), pull on the VM (idle), pre-register (twenty checks), launch under tmux v24, status, paste the last 30 lines at [v24] DONE, then the packet. If nested priors do not beat no priors on the operator book, v25 ships without class priors.",
@@ -954,29 +974,12 @@
    ]
   },
   {
-   "key": "pursuit_dossier__frozen_2021-12_v24",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v24 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
-   "added": "2026-10-25",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v24\" --dispatch",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v24"
-   ]
-  },
-  {
-   "key": "dossier_poll__frozen_2021-12_v24",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v24 dossier and send PURSUIT_DOSSIER.md",
-   "added": "2026-10-25",
-   "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v24\" --poll",
-    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v24"
-   ]
-  },
-  {
    "key": "registry_verdict__frozen_2021-12_v24",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v24 \u2014 close only when you have them",
-   "added": "2026-10-25"
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v24 \u2014 close only when you have them VERDICT (2026-10-25): HOLD on one of twenty (top50_jaccard 0.555; pursuit 1/3/4/7, large 1/3/4/6, NPI lift 6.7, score scale ok). The arms say honest class priors add nothing: v25 ships without them. docs/ACCURACY_READOUT_v24_2026-10-25.md. Close with the line below once read.",
+   "added": "2026-10-25",
+   "commands": [
+    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v24"
+   ]
   }
  ],
  "closed": [
@@ -1456,6 +1459,30 @@
    ],
    "closed": "2026-10-24",
    "closed_as": "skipped: v23 HOLD (the prior encoder leaked the training label; no Manus credits on a HOLD run)"
+  },
+  {
+   "key": "pursuit_dossier__frozen_2021-12_v24",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v24 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "added": "2026-10-25",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v24\" --dispatch",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v24"
+   ],
+   "closed": "2026-10-25",
+   "closed_as": "skipped: v24 HOLD on top50_jaccard 0.555 (no Manus credits on a HOLD run)"
+  },
+  {
+   "key": "dossier_poll__frozen_2021-12_v24",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v24 dossier and send PURSUIT_DOSSIER.md",
+   "added": "2026-10-25",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v24\" --poll",
+    "python -m src.reminders --done-task dossier_poll__frozen_2021-12_v24"
+   ],
+   "closed": "2026-10-25",
+   "closed_as": "skipped: v24 HOLD on top50_jaccard 0.555 (no Manus credits on a HOLD run)"
   }
  ]
 }

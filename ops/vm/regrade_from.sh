@@ -48,6 +48,11 @@ PRIOR_WEIGHTED="${PRIOR_WEIGHTED:-1}"
 # the label leak the v23 read-out found; an arm, never the ship)
 PRIOR_INNER="${PRIOR_INNER:-5}"
 PRIOR_FLAGS="--prior-min-n $PRIOR_MIN_N --prior-weighted $PRIOR_WEIGHTED --prior-inner-folds $PRIOR_INNER"
+# v25: CLASS_PRIORS set (even empty) overrides the SOURCE manifest's class priors on every ship
+# and arm line ('' = none; parse_spec reads the word none as no priors); unset = the manifest's
+if [ -n "${CLASS_PRIORS+x}" ]; then
+  PRIOR_FLAGS="$PRIOR_FLAGS --class-priors ${CLASS_PRIORS:-none}"
+fi
 export MEDICAID_DUCKDB_TMP="${MEDICAID_DUCKDB_TMP:-$DATA/interim/duckdb_tmp}"
 export MEDICAID_DUCKDB_MEM="${MEDICAID_DUCKDB_MEM:-$(awk '/MemTotal/ {printf "%dGB", int($2/1024/1024*0.4)}' /proc/meminfo)}"
 
@@ -126,6 +131,7 @@ pol = json.load(open(sys.argv[1])).get("training_policy") or {}
 print(",".join(pol.get("class_priors") or []))
 PY
 )"
+if [ -n "${CLASS_PRIORS+x}" ]; then SHIPPED_PRIORS="$CLASS_PRIORS"; fi     # v25: the override is the ship
 if [ -n "$SHIPPED_PRIORS" ]; then
   echo "[$NEW] shipped priors = $SHIPPED_PRIORS: grading the no-priors counterfactual (ab_no_priors/)"
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \

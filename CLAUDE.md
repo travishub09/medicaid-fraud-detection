@@ -1959,6 +1959,25 @@ first, then paste" above every move/done block.
   seventeen + `prior_inner >= 5` + `prior_floor = 300` + `prior_weighted = True`, graded
   against the no-priors arm (operator book 0 / 1 / 3 / 4); if nested does not beat it, v25
   ships without class priors. tests/test_prior_encoder_leak_2026_10.py. Not dispatched.
+  V24 READ-OUT (2026-10-25, `docs/ACCURACY_READOUT_v24_2026-10-25.md`): the first honest
+  class-prior run (nested encoder). HOLD on ONE of twenty: top-50 Jaccard 0.555 (28 orgs in
+  every draw; v17 0.575, v19 0.618). Pursuit 1 / 3 / 4 / 7, large 1 / 3 / 4 / 6, NPI lift
+  6.7, lead 24, inst 0, score scale 0.168 ok (v21 / v23 0.0006). The arms settle the priors
+  question: the leaking v22 encoder refit reads score scale 0.014 (degenerate, NPI lift
+  19.3: the new check catches it); the shipped nested policy refit and the no-priors refit
+  read the SAME operator book (0 / 1 / 3 / 4) and no-priors has the better NPI grain (8.7
+  vs 6.7). Honest class priors add nothing measurable: the trees already find the lab /
+  system classes from the billing features. The shipped list vs its own refit (1 / 3 / 4 / 7
+  vs 0 / 1 / 3 / 4, same policy and seeds) is the fold draw the Jaccard measures. DECISION
+  (the rule written before v24): v25 = v21's matrix re-graded WITHOUT class priors
+  (`CLASS_PRIORS=''` on the regrade runner, which now takes the override on every ship
+  and arm line; `PRIOR_ARMS=''`; nested priors graded as ab_class_priors/), under the
+  twenty with `priors = none`; a pass is the first PROMOTE candidate. Fixed in bundle
+  391: the diagnostics' rate-table block imported the pre-refactor argument builder (the
+  guarded NameError meant v24 wrote no class_prior_rates csv); the dossier's override log
+  line names the encoder keys. The broadcast-mask arm reads degenerate (0.085): mask
+  stays an arm. FQHCs (JWCH Institute, North East Medical Services) reached the dossier
+  pick: a `health center` cue is due on the institutional list. Not dispatched.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy
