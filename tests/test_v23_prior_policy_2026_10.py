@@ -105,7 +105,7 @@ def test_registry_and_runners_carry_the_encoder_and_the_arms():
     from pathlib import Path
     for f in ("ops/vm/regrade_from.sh", "ops/vm/run_frozen_night.sh"):
         s = Path(f).read_text()
-        assert 'PRIOR_ARMS="${PRIOR_ARMS:-loo_v22:300:1:0 nested_unweighted:300:0:5}"' in s and "ab_prior_${name}" in s
+        assert 'PRIOR_ARMS="${PRIOR_ARMS-loo_v22:300:1:0 nested_unweighted:300:0:5}"' in s and "ab_prior_${name}" in s
         assert "$PRIOR_FLAGS" in s and "--prior-inner-folds" in s
     export = Path("src/model_a/provider_features_export.py").read_text()
     assert '"prior_min_n": int(prior_min_n)' in export and "--prior-weighted" in export

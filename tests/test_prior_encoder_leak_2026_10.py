@@ -168,3 +168,53 @@ def test_fqhc_members_make_an_org_institutional_for_the_dossier_pick():
     m = pd.DataFrame({"npi": ["1", "2", "3"], "org_node_id": ["org:a", "org:b", "org:c"],
                       "primary_taxonomy": ["261QF0400X", "282N00000X", "207Q00000X"]})
     assert hospital_org_ids(m) == {"org:a", "org:b"}          # the FQHC and the hospital; the physician group stays
+
+
+def test_empty_prior_arms_means_no_encoder_arms_and_the_repeat_picks_are_national():
+    """v25 set PRIOR_ARMS='' and the runner still refit the two encoder arms: ${VAR:-default}
+    reads an EMPTY value as unset. ${VAR-default} substitutes only when the variable is unset."""
+    import subprocess
+    from pathlib import Path
+    for f in ("ops/vm/regrade_from.sh", "ops/vm/run_frozen_night.sh"):
+        s = Path(f).read_text()
+        assert 'PRIOR_ARMS="${PRIOR_ARMS-loo_v22' in s and 'PRIOR_ARMS="${PRIOR_ARMS:-' not in s
+    probe = 'PRIOR_ARMS="${PRIOR_ARMS-a:1:1:1 b:2:2:2}"; n=0; for arm in $PRIOR_ARMS; do n=$((n+1)); done; echo $n'
+    assert subprocess.run(["bash", "-c", probe], capture_output=True, text=True, env={"PRIOR_ARMS": ""}).stdout.strip() == "0"
+    assert subprocess.run(["bash", "-c", probe], capture_output=True, text=True, env={}).stdout.strip() == "2"
+    from src.model_a.pursuit_dossier import is_national_name
+    assert is_national_name("KINGMAN HEALTHCARE, INC") and is_national_name("SONORA QUEST LABORATORIES LLC")
+    assert not is_national_name("TRUETOX LABORATORIES LLC")
+
+
+def test_refit_at_repeat_zero_reproduces_the_shipped_scores_and_a_repeat_redraws():
+    """The diagnostics' refit used GroupKFold and skipped the unassessable mask; the shipped
+    scorer uses stratified group folds and holds unassessable rows out. v24 / v25: every
+    refit arm read 1-2 hits below the shipped list by construction. Repeat 0 = the ship."""
+    pytest.importorskip("lightgbm")
+    import src.model_a.company_list as cl
+    from src.model_a.accuracy_diagnostics import refit_scores
+    rng = np.random.default_rng(3)
+    n = 1500
+    org = rng.integers(0, 300, n)
+    known = (rng.random(n) < 0.03).astype(int)
+    m = pd.DataFrame({"npi": [f"{1000000000 + i}" for i in range(n)],
+                      "org_node_id": [f"org:{o}" for o in org], "group_id": [f"org:{o}" for o in org],
+                      "provider_on_exclusion": known, "exclusion_label_sources": np.where(known == 1, "leie", ""),
+                      "assessable": np.where(rng.random(n) < 0.1, 0, 1),
+                      "f_signal": rng.normal(0, 1, n) + 1.5 * known, "f_noise1": rng.normal(0, 1, n),
+                      "f_noise2": rng.normal(0, 1, n)})
+    manifest = {"label": "provider_on_exclusion", "raw_feature_cols": ["f_signal", "f_noise1", "f_noise2"],
+                "peerpct_cols": [], "subscore_cols": [], "embedding_cols": [],
+                "leakage_hard": ["provider_on_exclusion"], "leakage_adjacent": [],
+                "sources_used": {"spending": ["f_signal", "f_noise1", "f_noise2"]},
+                "training_policy": {"n_seeds": 1}}
+    cl.set_label_policy("all"); cl.set_training_policy(None, None, None)
+    try:
+        shipped = cl.oof_scores(m, manifest)
+        refit, fold, cols = refit_scores(m, manifest)
+        assert np.allclose(shipped, refit, atol=1e-9)                       # repeat 0 IS the ship
+        again, fold1, _ = refit_scores(m, manifest, repeat=1)
+        assert not np.allclose(shipped, again, atol=1e-6)                   # a repeat is a new draw
+        assert set(fold) == set(range(5)) and (fold1 != fold).mean() > 0.3  # of the same five-fold design
+    finally:
+        cl.set_label_policy("all"); cl.set_training_policy(None, None, None)

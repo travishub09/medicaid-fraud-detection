@@ -146,7 +146,7 @@ fi
 # refit arm, main list AND the operator book under the shipped order (acc_pursuit_*). v24 arms:
 # loo_v22 = the v22 encoder (leave-one-out: the leak, graded so the fix is measured on the same
 # matrix), nested_unweighted = the fix without the label weights. Format name:min_n:weighted:inner.
-PRIOR_ARMS="${PRIOR_ARMS:-loo_v22:300:1:0 nested_unweighted:300:0:5}"
+PRIOR_ARMS="${PRIOR_ARMS-loo_v22:300:1:0 nested_unweighted:300:0:5}"   # unset = the default arms; EMPTY = no encoder arms (v25 ran two no-op refits because :- read empty as unset)
 for arm in $PRIOR_ARMS; do
   IFS=: read -r name mn wt inner <<< "$arm"
   if [ "$mn" = "$PRIOR_MIN_N" ] && [ "$wt" = "$PRIOR_WEIGHTED" ] && [ "$inner" = "$PRIOR_INNER" ]; then continue; fi

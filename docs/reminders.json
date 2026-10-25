@@ -642,6 +642,27 @@
    ]
   },
   {
+   "key": "v26_run",
+   "added": "2026-10-25",
+   "what": "v26 = REPLICATION ON THE SECOND FREEZE (2023-12, horizon 33 months, built in bundle 345 and never run): a FULL export on a matrix frozen two years after the first, graded on cases announced 2024 to 2026 that share no forward positive with the 2021-12 ruler. Policy = v25's (no class priors, nested encoder knobs recorded, pmax_basis50, train hard, ten seeds). The series on v21's matrix has converged (v17/v19/v24/v25 one model within fold noise), so the next evidence is an independent ruler, not another re-grade. Own as-of graph (graph_asof_2023-12_full, the December-2023 NPPES from nppes_history), about 12 to 16 hours (embeddings in full). The hit bars are the second freeze's own (hits100 >= 2, hits250 >= 4: fewer cases resolve in 33 months); the structural checks are v25's. ORDER: merge 392, pull on the VM, the preclean sync + data scan 2023-12 (task post_download_checks) FIRST, pre-register, launch under tmux v26, status, the tail-30 and the packet at DONE. FREEZE_PAIR.md (model_a.freeze_pair) then puts v25 and v26 side by side.",
+   "commands": [
+    "REM 1. laptop merge, then the VM pull (idle):",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection && ops\\laptop\\merge_push.bat 392",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && git log --oneline -1\"",
+    "REM 2. the preclean sync + data scan for 2023-12 first (task post_download_checks carries the lines)",
+    "REM 3. pre-register:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v26 --expected 'the second freeze replicates the 2021-12 result on an independent ruler: the pursuit book holds 2 at 100 and 4 at 250 under the 33-month FCA ruler with the head stable (Jaccard >= 0.6), the NPI grain above 3 and a sound score scale' --goal 'v26 = v25 policy (no class priors, nested knobs, pmax_basis50, train hard, ten seeds) exported on the 2023-12 freeze; FREEZE_PAIR against v25; the first independent replication of the series' --check 'hits100 >= 2' 'hits250 >= 4' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'npi_lift1pct >= 3' 'score_scale >= 0.1' 'eval_policy = fca' 'horizon = 33' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = none' 'prune = none' 'prior_inner >= 5'\"",
+    "REM 4. launch (tmux v26; the runner builds the 2023-12 as-of graph itself):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v26 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && CLASS_PRIORS= PRIOR_ARMS= PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1 PURSUIT_ORDER=pmax_basis50 TRAIN_TIER=hard HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v26 2023-12 > /data/medicaid/model_a/night_v26_console.log 2>&1'\"",
+    "REM 5. status any time:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep -c 'step ' /data/medicaid/model_a/frozen_2023-12_v26/night_run.log 2>/dev/null; grep 'step ' /data/medicaid/model_a/frozen_2023-12_v26/night_run.log 2>/dev/null | tail -1; tail -3 /data/medicaid/model_a/night_v26_console.log\"",
+    "REM 6. at [v26] DONE: the tail, the packet, the scp, then upload run_packet_v26.tar.gz to the chat:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -30 /data/medicaid/model_a/night_v26_console.log\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/frozen_2023-12_v26 && tar -czf /home/ubuntu/run_packet_v26.tar.gz *.md *.json *.csv $(ls -d ab_* 2>/dev/null)\"",
+    "scp -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v26.tar.gz C:\\Users\\treyr\\Downloads\\"
+   ]
+  },
+  {
    "key": "v25_run",
    "added": "2026-10-25",
    "what": "v25 = the RE-GRADE of v21's matrix WITHOUT class priors (bundle 391): the v24 arms showed honest priors add nothing (the nested-prior refit and the no-priors refit read the same operator book 0/1/3/4; no-priors has the better NPI grain), so the rule written before v24 applies. CLASS_PRIORS='' overrides the source manifest on every ship and arm line; the nested priors are graded as ab_class_priors/ (CLASS_PRIORS_AB default taxonomy,entity); PRIOR_ARMS='' (no encoder arms: nothing to encode); prune and broadcast arms stay. Pre-registered under the twenty with priors = none and the new score_scale >= 0.1. About nine hours (v23 and v24 each took nine). A pass = the first PROMOTE candidate; the dossier dispatch is then the operator's call. ORDER: merge 391, pull on the VM (idle), pre-register, launch under tmux v25, status, the tail-30 and the packet at [v25] DONE.",
@@ -723,20 +744,6 @@
     "REM the facility-level summary (no resident data) to paste to Claude:",
     "powershell -c \"Get-Content 'C:\\Users\\treyr\\OneDrive\\Desktop\\data\\enforcement\\pi_reports\\wesleyan\\PBJ_THERAPY_365162.md' -Head 12\"",
     "python -m src.reminders --done-task wesleyan_ledger_check"
-   ]
-  },
-  {
-   "key": "second_freeze_2023_12",
-   "added": "2026-10-21",
-   "what": "THE SECOND FREEZE, BUILT 2026-10-21 (bundle 345; docs/FREEZE_DESIGN_NOTE addendum): the cutoff is 2023-12, NOT 2023-06: once the picker reads quarter / month tokens, every edition on disk (POS Q4 2023, PBJ 2023Q4, NH Nov2023, O&R 2023-12, NADAC 2023) is dated AFTER June 2023 and only 2023-12 lights them all up; the December-2023 NPPES in nppes_history is the exact as-of edition. Horizon 33 months ends 2026-09 (fully elapsed). RUN IT AFTER audit batch 1 ships and the 2021-12 v19 is read: pre-register the tag, then the runner with cutoff 2023-12 and HORIZON=33 (its own as-of graph graph_asof_2023-12_full), then freeze_pair on the two runs. The data scan's frozen_2023-12/DATA_AUDIT.md section 2 says what it reads.",
-   "commands": [
-    "REM pre-register (same checks as the 2021-12 run; hits will be smaller: fewer cases resolve in 33 months):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v19b --expected 'hits at 100/250 above random under the 33-month FCA ruler' --goal 'the second freeze: 2023-12, horizon 33, every source lit' --check 'hits100 >= 2' 'hits250 >= 4' 'inst_share50 <= 0.4' 'eval_policy = fca' 'frozen = True' 'train = hard'\"",
-    "REM start (its own tmux window; reads the as-of NPPES from nppes_history automatically):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v19b 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v19b 2023-12 --rebuild-graph'\"",
-    "REM when DONE, the two-ruler read-out (replace v19 with the 2021-12 run tag):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2021-12_v19 /data/medicaid/model_a/frozen_2023-12_v19b && cat /data/medicaid/model_a/frozen_2021-12_v19/FREEZE_PAIR.md\"",
-    "python -m src.reminders --done-task second_freeze_2023_12"
    ]
   },
   {
@@ -859,12 +866,12 @@
   },
   {
    "key": "post_download_checks",
-   "what": "DEFERRED TO THE VM (2026-10-22): the laptop data scan hit 15.6 of 16 GB and a 100 percent disk (killed). Run it on the VM after v21 prints DONE and the preclean sync (down-preclean) has brought over the 2026-10-22 downloads (home_health/, dialysis/, state_capacity/): it grades every preclean file against its adapter, dates it, and places it under the freeze. Paste the summary lines (the DATA_AUDIT.md head).",
+   "what": "DEFERRED TO THE VM (2026-10-22): the laptop data scan hit 15.6 of 16 GB and a 100 percent disk (killed). Run it on the VM after v21 prints DONE and the preclean sync (down-preclean) has brought over the 2026-10-22 downloads (home_health/, dialysis/, state_capacity/): it grades every preclean file against its adapter, dates it, and places it under the freeze. Paste the summary lines (the DATA_AUDIT.md head). ORDER 2026-10-25: the VM is idle after v25; run the preclean sync, then the scan for BOTH freezes (2021-12 and 2023-12: v26 is the second freeze), BEFORE the v26 launch.",
    "commands": [
     "REM after [v21] DONE: the preclean sync (never a full down after a lanes load), then the scan:",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s sync4 'bash ops/vm/sync_data.sh down-preclean > /data/medicaid/sync_preclean.log 2>&1'\"",
     "REM when tmux ls shows no sync4:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && bash ops/vm/data_audit.sh 2021-12 && head -40 /data/medicaid/preclean/DATA_AUDIT.md\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && bash ops/vm/data_audit.sh 2023-12 && head -40 /data/medicaid/preclean/DATA_AUDIT.md\"",
     "python -m src.reminders --done-task post_download_checks"
    ],
    "added": "2026-10-21"
@@ -994,17 +1001,17 @@
   },
   {
    "key": "pursuit_dossier__frozen_2021-12_v25",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v25 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder)",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v25 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) THE OPERATOR'S DECISION (2026-10-25): the standing rule is no Manus credits on a HOLD run and v25 is a HOLD on one check at the noise floor; the other reading is that v25 is the first honest, stable, 19-of-20 list and the operational baseline. Say 'dispatch v25' (the line below sends ten research prompts off $MANUS_API_KEY) or 'skip v25' (closed as skipped). Nothing moves until one of those words. Run on the VM, never the laptop.",
    "added": "2026-10-25",
    "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.model_a.pursuit_dossier --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v25\" --dispatch",
+    "REM ONLY on the operator's explicit 'dispatch v25' (spends Manus credits):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2021-12_v25 --operator-book --label-tier hard --exclusion-nodes /data/medicaid/graph_asof_2021-12_full/nodes/exclusion_nodes.parquet --dispatch\"",
     "python -m src.reminders --done-task pursuit_dossier__frozen_2021-12_v25"
    ]
   },
   {
    "key": "dossier_poll__frozen_2021-12_v25",
-   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v25 dossier and send PURSUIT_DOSSIER.md",
+   "what": "~30 min after dispatch: collect Manus research into the frozen_2021-12_v25 dossier and send PURSUIT_DOSSIER.md Only after a dispatch (free, read-only at the service).",
    "added": "2026-10-25",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
@@ -1014,8 +1021,11 @@
   },
   {
    "key": "registry_verdict__frozen_2021-12_v25",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v25 \u2014 close only when you have them",
-   "added": "2026-10-25"
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2021-12_v25 \u2014 close only when you have them VERDICT (2026-10-25): HOLD on one of twenty (pursuit hits@100 = 3 against 4; pursuit 2/2/3/6, large 2/2/2/6, Jaccard 0.622 PASSES, NPI lift 8.7, score scale ok). The series has converged: v17/v19/v24/v25 are one model and the head checks measure the fold draw. docs/ACCURACY_READOUT_v25_2026-10-25.md. Close with the line below once read.",
+   "added": "2026-10-25",
+   "commands": [
+    "python -m src.reminders --done-task registry_verdict__frozen_2021-12_v25"
+   ]
   }
  ],
  "closed": [
@@ -1519,6 +1529,22 @@
    ],
    "closed": "2026-10-25",
    "closed_as": "skipped: v24 HOLD on top50_jaccard 0.555 (no Manus credits on a HOLD run)"
+  },
+  {
+   "key": "second_freeze_2023_12",
+   "added": "2026-10-21",
+   "what": "THE SECOND FREEZE, BUILT 2026-10-21 (bundle 345; docs/FREEZE_DESIGN_NOTE addendum): the cutoff is 2023-12, NOT 2023-06: once the picker reads quarter / month tokens, every edition on disk (POS Q4 2023, PBJ 2023Q4, NH Nov2023, O&R 2023-12, NADAC 2023) is dated AFTER June 2023 and only 2023-12 lights them all up; the December-2023 NPPES in nppes_history is the exact as-of edition. Horizon 33 months ends 2026-09 (fully elapsed). RUN IT AFTER audit batch 1 ships and the 2021-12 v19 is read: pre-register the tag, then the runner with cutoff 2023-12 and HORIZON=33 (its own as-of graph graph_asof_2023-12_full), then freeze_pair on the two runs. The data scan's frozen_2023-12/DATA_AUDIT.md section 2 says what it reads.",
+   "commands": [
+    "REM pre-register (same checks as the 2021-12 run; hits will be smaller: fewer cases resolve in 33 months):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v19b --expected 'hits at 100/250 above random under the 33-month FCA ruler' --goal 'the second freeze: 2023-12, horizon 33, every source lit' --check 'hits100 >= 2' 'hits250 >= 4' 'inst_share50 <= 0.4' 'eval_policy = fca' 'frozen = True' 'train = hard'\"",
+    "REM start (its own tmux window; reads the as-of NPPES from nppes_history automatically):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v19b 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env && HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v19b 2023-12 --rebuild-graph'\"",
+    "REM when DONE, the two-ruler read-out (replace v19 with the 2021-12 run tag):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2021-12_v19 /data/medicaid/model_a/frozen_2023-12_v19b && cat /data/medicaid/model_a/frozen_2021-12_v19/FREEZE_PAIR.md\"",
+    "python -m src.reminders --done-task second_freeze_2023_12"
+   ],
+   "closed": "2026-10-25",
+   "closed_as": "superseded by v26_run (the second freeze IS v26)"
   }
  ]
 }

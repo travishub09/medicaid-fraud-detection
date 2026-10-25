@@ -1978,6 +1978,28 @@ first, then paste" above every move/done block.
   line names the encoder keys. The broadcast-mask arm reads degenerate (0.085): mask
   stays an arm. FQHCs (JWCH Institute, North East Medical Services) reached the dossier
   pick: a `health center` cue is due on the institutional list. Not dispatched.
+  V25 READ-OUT (2026-10-25, `docs/ACCURACY_READOUT_v25_2026-10-25.md`): v21's matrix
+  WITHOUT class priors. HOLD on ONE of twenty: pursuit hits@100 = 3 (bar 4); pursuit
+  2 / 2 / 3 / 6, large 2 / 2 / 2 / 6, Jaccard 0.622 PASSES (31 orgs in every draw), NPI
+  lift 8.7, score scale 0.185, lead 22. THE SERIES HAS CONVERGED: v17 / v19 / v24 / v25
+  are one model (2-3 at 50, 2-5 at 100, 6-8 at 250, Jaccard 0.55-0.62, NPI 7-9), each
+  missing a different check by one hit; the head checks now measure the fold draw, and
+  no further re-grade of v21's matrix is informative. MEASUREMENT DEFECT FIXED (bundle
+  392): the diagnostics' refit used plain GroupKFold and skipped the unassessable mask
+  while the shipped scorer uses StratifiedGroupKFold and holds them out, so every arm
+  sat 1-2 hits below the shipped list at 16 / 50 in v24 and v25 by construction;
+  `oof_with_folds` now calls `company_list.fold_assignments(seed=)` (repeat 0 reproduces
+  the shipped scores exactly, pinned by test; a repeat re-draws the same design).
+  Arm-vs-arm readings stand. Also fixed: `${PRIOR_ARMS-default}` (an EMPTY value is no
+  arms; `:-` read it as unset and v25 ran two no-op encoder refits); KINGMAN HEALTHCARE
+  and SONORA QUEST on `_NATIONAL_NAMES` (repeat dossier picks). THE DOSSIER IS THE
+  OPERATOR'S DECISION: the rule says no credits on a HOLD; the other reading is that v25
+  is the first honest, stable, 19-of-20 list and the operational baseline; the tasks stay
+  open until the operator says dispatch or skip. v26 = REPLICATION ON THE SECOND FREEZE
+  (2023-12, HORIZON=33, no priors, pmax_basis50, train hard; `run_frozen_night.sh v26
+  2023-12`), pre-registered with the second freeze's own hit bars (hits100 >= 2, hits250
+  >= 4: fewer cases resolve in 33 months) + the structural twenty; the data scan runs
+  first on the idle VM; the lanes dispatch (gated) feeds both freezes.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy

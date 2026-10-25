@@ -254,35 +254,31 @@ def _screened_columns(matrix: pd.DataFrame, manifest: dict, y_screen: np.ndarray
 def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_train: np.ndarray,
                    ambiguous: np.ndarray, n_splits: int = 5, repeat: int = 0) -> tuple[np.ndarray, np.ndarray]:
     """company_list.oof_scores' loop with the fold id returned and an optional
-    re-shuffle of the group assignment (repeat > 0 hashes the groups with the
-    repeat as salt before GroupKFold, which is otherwise deterministic)."""
-    from sklearn.model_selection import GroupKFold, KFold
+    re-draw of the fold assignment (repeat > 0 re-draws the SAME stratified group
+    design under a seed; repeat 0 IS the shipped design).
+
+    v25 (2026-10-25): this loop used plain GroupKFold and skipped the unassessable
+    mask while the shipped scorer uses StratifiedGroupKFold and holds unassessable
+    rows out of training, so every refit arm sat 1-2 hits below the shipped list at
+    16 / 50 in v24 and v25 by construction. Repeat 0 now reproduces the shipped
+    scores exactly (tests/test_prior_encoder_leak_2026_10.py pins it)."""
     from .network_ab import _fit_predict
-    from .company_list import (broadcast_only_mask, fold_design, prior_keys_for, training_policy,
-                               training_weights)
+    from .company_list import (broadcast_only_mask, fold_assignments, fold_design, prior_keys_for,
+                               training_policy, training_weights, unassessable_mask)
     X = matrix[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-    groups = matrix["group_id"].astype(str).to_numpy() if "group_id" in matrix.columns else None
+    groups = matrix["group_id"].to_numpy() if "group_id" in matrix.columns else None
     # the same training policy as the shipped scorer (v9): label_weight as the
     # sample weight, seed bagging, and the broadcast-row policy from the manifest
     # or the CLI override; the class priors (v21 A/B) encoded per fold
     w = training_weights(matrix)
     pol = training_policy(manifest)
     keys = prior_keys_for(matrix, pol)
+    ambiguous = ambiguous | unassessable_mask(matrix)
     if pol["broadcast"] == "mask":
         ambiguous = ambiguous | (broadcast_only_mask(matrix) & (np.asarray(y_train) == 1))
     scores = np.zeros(len(matrix))
     fold = np.full(len(matrix), -1)
-    if groups is not None and pd.Series(groups).nunique() > n_splits:
-        if repeat:
-            rng = np.random.RandomState(RANDOM_STATE + repeat)
-            uniq = pd.unique(groups)
-            perm = dict(zip(uniq, rng.permutation(len(uniq))))
-            g = np.array([perm[x] for x in groups])
-        else:
-            g = groups
-        it = GroupKFold(n_splits=n_splits).split(X, y_train, g)
-    else:
-        it = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE + repeat).split(X)
+    it = fold_assignments(y_train, groups, n_splits, seed=(RANDOM_STATE + repeat if repeat else None))
     for k, (tr, te) in enumerate(it):
         tr = tr[~ambiguous[tr]]
         Xtr, Xte = fold_design(X, matrix, y_train, pol, tr, te, keys)

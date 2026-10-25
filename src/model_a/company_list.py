@@ -417,18 +417,29 @@ def training_weights(matrix: pd.DataFrame) -> np.ndarray | None:
     return w
 
 
-def fold_assignments(y, groups, n_splits: int = 5):
+def fold_assignments(y, groups, n_splits: int = 5, seed: int | None = None):
     """The scorer's folds: StratifiedGroupKFold (2026-10-09; balanced on positives so
     one fold's model does not run hot: the v6 / v7 diagnostics found fold 1 supplying
     33% of the top 1% against 20% expected) when the groups and positives allow,
-    GroupKFold otherwise, plain shuffled KFold without groups. Deterministic."""
+    GroupKFold otherwise, plain shuffled KFold without groups. Deterministic without
+    ``seed``; with ``seed`` (the diagnostics' stability repeats, v25) the SAME design
+    re-drawn under a shuffle, so a repeat differs from the ship by the draw alone."""
     from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold
     y = np.asarray(y)
     if groups is not None and pd.Series(groups).nunique() > n_splits:
+        g = np.asarray(groups)
+        if seed is not None:
+            rng = np.random.RandomState(seed)
+            uniq = pd.unique(g)
+            perm = dict(zip(uniq, rng.permutation(len(uniq))))
+            g = np.array([perm[x] for x in g])
         if 0 < int(y.sum()) and int(y.sum()) >= n_splits and int((y == 0).sum()) >= n_splits:
-            return list(StratifiedGroupKFold(n_splits=n_splits, shuffle=False).split(np.zeros(len(y)), y, groups))
-        return list(GroupKFold(n_splits=n_splits).split(np.zeros(len(y)), y, groups))
-    return list(KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE).split(np.zeros(len(y))))
+            sg = (StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=seed) if seed is not None
+                  else StratifiedGroupKFold(n_splits=n_splits, shuffle=False))
+            return list(sg.split(np.zeros(len(y)), y, g))
+        return list(GroupKFold(n_splits=n_splits).split(np.zeros(len(y)), y, g))
+    return list(KFold(n_splits=n_splits, shuffle=True,
+                      random_state=(RANDOM_STATE if seed is None else seed)).split(np.zeros(len(y))))
 
 
 def calibrate_oof(matrix: pd.DataFrame, scores: np.ndarray, label_col: str | None = None,
