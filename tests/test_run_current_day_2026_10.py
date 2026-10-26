@@ -24,7 +24,8 @@ def test_runner_syntax_and_guards():
     assert "--dispatch" not in cmds                                     # the dossier is never sent by a runner
     # every $VAR inside an echo is guarded or defined above set -u (the v26 crash class)
     for m in re.finditer(r"\$\{([A-Z_]+)\}", s):
-        assert m.group(1) in s.split("exec >")[0] or f"${{{m.group(1)}:-" in s or f"${{{m.group(1)}+" in s
+        name = m.group(1)
+        assert f"{name}=" in s[:m.start()] or f"${{{name}:-" in s or f"${{{name}+" in s, name
 
 
 def test_resume_gate_rejects_unknown_step(tmp_path: Path):
