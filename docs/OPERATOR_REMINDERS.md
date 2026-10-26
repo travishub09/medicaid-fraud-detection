@@ -30,6 +30,14 @@ Nothing due. Good.
 python -m src.reminders --done-task v21_run
 ```
 
+- [ ] **first_to_file_check** — FIRST-TO-FILE CHECK (bundle 402, src/enforcement/first_to_file.py): before money goes into a lead, the public dockets are searched for the party through the free CourtListener API (RECAP / PACER metadata, any nature of suit; FCA-shaped rows flagged). A sealed qui tam is invisible to every public search; a clean result rules out public cases, settlements and government actions only. Names: the home care physician and his practice + the five agencies, the podiatrist + his three companies, and the ten v26 targets. Free; a minute per name. COURTLISTENER_TOKEN in ~/.medicaid_env raises the rate limit (optional). Paste FIRST_TO_FILE.md's head. (added 2026-10-26)
+
+```bat
+REM after merge 402 + the VM pull:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && python -m src.enforcement.first_to_file --names 'Andes, Scott;Vantage Medical Associates;Americare Certified Special Services;Extended Nursing Personnel;Prime Home Health Services;Excellent Home Care Services;HCS Certified Home Care;Morrison, Norris;High Desert Limb Salvage Institute;Foot and Wound Care of Indio;Norris Morrison DPM;HealthTrackRx;Stavros Center for Independent Living;Ideal Option;Unilab Corporation;Diagnostic Laboratory of Oklahoma;Laboratory Services Cooperative;Simple Laboratories;Mini Pharmacy Enterprises;Kennedy Donovan Center;TrueTox Laboratories' --since 2015-01-01 --out /data/medicaid/enforcement/first_to_file && head -n 80 /data/medicaid/enforcement/first_to_file/FIRST_TO_FILE.md"
+python -m src.reminders --done-task first_to_file_check
+```
+
 - [ ] **attending_concentration_run** — RUN THE ATTENDING-CONCENTRATION REPORT ON THE VM (bundle 400, src/model_a/attending_concentration.py): the physician-of-record shape the matrix cannot see (an individual NPI in the servicing field of other organizations' claims), found by hand 2026-10-26: one Brooklyn internist as clinician of record on $97M of five agencies' home aide claims from mid-2023, first in the nation on the aide codes. The report ranks every such individual nationally with the ramp, the billers, the home-care share, the new-patient visits per working day and three flags. Current-day, no model, a few minutes of DuckDB. Read the top 30 and tell Claude which rows are new; each flagged row is a desk-research card before any PI time. (added 2026-10-26)
 
 ```bat
