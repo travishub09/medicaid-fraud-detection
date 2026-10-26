@@ -23,6 +23,7 @@ PI_FACTS.md (human-readable).
 from __future__ import annotations
 
 import argparse
+import re
 import json
 from pathlib import Path
 
@@ -598,7 +599,7 @@ def main() -> None:
                          "that is a bare 10-digit NPI is resolved to its org "
                          "through the run matrix (the PI packet lists NPIs)")
     ap.add_argument("--npis", default=None,
-                    help="semicolon-separated NPIs, resolved to their orgs "
+                    help="NPIs separated by ; , or space, resolved to their orgs "
                          "through the run matrix")
     ap.add_argument("--top", type=int, default=None,
                     help="with a priority-list CSV in --orgs-file: only the "
@@ -625,7 +626,7 @@ def main() -> None:
     if args.orgs:
         org_ids += [o.strip() for o in args.orgs.split(";") if o.strip()]
     if args.npis:
-        npis += [n.strip() for n in args.npis.split(";") if n.strip()]
+        npis += [n.strip() for n in re.split(r"[;,\s]+", args.npis) if n.strip()]
     if args.orgs_file:
         p = Path(args.orgs_file)
         if p.suffix.lower() == ".csv":
@@ -664,8 +665,13 @@ def main() -> None:
             iter(sorted((root / "preclean" / "hcpcs_time").glob("hcpcs_minutes*.csv"))),
             None)
         res = attach_billing_facts(res, spending, minutes_csv=minutes)
+    # --out-prefix may carry a directory part (an absolute path lands outside the run
+    # folder: the operator's pi_reports/ tree, 2026-10-26); only the NAME is upper-cased
+    # for the Markdown sheet, never the folders (an upper-cased path did not exist).
+    _pp = Path(args.out_prefix)
+    _pp.parent.mkdir(parents=True, exist_ok=True) if _pp.parent != Path(".") else None
     jp = run_dir / f"{args.out_prefix}.json"
-    mp = run_dir / f"{args.out_prefix.upper()}.md"
+    mp = run_dir / _pp.parent / f"{_pp.name.upper()}.md"
     jp.write_text(json.dumps(res, indent=1), encoding="utf-8")
     mp.write_text(to_markdown(res), encoding="utf-8")
     found = sum(1 for v in res.values() if "error" not in v)
