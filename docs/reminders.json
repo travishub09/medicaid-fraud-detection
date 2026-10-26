@@ -1017,7 +1017,7 @@
   },
   {
    "key": "pursuit_dossier__frozen_2021-12_v25",
-   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v25 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) THE OPERATOR'S DECISION (2026-10-25): the standing rule is no Manus credits on a HOLD run and v25 is a HOLD on one check at the noise floor; the other reading is that v25 is the first honest, stable, 19-of-20 list and the operational baseline. Say 'dispatch v25' (the line below sends ten research prompts off $MANUS_API_KEY) or 'skip v25' (closed as skipped). Nothing moves until one of those words. Run on the VM, never the laptop.",
+   "what": "Build + dispatch the pursuit dossier for frozen_2021-12_v25 (skip if the run script already did \u2014 check for PURSUIT_DOSSIER.md in the run folder) THE OPERATOR'S DECISION (2026-10-25): the standing rule is no Manus credits on a HOLD run and v25 is a HOLD on one check at the noise floor; the other reading is that v25 is the first honest, stable, 19-of-20 list and the operational baseline. Say 'dispatch v25' (the line below sends ten research prompts off $MANUS_API_KEY) or 'skip v25' (closed as skipped). Nothing moves until one of those words. Run on the VM, never the laptop. OPERATOR 2026-10-26: 'running v26 tonight, dispatch tomorrow' -- the dispatch decision is deferred to the v26 packet read (2026-10-27); whichever run's dossier is dispatched, it is one dispatch, not two.",
    "added": "2026-10-25",
    "commands": [
     "REM ONLY on the operator's explicit 'dispatch v25' (spends Manus credits):",
