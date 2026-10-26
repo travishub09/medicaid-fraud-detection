@@ -79,12 +79,6 @@ REM download first, then:
 python -m src.reminders --done owners_2023_editions
 ```
 
-- [ ] **v26_run** — v26 = REPLICATION ON THE SECOND FREEZE (2023-12, horizon 33 months, built in bundle 345 and never run): a FULL export on a matrix frozen two years after the first, graded on cases announced 2024 to 2026 that share no forward positive with the 2021-12 ruler. Policy = v25's (no class priors, nested encoder knobs recorded, pmax_basis50, train hard, ten seeds). The series on v21's matrix has converged (v17/v19/v24/v25 one model within fold noise), so the next evidence is an independent ruler, not another re-grade. Own as-of graph (graph_asof_2023-12_full, the December-2023 NPPES from nppes_history), about 12 to 16 hours (embeddings in full). The hit bars are the second freeze's own (hits100 >= 2, hits250 >= 4: fewer cases resolve in 33 months); the structural checks are v25's. ORDER: merge 392, pull on the VM, the preclean sync + data scan 2023-12 (task post_download_checks) FIRST, pre-register, launch under tmux v26, status, the tail-30 and the packet at DONE. FREEZE_PAIR.md (model_a.freeze_pair) then puts v25 and v26 side by side. CRASHED 2026-10-26 06:48 UTC at step 8 (the prune arm's 'skipped' echo read an unset variable under set -u; no previous 2023-12 run = no prune list): the export, rulers, three books, broadcast and class-prior arms FINISHED (five hours); steps 8c, 9-13 did not run. Bundle 394 fixes the echo and adds RESUME_FROM=<step id>: RESUME lines below re-enter the same folder at the prune step (about 3 to 4 hours: the charged arm, the dossier, registration, the measurement ablations, the ledger). FINISHED 2026-10-26 17:07 UTC after the resume (read out: HOLD on the Jaccard only; the freeze pair holds). Close with the line below. (added 2026-10-25)
-
-```bat
-python -m src.reminders --done-task v26_run
-```
-
 - [ ] **v25_run** — v25 = the RE-GRADE of v21's matrix WITHOUT class priors (bundle 391): the v24 arms showed honest priors add nothing (the nested-prior refit and the no-priors refit read the same operator book 0/1/3/4; no-priors has the better NPI grain), so the rule written before v24 applies. CLASS_PRIORS='' overrides the source manifest on every ship and arm line; the nested priors are graded as ab_class_priors/ (CLASS_PRIORS_AB default taxonomy,entity); PRIOR_ARMS='' (no encoder arms: nothing to encode); prune and broadcast arms stay. Pre-registered under the twenty with priors = none and the new score_scale >= 0.1. About nine hours (v23 and v24 each took nine). A pass = the first PROMOTE candidate; the dossier dispatch is then the operator's call. ORDER: merge 391, pull on the VM (idle), pre-register, launch under tmux v25, status, the tail-30 and the packet at [v25] DONE. (added 2026-10-25)
 
 ```bat
@@ -236,12 +230,6 @@ REM after v12 is graded; Claude writes the exact ablation line then
 cd /d C:\Users\treyr\medicaid-fraud-detection
 python -u -m src.model_a.pi_facts --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2021-12_v11" --npis "1508848441;1588703995;1558688754" --deep --out-prefix pi_facts_chinatown
 REM say 'Sage first-call list + Wallabout follow-ups sent' when the email goes
-```
-
-- [ ] **post_download_checks** — DEFERRED TO THE VM (2026-10-22): the laptop data scan hit 15.6 of 16 GB and a 100 percent disk (killed). Run it on the VM after v21 prints DONE and the preclean sync (down-preclean) has brought over the 2026-10-22 downloads (home_health/, dialysis/, state_capacity/): it grades every preclean file against its adapter, dates it, and places it under the freeze. Paste the summary lines (the DATA_AUDIT.md head). ORDER 2026-10-25: the VM is idle after v25; run the preclean sync, then the scan for BOTH freezes (2021-12 and 2023-12: v26 is the second freeze), BEFORE the v26 launch. DONE IN FACT 2026-10-26 00:12 (the sync and the 2023-12 scan ran; report under /data/medicaid/audit_20261026_0012/); the operator closes it with the line below. (added 2026-10-21)
-
-```bat
-python -m src.reminders --done-task post_download_checks
 ```
 
 - [ ] **capacity_on_vm** — RULE (operator 2026-10-22: the laptop tools crashed the machine): the capacity check and the licensed-roster load run on the VM, never the laptop (run_licensed_capacity.bat / run_capacity_v3.bat are retired). After v21 DONE and the preclean sync (task post_download_checks): rebuild the licensed capacity from the rosters (NY / NJ in preclean/state_capacity), then the capacity check on v21's matrix; the report lands in the run folder (capacity/CAPACITY.md) and comes back in the packet. (added 2026-10-22)
