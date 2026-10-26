@@ -2024,6 +2024,30 @@ first, then paste" above every move/done block.
   and `admin_costs` absent in the HHA cost reports (the HHA rows of cost_report_fraud
   compute on a default). RULE: a runner branch no run has taken is untested; `bash -n` does
   not catch `set -u`; every `$VAR` in an echo is `${VAR:-}`.
+  V26 READ-OUT, THE SECOND FREEZE (2026-10-26, `docs/ACCURACY_READOUT_v26_2026-10-26.md`,
+  `docs/FREEZE_PAIR_v25_v26_2026-10-26.md`): the 2023-12 export under v25's policy, graded on
+  the 33-month ruler (273 positives in the universe). HOLD on ONE of seventeen: Jaccard
+  0.588 (26 of 50). Pursuit 1 / 2 / 5 / 6 (p 0.014 / 0.000 / 0.000), large 1 / 3 / 5 / 6,
+  NPI lift 15.0 (best of the series), score scale 0.215, lead median 4 months (the ruler is
+  young; lead_ge_gap exactly 0.5). FREEZE PAIR: 8 of 8 comparable checks hold on both
+  freezes. Independence is PARTIAL: the matrices are two years apart but 1,266 of v26's
+  2,598 ruler positives (the 2024 cases) are inside v25's 36-month window; three of the six
+  hits are on both rulers, Tactile Systems (31 mo) and Dana-Farber (24 mo) are not. The
+  shipped-policy refit reads the shipped book to the hit (the bundle-392 fold fix
+  confirmed); priors add nothing on this freeze either. FIXED (bundle 395, v27 semantics
+  for two schemes): `facility.pick_edition_candidates` + the export's fallback loop (the
+  hospice picker took the May-2026 release for 2023-12, 0 CCNs, while Nov-2023 sat beside
+  it: subscore_hospice_ineligibility all-NaN in v26); `em_prolonged_share` /
+  `psy_interactive_share` capped at 1 (add-on lines over base lines read 469x / 199x) and
+  `lab_component_share` on positive-only dollars (1.47 on refund months);
+  `pursuit_dossier.public_since_freeze` sets aside every org with a member on the run's
+  forward ruler (v26's pick named Precision Toxicology, a 2024 settlement, first), lists them
+  in dossier_public_since_freeze.csv, never ranks on it (`--keep-public-cases` restores);
+  SANFORD / STANFORD HEALTH / EUROFINS on the national list. DISPATCH: the rebuilt v26
+  operator book is the candidate (two years more current than v25, the method replicated);
+  the operator's word sends it. v27 = the 2023-12 export again once the owners editions
+  and the hospice fix are in. RULE: a frozen run's dossier is an operational pick made
+  today; the ruler may remove rows from it and never order them.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy

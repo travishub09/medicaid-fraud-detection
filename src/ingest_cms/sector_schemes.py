@@ -238,13 +238,20 @@ def sector_metrics_from_parquet(spending_path: str | Path,
         has_hh & (df["hh_patient_months"] > 0))
     out["hh_paid_per_patient_month"] = (df["hh_paid"] / df["hh_patient_months"]).where(
         has_hh & (df["hh_patient_months"] > 0))
-    fam = df["lab_panel_paid"] + df["lab_comp_paid"]
-    out["lab_component_share"] = (df["lab_comp_paid"] / fam).where(fam > 0)
+    # v26 (2026-10-26): refund months made the family total smaller than the component
+    # dollars (share 1.47); positive-only dollars, bounded
+    panel_pos = df["lab_panel_paid"].clip(lower=0.0)
+    comp_pos = df["lab_comp_paid"].clip(lower=0.0)
+    fam = panel_pos + comp_pos
+    out["lab_component_share"] = (comp_pos / fam).where(fam > 0).clip(upper=1.0)
     out["lab_draw_per_test"] = (df["lab_draw_lines"] / df["lab_test_lines"]).where(df["lab_test_lines"] > 0)
     has_psy = df["psy_lines"] > 0
     out["psy_60min_share"] = (df["psy60_lines"] / df["psy_lines"]).where(has_psy)
-    out["psy_interactive_share"] = (df["psy_int_lines"] / df["psy_lines"]).where(has_psy)
-    out["em_prolonged_share"] = (df["prolonged_lines"] / df["em_lines"]).where(df["em_lines"] > 0)
+    # v26 (2026-10-26): add-on lines can exceed the base lines they attach to (90785 or a
+    # prolonged code billed without the base visit: up to 199x and 469x on the 2023-12
+    # matrix); the share is capped at 1, the maximum = the most add-ons a base line can carry
+    out["psy_interactive_share"] = (df["psy_int_lines"] / df["psy_lines"]).where(has_psy).clip(upper=1.0)
+    out["em_prolonged_share"] = (df["prolonged_lines"] / df["em_lines"]).where(df["em_lines"] > 0).clip(upper=1.0)
 
     # impossible-day approximation: needs the public code→minutes map
     if minutes_csv and Path(minutes_csv).exists():

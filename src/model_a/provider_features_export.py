@@ -2450,13 +2450,21 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
             hos_all += [q for q in sorted((pc / "facility").glob(pat)) if q.is_file()] \
                 if any(ch in pat for ch in "*?[") else ([pc / "facility" / pat] if (pc / "facility" / pat).exists() else [])
         hos_all = sorted(set(hos_all))
-        hos_p = fac.pick_edition(hos_all, asof_cutoff) if hos_all else None
+        hos_cands = fac.pick_edition_candidates(hos_all, asof_cutoff) if hos_all else []
+        hos_p = None
+        m = None
+        # v26 (2026-10-26): try the candidates in order until one carries a measure period
+        # inside the freeze (the May-2026 release under 2023-12 read 0 CCNs; Nov-2023 was next)
+        for cand in hos_cands:
+            mc, _ = fac.compute_hospice_metrics(_read_any(cand), asof_cutoff=asof_cutoff)
+            if len(mc) or cand is hos_cands[-1]:
+                hos_p, m = cand, mc
+                break
+            log(f"    [facility/hospice] {cand.name}: 0 CCNs for cutoff {asof_cutoff}: trying the next edition")
         if hos_p and len(hos_all) > 1:
             log(f"    [facility/hospice] editions on disk: {', '.join(q.name for q in hos_all)}; "
                 f"using {hos_p.name} for cutoff {asof_cutoff or 'current-day'}")
         if hos_p:
-            m, _ = fac.compute_hospice_metrics(_read_any(hos_p),
-                                               asof_cutoff=asof_cutoff)
             log(f"    [facility/hospice] {hos_p.name}: {len(m):,} CCNs"
                 + (f" (measure periods ending <= {asof_cutoff})"
                    if asof_cutoff else ""))

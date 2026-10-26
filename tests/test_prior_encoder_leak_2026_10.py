@@ -263,3 +263,34 @@ def test_night_runner_resume_gate_and_the_prune_echo_is_guarded():
     r = subprocess.run(["bash", "-c", bad], capture_output=True, text=True, env={"RESUME_FROM": "nope"})
     assert r.returncode != 0 and "unknown RESUME_FROM" in r.stdout + r.stderr
     assert subprocess.run(["bash", "-n", "ops/vm/run_frozen_night.sh"]).returncode == 0
+
+
+def test_v26_fixes_hospice_candidates_bounded_shares_and_public_since_freeze(tmp_path):
+    """v26 packet (2026-10-26): (1) the hospice picker chose the May-2026 release for a 2023-12
+    freeze (0 CCNs) while Nov-2023 sat beside it; (2) three shares left [0,1] on the 2023 data;
+    (3) the dossier named a 2024 settlement as target number one."""
+    from pathlib import Path as P
+    from src.ingest_cms.facility import pick_edition, pick_edition_candidates
+    files = [P("Hospice_Provider_Feb2022.csv"), P("Hospice_Provider_May2026.csv"), P("Hospice_Provider_Nov2023.csv")]
+    assert [p.name for p in pick_edition_candidates(files, "2023-12")] == \
+        ["Hospice_Provider_May2026.csv", "Hospice_Provider_Nov2023.csv", "Hospice_Provider_Feb2022.csv"]
+    assert pick_edition(files, "2023-12").name == "Hospice_Provider_May2026.csv"        # the first to TRY
+    assert [p.name for p in pick_edition_candidates(files, None)][0] == "Hospice_Provider_May2026.csv"
+    from src.ingest_cms.sector_schemes import sector_metrics_from_parquet
+    rows = [("1003000175", "90785", "2024-01", 500.0, 40.0, 10.0), ("1003000175", "90834", "2024-01", 100.0, 2.0, 2.0),
+            ("1003000175", "99417", "2024-01", 900.0, 30.0, 10.0), ("1003000175", "99214", "2024-01", 100.0, 1.0, 1.0),
+            ("1003000183", "80053", "2024-01", -500.0, 5.0, 5.0), ("1003000183", "82947", "2024-01", 300.0, 10.0, 8.0)]
+    df = pd.DataFrame(rows, columns=["billing_npi", "hcpcs_code", "service_month", "total_paid", "total_claim_lines", "total_patients"])
+    p = tmp_path / "spending_fact.parquet"; df.to_parquet(p, index=False)
+    out = sector_metrics_from_parquet(p).set_index("npi")
+    assert out.loc["1003000175", "psy_interactive_share"] == 1.0 and out.loc["1003000175", "em_prolonged_share"] == 1.0
+    assert 0.0 <= out.loc["1003000183", "lab_component_share"] <= 1.0
+    from src.model_a.pursuit_dossier import public_since_freeze, is_national_name
+    run = tmp_path / "frozen_2023-12_v26"; run.mkdir()
+    (run / "future_bans_after_2023-12__fca33.csv").write_text(
+        "npi,first_excl_date,is_prospective_positive\n1000000001,2024-08-01,1\n1000000002,2025-01-01,0\n")
+    m = pd.DataFrame({"npi": ["1000000001", "1000000002", "1000000003"], "org_node_id": ["org:a", "org:b", "org:c"]})
+    ids, ruler = public_since_freeze(run, m)
+    assert ids == {"org:a"} and ruler.name.endswith("__fca33.csv")
+    assert public_since_freeze(tmp_path, m) == (set(), None)
+    assert is_national_name("SANFORD BISMARCK") and is_national_name("EUROFINS DIATHERIX LABORATORIES LLC")

@@ -249,18 +249,30 @@ def pick_edition(paths, asof_cutoff: str | None = None):
     edition under a 2021-12 freeze filtered to nothing: hospice_live_discharge_rate
     all-NaN in v7); with no edition after the cutoff, the newest before it.
     Undated names rank last. Returns None for an empty list."""
+    cands = pick_edition_candidates(paths, asof_cutoff)
+    return cands[0] if cands else None
+
+
+def pick_edition_candidates(paths, asof_cutoff: str | None = None) -> list:
+    """Every edition in the order to TRY (v26, 2026-10-26): frozen = the editions dated
+    on/after the cutoff earliest first (a release carries the periods that ended before
+    it), THEN the editions before the cutoff newest first; the caller moves to the next
+    candidate when one filters to nothing (the May-2026 release under a 2023-12 freeze
+    held no period ending <= 2023-12 while Nov-2023 sat beside it). Current-day: newest
+    first. Undated names last."""
     paths = [Path(p) for p in paths]
     if not paths:
-        return None
+        return []
     dated = [(edition_date(p.name), p) for p in paths]
     known = [(d, p) for d, p in dated if d]
+    undated = sorted(p for d, p in dated if not d)
     if not known:
-        return sorted(paths)[0]
+        return undated
     if asof_cutoff:
-        after = [(d, p) for d, p in known if d >= asof_cutoff[:7]]
-        if after:
-            return min(after)[1]
-    return max(known)[1]
+        after = sorted((d, p) for d, p in known if d >= asof_cutoff[:7])
+        before = sorted(((d, p) for d, p in known if d < asof_cutoff[:7]), reverse=True)
+        return [p for _, p in after] + [p for _, p in before] + undated
+    return [p for _, p in sorted(known, reverse=True)] + undated
 
 
 def compute_hospice_metrics(raw: pd.DataFrame,

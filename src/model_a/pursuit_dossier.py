@@ -536,6 +536,8 @@ _NATIONAL_NAMES = (
     # v21..v25 dossiers (2026-10-25): an Arizona hospital system enrolled under one NPI with no cue
     # word, and a national reference lab (the Quest Diagnostics joint venture)
     "KINGMAN HEALTHCARE", "SONORA QUEST",
+    # v26 dossier (2026-10-26): two hospital systems and a national reference-lab chain
+    "SANFORD", "STANFORD HEALTH", "EUROFINS",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 
@@ -644,18 +646,46 @@ def screening_cautions(row: pd.Series, matrix: pd.DataFrame) -> list[str]:
     return out
 
 
+def public_since_freeze(run_dir: Path, matrix: pd.DataFrame) -> tuple[set, Path | None]:
+    """Org ids with a member on the run's forward ruler (a case or exclusion made PUBLIC
+    after the freeze). v26 (2026-10-26): the second freeze's dossier named Precision
+    Toxicology first, a 2024 settlement. A frozen run's dossier is an operational pick made
+    today, so an organization whose case is already public is never a target; the ruler
+    is read here only to REMOVE rows, never to rank them. Returns (org ids, the ruler file)."""
+    cands = sorted(run_dir.glob("future_bans_after_*__fca*.csv")) or sorted(run_dir.glob("future_bans_after_*.csv"))
+    if not cands or "org_node_id" not in matrix.columns:
+        return set(), None
+    ruler = cands[0]
+    fb = pd.read_csv(ruler, dtype=str)
+    if "is_prospective_positive" not in fb.columns:
+        return set(), ruler
+    pub = set(fb.loc[fb["is_prospective_positive"].astype(str).isin(("1", "True", "true")), "npi"].astype(str))
+    ids = set(matrix.loc[matrix["npi"].astype(str).isin(pub), "org_node_id"].astype(str))
+    return ids, ruler
+
+
 def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
           poll: bool = False, transport=None,
           min_billed: float = 250_000.0,
           min_damages: float | None = None,
           min_hot: float = 0.5,
           include_government: bool = False,
-          operator_book: bool = False) -> Path:
+          operator_book: bool = False,
+          keep_public_cases: bool = False) -> Path:
     d = Path(run_dir)
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
     scores = oof_scores(matrix, manifest)
     orgs = rollup(matrix, scores, drop_excluded=True)
+    if not keep_public_cases:
+        pub_ids, ruler = public_since_freeze(d, matrix)
+        if pub_ids:
+            gone = orgs[orgs["org_id"].astype(str).isin(pub_ids)]
+            orgs = orgs[~orgs["org_id"].astype(str).isin(pub_ids)]
+            gone[["org_id", "org_name"]].to_csv(d / "dossier_public_since_freeze.csv", index=False)
+            print(f"[pursuit_dossier] {len(gone):,} org(s) with a public case or exclusion since the freeze "
+                  f"set aside (not targets; {ruler.name if ruler else ''}): "
+                  + "; ".join(gone["org_name"].astype(str).head(8)) + (" ..." if len(gone) > 8 else ""))
     from .case_size import org_case_size, size_line
     sizes = org_case_size(matrix)
     orgs = orgs.merge(sizes, on="org_id", how="left")
@@ -1044,6 +1074,9 @@ def main() -> None:
                          "government entities, no solo individuals): the class the "
                          "whistleblower strategy targets and the pursuit companion list "
                          "grades; the default top-10 is the main list")
+    ap.add_argument("--keep-public-cases", action="store_true",
+                    help="keep organizations with a public case since the freeze in the target pick "
+                         "(default: set aside; a frozen run's dossier is an operational pick made today)")
     ap.add_argument("--dispatch", action="store_true",
                     help="send the Manus research tasks now (needs "
                          f"${MANUS_KEY_ENV})")
@@ -1144,7 +1177,7 @@ def main() -> None:
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,
           min_hot=args.min_hot, include_government=args.include_government,
-          operator_book=args.operator_book)
+          operator_book=args.operator_book, keep_public_cases=args.keep_public_cases)
 
 
 if __name__ == "__main__":
