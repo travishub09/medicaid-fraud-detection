@@ -218,3 +218,27 @@ def test_refit_at_repeat_zero_reproduces_the_shipped_scores_and_a_repeat_redraws
         assert set(fold) == set(range(5)) and (fold1 != fold).mean() > 0.3  # of the same five-fold design
     finally:
         cl.set_label_policy("all"); cl.set_training_policy(None, None, None)
+
+
+def test_operator_pinned_baseline_is_distinct_from_the_champion(tmp_path, capsys):
+    """v25 (2026-10-26, the operator: 'freeze this version and come back to it'): a HOLD run can be
+    pinned as the fallback baseline (BASELINE.json, '@baseline'); the champion stays a PROMOTE fact."""
+    import json
+    from src.model_a import run_registry as rr
+    root = tmp_path; (root / "model_a").mkdir()
+    run = root / "model_a" / "frozen_2021-12_v25"; run.mkdir()
+    rows = [{"tag": "frozen_2021-12_v25", "run_dir": str(run), "git_commit": "3898faa", "decision": "HOLD",
+             "acc_org_hits50": 2, "acc_top50_jaccard": 0.622, "label_policy": "hard"}]
+    (root / "model_a" / "run_registry.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    assert rr.baseline_pointer(root) is None and rr.champion_pointer(root) is None
+    with pytest.raises(SystemExit):
+        rr.resolve_run_dir("@baseline", data_root=root)
+    ptr = rr.pin_baseline(root, "frozen_2021-12_v25", reason="first honest stable list", freeze_tag="freeze-v25-2026-10-25")
+    assert ptr["git_commit"] == "3898faa" and ptr["kpis"]["acc_top50_jaccard"] == 0.622 and ptr["previous"] is None
+    assert rr.resolve_run_dir("@baseline", data_root=root) == str(run)
+    assert rr.champion_pointer(root) is None                             # a pin is not a PROMOTE
+    with pytest.raises(SystemExit):
+        rr.pin_baseline(root, "frozen_2021-12_v99")                       # only a registered run
+    ptr2 = rr.pin_baseline(root, "frozen_2021-12_v25", reason="again")
+    assert ptr2["previous"]["tag"] == "frozen_2021-12_v25"                # the earlier pin is kept
+    assert rr.resolve_run_dir("/some/other/run", data_root=root) == "/some/other/run"

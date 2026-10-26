@@ -642,6 +642,22 @@
    ]
   },
   {
+   "key": "freeze_v25",
+   "added": "2026-10-26",
+   "what": "FREEZE v25 as the fallback (operator 2026-10-26: 'freeze this version and come back to it if v26/v27 do not get there'). Three layers: (1) CODE: tag freeze-v25-2026-10-25 + branch freeze/v25-2026-10-25 at 3898faa, carried by bundle 393 and pushed by merge_push.bat (return with `git checkout freeze-v25-2026-10-25`); (2) RUN ARTIFACTS: the VM folder /data/medicaid/model_a/frozen_2021-12_v25 (matrix, lists, dossier) stays on the VM disk; `sync_data.sh up` copies the reports + registry to OneDrive; keep run_packet_v25.tar.gz in Downloads; (3) THE POINTER: `run_registry --pin-baseline` writes /data/medicaid/model_a/BASELINE.json so every output CLI accepts --run-dir @baseline; a HOLD run can be the baseline, never the champion. ORDER: merge 393 (the tag rides along), pull on the VM, pin, up-sync. The pin moves only on the operator's word.",
+   "commands": [
+    "REM 1. laptop merge (carries the freeze tag), then the VM pull:",
+    "cd C:\\Users\\treyr\\medicaid-fraud-detection && ops\\laptop\\merge_push.bat 393",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && git fetch origin 'refs/tags/freeze-*:refs/tags/freeze-*' && git tag | grep freeze\"",
+    "REM 2. pin v25 as the baseline on the VM (the registry lives there):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --pin-baseline frozen_2021-12_v25 --freeze-tag freeze-v25-2026-10-25 --reason 'first honest, stable, 19-of-20 list; the fallback until v26/v27 beat it on an independent ruler' && python -m src.model_a.run_registry --data-root /data/medicaid --champion\"",
+    "REM 3. copy the v25 reports + registry to OneDrive (tmux; a few minutes):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s up25 'bash ops/vm/sync_data.sh up frozen_2021-12_v25 > /data/medicaid/sync_up_v25.log 2>&1'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; tail -3 /data/medicaid/sync_up_v25.log\"",
+    "python -m src.reminders --done-task freeze_v25"
+   ]
+  },
+  {
    "key": "v26_run",
    "added": "2026-10-25",
    "what": "v26 = REPLICATION ON THE SECOND FREEZE (2023-12, horizon 33 months, built in bundle 345 and never run): a FULL export on a matrix frozen two years after the first, graded on cases announced 2024 to 2026 that share no forward positive with the 2021-12 ruler. Policy = v25's (no class priors, nested encoder knobs recorded, pmax_basis50, train hard, ten seeds). The series on v21's matrix has converged (v17/v19/v24/v25 one model within fold noise), so the next evidence is an independent ruler, not another re-grade. Own as-of graph (graph_asof_2023-12_full, the December-2023 NPPES from nppes_history), about 12 to 16 hours (embeddings in full). The hit bars are the second freeze's own (hits100 >= 2, hits250 >= 4: fewer cases resolve in 33 months); the structural checks are v25's. ORDER: merge 392, pull on the VM, the preclean sync + data scan 2023-12 (task post_download_checks) FIRST, pre-register, launch under tmux v26, status, the tail-30 and the packet at DONE. FREEZE_PAIR.md (model_a.freeze_pair) then puts v25 and v26 side by side.",

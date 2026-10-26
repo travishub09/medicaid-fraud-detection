@@ -563,13 +563,63 @@ def champion_pointer(data_root: str | Path, series: str | None = None) -> dict |
     return champ
 
 
+BASELINE_FILE = "BASELINE.json"
+
+
+def baseline_pointer(data_root: str | Path) -> dict | None:
+    """The OPERATOR-PINNED baseline (v25, 2026-10-26): the run the operator chose to
+    fall back to when later runs do not beat it, distinct from the champion (a
+    validation fact: the newest PROMOTE). A HOLD run can be a baseline; it can never
+    be the champion. Written by ``pin_baseline``; read by '@baseline'."""
+    p = Path(data_root) / "model_a" / BASELINE_FILE
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def pin_baseline(data_root: str | Path, tag: str, reason: str = "", freeze_tag: str | None = None) -> dict:
+    """Pin ``tag`` (a registered run) as the fallback baseline: BASELINE.json carries the
+    run folder, the git commit the run was built on, the headline KPIs, the code
+    freeze tag (git) and the operator's reason. Re-pinning overwrites; the previous
+    pointer is kept in ``previous`` so a pin can be undone by hand."""
+    root = Path(data_root)
+    rows = dedupe_rows(_load_jsonl(root / "model_a" / "run_registry.jsonl"))
+    row = next((r for r in rows if r.get("tag") == tag), None)
+    if row is None:
+        raise SystemExit(f"pin_baseline: '{tag}' is not a registered run "
+                         f"({root / 'model_a' / 'run_registry.jsonl'})")
+    keep = ("acc_org_hits16", "acc_org_hits50", "acc_org_hits100", "acc_org_hits250", "acc_top50_jaccard",
+            "acc_npi_lift1pct", "acc_score_scale", "decision", "label_policy", "train_policy", "class_priors")
+    prev = baseline_pointer(root)
+    ptr = {"tag": tag, "run_dir": row.get("run_dir"), "git_commit": row.get("git_commit"),
+           "freeze_tag": freeze_tag, "pinned_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+           "reason": reason, "kpis": {k: row.get(k) for k in keep if row.get(k) is not None},
+           "previous": ({k: prev.get(k) for k in ("tag", "pinned_at")} if prev else None)}
+    (root / "model_a").mkdir(parents=True, exist_ok=True)
+    (root / "model_a" / BASELINE_FILE).write_text(json.dumps(ptr, indent=1), encoding="utf-8")
+    return ptr
+
+
 def resolve_run_dir(run_dir: str, data_root: str | Path | None = None) -> str:
-    """Resolve an output CLI's --run-dir, honoring the '@champion' alias.
+    """Resolve an output CLI's --run-dir, honoring the '@champion' and '@baseline' aliases.
 
     '@champion' resolves through the release registry to the promoted run's
     folder — so operators rerun what VALIDATED best, not what is merely
-    newest. Anything else passes through unchanged."""
+    newest. '@baseline' resolves to the operator-pinned fallback run (BASELINE.json;
+    a HOLD run may be pinned). Anything else passes through unchanged."""
     alias = str(run_dir).strip()
+    if alias.lower() == "@baseline":
+        root = data_root or os.environ.get("MEDICAID_DATA_ROOT", str(Path.home() / "Desktop/data"))
+        base = baseline_pointer(root)
+        if not base or not base.get("run_dir"):
+            raise SystemExit(f"@baseline: no pinned baseline ({Path(root) / 'model_a' / BASELINE_FILE}); "
+                             "pin one with run_registry --pin-baseline <tag> --reason '...'")
+        print(f"[run_registry] @baseline -> '{base.get('tag')}' ({base['run_dir']}, commit "
+              f"{base.get('git_commit') or '?'}, pinned {base.get('pinned_at')})")
+        return str(base["run_dir"])
     if not alias.lower().startswith("@champion"):
         return str(run_dir)
     # '@champion' = newest promoted run of any series; '@champion:<series>'
@@ -1447,6 +1497,11 @@ def main() -> None:
                          "commit) + the recipe to rerun or build off it — "
                          "rerunning the VALIDATED model, not merely the "
                          "newest one, is a first-class operation")
+    ap.add_argument("--pin-baseline", default=None, metavar="TAG",
+                    help="pin a registered run as the operator's fallback baseline (BASELINE.json; "
+                         "'@baseline' resolves to it; a HOLD run may be pinned, a champion needs a PROMOTE)")
+    ap.add_argument("--reason", default="", help="why this run is the baseline (recorded in BASELINE.json)")
+    ap.add_argument("--freeze-tag", default=None, help="the git freeze tag that snapshots the baseline's code")
     ap.add_argument("--html", action="store_true",
                     help="also regenerate MODEL_RUNS.html (data-driven "
                          "dashboard, no clipboard KPIs)")
@@ -1491,7 +1546,18 @@ def main() -> None:
     prereg = [p for p in _load_jsonl(pre_path) if not p.get("superseded")]
     signoffs = _load_jsonl(so_path)
 
+    if args.pin_baseline:
+        ptr = pin_baseline(args.data_root, args.pin_baseline, reason=args.reason, freeze_tag=args.freeze_tag)
+        print(f"[run_registry] BASELINE pinned: {ptr['tag']} ({ptr['run_dir']}, commit {ptr.get('git_commit') or '?'}, "
+              f"freeze tag {ptr.get('freeze_tag') or 'none'})")
+        print(f"  kpis: {ptr['kpis']}")
+        print("  read it: any output CLI accepts --run-dir @baseline")
+        return
     if args.champion:
+        base = baseline_pointer(args.data_root)
+        if base:
+            print(f"BASELINE (operator-pinned fallback): {base.get('tag')}  folder {base.get('run_dir')}  "
+                  f"commit {base.get('git_commit') or '?'}  freeze tag {base.get('freeze_tag') or 'none'}  pinned {base.get('pinned_at')}")
         champ = champion_pointer(args.data_root)
         if not champ:
             print("[run_registry] no promoted run yet — nothing is champion")

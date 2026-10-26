@@ -2000,6 +2000,18 @@ first, then paste" above every move/done block.
   2023-12`), pre-registered with the second freeze's own hit bars (hits100 >= 2, hits250
   >= 4: fewer cases resolve in 33 months) + the structural twenty; the data scan runs
   first on the idle VM; the lanes dispatch (gated) feeds both freezes.
+  FREEZE POINT v25 (2026-10-26, operator: "freeze this version and come back to it if v26 /
+  v27 do not get there"): tag `freeze-v25-2026-10-25` + branch `freeze/v25-2026-10-25` at
+  3898faa (the commit v25 ran on; bundle 393 carries both; merge_push.bat pushes freeze-*
+  tags). THE BASELINE POINTER (`run_registry --pin-baseline <tag> --reason --freeze-tag` ->
+  `<data_root>/model_a/BASELINE.json`; `--run-dir @baseline` on every output CLI;
+  `--champion` prints it): the OPERATOR-PINNED fallback run, distinct from the champion (a
+  validation fact: the newest PROMOTE; a HOLD run can be a baseline, never a champion). The
+  run artifacts stay in /data/medicaid/model_a/frozen_2021-12_v25 on the VM disk (persists
+  while stopped) and `sync_data.sh up frozen_2021-12_v25` copies the reports + registry to
+  OneDrive; the packet tar is on the laptop. RULE: v26 / v27 replace the baseline only by
+  beating it on an independent ruler (the second freeze) or passing all twenty on this one;
+  the pin moves by the operator's word, never by a runner.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy
