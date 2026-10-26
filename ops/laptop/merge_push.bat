@@ -46,6 +46,13 @@ REM freeze tags (2026-10-14): a bundle may carry refs/tags/freeze-* (a code snap
 REM return to). Fetching them is harmless when the bundle has none; the push is best-effort.
 git fetch "%BUNDLE%" "refs/tags/freeze-*:refs/tags/freeze-*" >nul 2>&1
 git push origin "refs/tags/freeze-*:refs/tags/freeze-*" >nul 2>&1
+REM repo migration overlap (2026-10-26): while the repo moves to the operator's own GitHub,
+REM every remote besides origin (the old one, renamed 'travis') gets the same push, best-effort,
+REM so both copies stay in step. With one remote this loop does nothing.
+for /f "usebackq" %%r in (`git remote`) do if /i not "%%r"=="origin" (
+  git push %%r %BRANCH% >nul 2>&1 && echo mirrored to remote %%r || echo mirror push to remote %%r failed (origin is pushed; not fatal)
+  git push %%r "refs/tags/freeze-*:refs/tags/freeze-*" >nul 2>&1
+)
 python -m src.reminders --done-task merge_bundle%N%
 git log --oneline -1
 echo DONE: bundle %N% merged and pushed. Next: the VM pull line.
