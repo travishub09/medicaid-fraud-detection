@@ -21,7 +21,7 @@ def test_runner_syntax_and_guards():
     assert "NO DOJ case labels" in s                                      # the v8 lesson, carried
     assert "run_frozen_night.sh" in s and "never beside it" in s          # never beside a frozen run
     assert "attending_concentration" in s and "contradictions" in s      # the reports the scorer cannot see
-    assert "--dispatch" not in s.replace("--dispatch on the dossier line is the operator's word", "")
+    assert "--dispatch" not in cmds                                     # the dossier is never sent by a runner
     # every $VAR inside an echo is guarded or defined above set -u (the v26 crash class)
     for m in re.finditer(r"\$\{([A-Z_]+)\}", s):
         assert m.group(1) in s.split("exec >")[0] or f"${{{m.group(1)}:-" in s or f"${{{m.group(1)}+" in s
