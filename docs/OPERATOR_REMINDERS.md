@@ -30,6 +30,21 @@ Nothing due. Good.
 python -m src.reminders --done-task v21_run
 ```
 
+- [ ] **attending_concentration_run** — RUN THE ATTENDING-CONCENTRATION REPORT ON THE VM (bundle 400, src/model_a/attending_concentration.py): the physician-of-record shape the matrix cannot see (an individual NPI in the servicing field of other organizations' claims), found by hand 2026-10-26: one Brooklyn internist as clinician of record on $97M of five agencies' home aide claims from mid-2023, first in the nation on the aide codes. The report ranks every such individual nationally with the ramp, the billers, the home-care share, the new-patient visits per working day and three flags. Current-day, no model, a few minutes of DuckDB. Read the top 30 and tell Claude which rows are new; each flagged row is a desk-research card before any PI time. (added 2026-10-26)
+
+```bat
+REM after merge 400 + the VM pull:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.attending_concentration --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --min-paid 2000000 --top 60 --out /data/medicaid/enforcement/attending_concentration && head -n 80 /data/medicaid/enforcement/attending_concentration/ATTENDING_CONCENTRATION.md"
+python -m src.reminders --done-task attending_concentration_run
+```
+
+- [ ] **current_day_export** — CURRENT-DAY EXPORT FOR THE OPERATIONAL LIST: every frozen run is blind to anything after its freeze by design (v26 freezes at 2023-12; the home care lead began in 2024 and the agency sits on no list although it scores 0.88 on home_health_intensity in the current data). The operational pursuit book needs a run with NO as-of cutoff on the current-day graph: the same export flags as the runner minus --asof-cutoff / --asof-nppes, graded on nothing (there is no forward ruler for today), dossier built from its operator book. Claude writes ops/vm/run_current_day.sh (the frozen runner's steps 0-2 and the dossier, no rulers / diagnostics) in the next bundle; about 12 hours on the VM; runs AFTER the v26 dispatch and poll are done, never beside them. (added 2026-10-26)
+
+```bat
+REM the runner line arrives with the bundle that carries ops/vm/run_current_day.sh
+python -m src.reminders --done-task current_day_export
+```
+
 - [ ] **repo_migration_trey_github** — MOVE THE REPO TO TREY'S OWN GITHUB (Travis 2026-10-26: nothing routes through the Equitable-connected GitHub; the Claude GitHub App is not installed on travishub09, which is why every push from the Claude session returns 403 and bundles are the delivery). Steps: (1) create an EMPTY private repo medicaid-fraud-detection under your own GitHub account (no README); (2) paste block A on the laptop: it adds your repo as a second remote, pushes every branch and tag, then renames the remotes so YOUR repo is origin and Travis's is 'travis' (merge_push.bat pushes to origin and best-effort to every other remote, so both stay in step during the overlap); (3) install the Claude GitHub App on your account (github.com/apps/claude, choose the new repo), then at claude.ai/code reconnect GitHub and start a new session on the new repo: from then on Claude pushes directly and bundles end; (4) on the VM, paste block B once (a deploy key: the public key it prints goes into the new repo's Settings > Deploy keys, read-only), then block C switches the VM's remote to ssh. Replace <USERNAME> with your GitHub username in every line. The CLAUDE.md branch rule stays claude/happy-mccarthy-3skrn3 until the new session names its own branch. (added 2026-10-26)
 
 ```bat
