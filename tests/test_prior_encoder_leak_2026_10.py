@@ -242,3 +242,24 @@ def test_operator_pinned_baseline_is_distinct_from_the_champion(tmp_path, capsys
     ptr2 = rr.pin_baseline(root, "frozen_2021-12_v25", reason="again")
     assert ptr2["previous"]["tag"] == "frozen_2021-12_v25"                # the earlier pin is kept
     assert rr.resolve_run_dir("/some/other/run", data_root=root) == "/some/other/run"
+
+
+def test_night_runner_resume_gate_and_the_prune_echo_is_guarded():
+    """v26 (2026-10-26) died at step 8 after five hours: the prune arm's 'skipped' echo read
+    $PRUNE_AB under set -u. The echo is guarded, and RESUME_FROM=<step id> re-enters the same
+    run folder at that step (every earlier step prints 'skipped')."""
+    import subprocess
+    from pathlib import Path
+    s = Path("ops/vm/run_frozen_night.sh").read_text()
+    assert "PRUNE_AB=${PRUNE_AB:-auto}, PREV=${PREV:-none}" in s and "PREV=$PREV)" not in s
+    assert s.count("if run_step ") == 20 and "STEPS=(0 0m 1 2 2a 2b 3 4 5 6 7 8 8p 8c 8x 9 10 11 12 13)" in s
+    gate = s[s.index("STEPS=("):s.index("[ -n \"$RESUME_FROM\" ] && echo")]
+    probe = "TAG=t\n" + gate + 'for x in 7 8 8p 8c 9 13; do run_step $x >/dev/null && echo "run $x"; done'
+    out = subprocess.run(["bash", "-c", probe], capture_output=True, text=True, env={"RESUME_FROM": "8p"}).stdout.split()
+    assert out == ["run", "8p", "run", "8c", "run", "9", "run", "13"]
+    out = subprocess.run(["bash", "-c", probe], capture_output=True, text=True, env={}).stdout.split()
+    assert out.count("run") == 6                                          # no RESUME_FROM: everything runs
+    bad = "TAG=t\n" + gate + "run_step 9"
+    r = subprocess.run(["bash", "-c", bad], capture_output=True, text=True, env={"RESUME_FROM": "nope"})
+    assert r.returncode != 0 and "unknown RESUME_FROM" in r.stdout + r.stderr
+    assert subprocess.run(["bash", "-n", "ops/vm/run_frozen_night.sh"]).returncode == 0

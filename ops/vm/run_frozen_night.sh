@@ -80,6 +80,27 @@ exec > >(tee -a "$LOG") 2>&1
 
 step() { echo; echo "[$TAG] step $1: $2   ($(date '+%F %T'))"; }
 fail() { echo; echo "[$TAG] FAILED at step $1  ($(date '+%F %T'))  -- paste the last 40 lines of $LOG to Claude"; exit 1; }
+# RESUME (2026-10-26, v26 died at step 8 on an unbound variable after five finished hours):
+# RESUME_FROM=<step id> skips every step before it and re-enters the SAME run folder (the
+# matrix, rulers, lists and arms already there are reused). Ids in order: 0 (freeze inputs)
+# 0m (merged label inputs) 1 (as-of graph) 2 (export) 2a 2b 3 (rulers) 4 5 6 7 8 (books + the
+# broadcast / prior / class-prior arms) 8p (prune arm) 8c (charged arm) 8x (commercial arm)
+# 9 10 11 12 13. The pre-registration is untouched; step 10 registers against it as before.
+STEPS=(0 0m 1 2 2a 2b 3 4 5 6 7 8 8p 8c 8x 9 10 11 12 13)
+RESUME_FROM="${RESUME_FROM:-}"
+run_step() {
+  [ -z "$RESUME_FROM" ] && return 0
+  local i="" j="" idx
+  for idx in "${!STEPS[@]}"; do
+    [ "${STEPS[$idx]}" = "$1" ] && i=$idx
+    [ "${STEPS[$idx]}" = "$RESUME_FROM" ] && j=$idx
+  done
+  [ -n "$j" ] || { echo "[$TAG] unknown RESUME_FROM '$RESUME_FROM' (ids: ${STEPS[*]})"; exit 1; }
+  [ -n "$i" ] || { echo "[$TAG] run_step: unknown step id '$1'"; exit 1; }
+  if [ "$i" -lt "$j" ]; then echo "[$TAG] step $1 skipped (RESUME_FROM=$RESUME_FROM)"; return 1; fi
+  return 0
+}
+[ -n "$RESUME_FROM" ] && echo "[$TAG] RESUMING at step $RESUME_FROM in $RUN (every earlier artifact reused)"
 
 echo "[$TAG] started $(date '+%F %T')  (VM runner 2026-10-11: full embeddings, spilling DuckDB at $MEDICAID_DUCKDB_MEM, regularized scorer)"
 FREEGB=$(awk '/MemAvailable/ {print int($2/1024/1024)}' /proc/meminfo)
@@ -104,6 +125,8 @@ if [ "${VINTAGE_INSPECT:-1}" = "1" ]; then
   fi
 fi
 
+NPPES_ASOF="${ASOF_NPPES:-}"
+if run_step 0; then
 step 0/13 "freeze inputs (as-of NPPES edition for $CUT, horizon $HORIZON) + the owner-edition archive"
 NPPES_ASOF="${ASOF_NPPES:-}"
 if [ -z "$NPPES_ASOF" ]; then
@@ -122,11 +145,15 @@ if [ ! -f "$SNAP" ] && [ -f "$DATA/graph/edges/owned_by_edges.parquet" ]; then
 else
   echo "[$TAG]   owner snapshot for $(date +%Y-%m): $([ -f "$SNAP" ] && echo present || echo 'no current graph edges; make graph first')"
 fi
+fi
 
+if run_step 0m; then
 step 0/13 "the merged label inputs (case DB + CIA cases; resolver NPIs + CIA party NPIs)"
 python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --cia-cases "$CIA_CASES" \
     --defendant-npis "$DEFENDANTS_BASE" --cia-npis "$CIA_NPIS" --out-cases "$CASES" --out-npis "$DEFENDANTS" || fail 0
+fi
 
+if run_step 1; then
 step 1/13 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (rebuilt into $GRAPH_ASOF unless present)"
 if [ -f "$GRAPH_ASOF/nodes/exclusion_nodes.parquet" ] && [ -z "$REBUILD" ]; then
   echo "[$TAG]   reusing $GRAPH_ASOF  (pass --rebuild-graph when processed/exclusions_*.parquet changed: v15 did)"
@@ -134,7 +161,9 @@ else
   python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH_ASOF" --asof "$CUT" --asof-nppes "$NPPES_ASOF" \
       --max-embed-nodes 0 --light-walks-above 0 || fail 1
 fi
+fi
 
+if run_step 2; then
 step 2/13 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS, as-of v3 scores, priors=${CLASS_PRIORS:-none}, prune=${DROP_SCHEMES:-none}, skip=${FROZEN_SKIP:-none})"
 python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH_ASOF" --asof-cutoff "$CUT" --with-analytics \
     --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
@@ -156,6 +185,9 @@ done
 # <ST>_terminations_<yyyymm>.*); nothing on the VM ran the loader, so a new list never became
 # exclusion nodes. The loader runs when any list is newer than its parquet (or the parquet is
 # missing); step 2b then sees the newer exclusions file and rebuilds the current-day graph.
+fi
+
+if run_step 2a; then
 step 2a/13 "state termination lists -> processed/exclusions_state_terminations.parquet (when a list is newer)"
 ST_DIR="$DATA/preclean/state_terminations"
 ST_OUT="$DATA/processed/exclusions_state_terminations.parquet"
@@ -171,7 +203,9 @@ if [ -d "$ST_DIR" ] && ls "$ST_DIR"/*_terminations_* >/dev/null 2>&1; then
 else
   echo "[$TAG]   no state lists under $ST_DIR"
 fi
+fi
 
+if run_step 2b; then
 step 2b/13 "the current-day graph (rebuilt when an exclusion source is newer than it; REBUILD_CURRENT=1 forces)"
 CUR="$DATA/graph/nodes/exclusion_nodes.parquet"
 NEWER=$(find "$DATA/processed" -maxdepth 1 -name 'exclusions*.parquet' -newer "$CUR" 2>/dev/null | head -5)
@@ -181,7 +215,9 @@ if [ ! -f "$CUR" ] || [ -n "$NEWER" ] || [ "${REBUILD_CURRENT:-0}" = "1" ]; then
 else
   echo "[$TAG]   current-day graph is newer than every exclusion source: reused"
 fi
+fi
 
+if run_step 3; then
 step 3/13 "forward labels (exclusion ruler, hard tier; FCA case ruler, 36 months)"
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --out "$RUN/future_bans_after_${CUT}.csv" || fail 3
@@ -196,21 +232,31 @@ fi
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only --qui-tam-only \
     --out "$RUN/future_bans_after_${CUT}__quitam${HORIZON}.csv" || fail 3
+fi
 
+if run_step 4; then
 step 4/13 "network A/B (size-matched) on the forward label"
 python -u -m src.model_a.network_ab --matrix "$RUN/provider_features_for_model.parquet" --manifest "$RUN/feature_manifest.json" \
     --future-label "$RUN/future_bans_after_${CUT}.csv" --cutoff "$CUT" --out "$RUN/NETWORK_AB_REPORT.md" || fail 4
+fi
 
+if run_step 5; then
 step 5/13 "scheme triage"
 python -u -m src.model_a.scheme_triage --run-dir "$RUN" || fail 5
+fi
 
+if run_step 6; then
 step 6/13 "priority list + pursuit book + large-biller book"
 python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 6
+fi
 
+if run_step 7; then
 step 7/13 "accuracy diagnostics on the PURSUIT book (the pre-registered checks read these)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" $PRIOR_FLAGS --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
+fi
 
+if run_step 8; then
 step 8/13 "the large-biller book, and the broadcast A/B (weight vs mask, refit on the same matrix)"
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" $PRIOR_FLAGS --list-name provider_priority_list_large.csv || fail 8
@@ -246,6 +292,9 @@ elif [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
+fi
+
+if run_step 8p; then
 # v21: the PRUNE A/B — the scheme-health prune candidates (coin-flip on both labels) held out
 # of the refit. PRUNE_AB=auto (default) reads the PREVIOUS run's scheme_health.json (this run's
 # is written at step 12); an explicit comma list overrides; empty / no previous run skips.
@@ -260,11 +309,17 @@ if [ -n "$PRUNE_LIST" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --drop-schemes "$PRUNE_LIST" --out "$RUN/ab_prune/ACCURACY_DIAGNOSTICS.md" || fail 8
 else
-  echo "[$TAG] prune A/B skipped (no prune list: PRUNE_AB=$PRUNE_AB, PREV=$PREV)"
+  echo "[$TAG] prune A/B skipped (no prune list: PRUNE_AB=${PRUNE_AB:-auto}, PREV=${PREV:-none})"
 fi
+fi
+
+if run_step 8c; then
 # v15: the charged tier A/B (the hard arm is ab_broadcast_weight above: same matrix, same seeds, tier hard)
 python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier hard+charged --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --out "$RUN/ab_tier_charged/ACCURACY_DIAGNOSTICS.md" || fail 8
+fi
+
+if run_step 8x; then
 # 2026-10-14: the commercial-plan fraud A/B (source hcf_commercial, training only), run only
 # once the case DB carries such rows (research_evidence commercial-cases)
 if grep -q "hcf_commercial" "$CASES" 2>/dev/null; then
@@ -273,22 +328,33 @@ if grep -q "hcf_commercial" "$CASES" 2>/dev/null; then
 else
   echo "[$TAG]   no hcf_commercial rows in $CASES: the commercial A/B is skipped (harvest set 'commercial', loader research_evidence commercial-cases)"
 fi
+fi
 
+if run_step 9; then
 step 9/13 "results digest + pursuit dossier (operator book; no Manus dispatch here)"
 python -u -m src.model_a.results_digest --dir "$RUN" --out "$RUN/RESULTS_DIGEST.md" || fail 9
 python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --operator-book --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" || fail 9
+fi
 
+if run_step 10; then
 step 10/13 "register the run against the locked pre-registration"
 python -u -m src.model_a.run_registry --data-root "$DATA" --run-dir "$RUN" || fail 10
+fi
 
+if run_step 11; then
 step 11/13 "learning loop"
 python -u -m src.model_a.learning_loop --run-dir "$RUN" --data-root "$DATA" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" ${PREV:+--prev-run-dir "$PREV"} || fail 11
+fi
 
+if run_step 12; then
 step 12/13 "measurement: scheme AUC on the FCA ruler, signal ranking, label enrichment, label + source ablations (ops/vm/measure_run.sh)"
 MEASURE_ABLATION="$MEASURE_ABLATION" bash "$REPO/ops/vm/measure_run.sh" "$TAG" "$CUT" || fail 12
+fi
 
+if run_step 13; then
 step 13/13 "the run issue ledger"
 python -u -m src.model_a.run_issues --run-dir "$RUN" --data-root "$DATA" ${PREV:+--prev-run-dir "$PREV"} || fail 13
+fi
 
 echo
 echo "[$TAG] DONE $(date '+%F %T')  -- tell Claude '$TAG finished'; then the packet:"

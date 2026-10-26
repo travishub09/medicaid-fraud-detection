@@ -2012,6 +2012,18 @@ first, then paste" above every move/done block.
   OneDrive; the packet tar is on the laptop. RULE: v26 / v27 replace the baseline only by
   beating it on an independent ruler (the second freeze) or passing all twenty on this one;
   the pin moves by the operator's word, never by a runner.
+  V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
+  five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
+  previous 2023-12 run = no prune list, a branch no run had taken). Guarded
+  (`${PRUNE_AB:-auto}`). `RESUME_FROM=<step id>` on run_frozen_night.sh re-enters the SAME run
+  folder at that step (ids 0 0m 1 2 2a 2b 3 4 5 6 7 8 8p 8c 8x 9 10 11 12 13; `run_step`
+  prints 'skipped' for every earlier step; the pre-registration is untouched). v26 resumes at
+  8p (the charged arm, the dossier, registration, the measurement ablations, the ledger). The
+  2023-12 scan (audit_20261026_0012) found NO pre-cutoff All-Owners edition for the second
+  freeze (reminder owners_2023_editions: the archived 2023-12 releases into owners_prior/)
+  and `admin_costs` absent in the HHA cost reports (the HHA rows of cost_report_fraud
+  compute on a default). RULE: a runner branch no run has taken is untested; `bash -n` does
+  not catch `set -u`; every `$VAR` in an echo is `${VAR:-}`.
   THE NY PA RULE (2026-10-23, the operator: 'it doesn't seem like fraud, does it?' after Sage's
   Wallabout visit found a real, busy practice): NY Medicaid FFS has the supervising physician
   BILL a registered PA's services and PAYS THEM AT THE PHYSICIAN FEE (Physician Policy
