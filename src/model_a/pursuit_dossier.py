@@ -538,6 +538,10 @@ _NATIONAL_NAMES = (
     "KINGMAN HEALTHCARE", "SONORA QUEST",
     # v26 dossier (2026-10-26): two hospital systems and a national reference-lab chain
     "SANFORD", "STANFORD HEALTH", "EUROFINS",
+    # v26 rebuilt pick (2026-10-26): three laboratory ARMS of national or hospital-system
+    # owners enrolled under their own names (Sunrise = Sonic Healthcare USA, LabOne = Quest
+    # Diagnostics, ACM = Rochester Regional Health). A subsidiary's name carries no cue.
+    "SUNRISE MEDICAL LABORATORIES", "LABONE", "ACM MEDICAL LABORATORY", "ACM GLOBAL",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 
