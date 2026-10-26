@@ -542,6 +542,12 @@ _NATIONAL_NAMES = (
     # owners enrolled under their own names (Sunrise = Sonic Healthcare USA, LabOne = Quest
     # Diagnostics, ACM = Rochester Regional Health). A subsidiary's name carries no cue.
     "SUNRISE MEDICAL LABORATORIES", "LABONE", "ACM MEDICAL LABORATORY", "ACM GLOBAL",
+    # v26 research read (2026-10-27): two more Quest arms under old names, a MassHealth
+    # personal-care-attendant fiscal intermediary (the attendants' wages bill under the
+    # center's numbers: $1.3B of pass-through), a nonprofit laboratory cooperative, and a
+    # nonprofit early-intervention provider. None is an operator a relator comes from.
+    "UNILAB", "DIAGNOSTIC LABORATORY OF OKLAHOMA", "CENTER FOR INDEPENDENT LIVING",
+    "LABORATORY SERVICES COOPERATIVE", "KENNEDY DONOVAN CENTER",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 

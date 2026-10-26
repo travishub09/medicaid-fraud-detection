@@ -1381,6 +1381,34 @@ first, then paste" above every move/done block.
   national TMS table found a NEVADA cluster of 20+ short-lived single-renderer
   100%-TMS entities (an ownership / coverage-date research question) and seven
   individual NPIs carrying TMS alone (Rosa Bellota NV $1.0M the largest).
+  V26 DOSSIER + THE FIRST PURSUIT PACKET (2026-10-26/27, docs: the packet and memos are
+  work product under <data_root>/enforcement/, never git): the v26 operator book was
+  dispatched (13 tasks: 10 targets + 3 national arms sent before bundle 398), polled to
+  zero pending, and read with the research: PURSUE TrueTox (NJ comptroller 2021 audit,
+  $24M overcharges on the same testing; our NY $56M), HealthTrackRx (2021 OIG
+  self-disclosure for sober-home kickbacks under its old name AIT), plus the two
+  current-day cards (Andes home care: two of the five agencies share 1989 Coney Island
+  Ave and a would-be owner, two settled with DOJ in 2009; Morrison skin grafts: CA
+  podiatry board accusation filed 2026-04-27, Medi-Cal pays grafts by invoice, DOJ sued
+  over PalinGen invoices 2026-06). HOLD Ideal Option (a federal court enforced a DOJ CID
+  2026-09-02: an active FCA investigation). SET ASIDE Stavros (MassHealth PCA fiscal
+  intermediary: $1.3B of attendant wages), Unilab + Diagnostic Laboratory of Oklahoma
+  (Quest arms under old names), Laboratory Services Cooperative, Kennedy Donovan (all
+  on _NATIONAL_NAMES now). BUILT the same two days: `model_a/attending_concentration.py`
+  (individual NPIs in the servicing field of other organizations' claims, ranked
+  nationally; the shape the billing-NPI matrix cannot see), `enforcement/first_to_file.py`
+  (named-party docket search through the CourtListener API; a sealed qui tam is
+  invisible to every public search), `ops/vm/run_current_day.sh` (the operational list
+  with no freeze; refuses to run beside a frozen run), the NY rendering-rule memo (FFS:
+  PA under the employing physician at the physician fee with the PA named; NP 95% since
+  2023-10; unlicensed = not payable; managed care: no plan permits a PA visit under the
+  supervising physician, UHC requires the NP/PA's own NPI, the model contract requires
+  the rendering clinician on every encounter; the private-practice PA cap rose 4 -> 6 on
+  2025-02-22). RULE: a custom research prompt goes through `pursuit_dossier
+  --dispatch-file` in its OWN folder (its own registry; never the run's), and the
+  attachments are pulled with urllib from the results JSON before the signed links
+  expire. The dispatch ran once on 397 code and once on 398: the registry de-duplicates
+  by org_id, so a re-run after a pick change sends only the new targets.
   VM (2026-10-12): r6i.4xlarge launched in us-east-2 (quota 32), Ubuntu 26.04, rclone
   1.75 installed by the rclone script (the apt 1.60 is too old for the OneDrive token),
   `rclone config` answers: onedrive / onedrive / Enter / Enter / 1 / n / n, token from
