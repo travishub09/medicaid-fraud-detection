@@ -38,10 +38,13 @@ ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C
 python -m src.reminders --done-task attending_concentration_run
 ```
 
-- [ ] **current_day_export** — CURRENT-DAY EXPORT FOR THE OPERATIONAL LIST: every frozen run is blind to anything after its freeze by design (v26 freezes at 2023-12; the home care lead began in 2024 and the agency sits on no list although it scores 0.88 on home_health_intensity in the current data). The operational pursuit book needs a run with NO as-of cutoff on the current-day graph: the same export flags as the runner minus --asof-cutoff / --asof-nppes, graded on nothing (there is no forward ruler for today), dossier built from its operator book. Claude writes ops/vm/run_current_day.sh (the frozen runner's steps 0-2 and the dossier, no rulers / diagnostics) in the next bundle; about 12 hours on the VM; runs AFTER the v26 dispatch and poll are done, never beside them. (added 2026-10-26)
+- [ ] **current_day_export** — CURRENT-DAY EXPORT FOR THE OPERATIONAL LIST: every frozen run is blind to anything after its freeze by design (v26 freezes at 2023-12; the home care lead began in 2024 and the agency sits on no list although it scores 0.88 on home_health_intensity in the current data). The operational pursuit book needs a run with NO as-of cutoff on the current-day graph: the same export flags as the runner minus --asof-cutoff / --asof-nppes, graded on nothing (there is no forward ruler for today), dossier built from its operator book. BUILT (bundle 401): ops/vm/run_current_day.sh = merged label inputs, the current-day graph (rebuilt with full embeddings when an exclusion source is newer or REBUILD_CURRENT=1), the export with no cutoff, the priority list + books, the attending-concentration and Tier A reports into the run folder, scheme triage, results digest, the operator-book dossier, the ledger. No ruler, no registration, no dispatch. About 12 hours (the embeddings) on the VM; it refuses to start beside a frozen run. Run it AFTER the v26 poll and the capacity check are done. (added 2026-10-26)
 
 ```bat
-REM the runner line arrives with the bundle that carries ops/vm/run_current_day.sh
+REM after merge 401 + the VM pull, with poll26 / cap26 gone from tmux ls:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && git pull --ff-only && tmux new -d -s cd1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && REBUILD_CURRENT=1 SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=pmax_basis50 bash ops/vm/run_current_day.sh cd1 > /data/medicaid/model_a/current_cd1_console.log 2>&1' && echo started"
+REM check on it (free):
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tmux ls; grep 'step ' /data/medicaid/model_a/current_cd1_console.log | tail -1; tail -3 /data/medicaid/model_a/current_cd1_console.log"
 python -m src.reminders --done-task current_day_export
 ```
 
