@@ -106,10 +106,24 @@ def search_party(name: str, fetch_json=default_fetch_json, since: str | None = N
     return pd.DataFrame(rows, columns=COLS)
 
 
+NAME_GAP_S = 3.0   # the search endpoint rate-limits anonymous callers; a free token lifts it
+
+
 def check_names(names: list[str], fetch_json=default_fetch_json, since: str | None = None,
-                raw_root: Path | None = None, sleep_s: float = DEFAULT_SLEEP) -> pd.DataFrame:
-    frames = [search_party(n, fetch_json=fetch_json, since=since, raw_root=raw_root, sleep_s=sleep_s)
-              for n in names if str(n).strip()]
+                raw_root: Path | None = None, sleep_s: float = DEFAULT_SLEEP,
+                name_gap_s: float = NAME_GAP_S, errors: list | None = None) -> pd.DataFrame:
+    """One search per name, a pause between names; a name whose search fails (HTTP 429
+    rate limit, a network error) is recorded in `errors` as (name, reason) and the
+    rest continue, so one refusal never empties the report."""
+    frames = []
+    for i, n in enumerate(n for n in names if str(n).strip()):
+        if i and name_gap_s:
+            time.sleep(name_gap_s)
+        try:
+            frames.append(search_party(n, fetch_json=fetch_json, since=since, raw_root=raw_root, sleep_s=sleep_s))
+        except Exception as exc:                      # noqa: BLE001 - the reason is reported, never hidden
+            if errors is not None:
+                errors.append((n, str(exc)[:200]))
     out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COLS)
     if len(out):
         out = out.drop_duplicates(["query", "docket_id"]).sort_values(["query", "fca_shaped", "date_filed"],
@@ -117,8 +131,9 @@ def check_names(names: list[str], fetch_json=default_fetch_json, since: str | No
     return out.reset_index(drop=True)
 
 
-def to_markdown(t: pd.DataFrame, names: list[str], since: str | None) -> str:
+def to_markdown(t: pd.DataFrame, names: list[str], since: str | None, errors: list | None = None) -> str:
     L = ["# FIRST-TO-FILE CHECK: public dockets naming the parties", ""]
+    failed = {n for n, _ in (errors or [])}
     L.append("_CourtListener (RECAP / PACER metadata), any nature of suit, newest first; `fca_shaped` = "
              "nature of suit 375 / 376 or a False Claims Act / qui tam / ex rel. caption. **A sealed qui tam "
              "appears on no public docket until the government unseals it**: a clean result rules out public "
@@ -127,9 +142,17 @@ def to_markdown(t: pd.DataFrame, names: list[str], since: str | None) -> str:
     L.append(f"Names searched: {len(names)}" + (f"; filed on/after {since}" if since else "") +
              f"; dockets found: {len(t)}; FCA-shaped: {int(t['fca_shaped'].sum()) if len(t) else 0}.")
     L.append("")
+    if errors:
+        L.append("**NOT SEARCHED (the service refused or failed; rerun with a COURTLISTENER_TOKEN or later):** "
+                 + "; ".join(f"{n} ({r[:60]})" for n, r in errors))
+        L.append("")
     for n in names:
         sub = t[t["query"] == n] if len(t) else t
         L.append(f"## {n}")
+        if n in failed:
+            L.append("_Not searched: the service refused the request. No conclusion._")
+            L.append("")
+            continue
         if not len(sub):
             L.append("_No public docket names this party._")
             L.append("")
@@ -149,6 +172,7 @@ def main() -> None:
     ap.add_argument("--names-file", default=None, help="one name per line")
     ap.add_argument("--since", default=None, help="filed on/after YYYY-MM-DD (default: no limit)")
     ap.add_argument("--out", required=True, help="output folder")
+    ap.add_argument("--name-gap", type=float, default=NAME_GAP_S, help="seconds between names (rate limit)")
     a = ap.parse_args()
     names: list[str] = []
     if a.names:
@@ -160,11 +184,15 @@ def main() -> None:
         raise SystemExit("no names: use --names or --names-file")
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    t = check_names(names, since=a.since)
+    errors: list = []
+    t = check_names(names, since=a.since, name_gap_s=a.name_gap, errors=errors)
     t.to_csv(out / "first_to_file.csv", index=False)
-    (out / "FIRST_TO_FILE.md").write_text(to_markdown(t, names, a.since), encoding="utf-8")
-    print(f"[first_to_file] {len(names)} names -> {len(t)} dockets ({int(t['fca_shaped'].sum()) if len(t) else 0} FCA-shaped) "
-          f"-> {out / 'FIRST_TO_FILE.md'}  (sealed complaints are invisible to every public search)")
+    (out / "FIRST_TO_FILE.md").write_text(to_markdown(t, names, a.since, errors), encoding="utf-8")
+    print(f"[first_to_file] {len(names)} names -> {len(t)} dockets ({int(t['fca_shaped'].sum()) if len(t) else 0} FCA-shaped); "
+          f"{len(errors)} name(s) NOT searched -> {out / 'FIRST_TO_FILE.md'}  (sealed complaints are invisible to every public search)")
+    if errors and not os.environ.get("COURTLISTENER_TOKEN"):
+        print("[first_to_file] no COURTLISTENER_TOKEN in the environment: anonymous searches are rate-limited; "
+              "a free account token (courtlistener.com, profile -> API) lifts it")
 
 
 if __name__ == "__main__":

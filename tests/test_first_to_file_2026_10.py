@@ -48,3 +48,16 @@ def test_cli_needs_names(tmp_path: Path):
     r = subprocess.run([sys.executable, "-m", "src.enforcement.first_to_file", "--out", str(tmp_path / "o")],
                        capture_output=True, text=True)
     assert r.returncode != 0 and "no names" in r.stderr
+
+
+def test_rate_limited_name_is_recorded_not_fatal(tmp_path: Path):
+    def flaky(url, params=None, headers=None):
+        if params and "Nobody" in params.get("q", ""):
+            raise RuntimeError("feed fetch failed after 5 attempts: HTTP 429")
+        return _fake(url, params, headers)
+    errors: list = []
+    t = check_names(["Acme Home Care LLC", "Nobody Corp"], fetch_json=flaky, raw_root=tmp_path, sleep_s=0,
+                    name_gap_s=0, errors=errors)
+    assert len(t) == 3 and errors and errors[0][0] == "Nobody Corp" and "429" in errors[0][1]
+    md = to_markdown(t, ["Acme Home Care LLC", "Nobody Corp"], None, errors)
+    assert "NOT SEARCHED" in md and "Not searched: the service refused" in md
