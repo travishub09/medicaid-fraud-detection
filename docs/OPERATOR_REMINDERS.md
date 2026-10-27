@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-26. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-27. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -243,14 +243,14 @@ python -u -m src.model_a.pi_facts --run-dir "C:\Users\treyr\OneDrive\Desktop\dat
 REM say 'Sage first-call list + Wallabout follow-ups sent' when the email goes
 ```
 
-- [ ] **capacity_on_vm** — RULE (operator 2026-10-22: the laptop tools crashed the machine): the capacity check and the licensed-roster load run on the VM, never the laptop (run_licensed_capacity.bat / run_capacity_v3.bat are retired). After v21 DONE and the preclean sync (task post_download_checks): rebuild the licensed capacity from the rosters (NY / NJ in preclean/state_capacity), then the capacity check on v21's matrix; the report lands in the run folder (capacity/CAPACITY.md) and comes back in the packet. (added 2026-10-22)
+- [ ] **capacity_on_vm** — RULE (operator 2026-10-22: the laptop tools crashed the machine): the capacity check runs on the VM, never the laptop. The two 2026-10-27 reruns reported 'CCN crosswalk MISSING / minutes map MISSING' and one flag because the tmux line did not export MEDICAID_DATA_ROOT (the tool read the laptop default ~/Desktop/data on the VM); bundle 406 makes a missing root fatal. Relaunch cap26c on v26's matrix with the export; the log's third line must read 'CCN crosswalk ok' and the fourth must name hcpcs_minutes_2023.csv before the done line. About an hour. Start the current-day run only after cap26c is gone from tmux ls. (added 2026-10-22)
 
 ```bat
-REM after the preclean sync (tmux ls shows no sync4):
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.ingest_cms.licensed_capacity --rosters /data/medicaid/preclean/state_capacity --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/processed/licensed_capacity.parquet"
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s cap21 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -u -m src.model_a.capacity --spending /data/medicaid/processed/spending_fact.parquet --matrix /data/medicaid/model_a/frozen_2021-12_v21/provider_features_for_model.parquet --min-paid 2000000 --provider-dim /data/medicaid/processed/provider_dim.parquet --graph-dir /data/medicaid/graph --pos-dir /data/medicaid/preclean/pos --ccn-crosswalk /data/medicaid/processed/ccn_npi_crosswalk.parquet --licensed-capacity /data/medicaid/processed/licensed_capacity_by_npi.parquet --minutes /data/medicaid/preclean/hcpcs_time/hcpcs_minutes.csv --out /data/medicaid/model_a/frozen_2021-12_v21/capacity > /data/medicaid/model_a/frozen_2021-12_v21/capacity.log 2>&1'"
-REM a few minutes later:
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tmux ls; tail -8 /data/medicaid/model_a/frozen_2021-12_v21/capacity.log"
+REM relaunch (the export is the fix; no --minutes / --ccn-crosswalk: the defaults find them under the root):
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s cap26c 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -u -m src.model_a.capacity --spending /data/medicaid/processed/spending_fact.parquet --matrix /data/medicaid/model_a/frozen_2023-12_v26/provider_features_for_model.parquet --min-paid 2000000 --provider-dim /data/medicaid/processed/provider_dim.parquet --graph-dir /data/medicaid/graph --pos-dir /data/medicaid/preclean/pos --licensed-capacity /data/medicaid/processed/licensed_capacity_by_npi.parquet --out /data/medicaid/model_a/frozen_2023-12_v26/capacity > /data/medicaid/model_a/frozen_2023-12_v26/capacity.log 2>&1' && echo started"
+REM status (free; read it when tmux ls no longer shows cap26c):
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tmux ls; tail -4 /data/medicaid/model_a/frozen_2023-12_v26/capacity.log; head -60 /data/medicaid/model_a/frozen_2023-12_v26/capacity/CAPACITY.md"
+REM only when the log reads 'CCN crosswalk ok' and names hcpcs_minutes_2023.csv:
 python -m src.reminders --done-task capacity_on_vm
 ```
 

@@ -396,6 +396,13 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     root = Path(os.environ.get("MEDICAID_DATA_ROOT", str(Path.home() / "Desktop/data")))
+    if not root.exists():
+        # 2026-10-27: a tmux line without `export MEDICAID_DATA_ROOT` read the laptop default on
+        # the VM, found no provider_dim / crosswalk / minutes map, and reported one flag on a
+        # 55,627-NPI universe as if that were the answer. A missing root is fatal, never a
+        # row of MISSING lines.
+        raise SystemExit(f"[capacity] data root {root} does not exist: export MEDICAID_DATA_ROOT "
+                         "(the VM's is /data/medicaid) before running")
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     from src.attempt_2.clean_data import read_csv_text
