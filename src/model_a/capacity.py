@@ -455,6 +455,11 @@ def main() -> None:
     pl = read_csv_text(a.practice_locations) if a.practice_locations else None
 
     minutes = Path(a.minutes) if a.minutes else _first(root / "preclean" / "hcpcs_time", "hcpcs_minutes*.csv")
+    if a.minutes and not minutes.exists():
+        # 2026-10-27: a wrong --minutes path computed NO implied hours for 55,627 NPIs and the
+        # report said "minutes map hcpcs_minutes.csv" as if it had read one (the silent-blank class)
+        raise SystemExit(f"--minutes {minutes} does not exist; omit the flag to use the newest "
+                         f"preclean/hcpcs_time/hcpcs_minutes*.csv")
     from .pi_facts import billing_facts
     facts = billing_facts(a.spending, npis, minutes_csv=minutes)
     print(f"[capacity] billing facts for {len(facts):,} NPIs (minutes map {minutes.name if minutes else 'MISSING'})")
