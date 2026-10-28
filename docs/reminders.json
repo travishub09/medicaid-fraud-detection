@@ -634,16 +634,6 @@
  ],
  "tasks": [
   {
-   "key": "verdicts_init_vm",
-   "added": "2026-10-28",
-   "what": "STANDING VERDICTS FILE (bundle 408, src/model_a/pursuit_verdicts.py): the operator's pursue / hold / watch / set_aside decisions on organizations live in ONE file, /data/medicaid/model_a/pursuit_verdicts.csv, and every run's dossier pick sets those organizations aside (the cd1 pick named Ideal Option and HealthTrackRx a week after v26's research settled them). Seed it once on the VM after merge 408 + the VM pull (the seed carries the v26 read: TrueTox pursue, HealthTrackRx / Mini Pharmacy / Simple Labs watch, Ideal Option hold, the five set-asides, Curative + Aegis set aside). New verdicts: `python -m src.model_a.pursuit_verdicts --add <org_id> <verdict> \"<reason>\" --name \"<name>\"` on the VM; a re-run of a dossier pick (`pursuit_dossier --run-dir <run> --operator-book`) then skips them and lists them in dossier_verdicts_applied.csv.",
-   "commands": [
-    "REM after merge 408 and the VM pull:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --init && python -m src.model_a.pursuit_verdicts --list\"",
-    "python -m src.reminders --done-task verdicts_init_vm"
-   ]
-  },
-  {
    "key": "v21_run",
    "added": "2026-10-22",
    "what": "FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close.",
@@ -669,18 +659,6 @@
     "REM after merge 400 + the VM pull:",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.attending_concentration --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --min-paid 2000000 --top 60 --out /data/medicaid/enforcement/attending_concentration && head -n 80 /data/medicaid/enforcement/attending_concentration/ATTENDING_CONCENTRATION.md\"",
     "python -m src.reminders --done-task attending_concentration_run"
-   ]
-  },
-  {
-   "key": "current_day_export",
-   "added": "2026-10-26",
-   "what": "CURRENT-DAY EXPORT FOR THE OPERATIONAL LIST: every frozen run is blind to anything after its freeze by design (v26 freezes at 2023-12; the home care lead began in 2024 and the agency sits on no list although it scores 0.88 on home_health_intensity in the current data). The operational pursuit book needs a run with NO as-of cutoff on the current-day graph: the same export flags as the runner minus --asof-cutoff / --asof-nppes, graded on nothing (there is no forward ruler for today), dossier built from its operator book. BUILT (bundle 401): ops/vm/run_current_day.sh = merged label inputs, the current-day graph (rebuilt with full embeddings when an exclusion source is newer or REBUILD_CURRENT=1), the export with no cutoff, the priority list + books, the attending-concentration and Tier A reports into the run folder, scheme triage, results digest, the operator-book dossier, the ledger. No ruler, no registration, no dispatch. About 12 hours (the embeddings) on the VM; it refuses to start beside a frozen run. Run it AFTER the v26 poll and the capacity check are done.",
-   "commands": [
-    "REM after merge 401 + the VM pull, with poll26 / cap26 gone from tmux ls:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && tmux new -d -s cd1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && REBUILD_CURRENT=1 SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=pmax_basis50 bash ops/vm/run_current_day.sh cd1 > /data/medicaid/model_a/current_cd1_console.log 2>&1' && echo started\"",
-    "REM check on it (free):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep 'step ' /data/medicaid/model_a/current_cd1_console.log | tail -1; tail -3 /data/medicaid/model_a/current_cd1_console.log\"",
-    "python -m src.reminders --done-task current_day_export"
    ]
   },
   {
@@ -1108,18 +1086,6 @@
    "added": "2026-10-26",
    "commands": [
     "python -m src.reminders --done-task registry_verdict__frozen_2023-12_v26"
-   ]
-  },
-  {
-   "key": "run_packet__current_202610_cd1",
-   "what": "Send the cd1 packet (the first current-day run, DONE 2026-10-28 02:04 UTC, 0 FAIL): every report + audit file, the attending-concentration and contradictions folders, zero raw data. The run lives on the VM; tar there, scp to the laptop, upload the tar to the chat. Then the OneDrive up-sync so the reports are off the VM disk.",
-   "added": "2026-10-28",
-   "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/run_packet_cd1.tar.gz *.md *.json *.csv attending_concentration contradictions 2>/dev/null; ls -la /home/ubuntu/run_packet_cd1.tar.gz\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_cd1.tar.gz C:\\Users\\treyr\\Downloads\\run_packet_cd1.tar.gz",
-    "REM upload C:\\Users\\treyr\\Downloads\\run_packet_cd1.tar.gz to the chat, then:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s upcd1 'bash ops/vm/sync_data.sh up current_202610_cd1 > /data/medicaid/model_a/up_cd1.log 2>&1' && echo started\"",
-    "python -m src.reminders --done-task run_packet__current_202610_cd1"
    ]
   },
   {
@@ -1684,6 +1650,46 @@
    "added": "2026-10-28",
    "closed_on": "2026-10-28",
    "closed_note": "not applicable: a current-day run has no forward ruler and is never registered (ops/vm/run_current_day.sh); the operator book is read, not graded"
+  },
+  {
+   "key": "verdicts_init_vm",
+   "added": "2026-10-28",
+   "what": "STANDING VERDICTS FILE (bundle 408, src/model_a/pursuit_verdicts.py): the operator's pursue / hold / watch / set_aside decisions on organizations live in ONE file, /data/medicaid/model_a/pursuit_verdicts.csv, and every run's dossier pick sets those organizations aside (the cd1 pick named Ideal Option and HealthTrackRx a week after v26's research settled them). Seed it once on the VM after merge 408 + the VM pull (the seed carries the v26 read: TrueTox pursue, HealthTrackRx / Mini Pharmacy / Simple Labs watch, Ideal Option hold, the five set-asides, Curative + Aegis set aside). New verdicts: `python -m src.model_a.pursuit_verdicts --add <org_id> <verdict> \"<reason>\" --name \"<name>\"` on the VM; a re-run of a dossier pick (`pursuit_dossier --run-dir <run> --operator-book`) then skips them and lists them in dossier_verdicts_applied.csv.",
+   "commands": [
+    "REM after merge 408 and the VM pull:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --init && python -m src.model_a.pursuit_verdicts --list\"",
+    "python -m src.reminders --done-task verdicts_init_vm"
+   ],
+   "closed_on": "2026-10-28",
+   "closed_note": "operator ran --init on the VM 2026-10-28 (file present)"
+  },
+  {
+   "key": "current_day_export",
+   "added": "2026-10-26",
+   "what": "CURRENT-DAY EXPORT FOR THE OPERATIONAL LIST: every frozen run is blind to anything after its freeze by design (v26 freezes at 2023-12; the home care lead began in 2024 and the agency sits on no list although it scores 0.88 on home_health_intensity in the current data). The operational pursuit book needs a run with NO as-of cutoff on the current-day graph: the same export flags as the runner minus --asof-cutoff / --asof-nppes, graded on nothing (there is no forward ruler for today), dossier built from its operator book. BUILT (bundle 401): ops/vm/run_current_day.sh = merged label inputs, the current-day graph (rebuilt with full embeddings when an exclusion source is newer or REBUILD_CURRENT=1), the export with no cutoff, the priority list + books, the attending-concentration and Tier A reports into the run folder, scheme triage, results digest, the operator-book dossier, the ledger. No ruler, no registration, no dispatch. About 12 hours (the embeddings) on the VM; it refuses to start beside a frozen run. Run it AFTER the v26 poll and the capacity check are done.",
+   "commands": [
+    "REM after merge 401 + the VM pull, with poll26 / cap26 gone from tmux ls:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only && tmux new -d -s cd1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && REBUILD_CURRENT=1 SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=pmax_basis50 bash ops/vm/run_current_day.sh cd1 > /data/medicaid/model_a/current_cd1_console.log 2>&1' && echo started\"",
+    "REM check on it (free):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls; grep 'step ' /data/medicaid/model_a/current_cd1_console.log | tail -1; tail -3 /data/medicaid/model_a/current_cd1_console.log\"",
+    "python -m src.reminders --done-task current_day_export"
+   ],
+   "closed_on": "2026-10-28",
+   "closed_note": "cd1 DONE 2026-10-28 02:04 UTC; packet read"
+  },
+  {
+   "key": "run_packet__current_202610_cd1",
+   "what": "Send the cd1 packet (the first current-day run, DONE 2026-10-28 02:04 UTC, 0 FAIL): every report + audit file, the attending-concentration and contradictions folders, zero raw data. The run lives on the VM; tar there, scp to the laptop, upload the tar to the chat. Then the OneDrive up-sync so the reports are off the VM disk.",
+   "added": "2026-10-28",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/run_packet_cd1.tar.gz *.md *.json *.csv attending_concentration contradictions 2>/dev/null; ls -la /home/ubuntu/run_packet_cd1.tar.gz\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_cd1.tar.gz C:\\Users\\treyr\\Downloads\\run_packet_cd1.tar.gz",
+    "REM upload C:\\Users\\treyr\\Downloads\\run_packet_cd1.tar.gz to the chat, then:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s upcd1 'bash ops/vm/sync_data.sh up current_202610_cd1 > /data/medicaid/model_a/up_cd1.log 2>&1' && echo started\"",
+    "python -m src.reminders --done-task run_packet__current_202610_cd1"
+   ],
+   "closed_on": "2026-10-28",
+   "closed_note": "packet uploaded and read 2026-10-28"
   }
  ]
 }

@@ -24,14 +24,6 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
-- [ ] **verdicts_init_vm** — STANDING VERDICTS FILE (bundle 408, src/model_a/pursuit_verdicts.py): the operator's pursue / hold / watch / set_aside decisions on organizations live in ONE file, /data/medicaid/model_a/pursuit_verdicts.csv, and every run's dossier pick sets those organizations aside (the cd1 pick named Ideal Option and HealthTrackRx a week after v26's research settled them). Seed it once on the VM after merge 408 + the VM pull (the seed carries the v26 read: TrueTox pursue, HealthTrackRx / Mini Pharmacy / Simple Labs watch, Ideal Option hold, the five set-asides, Curative + Aegis set aside). New verdicts: `python -m src.model_a.pursuit_verdicts --add <org_id> <verdict> "<reason>" --name "<name>"` on the VM; a re-run of a dossier pick (`pursuit_dossier --run-dir <run> --operator-book`) then skips them and lists them in dossier_verdicts_applied.csv. (added 2026-10-28)
-
-```bat
-REM after merge 408 and the VM pull:
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --init && python -m src.model_a.pursuit_verdicts --list"
-python -m src.reminders --done-task verdicts_init_vm
-```
-
 - [ ] **v21_run** — FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close. (added 2026-10-22)
 
 ```bat
@@ -52,16 +44,6 @@ python -m src.reminders --done-task first_to_file_check
 REM after merge 400 + the VM pull:
 ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.attending_concentration --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --min-paid 2000000 --top 60 --out /data/medicaid/enforcement/attending_concentration && head -n 80 /data/medicaid/enforcement/attending_concentration/ATTENDING_CONCENTRATION.md"
 python -m src.reminders --done-task attending_concentration_run
-```
-
-- [ ] **current_day_export** — CURRENT-DAY EXPORT FOR THE OPERATIONAL LIST: every frozen run is blind to anything after its freeze by design (v26 freezes at 2023-12; the home care lead began in 2024 and the agency sits on no list although it scores 0.88 on home_health_intensity in the current data). The operational pursuit book needs a run with NO as-of cutoff on the current-day graph: the same export flags as the runner minus --asof-cutoff / --asof-nppes, graded on nothing (there is no forward ruler for today), dossier built from its operator book. BUILT (bundle 401): ops/vm/run_current_day.sh = merged label inputs, the current-day graph (rebuilt with full embeddings when an exclusion source is newer or REBUILD_CURRENT=1), the export with no cutoff, the priority list + books, the attending-concentration and Tier A reports into the run folder, scheme triage, results digest, the operator-book dossier, the ledger. No ruler, no registration, no dispatch. About 12 hours (the embeddings) on the VM; it refuses to start beside a frozen run. Run it AFTER the v26 poll and the capacity check are done. (added 2026-10-26)
-
-```bat
-REM after merge 401 + the VM pull, with poll26 / cap26 gone from tmux ls:
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && git pull --ff-only && tmux new -d -s cd1 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && REBUILD_CURRENT=1 SEEDS=10 TRAIN_TIER=hard PURSUIT_ORDER=pmax_basis50 bash ops/vm/run_current_day.sh cd1 > /data/medicaid/model_a/current_cd1_console.log 2>&1' && echo started"
-REM check on it (free):
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tmux ls; grep 'step ' /data/medicaid/model_a/current_cd1_console.log | tail -1; tail -3 /data/medicaid/model_a/current_cd1_console.log"
-python -m src.reminders --done-task current_day_export
 ```
 
 - [ ] **repo_migration_trey_github** — MOVE THE REPO TO TREY'S OWN GITHUB (Travis 2026-10-26: nothing routes through the Equitable-connected GitHub; the Claude GitHub App is not installed on travishub09, which is why every push from the Claude session returns 403 and bundles are the delivery). Steps: (1) create an EMPTY private repo medicaid-fraud-detection under your own GitHub account (no README); (2) paste block A on the laptop: it adds your repo as a second remote, pushes every branch and tag, then renames the remotes so YOUR repo is origin and Travis's is 'travis' (merge_push.bat pushes to origin and best-effort to every other remote, so both stay in step during the overlap); (3) install the Claude GitHub App on your account (github.com/apps/claude, choose the new repo), then at claude.ai/code reconnect GitHub and start a new session on the new repo: from then on Claude pushes directly and bundles end; (4) on the VM, paste block B once (a deploy key: the public key it prints goes into the new repo's Settings > Deploy keys, read-only), then block C switches the VM's remote to ssh. Replace <USERNAME> with your GitHub username in every line. The CLAUDE.md branch rule stays claude/happy-mccarthy-3skrn3 until the new session names its own branch. (added 2026-10-26)
@@ -397,16 +379,6 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v26
 
 ```bat
 python -m src.reminders --done-task registry_verdict__frozen_2023-12_v26
-```
-
-- [ ] **run_packet__current_202610_cd1** — Send the cd1 packet (the first current-day run, DONE 2026-10-28 02:04 UTC, 0 FAIL): every report + audit file, the attending-concentration and contradictions folders, zero raw data. The run lives on the VM; tar there, scp to the laptop, upload the tar to the chat. Then the OneDrive up-sync so the reports are off the VM disk. (added 2026-10-28)
-
-```bat
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/run_packet_cd1.tar.gz *.md *.json *.csv attending_concentration contradictions 2>/dev/null; ls -la /home/ubuntu/run_packet_cd1.tar.gz"
-scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_cd1.tar.gz C:\Users\treyr\Downloads\run_packet_cd1.tar.gz
-REM upload C:\Users\treyr\Downloads\run_packet_cd1.tar.gz to the chat, then:
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s upcd1 'bash ops/vm/sync_data.sh up current_202610_cd1 > /data/medicaid/model_a/up_cd1.log 2>&1' && echo started"
-python -m src.reminders --done-task run_packet__current_202610_cd1
 ```
 
 - [ ] **pursuit_dossier__current_202610_cd1** — The cd1 operator book is PURSUIT_DOSSIER.md in the run folder (built by the runner; not dispatched). Dispatch spends Manus credits and runs ONLY on the operator's explicit go, after the packet is read against the v26 book (a target already researched for v26 is not re-sent: the registry de-duplicates by org_id, but the folders differ, so check the names first). (added 2026-10-28)
