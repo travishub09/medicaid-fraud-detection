@@ -389,11 +389,13 @@ ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C
 python -m src.reminders --done-task pursuit_dossier__current_202610_cd1
 ```
 
-- [ ] **dossier_poll__current_202610_cd1** — ~30 min after dispatch: collect Manus research into the current_202610_cd1 dossier and send PURSUIT_DOSSIER.md (added 2026-10-28)
+- [ ] **dossier_poll__current_202610_cd1** — Collect the six cd1 research answers (dispatched 2026-10-28). `--poll-only` polls the registry and prints the tally WITHOUT rebuilding the dossier (a plain --poll re-scores the matrix for minutes and, without --operator-book, re-picks from the main list). When pending reads 0, re-render the operator-book dossier with the research folded in, then tar + scp + upload to the chat. (added 2026-10-28)
 
 ```bat
-REM free, read-only; repeat until pending = 0:
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --poll | tail -5"
+REM free, read-only; repeat until pending 0 (after merge 410 + the VM pull):
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --poll-only"
+REM when pending 0: re-render the operator-book dossier with the research (a few minutes), then pack:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --poll | tail -3"
 ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/cd1_dossier.tar.gz PURSUIT_DOSSIER.md pursuit_research_*.json* research_attachments 2>/dev/null; ls -la /home/ubuntu/cd1_dossier.tar.gz"
 scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/cd1_dossier.tar.gz C:\Users\treyr\Downloads\cd1_dossier.tar.gz
 python -m src.reminders --done-task dossier_poll__current_202610_cd1

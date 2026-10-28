@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from collections import Counter
 import time as time_module
 import os
 from datetime import date
@@ -1123,6 +1124,11 @@ def main() -> None:
                          "— for metro/national batches authored elsewhere")
     ap.add_argument("--poll", action="store_true",
                     help="collect finished research and fold it into the dossier")
+    ap.add_argument("--poll-only", action="store_true",
+                    help="collect finished research and print the status tally WITHOUT rebuilding the "
+                         "dossier (the plain --poll re-scores the matrix first: minutes, and without "
+                         "--operator-book it re-picks from the main list); re-render with "
+                         "--operator-book --poll once every task is completed")
     ap.add_argument("--priority-list", action="store_true",
                     help="write the FULL signal-ranked priority list "
                          "(provider_priority_list.csv): every org, sorted by "
@@ -1199,6 +1205,19 @@ def main() -> None:
         info = dispatch_research(Path(args.dispatch_file),
                                  d / "pursuit_research_tasks.json")
         print(f"[pursuit_dossier] custom batch: {info}")
+        return
+    if args.poll_only:
+        d = Path(args.run_dir)
+        res = poll_research(d / "pursuit_research_tasks.json", d / "pursuit_research_results.json")
+        tally = Counter(str(v.get("status")) for v in res.values())
+        n_reg = len(json.loads((d / "pursuit_research_tasks.json").read_text(encoding="utf-8"))) \
+            if (d / "pursuit_research_tasks.json").exists() else 0
+        pending = n_reg - tally.get("completed", 0) - tally.get("error", 0) - tally.get("failed", 0)
+        print(f"[pursuit_dossier] poll: {n_reg} task(s) in the registry; "
+              + ", ".join(f"{k} {v}" for k, v in sorted(tally.items())) + f"; pending {max(pending, 0)}"
+              + ("" if not res else f" -> {d / 'pursuit_research_results.json'}"))
+        if not os.environ.get(MANUS_KEY_ENV):
+            print(f"[pursuit_dossier] no {MANUS_KEY_ENV} in the environment: nothing was polled")
         return
     if args.priority_list:
         build_priority_list(
