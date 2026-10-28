@@ -75,3 +75,14 @@ def test_billing_facts_names_renderers_and_per_diem_census(tmp_path):
     assert "1124638242 $10,000 (3%, 1 mo)" in md
     md2 = "\n".join(_billing_lines(bf["1639500796"]))
     assert "80.0 lines per calendar day" in md2 and "patients worst 80 (2024-01)" in md2
+
+
+def test_out_paths_upper_case_only_the_file_name(tmp_path):
+    """2026-10-28: an absolute --out-prefix landed the WHEN sheet at /DATA/MEDICAID/.../XIE_WINDOWS.md."""
+    from src.model_a.pi_facts import out_paths
+    jp, mp, wp, wjp = out_paths(tmp_path / "run", str(tmp_path / "enforcement" / "pi_reports" / "chinatown" / "xie"))
+    assert jp == tmp_path / "enforcement" / "pi_reports" / "chinatown" / "xie.json"
+    assert mp.name == "XIE.md" and wp.name == "XIE_WINDOWS.md" and wjp.name == "xie_windows.json"
+    assert wp.parent == tmp_path / "enforcement" / "pi_reports" / "chinatown" and wp.parent.exists()
+    jp2, mp2, wp2, _ = out_paths(tmp_path / "run", "pi_facts_packet")          # a bare prefix stays in the run folder
+    assert jp2.parent == tmp_path / "run" and mp2.name == "PI_FACTS_PACKET.md" and wp2.name == "PI_FACTS_PACKET_WINDOWS.md"

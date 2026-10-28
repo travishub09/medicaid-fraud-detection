@@ -587,6 +587,18 @@ def resolve_npis_to_orgs(matrix: pd.DataFrame, npis: list[str]) -> tuple[list[st
     return out, missing
 
 
+def out_paths(run_dir: Path, out_prefix: str) -> tuple[Path, Path, Path, Path]:
+    """(facts json, FACTS.md, FACTS_WINDOWS.md, windows json) for an --out-prefix that may
+    carry a directory (absolute = outside the run folder, the operator's pi_reports/ tree).
+    Only the file NAME is upper-cased for the Markdown sheets, never the folders: the WHEN
+    sheet used to upper-case the whole prefix and write to /DATA/MEDICAID/... (2026-10-28)."""
+    pp = Path(out_prefix)
+    base = run_dir / pp.parent
+    base.mkdir(parents=True, exist_ok=True)
+    return (base / f"{pp.name}.json", base / f"{pp.name.upper()}.md",
+            base / f"{pp.name.upper()}_WINDOWS.md", base / f"{pp.name}_windows.json")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-dir", required=True,
@@ -668,10 +680,7 @@ def main() -> None:
     # --out-prefix may carry a directory part (an absolute path lands outside the run
     # folder: the operator's pi_reports/ tree, 2026-10-26); only the NAME is upper-cased
     # for the Markdown sheet, never the folders (an upper-cased path did not exist).
-    _pp = Path(args.out_prefix)
-    _pp.parent.mkdir(parents=True, exist_ok=True) if _pp.parent != Path(".") else None
-    jp = run_dir / f"{args.out_prefix}.json"
-    mp = run_dir / _pp.parent / f"{_pp.name.upper()}.md"
+    jp, mp, wp, wjp = out_paths(run_dir, args.out_prefix)
     jp.write_text(json.dumps(res, indent=1), encoding="utf-8")
     mp.write_text(to_markdown(res), encoding="utf-8")
     found = sum(1 for v in res.values() if "error" not in v)
@@ -679,9 +688,8 @@ def main() -> None:
     print(f"[pi_facts] fact sheets -> {mp}")
     if args.deep:
         wmd, wrows = window_sheet(res)
-        wp = run_dir / f"{args.out_prefix.upper()}_WINDOWS.md"
         wp.write_text(wmd, encoding="utf-8")
-        (run_dir / f"{args.out_prefix}_windows.json").write_text(json.dumps(wrows, indent=1), encoding="utf-8")
+        wjp.write_text(json.dumps(wrows, indent=1), encoding="utf-8")
         print(f"[pi_facts] window sheet ({len(wrows)} practices) -> {wp}")
 
 
