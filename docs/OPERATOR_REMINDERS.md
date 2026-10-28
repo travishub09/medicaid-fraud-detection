@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-27. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-28. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -243,17 +243,6 @@ python -u -m src.model_a.pi_facts --run-dir "C:\Users\treyr\OneDrive\Desktop\dat
 REM say 'Sage first-call list + Wallabout follow-ups sent' when the email goes
 ```
 
-- [ ] **capacity_on_vm** — RULE (operator 2026-10-22: the laptop tools crashed the machine): the capacity check runs on the VM, never the laptop. The two 2026-10-27 reruns reported 'CCN crosswalk MISSING / minutes map MISSING' and one flag because the tmux line did not export MEDICAID_DATA_ROOT (the tool read the laptop default ~/Desktop/data on the VM); bundle 406 makes a missing root fatal. Relaunch cap26c on v26's matrix with the export; the log's third line must read 'CCN crosswalk ok' and the fourth must name hcpcs_minutes_2023.csv before the done line. About an hour. Start the current-day run only after cap26c is gone from tmux ls. (added 2026-10-22)
-
-```bat
-REM relaunch (the export is the fix; no --minutes / --ccn-crosswalk: the defaults find them under the root):
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s cap26c 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -u -m src.model_a.capacity --spending /data/medicaid/processed/spending_fact.parquet --matrix /data/medicaid/model_a/frozen_2023-12_v26/provider_features_for_model.parquet --min-paid 2000000 --provider-dim /data/medicaid/processed/provider_dim.parquet --graph-dir /data/medicaid/graph --pos-dir /data/medicaid/preclean/pos --licensed-capacity /data/medicaid/processed/licensed_capacity_by_npi.parquet --out /data/medicaid/model_a/frozen_2023-12_v26/capacity > /data/medicaid/model_a/frozen_2023-12_v26/capacity.log 2>&1' && echo started"
-REM status (free; read it when tmux ls no longer shows cap26c):
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tmux ls; tail -4 /data/medicaid/model_a/frozen_2023-12_v26/capacity.log; head -60 /data/medicaid/model_a/frozen_2023-12_v26/capacity/CAPACITY.md"
-REM only when the log reads 'CCN crosswalk ok' and names hcpcs_minutes_2023.csv:
-python -m src.reminders --done-task capacity_on_vm
-```
-
 - [ ] **pursuit_dossier__frozen_2021-12_v19** — The runner already built PURSUIT_DOSSIER.md (step 10). DISPATCH is gated: no Manus credits on a HOLD run (operator policy 2026-10-11); it runs only if the registry verdict is PROMOTE or the operator says go. (added 2026-10-22)
 
 ```bat
@@ -400,6 +389,34 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v26
 
 ```bat
 python -m src.reminders --done-task registry_verdict__frozen_2023-12_v26
+```
+
+- [ ] **run_packet__current_202610_cd1** — Send the cd1 packet (the first current-day run, DONE 2026-10-28 02:04 UTC, 0 FAIL): every report + audit file, the attending-concentration and contradictions folders, zero raw data. The run lives on the VM; tar there, scp to the laptop, upload the tar to the chat. Then the OneDrive up-sync so the reports are off the VM disk. (added 2026-10-28)
+
+```bat
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/run_packet_cd1.tar.gz *.md *.json *.csv attending_concentration contradictions 2>/dev/null; ls -la /home/ubuntu/run_packet_cd1.tar.gz"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_cd1.tar.gz C:\Users\treyr\Downloads\run_packet_cd1.tar.gz
+REM upload C:\Users\treyr\Downloads\run_packet_cd1.tar.gz to the chat, then:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s upcd1 'bash ops/vm/sync_data.sh up current_202610_cd1 > /data/medicaid/model_a/up_cd1.log 2>&1' && echo started"
+python -m src.reminders --done-task run_packet__current_202610_cd1
+```
+
+- [ ] **pursuit_dossier__current_202610_cd1** — The cd1 operator book is PURSUIT_DOSSIER.md in the run folder (built by the runner; not dispatched). Dispatch spends Manus credits and runs ONLY on the operator's explicit go, after the packet is read against the v26 book (a target already researched for v26 is not re-sent: the registry de-duplicates by org_id, but the folders differ, so check the names first). (added 2026-10-28)
+
+```bat
+REM only on the operator's go, after the packet read:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --dispatch | tail -5"
+python -m src.reminders --done-task pursuit_dossier__current_202610_cd1
+```
+
+- [ ] **dossier_poll__current_202610_cd1** — ~30 min after dispatch: collect Manus research into the current_202610_cd1 dossier and send PURSUIT_DOSSIER.md (added 2026-10-28)
+
+```bat
+REM free, read-only; repeat until pending = 0:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --poll | tail -5"
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/cd1_dossier.tar.gz PURSUIT_DOSSIER.md pursuit_research_*.json* research_attachments 2>/dev/null; ls -la /home/ubuntu/cd1_dossier.tar.gz"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/cd1_dossier.tar.gz C:\Users\treyr\Downloads\cd1_dossier.tar.gz
+python -m src.reminders --done-task dossier_poll__current_202610_cd1
 ```
 
 
