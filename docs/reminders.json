@@ -634,6 +634,20 @@
  ],
  "tasks": [
   {
+   "key": "cd1_dossier_read",
+   "added": "2026-10-28",
+   "what": "READ THE SIX cd1 RESEARCH ANSWERS (all completed 2026-10-28 17:27 UTC). After merge 412 + the VM pull: pull the attachments before the signed links expire, re-render the operator-book dossier with the research folded in (a few minutes of scoring), tar + scp + upload cd1_dossier.tar.gz to the chat; Claude reads the six against the v26 bar and the operator records a verdict per name with `pursuit_verdicts --add`.",
+   "commands": [
+    "REM after merge 412 + the VM pull:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --pull-attachments\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --poll | tail -3\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/cd1_dossier.tar.gz PURSUIT_DOSSIER.md pursuit_research_*.json* research_attachments dossier_verdicts_applied.csv 2>/dev/null; ls -la /home/ubuntu/cd1_dossier.tar.gz\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/cd1_dossier.tar.gz C:\\Users\\treyr\\Downloads\\cd1_dossier.tar.gz",
+    "REM upload C:\\Users\\treyr\\Downloads\\cd1_dossier.tar.gz to the chat, then:",
+    "python -m src.reminders --done-task cd1_dossier_read"
+   ]
+  },
+  {
    "key": "v21_run",
    "added": "2026-10-22",
    "what": "FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close.",
@@ -1086,32 +1100,6 @@
    "added": "2026-10-26",
    "commands": [
     "python -m src.reminders --done-task registry_verdict__frozen_2023-12_v26"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__current_202610_cd1",
-   "what": "The cd1 operator book is PURSUIT_DOSSIER.md in the run folder (built by the runner; not dispatched). Dispatch spends Manus credits and runs ONLY on the operator's explicit go, after the packet is read against the v26 book (a target already researched for v26 is not re-sent: the registry de-duplicates by org_id, but the folders differ, so check the names first).",
-   "added": "2026-10-28",
-   "commands": [
-    "REM only on the operator's go, after the packet read:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --dispatch | tail -5\"",
-    "python -m src.reminders --done-task pursuit_dossier__current_202610_cd1"
-   ]
-  },
-  {
-   "key": "dossier_poll__current_202610_cd1",
-   "what": "Collect the six cd1 research answers (dispatched 2026-10-28). `--poll-only` polls the registry and prints the tally WITHOUT rebuilding the dossier (a plain --poll re-scores the matrix for minutes and, without --operator-book, re-picks from the main list). When pending reads 0, re-render the operator-book dossier with the research folded in, then tar + scp + upload to the chat.",
-   "added": "2026-10-28",
-   "commands": [
-    "REM free, read-only; repeat until pending 0 (after merge 410 + the VM pull):",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --poll-only\"",
-    "REM when pending 0: re-render the operator-book dossier with the research (a few minutes), then pack:",
-    "REM pull the attachments BEFORE the signed links expire:",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --pull-attachments\"",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --poll | tail -3\"",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/cd1_dossier.tar.gz PURSUIT_DOSSIER.md pursuit_research_*.json* research_attachments 2>/dev/null; ls -la /home/ubuntu/cd1_dossier.tar.gz\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/cd1_dossier.tar.gz C:\\Users\\treyr\\Downloads\\cd1_dossier.tar.gz",
-    "python -m src.reminders --done-task dossier_poll__current_202610_cd1"
    ]
   }
  ],
@@ -1694,6 +1682,36 @@
    ],
    "closed_on": "2026-10-28",
    "closed_note": "packet uploaded and read 2026-10-28"
+  },
+  {
+   "key": "pursuit_dossier__current_202610_cd1",
+   "what": "The cd1 operator book is PURSUIT_DOSSIER.md in the run folder (built by the runner; not dispatched). Dispatch spends Manus credits and runs ONLY on the operator's explicit go, after the packet is read against the v26 book (a target already researched for v26 is not re-sent: the registry de-duplicates by org_id, but the folders differ, so check the names first).",
+   "added": "2026-10-28",
+   "commands": [
+    "REM only on the operator's go, after the packet read:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --dispatch | tail -5\"",
+    "python -m src.reminders --done-task pursuit_dossier__current_202610_cd1"
+   ],
+   "closed_on": "2026-10-28",
+   "closed_note": "six-name batch dispatched 2026-10-28 16:56 UTC (operator's go; Ideal Option / HealthTrackRx / Aegis / Curative skipped)"
+  },
+  {
+   "key": "dossier_poll__current_202610_cd1",
+   "what": "Collect the six cd1 research answers (dispatched 2026-10-28). `--poll-only` polls the registry and prints the tally WITHOUT rebuilding the dossier (a plain --poll re-scores the matrix for minutes and, without --operator-book, re-picks from the main list). When pending reads 0, re-render the operator-book dossier with the research folded in, then tar + scp + upload to the chat.",
+   "added": "2026-10-28",
+   "commands": [
+    "REM free, read-only; repeat until pending 0 (after merge 410 + the VM pull):",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --poll-only\"",
+    "REM when pending 0: re-render the operator-book dossier with the research (a few minutes), then pack:",
+    "REM pull the attachments BEFORE the signed links expire:",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --pull-attachments\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --poll | tail -3\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/cd1_dossier.tar.gz PURSUIT_DOSSIER.md pursuit_research_*.json* research_attachments 2>/dev/null; ls -la /home/ubuntu/cd1_dossier.tar.gz\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/cd1_dossier.tar.gz C:\\Users\\treyr\\Downloads\\cd1_dossier.tar.gz",
+    "python -m src.reminders --done-task dossier_poll__current_202610_cd1"
+   ],
+   "closed_on": "2026-10-28",
+   "closed_note": "all six completed 2026-10-28 17:27 UTC (--poll-only); the read is task cd1_dossier_read"
   }
  ]
 }
