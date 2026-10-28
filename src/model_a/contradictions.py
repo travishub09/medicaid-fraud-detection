@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -79,21 +80,72 @@ def _sql(p) -> str:
     return str(p).replace("'", "''")
 
 
+# 2026-10-28 (the first current-day run): 819 of the 1,194 billing_after_exclusion rows
+# were Florida sanction-list entries whose action is a FINE or a CAP on a hospital or an
+# agency (Boston Medical Center at $768M was row 1), and the enrollment-end rows read a
+# termination in ONE state (Natera in Kansas) against claims paid everywhere. A fine is
+# not a bar on billing, and a state's action bars that state's claims only. The paid
+# fact carries no claim state, so the provider's own state is the proxy: a state-scoped
+# event is kept only when the provider's state matches (or is unknown).
+_BAR_WORDS = re.compile(r"\b(TERMINAT\w*|EXCLU\w*|SUSPEN\w*|REVO\w*|DEBAR\w*|BARRED|SANCTIONED|"
+                        r"DISQUALIF\w*|PRECLU\w*)", re.I)
+_NON_BAR_WORDS = re.compile(r"\b(FINE|FINES|CAP|PROBATION|REPRIMAND|CITATION|WARNING|MONETARY|"
+                            r"PENALTY|PENALTIES|ADMINISTRATIVE FINE|CORRECTIVE ACTION)\b", re.I)
+_STATE_SCOPED = re.compile(r"^(state_term|mcd_enroll):([A-Z]{2}):", re.I)
+
+
+def event_keep(excl_type: str, provider_state: str = "") -> tuple[bool, str]:
+    """Whether an exclusion-node record is a BILLING BAR for this provider's claims.
+    Returns (keep, reason-if-dropped)."""
+    et = str(excl_type or "")
+    low = et.lower()
+    if low.startswith("opensanc"):
+        return False, "opensanctions is an identifier crosswalk, never its own bar (the source list carries the event)"
+    m = _STATE_SCOPED.match(et)
+    if m:
+        st = m.group(2).upper()
+        reason = et[m.end():]
+        if low.startswith("state_term") and _NON_BAR_WORDS.search(reason) and not _BAR_WORDS.search(reason):
+            return False, f"a {st} fine / cap / probation is not a bar on billing"
+        ps = str(provider_state or "").strip().upper()
+        if ps and ps != st:
+            return False, f"{st} action; the provider bills from {ps} (the fact carries no claim state)"
+    return True, ""
+
+
+def events_with_setaside(exclusion_nodes: pd.DataFrame | None,
+                         deactivations: pd.DataFrame | None,
+                         provider_dim: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """`_events` plus the records it set aside (npi, excl_type, reason)."""
+    setaside: list[dict] = []
+    ev = _events(exclusion_nodes, deactivations, provider_dim, _setaside=setaside)
+    return ev, pd.DataFrame(setaside, columns=["npi", "name", "excl_type", "excl_date", "reason"])
+
+
 def _events(exclusion_nodes: pd.DataFrame | None,
             deactivations: pd.DataFrame | None,
-            provider_dim: pd.DataFrame | None = None) -> pd.DataFrame:
+            provider_dim: pd.DataFrame | None = None,
+            _setaside: list | None = None) -> pd.DataFrame:
     """One row per (npi, event_type): the FIRST exclusion (with its FCA tier)
     and the deactivation date, each with the END of its window when the
     record carries one: an exclusion's reinstatement date, a deactivated
     NPI's reactivation date (provider_dim). Dollars after the end date are
-    NOT contradictions. Blank / invalid NPIs are dropped."""
+    NOT contradictions. Blank / invalid NPIs are dropped; records that are not
+    a billing bar for this provider (fines, caps, another state's action,
+    OpenSanctions mirrors) are set aside with the reason (`event_keep`)."""
     rows = []
     react = {}
+    pstate: dict = {}
     if provider_dim is not None and len(provider_dim) and "reactivation_date" in provider_dim.columns:
         pdim = provider_dim[["npi", "reactivation_date"]].copy()
         pdim["npi"] = pdim["npi"].astype(str)
         rd = pd.to_datetime(pdim["reactivation_date"], errors="coerce")
         react = dict(zip(pdim["npi"][rd.notna()], rd[rd.notna()]))
+    if provider_dim is not None and len(provider_dim):
+        scol = next((c for c in ("practice_state", "addr_state") if c in provider_dim.columns), None)
+        if scol:
+            s = provider_dim[["npi", scol]].dropna()
+            pstate = dict(zip(s["npi"].astype(str), s[scol].astype(str).str.strip().str.upper()))
     if exclusion_nodes is not None and len(exclusion_nodes) and "npi" in exclusion_nodes.columns:
         e = exclusion_nodes.copy()
         e["npi"] = e["npi"].fillna("").astype(str).str.strip()
@@ -110,6 +162,12 @@ def _events(exclusion_nodes: pd.DataFrame | None,
             for r in e.itertuples():
                 end = r.end
                 et = str(r.excl_type)
+                keep, why = event_keep(et, pstate.get(r.npi, ""))
+                if not keep:
+                    if _setaside is not None:
+                        _setaside.append({"npi": r.npi, "name": str(getattr(r, "entity_name", "") or ""),
+                                          "excl_type": et, "excl_date": str(r.date.date()), "reason": why})
+                    continue
                 # a Medicaid enrollment that ended for cause (ingest_cms.medicaid_enrollment,
                 # excl_type mcd_enroll:<ST>:<reason>) is its own per-se fact with its own
                 # innocent explanations (managed care, run-out claims, a re-enrollment the
@@ -390,7 +448,11 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
          "death; individual NPIs whose timed "
          "codes exceed a working day; individual NPIs billing organization-only codes. Each "
          "has innocent explanations listed at the end; rule those out first._", "",
-         f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v)}._", ""]
+         f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v and k != 'n_setaside')}._", ""]
+    if inputs.get("n_setaside"):
+        L += [f"_{int(inputs['n_setaside']):,} exclusion record(s) were set aside as NOT a billing bar for the "
+              "provider (a state's fine / cap / probation, another state's action against a provider billing "
+              "from elsewhere, OpenSanctions mirrors): contradictions_setaside.csv lists each with the reason._", ""]
     if not len(t):
         return "\n".join(L + ["_No rows met the thresholds._"]) + "\n"
     by = t.groupby(["tier", "contradiction"])["post_event_paid"].agg(["size", "sum"])
@@ -495,9 +557,15 @@ def main() -> None:
             from src.ingest_cms.medicaid_enrollment import fill_state
             pdim, n_fill = fill_state(pdim, pd.read_parquet(feats_p, columns=["npi", "mcd_primary_state"]))
             print(f"[contradictions] state filled from {feats_p.name} for {n_fill:,} NPIs with no address state")
-    events = _events(excl, deact, pdim)
+    events, setaside = events_with_setaside(excl, deact, pdim)
     print(f"[contradictions] events: {events['event'].value_counts().to_dict() if len(events) else 0}; "
           f"windows capped by reinstatement/reactivation: {int(events['end_date'].notna().sum()) if len(events) else 0:,}")
+    if len(setaside):
+        setaside.to_csv(out / "contradictions_setaside.csv", index=False)
+        top = setaside["reason"].str.replace(r"^[A-Z]{2} ", "", regex=True).str.slice(0, 60).value_counts().head(4)
+        print(f"[contradictions] {len(setaside):,} exclusion record(s) set aside as NOT a billing bar for the provider "
+              f"(fines / caps, another state's action, OpenSanctions mirrors) -> contradictions_setaside.csv; "
+              + "; ".join(f"{k}: {v:,}" for k, v in top.items()))
     post = post_event_billing(a.spending, events)
     print(f"[contradictions] providers with any post-event billing: {(post['post_paid'] > 0).sum():,}")
 
@@ -518,7 +586,7 @@ def main() -> None:
         print(f"[contradictions] attaching paid-claims facts to the top {a.deep_top} Tier A rows ...")
         t = attach_deep_facts(t, a.spending, minutes_csv=minutes, top_n=a.deep_top)
     t.to_csv(out / "contradictions.csv", index=False)
-    inputs = {"spending": Path(a.spending).name, "exclusions": Path(a.exclusion_nodes).name if a.exclusion_nodes else "",
+    inputs = {"n_setaside": int(len(setaside)), "spending": Path(a.spending).name, "exclusions": Path(a.exclusion_nodes).name if a.exclusion_nodes else "",
               "deactivation": Path(dp).name if dp else "", "matrix": Path(a.matrix).name if a.matrix else ""}
     (out / "CONTRADICTIONS.md").write_text(to_markdown(t, inputs), encoding="utf-8")
     (out / "contradictions_summary.json").write_text(json.dumps({

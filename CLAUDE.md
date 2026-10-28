@@ -2040,6 +2040,38 @@ first, then paste" above every move/done block.
   OneDrive; the packet tar is on the laptop. RULE: v26 / v27 replace the baseline only by
   beating it on an independent ruler (the second freeze) or passing all twenty on this one;
   the pin moves by the operator's word, never by a runner.
+  CD1, THE FIRST CURRENT-DAY RUN (2026-10-28, `ops/vm/run_current_day.sh cd1`, DONE 02:04 UTC,
+  0 FAIL, 43 of 46 sources, 27 schemes, 617,062 providers, 3,270 hard positives): the
+  operator book's head is labs + health systems again (the national list missed Aegis,
+  Curative, Ballad, OhioHealth, UofL, Fred Hutchinson, Oakwood, Mercy, Nassau Health Care,
+  MTM, AMR: added), the pick re-named Ideal Option (HOLD) and HealthTrackRx (watch) a week
+  after v26's research settled them, and six new operator-run names (Genesis Reference
+  Labs, Accu Reference, Gravity Diagnostics, National Labs, Childrens Health Care
+  Associates, Pediatria) are the research candidates. The attending-concentration report
+  confirmed the lens (Andes rank 7, Morrison rank 18; their billing entities rank 1,756 and
+  1,950 on the main list, which is why the scorer alone never surfaced them); most other
+  rows are medical directors on CMHC / OTP / ambulance claims and lab directors on
+  COVID-era tests (innocent by construction); one desk candidate: a San Diego cardiologist,
+  $83M as renderer across 31 billers, 36478 vein ablation. The contradictions report was
+  WRONG at the top: 819 of 1,194 billing_after_exclusion rows were Florida FINE / CAP
+  listings (Boston Medical Center $768M first) and the enrollment-end rows read one state's
+  termination against claims billed everywhere. FIXED (bundle 408): `contradictions.
+  event_keep` drops fines / caps / probation, another state's action against a provider
+  billing from elsewhere (the provider's state is the proxy; the fact carries no claim
+  state) and OpenSanctions mirrors, into contradictions_setaside.csv with the reason.
+  STANDING VERDICTS (`model_a/pursuit_verdicts.py`, `<data_root>/model_a/pursuit_verdicts.csv`,
+  org_id / org_name / verdict pursue|hold|watch|set_aside / date / reason / run): the
+  operator's decisions on organizations, honoured by every dossier pick
+  (`dossier_verdicts_applied.csv`), never by the graded books; `--init` seeds the v26 read,
+  `--add` records a new one (the operator's word). ANDES CORRECTION (Josh, 2026-10-27):
+  the docket check on the CHHA's name missed the December 2025 NY AG / E.D.N.Y. settlement
+  with its SISTER agency Americare, Inc. ($55M: wage parity 2014-2020 + $10M Medicaid, from
+  a whistleblower complaint; AG reporting for three years; investigations into other
+  agencies named "ongoing"): different conduct and years, but the government has a file on
+  the group. RULE: every first-to-file names list carries sibling entities, d/b/a names
+  and the owners' other companies. The Shemias agreed to buy Extended in September 2019
+  and closed in January 2022; "no link" reads "no direct link"; the $10M a month is the
+  late-2024 run rate under his number, not an average.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

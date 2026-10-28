@@ -548,6 +548,13 @@ _NATIONAL_NAMES = (
     # nonprofit early-intervention provider. None is an operator a relator comes from.
     "UNILAB", "DIAGNOSTIC LABORATORY OF OKLAHOMA", "CENTER FOR INDEPENDENT LIVING",
     "LABORATORY SERVICES COOPERATIVE", "KENNEDY DONOVAN CENTER",
+    # the first current-day run (2026-10-28): two national-scale laboratories in the pick, and
+    # the hospital systems, the public hospital, the national NEMT broker and the national
+    # ambulance company in its top 50 with no cue word
+    "AEGIS SCIENCES", "CURATIVE", "MOUNTAIN STATES HEALTH ALLIANCE", "BALLAD HEALTH", "OHIOHEALTH",
+    "UOFL HEALTH", "FRED HUTCHINSON", "OAKWOOD HEALTHCARE", "MERCY HEALTH", "NASSAU HEALTH CARE",
+    "MEDICAL TRANSPORTATION MANAGEMENT", "AMERICAN MEDICAL RESPONSE", "ST. JOSEPH HEALTH",
+    "FULGENT",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 
@@ -681,7 +688,8 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
           min_hot: float = 0.5,
           include_government: bool = False,
           operator_book: bool = False,
-          keep_public_cases: bool = False) -> Path:
+          keep_public_cases: bool = False,
+          verdicts_path: str | Path | None = None) -> Path:
     d = Path(run_dir)
     matrix = pd.read_parquet(d / "provider_features_for_model.parquet")
     manifest = json.loads((d / "feature_manifest.json").read_text(encoding="utf-8"))
@@ -696,6 +704,21 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
             print(f"[pursuit_dossier] {len(gone):,} org(s) with a public case or exclusion since the freeze "
                   f"set aside (not targets; {ruler.name if ruler else ''}): "
                   + "; ".join(gone["org_name"].astype(str).head(8)) + (" ..." if len(gone) > 8 else ""))
+    # 2026-10-28: the operator's standing verdicts (pursue / hold / watch / set_aside) on
+    # organizations, kept in ONE file beside the runs; a name already decided is never
+    # picked again by any run's dossier (the first current-day pick named Ideal Option
+    # and HealthTrackRx a week after v26's research settled them). Never a filter on
+    # the graded books.
+    from .pursuit_verdicts import load_verdicts, apply_verdicts
+    verdicts = load_verdicts(verdicts_path, run_dir=d)
+    if len(verdicts):
+        orgs, decided = apply_verdicts(orgs, verdicts)
+        if len(decided):
+            decided[["org_id", "org_name", "verdict", "verdict_reason"]].to_csv(d / "dossier_verdicts_applied.csv", index=False)
+            print(f"[pursuit_dossier] {len(decided):,} org(s) with a standing verdict set aside from the pick "
+                  f"({len(verdicts)} verdicts on file): "
+                  + "; ".join(f"{n} ({v})" for n, v in zip(decided["org_name"].astype(str).head(8), decided["verdict"].head(8)))
+                  + (" ..." if len(decided) > 8 else ""))
     from .case_size import org_case_size, size_line
     sizes = org_case_size(matrix)
     orgs = orgs.merge(sizes, on="org_id", how="left")
@@ -1084,6 +1107,9 @@ def main() -> None:
                          "government entities, no solo individuals): the class the "
                          "whistleblower strategy targets and the pursuit companion list "
                          "grades; the default top-10 is the main list")
+    ap.add_argument("--verdicts", default=None,
+                    help="standing-verdicts csv (default: pursuit_verdicts.csv beside the run folder, "
+                         "else <data_root>/model_a/); decided organizations are set aside from the pick")
     ap.add_argument("--keep-public-cases", action="store_true",
                     help="keep organizations with a public case since the freeze in the target pick "
                          "(default: set aside; a frozen run's dossier is an operational pick made today)")
@@ -1187,7 +1213,8 @@ def main() -> None:
     build(args.run_dir, top=args.top, dispatch=args.dispatch, poll=args.poll,
           min_billed=args.min_billed, min_damages=args.min_damages,
           min_hot=args.min_hot, include_government=args.include_government,
-          operator_book=args.operator_book, keep_public_cases=args.keep_public_cases)
+          operator_book=args.operator_book, keep_public_cases=args.keep_public_cases,
+          verdicts_path=args.verdicts)
 
 
 if __name__ == "__main__":

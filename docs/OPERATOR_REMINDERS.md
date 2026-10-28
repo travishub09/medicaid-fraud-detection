@@ -24,13 +24,21 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
+- [ ] **verdicts_init_vm** — STANDING VERDICTS FILE (bundle 408, src/model_a/pursuit_verdicts.py): the operator's pursue / hold / watch / set_aside decisions on organizations live in ONE file, /data/medicaid/model_a/pursuit_verdicts.csv, and every run's dossier pick sets those organizations aside (the cd1 pick named Ideal Option and HealthTrackRx a week after v26's research settled them). Seed it once on the VM after merge 408 + the VM pull (the seed carries the v26 read: TrueTox pursue, HealthTrackRx / Mini Pharmacy / Simple Labs watch, Ideal Option hold, the five set-asides, Curative + Aegis set aside). New verdicts: `python -m src.model_a.pursuit_verdicts --add <org_id> <verdict> "<reason>" --name "<name>"` on the VM; a re-run of a dossier pick (`pursuit_dossier --run-dir <run> --operator-book`) then skips them and lists them in dossier_verdicts_applied.csv. (added 2026-10-28)
+
+```bat
+REM after merge 408 and the VM pull:
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --init && python -m src.model_a.pursuit_verdicts --list"
+python -m src.reminders --done-task verdicts_init_vm
+```
+
 - [ ] **v21_run** — FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close. (added 2026-10-22)
 
 ```bat
 python -m src.reminders --done-task v21_run
 ```
 
-- [ ] **first_to_file_check** — FIRST-TO-FILE CHECK (bundle 402, src/enforcement/first_to_file.py): before money goes into a lead, the public dockets are searched for the party through the free CourtListener API (RECAP / PACER metadata, any nature of suit; FCA-shaped rows flagged). A sealed qui tam is invisible to every public search; a clean result rules out public cases, settlements and government actions only. Names: the home care physician and his practice + the five agencies, the podiatrist + his three companies, and the ten v26 targets. Free; a minute per name. COURTLISTENER_TOKEN in ~/.medicaid_env raises the rate limit (optional). Paste FIRST_TO_FILE.md's head. (added 2026-10-26)
+- [ ] **first_to_file_check** — FIRST-TO-FILE CHECK (bundle 402, src/enforcement/first_to_file.py): before money goes into a lead, the public dockets are searched for the party through the free CourtListener API (RECAP / PACER metadata, any nature of suit; FCA-shaped rows flagged). A sealed qui tam is invisible to every public search; a clean result rules out public cases, settlements and government actions only. Names: the home care physician and his practice + the five agencies, the podiatrist + his three companies, and the ten v26 targets. Free; a minute per name. COURTLISTENER_TOKEN in ~/.medicaid_env raises the rate limit (optional). Paste FIRST_TO_FILE.md's head. RULE (2026-10-28, the Americare lesson): the docket search on a CHHA's name missed the December 2025 settlement with its SISTER agency (Americare, Inc.); every names list carries the sibling entities, the d/b/a names and the owners' other companies (from the Medicare ownership file / PECOS), not only the billing entity. (added 2026-10-26)
 
 ```bat
 REM after merge 402 + the VM pull:

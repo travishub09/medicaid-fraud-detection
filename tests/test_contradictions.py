@@ -158,3 +158,28 @@ def test_assemble_ranks_by_dollars_and_filters_noise(tmp_path: Path):
     assert "TIER A CONTRADICTIONS" in md and "| A | billing_after_exclusion | 1 |" in md
     assert "## Tier A" in md and "## Tier B" in md and "STATE CONVENTION" in md
     assert "Innocent explanations" in md and "never accusations" in md
+
+
+def test_fines_and_other_state_actions_are_not_billing_bars():
+    """2026-10-28 (the first current-day run): a Florida FINE on an out-of-state hospital and a
+    one-state enrollment end against a provider billing from another state are not per-se
+    facts; a termination in the provider's own state is."""
+    from src.model_a.contradictions import event_keep, events_with_setaside
+    assert event_keep("state_term:FL:7(E) / FINE [GENERAL HOSPITAL]", "MA") == (False, "a FL fine / cap / probation is not a bar on billing")
+    assert event_keep("state_term:FL:7(E) / FINE [GENERAL HOSPITAL]", "FL")[0] is False
+    assert event_keep("state_term:FL:TERMINATED | CONVICTED OF MEDICAID FRAUD", "FL") == (True, "")
+    assert event_keep("state_term:FL:TERMINATED | CONVICTED OF MEDICAID FRAUD", "")[0] is True       # unknown state: kept
+    assert event_keep("mcd_enroll:KS:TERM - STATE EXCLUSION/ DEBARMENT", "CA")[0] is False
+    assert event_keep("mcd_enroll:KS:TERM - STATE EXCLUSION/ DEBARMENT", "KS")[0] is True
+    assert event_keep("opensanctions:us_leie", "NY")[0] is False
+    assert event_keep("1128a1", "NY")[0] is True and event_keep("medicare_revocation: 424.535(a)(8)", "TX")[0] is True
+    excl = pd.DataFrame({"npi": [A, B, C],
+                         "excl_date": ["2022-01-15", "2021-06-01", "2020-01-01"],
+                         "excl_type": ["state_term:FL:7(E) / FINE [GENERAL HOSPITAL]",
+                                       "mcd_enroll:KS:TERM - STATE EXCLUSION/ DEBARMENT", "1128a1"],
+                         "entity_name": ["BIG HOSPITAL", "NAT LAB", "ROE, JANE"]})
+    pdim = pd.DataFrame({"npi": [A, B, C], "addr_state": ["MA", "CA", "NY"]})
+    ev, aside = events_with_setaside(excl, None, pdim)
+    assert set(ev["npi"]) == {C}
+    assert len(aside) == 2 and set(aside["npi"]) == {A, B} and "not a bar" in aside.set_index("npi").loc[A, "reason"]
+    assert "bills from CA" in aside.set_index("npi").loc[B, "reason"]
