@@ -353,6 +353,40 @@ def _dispatch_locked(prompts_path: Path, registry_path: Path, transport, max_new
     return out
 
 
+def pull_attachments(results_path: Path, out_dir: Path, fetch=None, timeout: int = 120) -> list[dict]:
+    """Save every attachment named in pursuit_research_results.json under
+    out_dir/<org key>/<filename> (the signed CDN links expire; the v26 pull was a
+    one-off python line, 2026-10-28). Returns one row per attachment with the local
+    path or the error. `fetch(url) -> bytes` is injectable for tests."""
+    if not results_path.exists():
+        return []
+    if fetch is None:
+        import requests
+
+        def fetch(url: str) -> bytes:
+            r = requests.get(url, timeout=timeout)
+            r.raise_for_status()
+            return r.content
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    rows: list[dict] = []
+    for oid, env in results.items():
+        key = re.sub(r"[^A-Za-z0-9]+", "_", str(oid)).strip("_")[:60]
+        for a in (env or {}).get("attachments") or []:
+            if not isinstance(a, dict) or not a.get("url"):
+                continue
+            name = re.sub(r"[^A-Za-z0-9._-]+", "_", str(a.get("filename") or "attachment"))
+            dest = out_dir / key / name
+            row = {"org_id": oid, "filename": name, "path": str(dest), "error": ""}
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not dest.exists():
+                    dest.write_bytes(fetch(str(a["url"])))
+            except Exception as e:                       # noqa: BLE001 - the row says why
+                row["error"] = str(e)[:200]
+            rows.append(row)
+    return rows
+
+
 def poll_research(registry_path: Path, out_path: Path, transport=None) -> dict:
     """Collect finished research; returns {org_id: envelope} for the renderer."""
     if not registry_path.exists():
@@ -1124,6 +1158,9 @@ def main() -> None:
                          "— for metro/national batches authored elsewhere")
     ap.add_argument("--poll", action="store_true",
                     help="collect finished research and fold it into the dossier")
+    ap.add_argument("--pull-attachments", action="store_true",
+                    help="save every attachment in pursuit_research_results.json under "
+                         "<run>/research_attachments/ (the signed links expire)")
     ap.add_argument("--poll-only", action="store_true",
                     help="collect finished research and print the status tally WITHOUT rebuilding the "
                          "dossier (the plain --poll re-scores the matrix first: minutes, and without "
@@ -1205,6 +1242,14 @@ def main() -> None:
         info = dispatch_research(Path(args.dispatch_file),
                                  d / "pursuit_research_tasks.json")
         print(f"[pursuit_dossier] custom batch: {info}")
+        return
+    if args.pull_attachments:
+        d = Path(args.run_dir)
+        rows = pull_attachments(d / "pursuit_research_results.json", d / "research_attachments")
+        ok = [r for r in rows if not r["error"]]
+        print(f"[pursuit_dossier] attachments: {len(ok)} saved, {len(rows) - len(ok)} failed -> {d / 'research_attachments'}")
+        for r in rows:
+            print(f"  {'ok ' if not r['error'] else 'ERR'} {r['org_id']}: {r['filename']}" + (f" ({r['error']})" if r["error"] else ""))
         return
     if args.poll_only:
         d = Path(args.run_dir)

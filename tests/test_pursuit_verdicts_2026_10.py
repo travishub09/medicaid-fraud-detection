@@ -49,3 +49,21 @@ def test_national_names_from_the_first_current_day_run():
         assert is_national_name(n), n
     assert not is_national_name("GENESIS REFERENCE LABORATORIES, LLC")
     assert not is_national_name("ACCU REFERENCE MEDICAL LAB, LLC")
+
+
+def test_pull_attachments_saves_each_file_and_records_errors(tmp_path: Path):
+    import json
+    from src.model_a.pursuit_dossier import pull_attachments
+    res = {"org:pac:1": {"status": "completed", "attachments": [{"filename": "a findings.csv", "url": "https://x/a"},
+                                                                 {"filename": "bad.csv", "url": "https://x/bad"}]},
+           "org:name:B C": {"status": "completed", "attachments": []}}
+    rp = tmp_path / "pursuit_research_results.json"
+    rp.write_text(json.dumps(res), encoding="utf-8")
+
+    def fetch(url):
+        if url.endswith("bad"):
+            raise RuntimeError("403")
+        return b"col\n1\n"
+    rows = pull_attachments(rp, tmp_path / "research_attachments", fetch=fetch)
+    assert len(rows) == 2 and rows[0]["error"] == "" and (tmp_path / "research_attachments" / "org_pac_1" / "a_findings.csv").read_bytes() == b"col\n1\n"
+    assert rows[1]["error"] == "403"
