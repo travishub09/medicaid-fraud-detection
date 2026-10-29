@@ -62,6 +62,12 @@ class Screen:
     precedent: str = ""
     taxonomy_prefixes: tuple[str, ...] = ()    # restrict to these NUCC prefixes when provider_dim carries taxonomy ('' = any)
     extra: dict = field(default_factory=dict)
+    # the second track (2026-10-29): shapes a field investigator can verify on site
+    grain: str = "billing"                     # 'billing' (the biller) or 'servicing' (the individual on the claim)
+    per_day: bool = False                      # report peak lines per calendar day (average daily census / units a day)
+    min_per_day: float | None = None           # rule on that peak (None = reported, not ruled)
+    entity_types: tuple[str, ...] = ()         # restrict to NPPES entity types ('1' individuals, '2' organizations)
+    capacity_rule: bool = False                # join licensed capacity by NPI; occupancy = peak per day / capacity
 
 
 SCREENS: dict[str, Screen] = {
@@ -117,6 +123,65 @@ SCREENS: dict[str, Screen] = {
                   "the 2022-2024 respiratory-panel settlements.",
         taxonomy_prefixes=("291U",),
     ),
+    "perdiem_occupancy": Screen(
+        key="perdiem_occupancy",
+        title="Per-diem beds billed above the building",
+        theory=("A residential or day program bills a per-diem code for more patient-days than its "
+                "licensed or certified capacity can hold: the average daily census in the peak month "
+                "(per-diem lines over calendar days) against the licensed places. A count on site is "
+                "the claim; every patient-day above the building is a damages unit, and a census that "
+                "never falls below capacity is a standing-order shape in its own right."),
+        numerator=("H0017", "H0018", "H0019", "H2013", "H2020", "H2034", "H2036", "H0035", "S9480",
+                   "S5102", "T2016", "T2031", "T2033", "T1020"),
+        denominator=(),
+        flag_codes=("H0019", "T2016", "T2033"),
+        min_paid_num=1_000_000.0,
+        min_intensity=15.0,
+        per_day=True,
+        capacity_rule=True,
+        innocent=("several licensed sites under one billing number (the capacity file sums a number's sites, "
+                  "but a site the roster does not carry under the same name is missed)",
+                  "a day program whose per-diem is a slot, not a bed (slots turn over inside a day)",
+                  "a capacity table that is stale (a licence expanded after the roster was pulled)",
+                  "a billing number that bills for sister facilities under a management agreement"),
+        roles=("the house managers and direct-care staff who know the census by shift",
+               "the admissions coordinator who knows the waiting list and the double-ups",
+               "the biller who knows which site each per-diem was coded to",
+               "the state licensing surveyor's reports (public) for the licensed count and the citations"),
+        precedent="The residential and group-home per-diem cases (the 'Special Homes' shape: residents per day "
+                  "against licensed places); nursing-home census cases.",
+    ),
+    "attendant_hours": Screen(
+        key="attendant_hours",
+        title="Attendant hours no one person can work",
+        theory=("A personal-care or home-health aide (the individual in the servicing field of the claim) "
+                "is paid for more 15-minute units in a day than a person can deliver, often across "
+                "several agencies' claims in the same month. The aide's day is the claim: an "
+                "investigator verifies whether the aide was at the client's home during the billed "
+                "hours, and the agency's office exists. Units above the day are damages; units billed "
+                "by two agencies for one aide are the kickback or the ghost."),
+        numerator=("T1019", "S5125", "S5126", "S5130", "S5131", "T1004", "T1005", "G0156"),
+        denominator=(),
+        flag_codes=("T1019",),
+        min_paid_num=150_000.0,
+        min_intensity=0.0,
+        grain="servicing",
+        per_day=True,
+        min_per_day=64.0,
+        entity_types=("1",),
+        innocent=("the file's line is a client-day, not a 15-minute unit (read the distribution line under the "
+                  "table first: a median peak near 1 means lines are days and the rule re-runs on clients a day)",
+                  "a live-in or 24-hour shared-care arrangement billed under one aide's number by rule",
+                  "an agency that puts its supervisor's or owner's NPI in the servicing field for every aide "
+                  "(then the number is the agency's, and the question is who rendered)",
+                  "two agencies that are the same owner's two licences"),
+        roles=("the aides themselves and the clients' families (who was in the home, which hours)",
+               "the agency scheduler who built the timesheets and the EVV records",
+               "the biller who keyed the servicing NPI",
+               "the state's EVV vendor records (the aggregator) for the check-in and check-out stamps"),
+        precedent="The home-health and personal-care impossible-day prosecutions (state MFCUs; the EVV "
+                  "cases since the 21st Century Cures mandate); the New York and Texas attendant-care cases.",
+    ),
 }
 
 
@@ -125,50 +190,69 @@ def _codes_table(con, name: str, codes) -> None:
     con.executemany(f"INSERT INTO {name} VALUES (?)", [(c.upper(),) for c in codes])
 
 
+def _days_in_month_sql(month_expr: str) -> str:
+    """DuckDB: calendar days in the month of a 'YYYY-MM' expression."""
+    return f"EXTRACT(day FROM last_day(CAST({month_expr} || '-01' AS DATE)))"
+
+
 def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | None = None,
-               verdicts: pd.DataFrame | None = None, top: int = 50) -> pd.DataFrame:
-    """Every billing NPI on the screen's numerator with the ratios, the dollars by year,
-    the status (candidate / national / hospital / verdict:<v> / below_floor / fails_<rule>)
-    and the rank among candidates. DuckDB end to end; the fact never enters pandas."""
+               verdicts: pd.DataFrame | None = None, top: int = 50, capacity: Path | None = None) -> pd.DataFrame:
+    """Every NPI on the screen's numerator (the billing NPI, or the servicing NPI when the
+    screen's grain is 'servicing') with the ratios, the dollars by year, the status
+    (candidate / national / hospital / government / verdict:<v> / below_floor / fails_<rule>)
+    and the rank among candidates. Per-day screens add the peak month's lines per calendar
+    day (a per-diem's average daily census; an aide's units a day) and, with a capacity
+    table (licensed_capacity_by_npi.parquet: npi, licensed_capacity), the occupancy ratio.
+    DuckDB end to end; the fact never enters pandas."""
     con = con or _duck_connect()
     p = _sql_str(spending)
     cols = _cols(con, Path(spending))
     lines = "CAST(total_claim_lines AS DOUBLE)" if "total_claim_lines" in cols else "NULL"
     pats = "CAST(total_patients AS DOUBLE)" if "total_patients" in cols else "NULL"
+    key = "servicing_npi" if screen.grain == "servicing" and "servicing_npi" in cols else "billing_npi"
+    month = "substr(CAST(service_month AS VARCHAR), 1, 7)"
     _codes_table(con, "num_codes", screen.numerator)
-    _codes_table(con, "den_codes", screen.denominator)
+    _codes_table(con, "den_codes", screen.denominator or ("__none__",))
     _codes_table(con, "flag_codes", screen.flag_codes or ("__none__",))
+    code = "UPPER(TRIM(CAST(hcpcs_code AS VARCHAR)))"
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE tot AS
-        SELECT CAST(billing_npi AS VARCHAR) npi, SUM(CAST(total_paid AS DOUBLE)) paid_all,
-               MAX(substr(CAST(service_month AS VARCHAR), 1, 7)) last_month_all
-        FROM read_parquet('{p}') GROUP BY 1""")
+        SELECT CAST({key} AS VARCHAR) npi, SUM(CAST(total_paid AS DOUBLE)) paid_all,
+               MAX({month}) last_month_all
+        FROM read_parquet('{p}') WHERE {key} IS NOT NULL GROUP BY 1""")
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE num AS
-        SELECT CAST(billing_npi AS VARCHAR) npi,
+        SELECT CAST({key} AS VARCHAR) npi,
                SUM(CAST(total_paid AS DOUBLE)) paid_num,
                SUM({lines}) lines_num, SUM({pats}) pm_num,
-               SUM(CASE WHEN UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) IN (SELECT hcpcs FROM flag_codes)
-                        THEN {lines} ELSE 0 END) lines_flag,
-               COUNT(DISTINCT substr(CAST(service_month AS VARCHAR), 1, 7)) months_num,
-               MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) first_month,
-               MAX(substr(CAST(service_month AS VARCHAR), 1, 7)) last_month
+               SUM(CASE WHEN {code} IN (SELECT hcpcs FROM flag_codes) THEN {lines} ELSE 0 END) lines_flag,
+               COUNT(DISTINCT {month}) months_num,
+               MIN({month}) first_month, MAX({month}) last_month,
+               COUNT(DISTINCT CAST(billing_npi AS VARCHAR)) n_billers
         FROM read_parquet('{p}')
-        WHERE UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) IN (SELECT hcpcs FROM num_codes)
+        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
         GROUP BY 1""")
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE den AS
-        SELECT CAST(billing_npi AS VARCHAR) npi, SUM(CAST(total_paid AS DOUBLE)) paid_den,
+        SELECT CAST({key} AS VARCHAR) npi, SUM(CAST(total_paid AS DOUBLE)) paid_den,
                SUM({lines}) lines_den, SUM({pats}) pm_den
         FROM read_parquet('{p}')
-        WHERE UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) IN (SELECT hcpcs FROM den_codes)
+        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM den_codes)
         GROUP BY 1""")
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE byyear AS
-        SELECT CAST(billing_npi AS VARCHAR) npi, substr(CAST(service_month AS VARCHAR), 1, 4) yr,
+        SELECT CAST({key} AS VARCHAR) npi, substr(CAST(service_month AS VARCHAR), 1, 4) yr,
                SUM(CAST(total_paid AS DOUBLE)) paid
         FROM read_parquet('{p}')
-        WHERE UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) IN (SELECT hcpcs FROM num_codes)
+        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
+        GROUP BY 1, 2""")
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE bymonth AS
+        SELECT CAST({key} AS VARCHAR) npi, {month} AS mon,
+               SUM({lines}) / {_days_in_month_sql(month)} AS lines_per_day,
+               SUM({pats}) AS pats
+        FROM read_parquet('{p}')
+        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
         GROUP BY 1, 2""")
     df = con.execute("""
         SELECT n.npi, n.paid_num, t.paid_all,
@@ -177,12 +261,15 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
                CASE WHEN COALESCE(d.lines_den, 0) > 0 THEN n.lines_num / d.lines_den END AS reflex_ratio,
                CASE WHEN n.pm_num > 0 THEN n.lines_num / n.pm_num END AS intensity,
                CASE WHEN n.lines_num > 0 THEN n.lines_flag / n.lines_num END AS flag_share,
-               COALESCE(d.paid_den, 0) AS paid_den, n.months_num, n.first_month, n.last_month,
+               COALESCE(d.paid_den, 0) AS paid_den, n.months_num, n.first_month, n.last_month, n.n_billers,
                (SELECT yr FROM byyear b WHERE b.npi = n.npi ORDER BY paid DESC, yr DESC LIMIT 1) AS peak_year,
                (SELECT MAX(paid) FROM byyear b WHERE b.npi = n.npi) AS peak_year_paid,
                (SELECT paid FROM byyear b WHERE b.npi = n.npi
                   AND b.yr = (SELECT MAX(yr) FROM byyear c WHERE c.npi = n.npi)) AS last_year_paid,
-               (SELECT MAX(yr) FROM byyear b WHERE b.npi = n.npi) AS last_year
+               (SELECT MAX(yr) FROM byyear b WHERE b.npi = n.npi) AS last_year,
+               (SELECT MAX(lines_per_day) FROM bymonth m WHERE m.npi = n.npi) AS peak_lines_per_day,
+               (SELECT mon FROM bymonth m WHERE m.npi = n.npi ORDER BY lines_per_day DESC, mon DESC LIMIT 1) AS peak_day_month,
+               (SELECT MEDIAN(lines_per_day) FROM bymonth m WHERE m.npi = n.npi) AS median_lines_per_day
         FROM num n JOIN tot t USING (npi) LEFT JOIN den d USING (npi)
         ORDER BY n.paid_num DESC""").df()
     if provider_dim is not None and Path(provider_dim).exists() and len(df):
@@ -203,6 +290,20 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
             df[c] = ""
     df["name"] = df["name"].fillna("").astype(str).str.strip()
     df["taxonomy"] = df["taxonomy"].fillna("").astype(str)
+    df["entity_type"] = df["entity_type"].fillna("").astype(str).str.strip()
+    df["licensed_capacity"] = pd.NA
+    df["occupancy_ratio"] = pd.NA
+    if screen.capacity_rule and capacity is not None and Path(capacity).exists() and len(df):
+        cc = _cols(con, Path(capacity))
+        cap_col = next((c for c in ("licensed_capacity", "capacity", "certified_beds", "beds") if c in cc), None)
+        if cap_col:
+            cap = con.execute(f"""
+                SELECT CAST(npi AS VARCHAR) AS npi, MAX(CAST({cap_col} AS DOUBLE)) AS licensed_capacity
+                FROM read_parquet('{_sql_str(capacity)}')
+                WHERE CAST(npi AS VARCHAR) IN (SELECT npi FROM num) GROUP BY 1""").df()
+            df = df.drop(columns=["licensed_capacity"]).merge(cap, on="npi", how="left")
+            df["occupancy_ratio"] = df["peak_lines_per_day"] / df["licensed_capacity"].where(df["licensed_capacity"] > 0)
+    df["over_capacity"] = df["occupancy_ratio"].astype(float).gt(1.0).fillna(False) if df["occupancy_ratio"].notna().any() else False
     return classify(df, screen, verdicts, top=top)
 
 
@@ -231,6 +332,7 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
     for r in df.itertuples():
         nm = str(r.name).upper().strip()
         tx = str(r.taxonomy or "")
+        et = str(getattr(r, "entity_type", "") or "").strip()
         hit = v_by_name.get(nm) or next((v for k, v in v_by_name.items() if k and nm and (k in nm or nm in k)), None)
         if hit:
             status.append(f"verdict:{hit}"); reason.append("standing verdict")
@@ -242,6 +344,8 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("hospital"); reason.append("hospital-licensed number")
         elif screen.taxonomy_prefixes and tx and not any(tx.startswith(p) for p in screen.taxonomy_prefixes):
             status.append("other_type"); reason.append(f"taxonomy {tx} outside the screen's provider type")
+        elif screen.entity_types and et and et not in screen.entity_types:
+            status.append("other_type"); reason.append(f"entity type {et} outside the screen's provider type")
         elif float(r.paid_num or 0) < screen.min_paid_num:
             status.append("below_floor"); reason.append(f"numerator dollars under {screen.min_paid_num:,.0f}")
         else:
@@ -249,20 +353,30 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             inten = r.intensity
             no_den = float(r.lines_den or 0) == 0 and float(r.lines_num or 0) > 0
             reflex_ok = no_den or (ratio is not None and not pd.isna(ratio) and float(ratio) >= screen.min_reflex)
-            inten_ok = inten is not None and not pd.isna(inten) and float(inten) >= screen.min_intensity
-            if reflex_ok and inten_ok:
-                status.append("candidate"); reason.append("passes reflex and intensity")
+            inten_ok = screen.min_intensity <= 0 or (inten is not None and not pd.isna(inten) and float(inten) >= screen.min_intensity)
+            pday = getattr(r, "peak_lines_per_day", None)
+            pday_ok = screen.min_per_day is None or (pday is not None and not pd.isna(pday) and float(pday) >= screen.min_per_day)
+            if reflex_ok and inten_ok and pday_ok:
+                status.append("candidate"); reason.append("passes the screen's rules")
             elif not reflex_ok:
                 status.append("fails_reflex"); reason.append("more screens than definitive lines")
-            else:
+            elif not inten_ok:
                 status.append("fails_intensity"); reason.append(f"under {screen.min_intensity} per patient-month")
+            else:
+                status.append("fails_per_day"); reason.append(f"peak under {screen.min_per_day} lines a day")
     df = df.copy()
     df["status"] = status
     df["status_reason"] = reason
     df["screen"] = screen.key
     cand = df["status"].eq("candidate")
     df["rank"] = pd.NA
-    df.loc[cand, "rank"] = range(1, int(cand.sum()) + 1)
+    if screen.capacity_rule and "occupancy_ratio" in df.columns and df["occupancy_ratio"].notna().any():
+        # a count above the building first (the on-site fact), then dollars; rows without a capacity last
+        order = df[cand].assign(_oc=df.loc[cand, "occupancy_ratio"].astype(float).fillna(-1.0)) \
+                        .sort_values(["_oc", "paid_num"], ascending=[False, False]).index
+        df.loc[order, "rank"] = range(1, len(order) + 1)
+    else:
+        df.loc[cand, "rank"] = range(1, int(cand.sum()) + 1)
     return df
 
 
@@ -275,27 +389,53 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
     for key, df in results.items():
         s = SCREENS[key]
         L += [f"## {s.title} (`{key}`)", "", f"**Theory.** {s.theory}", "",
-              f"**Codes.** numerator {', '.join(s.numerator)}; denominator {', '.join(s.denominator)}"
-              + (f"; top-tier code {', '.join(s.flag_codes)}" if s.flag_codes else "") + ".", "",
-              f"**Rules.** numerator dollars >= ${s.min_paid_num:,.0f}; numerator lines / denominator lines >= "
-              f"{s.min_reflex} (or no denominator at all); numerator lines per patient-month >= {s.min_intensity}.", "",
+              f"**Codes.** numerator {', '.join(s.numerator)}; denominator "
+              f"{', '.join(s.denominator) if s.denominator else 'none (no ordinary practice beside it)'}"
+              + (f"; flagged code {', '.join(s.flag_codes)}" if s.flag_codes else "")
+              + (f"; grain = the {s.grain} NPI" if s.grain != "billing" else "") + ".", "",
+              f"**Rules.** numerator dollars >= ${s.min_paid_num:,.0f}"
+              + (f"; numerator lines / denominator lines >= {s.min_reflex} (or no denominator at all)" if s.denominator else "")
+              + (f"; numerator lines per patient-month >= {s.min_intensity}" if s.min_intensity > 0 else "")
+              + (f"; peak lines per calendar day >= {s.min_per_day}" if s.min_per_day is not None else "")
+              + ("; occupancy = peak lines a day over licensed capacity where a capacity is known (over 1.0 ranks first)"
+                 if s.capacity_rule else "") + ".", "",
               "**Innocent explanations to rule out first.** " + " ".join(f"({i + 1}) {t}." for i, t in enumerate(s.innocent)), "",
               "**Who would know.** " + "; ".join(s.roles) + ".", "",
               f"**Precedent.** {s.precedent}", ""]
         tally = df["status"].value_counts().to_dict()
         L.append("Status tally: " + ", ".join(f"{k} {v}" for k, v in sorted(tally.items())) + ".")
         L.append("")
-        cand = df[df["status"].eq("candidate")].head(top)
-        L.append(f"### Candidates (top {min(top, len(cand))} of {int(df['status'].eq('candidate').sum())}, by numerator dollars)")
+        if s.per_day and "peak_lines_per_day" in df.columns and df["peak_lines_per_day"].notna().any():
+            q = df["peak_lines_per_day"].astype(float).quantile([0.5, 0.9, 0.99])
+            L.append(f"Peak lines per calendar day over every NPI on the numerator: median {q.iloc[0]:.1f}, "
+                     f"p90 {q.iloc[1]:.1f}, p99 {q.iloc[2]:.1f} (read this before the table: it says what a "
+                     f"line is in this file).")
+            L.append("")
+        cand = df[df["status"].eq("candidate")].sort_values("rank").head(top)
+        order_note = "over-capacity first, then numerator dollars" if s.capacity_rule else "by numerator dollars"
+        L.append(f"### Candidates (top {min(top, len(cand))} of {int(df['status'].eq('candidate').sum())}, {order_note})")
         L.append("")
-        L.append("| rank | npi | name | st | numerator $ | share of all | reflex (num/den lines) | per patient-month | top-tier share | first | last | peak year | last year $ |")
-        L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-        for r in cand.itertuples():
-            rr = "no screens" if pd.isna(r.reflex_ratio) else f"{r.reflex_ratio:.1f}"
-            L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | "
-                     f"{(r.num_share or 0) * 100:.0f}% | {rr} | {0 if pd.isna(r.intensity) else r.intensity:.1f} | "
-                     f"{0 if pd.isna(r.flag_share) else r.flag_share * 100:.0f}% | {r.first_month} | {r.last_month} | "
-                     f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
+        if s.per_day:
+            L.append("| rank | npi | name | st | numerator $ | share of all | per patient-month | peak lines/day (month) | median lines/day | capacity | occupancy | billers | first | last | peak year | last year $ |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            for r in cand.itertuples():
+                cap = "" if pd.isna(r.licensed_capacity) else f"{float(r.licensed_capacity):,.0f}"
+                occ = "" if pd.isna(r.occupancy_ratio) else f"{float(r.occupancy_ratio):.2f}"
+                L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | "
+                         f"{(r.num_share or 0) * 100:.0f}% | {0 if pd.isna(r.intensity) else r.intensity:.1f} | "
+                         f"{0 if pd.isna(r.peak_lines_per_day) else r.peak_lines_per_day:.1f} ({r.peak_day_month}) | "
+                         f"{0 if pd.isna(r.median_lines_per_day) else r.median_lines_per_day:.1f} | {cap} | {occ} | "
+                         f"{int(r.n_billers or 0)} | {r.first_month} | {r.last_month} | "
+                         f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
+        else:
+            L.append("| rank | npi | name | st | numerator $ | share of all | reflex (num/den lines) | per patient-month | top-tier share | first | last | peak year | last year $ |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            for r in cand.itertuples():
+                rr = "no screens" if pd.isna(r.reflex_ratio) else f"{r.reflex_ratio:.1f}"
+                L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | "
+                         f"{(r.num_share or 0) * 100:.0f}% | {rr} | {0 if pd.isna(r.intensity) else r.intensity:.1f} | "
+                         f"{0 if pd.isna(r.flag_share) else r.flag_share * 100:.0f}% | {r.first_month} | {r.last_month} | "
+                         f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
         L.append("")
         aside = df[df["status"].str.startswith("verdict") | df["status"].isin(["national", "hospital"])]
         aside = aside[aside["paid_num"] >= s.min_paid_num].head(25)
@@ -316,6 +456,8 @@ def main() -> None:
     ap.add_argument("--spending", default=str(root / "processed" / "spending_fact.parquet"))
     ap.add_argument("--provider-dim", default=str(root / "processed" / "provider_dim.parquet"))
     ap.add_argument("--verdicts", default=None, help=f"verdicts file (default <data_root>/model_a/pursuit_verdicts.csv)")
+    ap.add_argument("--capacity", default=str(root / "processed" / "licensed_capacity_by_npi.parquet"),
+                    help="licensed capacity by NPI (ingest_cms.licensed_capacity) for the occupancy screens")
     ap.add_argument("--screen", default=None, help="one screen key (default: every screen)")
     ap.add_argument("--top", type=int, default=50)
     ap.add_argument("--out", required=True, help="output folder")
@@ -331,8 +473,13 @@ def main() -> None:
     results = {}
     for k in keys:
         df = run_screen(Path(a.spending), SCREENS[k], con=con, provider_dim=Path(a.provider_dim),
-                        verdicts=verdicts, top=a.top)
+                        verdicts=verdicts, top=a.top, capacity=Path(a.capacity) if a.capacity else None)
         df.to_csv(out / f"screen_{k}.csv", index=False)
+        # the top candidates' names, one per line, for `first_to_file --names-file` (the free court-record
+        # check that runs on every candidate before a research prompt)
+        cand = df[df["status"].eq("candidate")].sort_values("rank").head(a.top)
+        names = [n for n in cand["name"].astype(str).str.strip().tolist() if n]
+        (out / f"names_{k}.txt").write_text("\n".join(dict.fromkeys(names)) + ("\n" if names else ""), encoding="utf-8")
         results[k] = df
         print(f"[theory_screens] {k}: {len(df)} NPIs on the numerator; "
               f"{int(df['status'].eq('candidate').sum())} candidates; "

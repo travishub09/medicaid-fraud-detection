@@ -2218,6 +2218,27 @@ first, then paste" above every move/done block.
   --score-source priority_list` under a 58-month horizon, the exclusion ruler rebuilt from the
   current graph (`--forward-label excl58=`) and the FCA ruler from the merged case DB; no
   retrain (task v11_answer_key_regrade carries the lines).
+  THE SECOND TRACK (2026-10-29, operator: 'should we pursue a more diverse set of schemes;
+  what is easiest to verify through on-site PI resources' -> 'register and go'): the lab theory
+  is a records case (the order path lives in requisitions and LIS configuration a PI cannot
+  see; eleven of twelve kill answers said so), so the second track is the two shapes where ONE
+  VISIT DECIDES: `perdiem_occupancy` (residential / day-program per-diem codes H0017-19 /
+  H2013 / H2020 / H2034 / H2036 / H0035 / S9480 / S5102 / T2016 / T2031 / T2033 / T1020; the
+  peak month's lines per calendar day = average daily census, against licensed capacity from
+  processed/licensed_capacity_by_npi.parquet -> occupancy_ratio, over 1.0 ranks first) and
+  `attendant_hours` (grain = the SERVICING NPI, individuals only: T1019 / S5125 / S5126 / S5130
+  / S5131 / T1004 / T1005 / G0156 units a day across every agency's claims, n_billers, rule >= 64
+  lines a day = 16 hours at 15-minute units; the report prints the median / p90 / p99 of peak
+  lines a day over every NPI so the file's line convention is read before the table: a median
+  near 1 means a line is a client-day). Screen fields `grain` / `per_day` / `min_per_day` /
+  `entity_types` / `capacity_rule`; `bymonth` temp table with DuckDB `last_day` for the calendar
+  days; the CLI writes names_<key>.txt (top candidates in rank order) for `first_to_file
+  --names-file`. The capacity-card lesson stands: a per-diem or attendant count IS the claim; a
+  visit-code count on a group practice is a billing convention (the PA rule), never a card.
+  Hospice and nursing-home worthless services stay third (their decisive facts are records).
+  Reliability per round is the comparison: the lab round read about half survival; the
+  per-diem round is graded the same way. Task track2_sweep carries the sweep + court-record
+  lines; the depth round 2 and the Emerald re-send were given the go the same day.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

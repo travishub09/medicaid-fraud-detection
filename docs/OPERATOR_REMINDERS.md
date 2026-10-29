@@ -24,6 +24,17 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
+- [ ] **track2_sweep** — THE SECOND TRACK (operator 2026-10-29: 'register and go'): the two on-site screens are registered in theory_screens (perdiem_occupancy: residential / day-program per-diem lines per calendar day in the peak month against licensed capacity; attendant_hours: the aide in the servicing field, 15-minute units a day across agencies). Needs bundle 419 merged and pulled. Line 1 runs every screen (the four tables, the names files for the court-record check; licensed_capacity_by_npi.parquet is read when it exists, else occupancy is blank). Line 2 and 3 run the free court-record check on the top twenty names of each new screen (about 15 minutes each; a refused name reruns alone with --name-gap 8). Then pack the folder and upload THEORY_SCREENS.md + the two FIRST_TO_FILE.md for the read. Read the 'Peak lines per calendar day' distribution line under the attendant table FIRST: a median near 1 means a line is a client-day and the rule re-runs on clients a day. (added 2026-10-29)
+
+```bat
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.theory_screens --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --verdicts /data/medicaid/model_a/pursuit_verdicts.csv --out /data/medicaid/enforcement/theory_screens && head -c 6000 /data/medicaid/enforcement/theory_screens/THEORY_SCREENS.md | tail -c 2500"
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && head -20 /data/medicaid/enforcement/theory_screens/names_perdiem_occupancy.txt > /data/medicaid/enforcement/theory_screens/names_perdiem_top20.txt && python -m src.enforcement.first_to_file --names-file /data/medicaid/enforcement/theory_screens/names_perdiem_top20.txt --since 2015-01-01 --out /data/medicaid/enforcement/first_to_file_perdiem && tail -30 /data/medicaid/enforcement/first_to_file_perdiem/FIRST_TO_FILE.md"
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && head -20 /data/medicaid/enforcement/theory_screens/names_attendant_hours.txt > /data/medicaid/enforcement/theory_screens/names_attendant_top20.txt && python -m src.enforcement.first_to_file --names-file /data/medicaid/enforcement/theory_screens/names_attendant_top20.txt --since 2015-01-01 --out /data/medicaid/enforcement/first_to_file_attendant && tail -30 /data/medicaid/enforcement/first_to_file_attendant/FIRST_TO_FILE.md"
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/enforcement && tar czf /home/ubuntu/track2_screens.tar.gz theory_screens first_to_file_perdiem first_to_file_attendant"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/track2_screens.tar.gz C:\Users\treyr\Downloads\track2_screens.tar.gz
+python -m src.reminders --done-task track2_sweep
+```
+
 - [ ] **mdl_code_mix** — Medical Diagnostic Laboratories (NJ, $62M on the urine-PCR numerator): the kill round said 87505-87507 are gastrointestinal-panel codes, and they sat in the screen's numerator (fixed in bundle 418). Before any research spend, read the lab's code mix: 87798 (per organism, the UTI shape) vs 87505-87507 (stool panels) vs 87481-87661 (single organisms) vs cultures; then re-run the sweep so the urine-PCR table is honest. Paste the two tables. (added 2026-10-29)
 
 ```bat
@@ -32,14 +43,14 @@ ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C
 python -m src.reminders --done-task mdl_code_mix
 ```
 
-- [ ] **emerald_redispatch** — GATED (credits): the Emerald National Laboratory (OR) kill task came back 'completed' with a progress sentence and no attachments (a service-side failure). Re-send that one prompt alone in its own folder when the operator says go; the prompt is row screen:emerald of screen_kill_prompts.jsonl. (added 2026-10-29)
+- [ ] **emerald_redispatch** — GO given 2026-10-29 (credits): the Emerald National Laboratory (OR) kill task came back 'completed' with a progress sentence and no attachments (a service-side failure). Re-send that one prompt alone in its own folder when the operator says go; the prompt is row screen:emerald of screen_kill_prompts.jsonl. (added 2026-10-29)
 
 ```bat
 ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && mkdir -p /data/medicaid/enforcement/screen_kill_emerald && grep screen:emerald /data/medicaid/enforcement/screen_kill_prompts.jsonl > /data/medicaid/enforcement/screen_kill_emerald/prompt.jsonl && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill_emerald --dispatch-file /data/medicaid/enforcement/screen_kill_emerald/prompt.jsonl"
 python -m src.reminders --done-task emerald_redispatch
 ```
 
-- [ ] **deep_round2_dispatch** — GATED on the operator's go (credits): the five depth prompts for the screen survivors (American Forensic, ERSO, Lab24, Appalachian, Nepenthe) are written (deep2_prompts.jsonl, sent in chat 2026-10-29; save to Downloads). Each is the seven-section packet prompt plus a state-specific section 8. Dispatch in its OWN folder; poll in about two hours; pull attachments; pack the text; upload for the read. (added 2026-10-29)
+- [ ] **deep_round2_dispatch** — GO given 2026-10-29 (credits): the five depth prompts for the screen survivors (American Forensic, ERSO, Lab24, Appalachian, Nepenthe) are written (deep2_prompts.jsonl, sent in chat 2026-10-29; save to Downloads). Each is the seven-section packet prompt plus a state-specific section 8. Dispatch in its OWN folder; poll in about two hours; pull attachments; pack the text; upload for the read. (added 2026-10-29)
 
 ```bat
 scp -i C:\Users\treyr\.ssh\medicaid-vm.pem C:\Users\treyr\Downloads\deep2_prompts.jsonl ubuntu@3.17.37.139:/data/medicaid/enforcement/deep2_prompts.jsonl
@@ -461,3 +472,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+
