@@ -2144,6 +2144,27 @@ first, then paste" above every move/done block.
   BEFORE a research prompt is written, never after; a lab's shape is settled by pi_facts
   top codes in one line. Verdicts file: Genesis and National Labs pursue (definitive
   theory), Accu pursue pending the Sims read, Gravity / Vantage / Housecalls set aside.
+  THEORY SCREENS (`model_a/theory_screens.py`, 2026-10-29, the operator: "fund a new SIU
+  with reliable leads"): the theory is chosen FIRST and the fact table lists every
+  provider in the shape. A screen = a numerator code family (the money the theory is
+  about), a denominator family (ordinary practice beside it), a dollar floor, and two
+  ratios: reflex (numerator lines over denominator lines, every screen confirmed; no
+  denominator at all passes) and intensity (numerator lines per patient-month). Registered:
+  `definitive_reflex` (G0480-83 over 80305-07, G0483 share reported, 291U labs, $1M floor,
+  reflex >= 1, intensity >= 1.5: the shape Genesis / National Labs / Accu share) and
+  `uti_pcr_reflex` (87798 / 87505-07 / 87801 over urine cultures 87086 / 87088: Omni's
+  theory, so the court-record check is the first gate). Status per row in this order:
+  standing verdict (the operator's word wins), national name, hospital-licensed number,
+  provider type, floor, reflex, intensity; candidates ranked on numerator dollars with
+  years, peak year and last-year dollars; THEORY_SCREENS.md prints the theory, the innocent
+  explanations, the roles that would know and the precedent above every table. All DuckDB.
+  ORDER for an SIU lead: screen -> court records on the top twenty (free) -> kill prompts
+  on the top ten -> the packet (theory in one sentence, WHEN sheet, roles, court-record
+  answer, release scope of any prior settlement). Reliability is measured as picks to
+  survivors per round (the kill round: six to three and a half). v27 waits for the 2023
+  owners editions and is read as a replication, never as a list. Next screens to register
+  when their inputs are in the fact: worthless services (nursing homes) and hospice
+  ineligibility, the two shapes the model has validated on real cases.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
