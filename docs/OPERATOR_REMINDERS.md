@@ -31,18 +31,6 @@ ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C
 python -m src.reminders --done-task omni_ruling_watch
 ```
 
-- [ ] **cd1_dossier_read** — READ THE SIX cd1 RESEARCH ANSWERS (all completed 2026-10-28 17:27 UTC). After merge 412 + the VM pull: pull the attachments before the signed links expire, re-render the operator-book dossier with the research folded in (a few minutes of scoring), tar + scp + upload cd1_dossier.tar.gz to the chat; Claude reads the six against the v26 bar and the operator records a verdict per name with `pursuit_verdicts --add`. (added 2026-10-28)
-
-```bat
-REM after merge 412 + the VM pull:
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --pull-attachments"
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/current_202610_cd1 --operator-book --poll | tail -3"
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/current_202610_cd1 && tar -czf /home/ubuntu/cd1_dossier.tar.gz PURSUIT_DOSSIER.md pursuit_research_*.json* research_attachments dossier_verdicts_applied.csv 2>/dev/null; ls -la /home/ubuntu/cd1_dossier.tar.gz"
-scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/cd1_dossier.tar.gz C:\Users\treyr\Downloads\cd1_dossier.tar.gz
-REM upload C:\Users\treyr\Downloads\cd1_dossier.tar.gz to the chat, then:
-python -m src.reminders --done-task cd1_dossier_read
-```
-
 - [ ] **v21_run** — FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close. (added 2026-10-22)
 
 ```bat
@@ -417,3 +405,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+
