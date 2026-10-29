@@ -71,6 +71,10 @@ class Screen:
     min_occupancy: float | None = None         # with a capacity on file: candidate only above this (under_capacity otherwise)
     candidate_taxonomies: tuple[str, ...] = () # the roles the theory is about (an individual outside them is 'not_<role>' and listed, not ranked)
     report_statuses: tuple[str, ...] = ()      # statuses the report tables beside the candidates (the shapes worth a look)
+    numerator_like: tuple[str, ...] = ()       # SQL LIKE patterns added to the numerator (a code FAMILY: 'E%' for DME)
+    exclude_taxonomy_prefixes: tuple[str, ...] = ()  # NUCC prefixes set aside as 'other_type' (a broker is not a fleet)
+    address_rule: bool = False                 # candidate only when the practice address is a mailbox / PO box or shared by many organizations
+    min_addr_orgs: int = 5                     # distinct organizations at the exact address that make it 'shared'
 
 
 SCREENS: dict[str, Screen] = {
@@ -195,12 +199,154 @@ SCREENS: dict[str, Screen] = {
         precedent="The home-health and personal-care impossible-day prosecutions (state MFCUs; the EVV "
                   "cases since the 21st Century Cures mandate); the New York and Texas attendant-care cases.",
     ),
+    # ---- the visit-decided shapes registered 2026-10-29 (operator: 'diversify beyond labs to what a PI
+    # can fully validate'): a fleet can be counted in a lot, a stretcher patient can be watched walking in,
+    # a storefront either exists or is a mailbox. Each card is one day in the field.
+    "ambulance_repetitive": Screen(
+        key="ambulance_repetitive",
+        title="Non-emergency ambulance runs for patients who can sit",
+        theory=("An ambulance company bills basic-life-support non-emergency transports (A0428, and A0426 "
+                "ALS non-emergency) at dialysis-schedule intensity (three round trips a week per patient) "
+                "with few or no emergency runs beside them. Medicaid pays a stretcher transport only when "
+                "the patient cannot sit or be moved by other means; a patient who walks to the rig is the "
+                "claim. Every transport of an ambulatory patient is a damages unit, and the physician "
+                "certification statements on file are the records question behind the observation."),
+        numerator=("A0428", "A0426"),
+        denominator=("A0427", "A0429", "A0433", "A0434"),
+        flag_codes=("A0428",),
+        min_paid_num=1_000_000.0,
+        min_reflex=3.0,
+        min_intensity=8.0,
+        per_day=True,
+        taxonomy_prefixes=("3416",),
+        innocent=("an interfacility-transfer contract (hospital to nursing home) billed under the same code: the "
+                  "patients are bed-bound by definition; the destination mix is the tell",
+                  "a dialysis population that is in fact stretcher-bound (documented in the physician certification "
+                  "statements, which the state can audit and a relator can describe)",
+                  "a company whose emergency work bills under a municipal or hospital number, so the denominator "
+                  "sits elsewhere",
+                  "mileage or wait-time lines counted as transports (read the distribution line: lines a day against "
+                  "the rigs seen)"),
+        roles=("the EMTs and drivers (who walked to the rig, who was lifted)",
+               "the dispatcher who scheduled the standing dialysis runs",
+               "the biller who completed the medical-necessity fields and the PCS forms",
+               "the dialysis center's front-desk and charge nurses (who arrives by ambulance and how)"),
+        precedent="The 2013-2020 ambulance dialysis prosecutions (Philadelphia, Houston, Los Angeles, New Jersey): "
+                  "stretcher transports of patients who could sit; the DOJ ambulance settlements under the "
+                  "repetitive-patient prior-authorization rule.",
+    ),
+    "nemt_fleet": Screen(
+        key="nemt_fleet",
+        title="Transport trips a fleet cannot make",
+        theory=("A non-emergency medical transportation company (vans, wheelchair vans, taxis) bills more "
+                "trips a day than the vehicles it runs can make, or more trips per patient-month than a "
+                "treatment schedule explains. The fleet is the claim: vehicles can be counted at the base "
+                "and on the state registration, and a trip rate per vehicle per day above what a day holds "
+                "(about twenty short trips) is the damages arithmetic. A company with no base and no vehicles "
+                "is the phantom shape."),
+        numerator=("T2001", "T2002", "T2003", "T2004", "T2005", "T2007", "T2049",
+                   "A0080", "A0090", "A0100", "A0110", "A0120", "A0130", "A0140"),
+        denominator=(),
+        flag_codes=("A0130", "T2003"),
+        min_paid_num=1_000_000.0,
+        min_intensity=6.0,
+        per_day=True,
+        min_per_day=100.0,
+        taxonomy_prefixes=("34",),
+        exclude_taxonomy_prefixes=("347E",),
+        innocent=("a transportation broker's number (a broker carries a network's trips; brokers are set aside by "
+                  "taxonomy 347E and by name, but a broker enrolled under a plain transport taxonomy reads as a fleet)",
+                  "mileage lines billed per mile under a trip code (read the distribution line first: a median peak "
+                  "in the thousands means lines are miles, and the rule re-runs on trips)",
+                  "a subcontracted fleet (the company dispatches other owners' vehicles under its number: the "
+                  "vehicles exist, at other addresses)",
+                  "a shared-ride or group-trip program where one vehicle carries several billed riders"),
+        roles=("the drivers (how many runs a day, how many riders, which vehicles)",
+               "the dispatcher who built the manifests",
+               "the biller who keyed trips and mileage",
+               "the dialysis and day-program sites that account for most trips (who actually arrived, and how)"),
+        precedent="The NEMT prosecutions in Texas, Michigan, Minnesota and the District of Columbia (trips never "
+                  "made, fleets that did not exist, dead or hospitalized riders); the OIG NEMT audits.",
+    ),
+    "dme_mailbox": Screen(
+        key="dme_mailbox",
+        title="Equipment suppliers billing from a mailbox",
+        theory=("A durable medical equipment supplier bills Medicaid at scale from a practice address that is a "
+                "commercial mailbox, a PO box, or a suite shared by many unrelated organizations. A DMEPOS "
+                "supplier must keep a physical facility at an appropriate site (42 CFR 424.57(c)(7): not a "
+                "post office box or commercial mail-receiving agency), with inventory and posted hours. The "
+                "storefront is the claim: an investigator at the address finds a store, an empty unit, or a "
+                "wall of mailboxes."),
+        numerator=(),
+        numerator_like=("E%", "K0%", "L%", "A4%", "A5%", "A6%", "A7%", "A9%", "B4%"),
+        denominator=(),
+        flag_codes=("E0601", "E1390", "K0823", "L0650", "A4253", "A9270"),
+        min_paid_num=1_000_000.0,
+        min_intensity=0.0,
+        taxonomy_prefixes=("332B",),
+        address_rule=True,
+        innocent=("the registration lists a mailing address in the practice-location field by mistake (the real "
+                  "store is elsewhere: a records fix, not a case)",
+                  "an executive-suite building with many tenants and a real office inside it (the shared count "
+                  "reads the building; the visit reads the unit)",
+                  "a chain that lists its corporate office on every branch's record (set aside by name; a chain's "
+                  "distinct-organization count is one)",
+                  "a supplier that moved and the NPPES record is stale (the visit finds the new store)"),
+        roles=("the delivery drivers and warehouse staff (is there inventory, who delivered what)",
+               "customer-service and intake staff (who ordered, which physicians)",
+               "the mailbox store or landlord (who rents the box or the unit)",
+               "the billing staff (which beneficiaries, which prescriptions)"),
+        precedent="The DME storefront and shell-company cases (Operation Brace Yourself 2019, the Miami and Houston "
+                  "DME cases); CMS supplier-standard revocations for a non-operational site.",
+    ),
 }
 
 
 def _codes_table(con, name: str, codes) -> None:
     con.execute(f"CREATE OR REPLACE TEMP TABLE {name}(hcpcs VARCHAR)")
     con.executemany(f"INSERT INTO {name} VALUES (?)", [(c.upper(),) for c in codes])
+
+
+def _num_pred(code: str, screen: Screen) -> str:
+    """The numerator predicate: exact codes in num_codes, plus any LIKE families (a DME screen's
+    numerator is a code family, not a list)."""
+    parts = [f"{code} IN (SELECT hcpcs FROM num_codes)"]
+    parts += [f"{code} LIKE '{pat.upper()}'" for pat in screen.numerator_like]
+    return "(" + " OR ".join(parts) + ")"
+
+
+def _address_table(con, provider_dim: Path) -> None:
+    """Per-NPI address grounding from provider_dim, in DuckDB: the practice line read against the
+    mailbox / PO-box pattern (address_grounding._MAILBOX, one definition), and the number of distinct
+    ORGANIZATION names and NPIs at the exact line + ZIP5 (a real clinic is one org with many NPIs; a
+    dozen unrelated orgs at one suite is a shell cluster). Writes TEMP TABLE addr_flags."""
+    from src.model_a.address_grounding import _MAILBOX
+    pc = _cols(con, Path(provider_dim))
+    line = "addr_line1" if "addr_line1" in pc else None
+    if line is None:
+        con.execute("CREATE OR REPLACE TEMP TABLE addr_flags(npi VARCHAR, addr_line1 VARCHAR, addr_is_mailbox BOOLEAN, "
+                    "addr_distinct_orgs BIGINT, addr_npis BIGINT)")
+        return
+    zipc = "substr(CAST(addr_zip AS VARCHAR), 1, 5)" if "addr_zip" in pc else "''"
+    org = " || ' ' || ".join(f"COALESCE(CAST({c} AS VARCHAR), '')" for c in ("org_legal_name", "provider_name") if c in pc) or "''"
+    pattern = "(?i)" + _MAILBOX.pattern
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE addr_all AS
+        SELECT CAST(npi AS VARCHAR) AS npi,
+               UPPER(TRIM(COALESCE(CAST({line} AS VARCHAR), ''))) AS line1,
+               COALESCE({zipc}, '') AS zip5,
+               UPPER(TRIM({org})) AS orgname
+        FROM read_parquet('{_sql_str(provider_dim)}')""")
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE addr_flags AS
+        SELECT a.npi, a.line1 AS addr_line1,
+               regexp_matches(a.line1, ?) AS addr_is_mailbox,
+               c.n_orgs AS addr_distinct_orgs, c.n_npis AS addr_npis
+        FROM addr_all a
+        JOIN (SELECT line1, zip5, COUNT(DISTINCT orgname) AS n_orgs, COUNT(*) AS n_npis
+              FROM addr_all WHERE line1 <> '' GROUP BY 1, 2) c
+          ON a.line1 = c.line1 AND a.zip5 = c.zip5
+        WHERE a.npi IN (SELECT npi FROM num)""", [pattern])
 
 
 def _days_in_month_sql(month_expr: str) -> str:
@@ -233,10 +379,11 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
     pats = "CAST(total_patients AS DOUBLE)" if "total_patients" in cols else "NULL"
     key = "servicing_npi" if screen.grain == "servicing" and "servicing_npi" in cols else "billing_npi"
     month = "substr(CAST(service_month AS VARCHAR), 1, 7)"
-    _codes_table(con, "num_codes", screen.numerator)
+    _codes_table(con, "num_codes", screen.numerator or ("__none__",))
     _codes_table(con, "den_codes", screen.denominator or ("__none__",))
     _codes_table(con, "flag_codes", screen.flag_codes or ("__none__",))
     code = "UPPER(TRIM(CAST(hcpcs_code AS VARCHAR)))"
+    numpred = _num_pred(code, screen)
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE tot AS
         SELECT CAST({key} AS VARCHAR) npi, SUM(CAST(total_paid AS DOUBLE)) paid_all,
@@ -253,7 +400,7 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
                COUNT(DISTINCT CAST(billing_npi AS VARCHAR)) n_billers,
                SUM(CASE WHEN CAST(billing_npi AS VARCHAR) = CAST({key} AS VARCHAR) THEN {lines} ELSE 0 END) lines_self
         FROM read_parquet('{p}')
-        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
+        WHERE {key} IS NOT NULL AND {numpred}
         GROUP BY 1""")
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE den AS
@@ -267,7 +414,7 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
         SELECT CAST({key} AS VARCHAR) npi, substr(CAST(service_month AS VARCHAR), 1, 4) yr,
                SUM(CAST(total_paid AS DOUBLE)) paid
         FROM read_parquet('{p}')
-        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
+        WHERE {key} IS NOT NULL AND {numpred}
         GROUP BY 1, 2""")
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE bymonth AS
@@ -278,7 +425,7 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
         FROM (
             SELECT CAST({key} AS VARCHAR) npi, {month} AS mon, SUM({lines}) AS lines_sum, SUM({pats}) AS pats
             FROM read_parquet('{p}')
-            WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
+            WHERE {key} IS NOT NULL AND {numpred}
             GROUP BY 1, 2
         )""")
     df = con.execute("""
@@ -341,6 +488,15 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
             df["occupancy_two_shifts"] = df["occupancy_weekday"] / 2.0
     df["over_capacity"] = df["occupancy_ratio"].astype(float).gt(1.0).fillna(False) if df["occupancy_ratio"].notna().any() else False
     df["capacity_known"] = bool(df["licensed_capacity"].notna().any())
+    for c, v in (("addr_line1", ""), ("addr_is_mailbox", False), ("addr_distinct_orgs", pd.NA), ("addr_npis", pd.NA)):
+        df[c] = v
+    if screen.address_rule and provider_dim is not None and Path(provider_dim).exists() and len(df):
+        _address_table(con, Path(provider_dim))
+        af = con.execute("SELECT * FROM addr_flags").df()
+        if len(af):
+            df = df.drop(columns=["addr_line1", "addr_is_mailbox", "addr_distinct_orgs", "addr_npis"]).merge(af, on="npi", how="left")
+            df["addr_is_mailbox"] = df["addr_is_mailbox"].fillna(False).astype(bool)
+            df["addr_line1"] = df["addr_line1"].fillna("")
     out = classify(df, screen, verdicts, top=top)
     return out.drop(columns=["capacity_known"])
 
@@ -391,6 +547,8 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("hospital"); reason.append("hospital-licensed number")
         elif screen.taxonomy_prefixes and tx and not any(tx.startswith(p) for p in screen.taxonomy_prefixes):
             status.append("other_type"); reason.append(f"taxonomy {tx} outside the screen's provider type")
+        elif screen.exclude_taxonomy_prefixes and tx and any(tx.startswith(p) for p in screen.exclude_taxonomy_prefixes):
+            status.append("other_type"); reason.append(f"taxonomy {tx} is set aside by the screen (a broker, not a fleet)")
         elif screen.entity_types and et and et not in screen.entity_types:
             status.append("other_type"); reason.append(f"entity type {et} outside the screen's provider type")
         elif float(r.paid_num or 0) < screen.min_paid_num:
@@ -399,6 +557,11 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("not_aide"); reason.append(f"taxonomy {tx}: an individual's number at agency scale in the servicing field (whose number went on the claim)")
         elif screen.grain == "servicing" and float(getattr(r, "self_share", 0) or 0) >= 0.9:
             status.append("self_billed"); reason.append("the servicing field is the biller's own number (an agency enrolled under a person's number): the aide grain is absent for these claims")
+        elif screen.address_rule and not (bool(getattr(r, "addr_is_mailbox", False))
+                                          or (not pd.isna(getattr(r, "addr_distinct_orgs", pd.NA))
+                                              and int(r.addr_distinct_orgs) >= screen.min_addr_orgs)):
+            status.append("address_clean"); reason.append("the practice address is neither a mailbox nor shared by "
+                                                           f"{screen.min_addr_orgs}+ organizations")
         elif screen.capacity_rule and screen.min_occupancy is not None and bool(getattr(r, "capacity_known", False)) \
                 and pd.isna(getattr(r, "licensed_capacity", pd.NA)):
             status.append("needs_capacity"); reason.append("no licensed capacity on file for this number (the roster for its state is not loaded)")
@@ -425,9 +588,22 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
     df["status"] = status
     df["status_reason"] = reason
     df["screen"] = screen.key
+    if screen.address_rule:
+        def _basis(r):
+            if bool(r.addr_is_mailbox):
+                return "mailbox"
+            if not pd.isna(r.addr_distinct_orgs) and int(r.addr_distinct_orgs) >= screen.min_addr_orgs:
+                return f"shared:{int(r.addr_distinct_orgs)} orgs"
+            return ""
+        df["address_basis"] = [_basis(r) for r in df.itertuples()]
     cand = df["status"].eq("candidate")
     df["rank"] = pd.NA
-    if screen.capacity_rule and "occupancy_ratio" in df.columns and df["occupancy_ratio"].notna().any():
+    if screen.address_rule and cand.any():
+        # a mailbox first (the per-se site rule), then a shared suite, then dollars
+        order = df[cand].assign(_mb=df.loc[cand, "addr_is_mailbox"].astype(bool).astype(int)) \
+                        .sort_values(["_mb", "paid_num"], ascending=[False, False]).index
+        df.loc[order, "rank"] = range(1, len(order) + 1)
+    elif screen.capacity_rule and "occupancy_ratio" in df.columns and df["occupancy_ratio"].notna().any():
         # a count above the building first (the on-site fact), then dollars; rows without a capacity last
         order = df[cand].assign(_oc=df.loc[cand, "occupancy_ratio"].astype(float).fillna(-1.0)) \
                         .sort_values(["_oc", "paid_num"], ascending=[False, False]).index
@@ -446,7 +622,7 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
     for key, df in results.items():
         s = SCREENS[key]
         L += [f"## {s.title} (`{key}`)", "", f"**Theory.** {s.theory}", "",
-              f"**Codes.** numerator {', '.join(s.numerator)}; denominator "
+              f"**Codes.** numerator {', '.join(s.numerator + tuple(f'{p} (family)' for p in s.numerator_like))}; denominator "
               f"{', '.join(s.denominator) if s.denominator else 'none (no ordinary practice beside it)'}"
               + (f"; flagged code {', '.join(s.flag_codes)}" if s.flag_codes else "")
               + (f"; grain = the {s.grain} NPI" if s.grain != "billing" else "") + ".", "",
@@ -454,6 +630,8 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
               + (f"; numerator lines / denominator lines >= {s.min_reflex} (or no denominator at all)" if s.denominator else "")
               + (f"; numerator lines per patient-month >= {s.min_intensity}" if s.min_intensity > 0 else "")
               + (f"; peak lines per calendar day >= {s.min_per_day}" if s.min_per_day is not None else "")
+              + (f"; the practice address is a mailbox / PO box or shared by {s.min_addr_orgs}+ distinct organizations "
+                 "(a mailbox ranks first, then dollars)" if s.address_rule else "")
               + ("; occupancy = peak lines a calendar day over licensed capacity where a capacity is known (over 1.0 "
                  "ranks first); open-day occ. = the same over weekdays (a five-day program); two-shift occ. = half of "
                  "that, the reading when the licence approves two sessions a day: a row above 1.0 on two shifts is over "
@@ -472,10 +650,20 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
                      f"line is in this file).")
             L.append("")
         cand = df[df["status"].eq("candidate")].sort_values("rank").head(top)
-        order_note = "over-capacity first, then numerator dollars" if s.capacity_rule else "by numerator dollars"
+        order_note = ("over-capacity first, then numerator dollars" if s.capacity_rule
+                      else "mailbox first, then numerator dollars" if s.address_rule else "by numerator dollars")
         L.append(f"### Candidates (top {min(top, len(cand))} of {int(df['status'].eq('candidate').sum())}, {order_note})")
         L.append("")
-        if s.per_day:
+        if s.address_rule:
+            L.append("| rank | npi | name | st | address | basis | orgs at address | NPIs at address | numerator $ | share of all | first | last | peak year | last year $ |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            for r in cand.itertuples():
+                no = "" if pd.isna(r.addr_distinct_orgs) else f"{int(r.addr_distinct_orgs)}"
+                nn = "" if pd.isna(r.addr_npis) else f"{int(r.addr_npis)}"
+                L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | {str(r.addr_line1)[:40]} | "
+                         f"{getattr(r, 'address_basis', '')} | {no} | {nn} | ${r.paid_num:,.0f} | {(r.num_share or 0) * 100:.0f}% | "
+                         f"{r.first_month} | {r.last_month} | {r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
+        elif s.per_day:
             L.append("| rank | npi | name | st | numerator $ | share of all | per patient-month | peak lines/day (month) | median lines/day | per weekday | capacity | occupancy | open-day occ. | two-shift occ. | billers | first | last | peak year | last year $ |")
             L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             for r in cand.itertuples():
@@ -542,7 +730,7 @@ def agencies_for(con, spending: Path, screen: Screen, servicing_npis: list[str],
                SUM(CAST(total_paid AS DOUBLE)) AS paid, MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) AS first_month,
                MAX(substr(CAST(service_month AS VARCHAR), 1, 7)) AS last_month
         FROM read_parquet('{_sql_str(spending)}')
-        WHERE CAST(servicing_npi AS VARCHAR) IN (SELECT npi FROM sel) AND {code} IN (SELECT hcpcs FROM num_codes)
+        WHERE CAST(servicing_npi AS VARCHAR) IN (SELECT npi FROM sel) AND {_num_pred(code, screen)}
         GROUP BY 1, 2 ORDER BY paid DESC""").df()
     ag["biller_name"] = ""
     ag["biller_state"] = ""

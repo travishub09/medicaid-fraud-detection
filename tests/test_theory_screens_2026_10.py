@@ -200,3 +200,109 @@ def test_attendant_hours_screens_the_servicing_npi_across_agencies(tmp_path):
     ag = ts.agencies_for(con, fact, ts.SCREENS["attendant_hours"], ["4000000001"], dim)
     assert set(ag["biller_name"]) == {"AGENCY ONE LLC", "AGENCY TWO LLC"}
     assert abs(float(ag.set_index("biller_npi").loc["3000000001", "paid"]) - 120_000.0) < 1e-6
+
+
+# ---------------------------------------------------------------- the visit-decided shapes (2026-10-29)
+
+def _dim_rows(rows):
+    base = {"provider_name": "", "entity_type": "2", "addr_state": "TX", "addr_line1": "", "addr_zip": ""}
+    return pd.DataFrame([{**base, **r} for r in rows])
+
+
+def test_ambulance_repetitive_flags_the_dialysis_run_shape(tmp_path):
+    rows = []
+
+    def add(npi, code, month, paid, lines, pats):
+        rows.append({"billing_npi": npi, "servicing_npi": npi, "hcpcs_code": code, "service_month": month,
+                     "total_paid": float(paid), "total_claim_lines": float(lines), "total_patients": float(pats)})
+    for m in ("2023-01", "2023-07", "2024-01", "2024-07"):
+        add("1000000011", "A0428", m, 600_000, 2_600, 100)   # 26 transports per patient-month, no emergencies
+        add("1000000011", "A0425", m, 100_000, 2_600, 100)   # mileage rides along, not in the numerator
+        add("1000000012", "A0428", m, 400_000, 1_000, 500)   # 2 per patient-month: a real mix
+        add("1000000012", "A0427", m, 900_000, 1_500, 1_400) # mostly emergency runs -> reflex 0.67
+        add("1000000013", "A0428", m, 600_000, 2_600, 100)   # same shape, a hospital number
+    fact = tmp_path / "f.parquet"; pd.DataFrame(rows).to_parquet(fact, index=False)
+    dim = tmp_path / "d.parquet"
+    _dim_rows([
+        {"npi": "1000000011", "org_legal_name": "REPEAT MEDICAL TRANSPORT LLC", "taxonomy_code": "3416L0300X"},
+        {"npi": "1000000012", "org_legal_name": "CITY EMS INC", "taxonomy_code": "3416A0800X"},
+        {"npi": "1000000013", "org_legal_name": "ZETA GENERAL HOSPITAL", "taxonomy_code": "282N00000X"},
+    ]).to_parquet(dim, index=False)
+    df = ts.run_screen(fact, ts.SCREENS["ambulance_repetitive"], provider_dim=dim, verdicts=None)
+    st = dict(zip(df["npi"], df["status"]))
+    assert st["1000000011"] == "candidate"
+    assert st["1000000012"] == "fails_reflex"
+    assert st["1000000013"] == "hospital"
+    row = df[df["npi"] == "1000000011"].iloc[0]
+    assert abs(float(row["intensity"]) - 26.0) < 1e-6
+    assert float(row["peak_lines_per_day"]) > 80          # 2,600 transports in a month
+
+
+def test_nemt_fleet_rules_on_trips_a_day_and_sets_brokers_aside(tmp_path):
+    rows = []
+
+    def add(npi, code, month, paid, lines, pats):
+        rows.append({"billing_npi": npi, "servicing_npi": npi, "hcpcs_code": code, "service_month": month,
+                     "total_paid": float(paid), "total_claim_lines": float(lines), "total_patients": float(pats)})
+    for m in ("2023-01", "2023-07", "2024-01", "2024-07"):
+        add("1000000021", "T2003", m, 500_000, 6_000, 300)   # 200 trips a calendar day, 20 per patient-month
+        add("1000000022", "A0130", m, 400_000, 300, 30)      # 10 a day: a small real fleet
+        add("1000000023", "T2003", m, 2_000_000, 30_000, 2_000)  # a broker's number
+    fact = tmp_path / "f.parquet"; pd.DataFrame(rows).to_parquet(fact, index=False)
+    dim = tmp_path / "d.parquet"
+    _dim_rows([
+        {"npi": "1000000021", "org_legal_name": "FLEET RIDES LLC", "taxonomy_code": "343900000X"},
+        {"npi": "1000000022", "org_legal_name": "SMALL VAN CO", "taxonomy_code": "343900000X"},
+        {"npi": "1000000023", "org_legal_name": "STATEWIDE RIDE BROKER INC", "taxonomy_code": "347E00000X"},
+    ]).to_parquet(dim, index=False)
+    df = ts.run_screen(fact, ts.SCREENS["nemt_fleet"], provider_dim=dim, verdicts=None)
+    st = dict(zip(df["npi"], df["status"]))
+    assert st["1000000021"] == "candidate"
+    assert st["1000000022"] == "fails_per_day"
+    assert st["1000000023"] == "other_type"
+    assert int(df.loc[df["npi"] == "1000000021", "rank"].iloc[0]) == 1
+
+
+def test_dme_mailbox_reads_the_code_family_and_the_address(tmp_path):
+    rows = []
+
+    def add(npi, code, month, paid, lines, pats):
+        rows.append({"billing_npi": npi, "servicing_npi": npi, "hcpcs_code": code, "service_month": month,
+                     "total_paid": float(paid), "total_claim_lines": float(lines), "total_patients": float(pats)})
+    for m in ("2023-01", "2023-07", "2024-01", "2024-07"):
+        add("1000000031", "E0601", m, 400_000, 800, 400)     # a mailbox supplier (the E family, no exact code list)
+        add("1000000031", "A4253", m, 100_000, 2_000, 400)
+        add("1000000032", "K0823", m, 500_000, 200, 200)     # a suite shared by six organizations
+        add("1000000033", "L0650", m, 500_000, 500, 500)     # a real store at its own address
+        add("1000000034", "E0601", m, 500_000, 800, 400)     # a mailbox, but a pharmacy taxonomy -> other_type
+        add("1000000035", "99213", m, 5_000_000, 800, 400)   # not a DME code at all: never on the numerator
+    fact = tmp_path / "f.parquet"; pd.DataFrame(rows).to_parquet(fact, index=False)
+    shared = [{"npi": f"20000000{i:02d}", "org_legal_name": f"TENANT {i} LLC", "taxonomy_code": "207Q00000X",
+               "addr_line1": "500 Commerce Pkwy Ste 210", "addr_zip": "77001"} for i in range(1, 7)]
+    dim = tmp_path / "d.parquet"
+    _dim_rows([
+        {"npi": "1000000031", "org_legal_name": "BOX MEDICAL SUPPLY LLC", "taxonomy_code": "332B00000X",
+         "addr_line1": "1234 Main St PMB 44", "addr_zip": "77002"},
+        {"npi": "1000000032", "org_legal_name": "SUITE DME INC", "taxonomy_code": "332BX2000X",
+         "addr_line1": "500 Commerce Pkwy Ste 210", "addr_zip": "77001"},
+        {"npi": "1000000033", "org_legal_name": "REAL STORE MEDICAL", "taxonomy_code": "332B00000X",
+         "addr_line1": "77 Oak Ave", "addr_zip": "77003"},
+        {"npi": "1000000034", "org_legal_name": "CORNER PHARMACY", "taxonomy_code": "333600000X",
+         "addr_line1": "9 Elm St PO Box 12", "addr_zip": "77004"},
+        {"npi": "1000000035", "org_legal_name": "BIG CLINIC", "taxonomy_code": "207Q00000X",
+         "addr_line1": "1 Clinic Way", "addr_zip": "77005"},
+    ] + shared).to_parquet(dim, index=False)
+    df = ts.run_screen(fact, ts.SCREENS["dme_mailbox"], provider_dim=dim, verdicts=None)
+    assert "1000000035" not in set(df["npi"])                  # the family predicate, not an exact list
+    st = dict(zip(df["npi"], df["status"]))
+    assert st["1000000031"] == "candidate"
+    assert st["1000000032"] == "candidate"
+    assert st["1000000033"] == "address_clean"
+    assert st["1000000034"] == "other_type"
+    basis = dict(zip(df["npi"], df["address_basis"]))
+    assert basis["1000000031"] == "mailbox"
+    assert basis["1000000032"].startswith("shared:7")        # six tenants + the supplier itself
+    # the mailbox ranks first even though the shared suite bills more
+    assert int(df.loc[df["npi"] == "1000000031", "rank"].iloc[0]) == 1
+    md = ts.to_markdown({"dme_mailbox": df})
+    assert "E% (family)" in md and "PMB 44" in md.upper()
