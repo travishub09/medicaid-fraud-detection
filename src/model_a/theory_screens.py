@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -98,7 +99,10 @@ SCREENS: dict[str, Screen] = {
                 "standard, with few or no culture lines beside them. The claim is medical necessity of the "
                 "panel; the Omni Healthcare qui tam (N.D. Tex. 3:22-cv-01710) pleads this theory against "
                 "twenty labs, so the court-record check is the first gate on every name here."),
-        numerator=("87798", "87505", "87506", "87507", "87801", "87640", "87641", "87653", "87481",
+        # 87505-87507 are the gastrointestinal-pathogen multiplex panels (stool), not urine codes:
+        # the kill round on Medical Diagnostic Laboratories (2026-10-29) read them in the numerator,
+        # so they are out; a lab that bills them on urine is a records question, never a screen fact
+        numerator=("87798", "87801", "87640", "87641", "87653", "87481",
                    "87486", "87491", "87591", "87661"),
         denominator=("87086", "87088", "87077", "87186"),
         flag_codes=("87798",),
@@ -202,6 +206,20 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
     return classify(df, screen, verdicts, top=top)
 
 
+_GOVERNMENT_RE = re.compile(
+    r"^(STATE|CITY|COUNTY|TOWN|COMMONWEALTH|DEPARTMENT|DEPT|BOARD)\s+OF\b|\bPUBLIC HEALTH (LAB|DEPT|DEPARTMENT)\b"
+    r"|\b(COUNTY|CITY|STATE|PARISH) (HEALTH|LABORATORY|LAB|COMMISSION|HOSPITAL DISTRICT)\b|\bVETERANS AFFAIRS\b"
+)
+
+
+def is_government_name(name: str) -> bool:
+    """A public-health laboratory (STATE OF / COUNTY OF / CITY OF ...): not an operator a relator
+    comes from, so it leaves the candidate table under its own status (the first sweep's read,
+    2026-10-29)."""
+    nm = (name or "").upper().strip()
+    return bool(nm) and bool(_GOVERNMENT_RE.search(nm))
+
+
 def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, top: int = 50) -> pd.DataFrame:
     """Status per row, in this order: a standing verdict wins (the operator's word), then the
     national list and hospital-licensed numbers (not an operator a relator comes from), then
@@ -218,6 +236,8 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append(f"verdict:{hit}"); reason.append("standing verdict")
         elif nm and is_national_name(nm):
             status.append("national"); reason.append("national name")
+        elif is_government_name(nm):
+            status.append("government"); reason.append("public-health laboratory (state / county / city)")
         elif tx[:2] in ("27", "28"):
             status.append("hospital"); reason.append("hospital-licensed number")
         elif screen.taxonomy_prefixes and tx and not any(tx.startswith(p) for p in screen.taxonomy_prefixes):

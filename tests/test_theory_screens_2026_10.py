@@ -35,6 +35,7 @@ def _fact(tmp: Path) -> tuple[Path, Path]:
         add("1000000005", "G0483", m, 600_000, 900, 300)
         add("1000000006", "G0483", m, 600_000, 900, 300)
         add("1000000007", "G0482", m, 300_000, 600, 200)     # no screens at all
+        add("1000000008", "G0483", m, 600_000, 900, 300)     # a county public-health lab
     fact = tmp / "spending_fact.parquet"
     pd.DataFrame(rows).to_parquet(fact, index=False)
     dim = pd.DataFrame([
@@ -45,6 +46,7 @@ def _fact(tmp: Path) -> tuple[Path, Path]:
         {"npi": "1000000005", "org_legal_name": "EPSILON LABORATORIES", "provider_name": "", "entity_type": "2", "addr_state": "OH", "taxonomy_code": "291U00000X"},
         {"npi": "1000000006", "org_legal_name": "ZETA GENERAL HOSPITAL", "provider_name": "", "entity_type": "2", "addr_state": "OH", "taxonomy_code": "282N00000X"},
         {"npi": "1000000007", "org_legal_name": "THETA REFERENCE LAB", "provider_name": "", "entity_type": "2", "addr_state": "KY", "taxonomy_code": "291U00000X"},
+        {"npi": "1000000008", "org_legal_name": "COUNTY OF IOTA PUBLIC HEALTH LABORATORY", "provider_name": "", "entity_type": "2", "addr_state": "CA", "taxonomy_code": "291U00000X"},
     ])
     dimp = tmp / "provider_dim.parquet"
     dim.to_parquet(dimp, index=False)
@@ -64,6 +66,10 @@ def test_definitive_reflex_screen_classifies_the_planted_labs(tmp_path):
     assert st["1000000004"] == "below_floor"
     assert st["1000000005"] == "verdict:set_aside"
     assert st["1000000006"] == "hospital"
+    assert st["1000000008"] == "government"           # STATE OF / COUNTY OF: not an operator
+    assert ts.is_government_name("STATE OF ALABAMA DEPARTMENT OF PUBLIC HEALTH")
+    assert not ts.is_government_name("ALPHA TOX LAB LLC")
+    assert "87507" not in ts.SCREENS["uti_pcr_reflex"].numerator   # the GI-panel codes are out
     a = df[df["npi"] == "1000000001"].iloc[0]
     assert abs(a["reflex_ratio"] - 3.0) < 1e-9 and abs(a["intensity"] - 3.0) < 1e-9
     assert abs(a["flag_share"] - 1.0) < 1e-9          # every definitive line is the top-tier code

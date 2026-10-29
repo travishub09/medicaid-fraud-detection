@@ -2192,6 +2192,32 @@ first, then paste" above every move/done block.
   transactions; counsel's call. The three 2026-10-27 custom prompts DID go (truetox_next,
   morrison_accusation, andes_next; the poll loop line failed on a literal variable); Morrison
   and Andes added nothing to the kill-round verdicts.
+  THE KILL ROUND ON THE SCREEN (2026-10-29, twelve names, read with the three depth memos):
+  eleven answers came back WOUNDED or ALIVE and none DEAD, because the agents graded the
+  ratio against the state rule (every state pays documented direct-to-definitive testing in
+  some route) while the kill facts asked for (a release, a pending case, a policy that pays
+  definitive routinely, a state audit) were found for nobody. RULE: a WOUNDED that says only
+  'the ratio does not prove the order path' is the standard innocent explanation, not a wound;
+  the read is by the state rule against the lab's own numbers. Survivors (pursue): American
+  Forensic (NY bars lab reflex and standing orders; every screen confirmed; Cordant era to
+  2023), ERSO (100 pct definitive, 2.1 per patient-month, $6.1M in 2024), Lab24 (G0483 on 92
+  pct of definitive lines), Appalachian (reflex 27; 25 per patient-year against WV's 12),
+  Nepenthe (Oregon D23 covers definitive only on a discrepant screen, 12 dates a year; the lab
+  reads 25). Watch: Principle (largest dollars, weakest shape), Southwest (the NM OTP manual
+  bundles the in-clinic dipstick, so the reflex ratio is explained), CareNexa (Molecular Testing
+  Labs successor, declining). Set aside: Combined Physicians, Qualitox. Emerald: the service
+  returned a progress sentence and no attachments (re-dispatch gated). MDL: 87505-87507 are the
+  GI-panel codes and sat in the urine-PCR numerator (out now; `is_government_name` adds a
+  `government` status for public-health labs). The depth memos (Genesis: a 2026 company post
+  says clients use saved ordering profiles; National Labs: the Sierra SOW describes two
+  automatic-analysis paths; Accu: the Whatcom jail contract and a Rhode Island proposal with a
+  congregate-care roster) name former staff: the names stay in the research files under
+  enforcement/, never in a packet or here. The five depth prompts (deep2_prompts.jsonl, seven
+  sections plus a state section) are written and gated on credits. V11 AGAINST TODAY'S ANSWER
+  KEY (operator yes, 2026-10-29): grade the SHIPPED v11 pursuit list with `accuracy_diagnostics
+  --score-source priority_list` under a 58-month horizon, the exclusion ruler rebuilt from the
+  current graph (`--forward-label excl58=`) and the FCA ruler from the merged case DB; no
+  retrain (task v11_answer_key_regrade carries the lines).
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
