@@ -2287,6 +2287,33 @@ first, then paste" above every move/done block.
   425 were the workaround; from here the session pushes `claude/happy-mccarthy-3skrn3` directly and
   the laptop takes it with `git pull --ff-only` (merge_push.bat stays as the fallback if a push 403s
   again). The VM rule is unchanged: never `git pull` there while a run is going.
+  THE NJ KILL ROUND READ (2026-10-29, four answers): the innocent explanation is a declared SECOND
+  SHIFT (N.J.A.C. 8:43F-2.6: a project proposal must declare more than one shift and its hours;
+  the facility still may not exceed licensed capacity at one time; the Medicaid per diem needs five
+  service hours, at most five days a week per beneficiary, so the calendar-day census understates the
+  open-day census by about 31/22). Golden's March 2025 DOH expansion survey records '1st Shift 119,
+  2nd Shift 93': two shifts are real in this sector. The screen now prints `peak_lines_per_weekday`,
+  `occupancy_weekday` and `occupancy_two_shifts` (= weekday occupancy / 2) beside the calendar
+  reading: a row above 1.0 on two shifts is over the building on any lawful schedule. READ: Bergen
+  121 a calendar day on a licence of 60 = about 171 an open day against 120 on two shifts -> over on
+  any schedule, pursue (the card: a weekday count at the door across the whole day, and the posted
+  hours); Totowa 214 vs 208, Forever Young 367 vs 400 (16 buses and 16 drivers on its FMCSA record;
+  Horizon NJ Health's policy caps daily reimbursement at licensed capacity or 200), Golden 372 vs 440
+  -> watch, decided by the approved shift schedule, which is an OPRA request to NJ DOH for the four
+  licence files (task nj_amdc_opra), no credits. One agent called Forever Young DEAD on the ground
+  that TOTAL_CLAIM_LINES is not participant-days; the file answers it: 20 lines per participant-month
+  on a five-day program is one line per attendance day. Emerald (re-sent): ALIVE under Oregon D23,
+  pursue. DEPTH ROUND 2 (AFTS, ERSO, Lab24, Appalachian, Nepenthe): thin on documents, useful on
+  roles: AFTS's formers all pre-2015 but the Cordant CIA text DEFINES Cordant to include AFTS (a
+  covered entity 2020-2025 while every screen was confirmed through 2022); ERSO has no public
+  formers, clients or filings (the authorized representative holds roles at other laboratories);
+  Lab24 three formers, a Contra Costa 2025 contract and an Oregon CCO payment; Appalachian three
+  formers (a toxicologist, a courier, an operations director who did billing), COVID contracts only,
+  Veltex = a space lease; Nepenthe nine formers, two named client organizations, a 2023 supply form at
+  $0.00 (the free-supplies shape). Names stay in the research CSVs. V11 AGAINST TODAY'S KEY (run
+  during v27 by the operator; the diagnostics ran beside the embeddings without harm): v11 pursuit
+  0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 under a 58-month FCA ruler (random 0.45 / 0.9 / 2.25), the main
+  list 0 / 0 / 4 / 7, v25 pursuit 2 at 50 (task v11_answer_key_read pulls the folder for the rest).
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

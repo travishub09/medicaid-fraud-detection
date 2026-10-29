@@ -149,6 +149,11 @@ def test_perdiem_occupancy_ranks_the_overfull_building_first(tmp_path):
     assert by.loc["2000000003", "status"] == "needs_capacity"      # no roster for its state
     assert abs(float(by.loc["2000000001", "peak_lines_per_day"]) - 40.0) < 1e-9
     assert abs(float(by.loc["2000000001", "occupancy_ratio"]) - 40 / 30) < 1e-9
+    # Jan 2024 has 23 weekdays, Apr and Jun 2024 have 22 and 20: the open-day peak is 40 * 31 / 23 in January
+    # or 40 * 30 / 20 = 60 in June -> 60 per weekday, 2.0 on the licence, 1.0 on two shifts
+    assert abs(float(by.loc["2000000001", "peak_lines_per_weekday"]) - 60.0) < 1e-9
+    assert abs(float(by.loc["2000000001", "occupancy_weekday"]) - 2.0) < 1e-9
+    assert abs(float(by.loc["2000000001", "occupancy_two_shifts"]) - 1.0) < 1e-9
     assert abs(float(by.loc["2000000002", "occupancy_ratio"]) - 20 / 30) < 1e-9
     assert bool(by.loc["2000000001", "over_capacity"]) and not bool(by.loc["2000000002", "over_capacity"])
     assert int(by.loc["2000000001", "rank"]) == 1 and pd.isna(by.loc["2000000002", "rank"])

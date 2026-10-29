@@ -208,6 +208,15 @@ def _days_in_month_sql(month_expr: str) -> str:
     return f"EXTRACT(day FROM last_day(CAST({month_expr} || '-01' AS DATE)))"
 
 
+def _weekdays_in_month_sql(month_expr: str) -> str:
+    """DuckDB: Monday-to-Friday days in the month (a day program runs about 22 of them; the
+    New Jersey adult-day per diem is capped at five days a week per beneficiary, so a
+    calendar-day census understates the open-day census: the 2026-10-29 kill round)."""
+    first = f"CAST({month_expr} || '-01' AS DATE)"
+    return (f"(SELECT COUNT(*) FROM range({first}, last_day({first}) + INTERVAL 1 DAY, INTERVAL 1 DAY) r(d) "
+            f"WHERE dayofweek(CAST(r.d AS DATE)) BETWEEN 1 AND 5)")
+
+
 def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | None = None,
                verdicts: pd.DataFrame | None = None, top: int = 50, capacity: Path | None = None) -> pd.DataFrame:
     """Every NPI on the screen's numerator (the billing NPI, or the servicing NPI when the
@@ -262,12 +271,16 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
         GROUP BY 1, 2""")
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE bymonth AS
-        SELECT CAST({key} AS VARCHAR) npi, {month} AS mon,
-               SUM({lines}) / {_days_in_month_sql(month)} AS lines_per_day,
-               SUM({pats}) AS pats
-        FROM read_parquet('{p}')
-        WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
-        GROUP BY 1, 2""")
+        SELECT npi, mon,
+               lines_sum / {_days_in_month_sql('mon')} AS lines_per_day,
+               lines_sum / {_weekdays_in_month_sql('mon')} AS lines_per_weekday,
+               pats
+        FROM (
+            SELECT CAST({key} AS VARCHAR) npi, {month} AS mon, SUM({lines}) AS lines_sum, SUM({pats}) AS pats
+            FROM read_parquet('{p}')
+            WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
+            GROUP BY 1, 2
+        )""")
     df = con.execute("""
         SELECT n.npi, n.paid_num, t.paid_all,
                CASE WHEN t.paid_all > 0 THEN n.paid_num / t.paid_all END AS num_share,
@@ -284,7 +297,8 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
                (SELECT MAX(yr) FROM byyear b WHERE b.npi = n.npi) AS last_year,
                (SELECT MAX(lines_per_day) FROM bymonth m WHERE m.npi = n.npi) AS peak_lines_per_day,
                (SELECT mon FROM bymonth m WHERE m.npi = n.npi ORDER BY lines_per_day DESC, mon DESC LIMIT 1) AS peak_day_month,
-               (SELECT MEDIAN(lines_per_day) FROM bymonth m WHERE m.npi = n.npi) AS median_lines_per_day
+               (SELECT MEDIAN(lines_per_day) FROM bymonth m WHERE m.npi = n.npi) AS median_lines_per_day,
+               (SELECT MAX(lines_per_weekday) FROM bymonth m WHERE m.npi = n.npi) AS peak_lines_per_weekday
         FROM num n JOIN tot t USING (npi) LEFT JOIN den d USING (npi)
         ORDER BY n.paid_num DESC""").df()
     if provider_dim is not None and Path(provider_dim).exists() and len(df):
@@ -308,6 +322,8 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
     df["entity_type"] = df["entity_type"].fillna("").astype(str).str.strip()
     df["licensed_capacity"] = pd.NA
     df["occupancy_ratio"] = pd.NA
+    df["occupancy_weekday"] = pd.NA
+    df["occupancy_two_shifts"] = pd.NA
     if screen.capacity_rule and capacity is not None and Path(capacity).exists() and len(df):
         cc = _cols(con, Path(capacity))
         cap_col = next((c for c in ("licensed_capacity", "capacity", "certified_beds", "beds") if c in cc), None)
@@ -318,6 +334,11 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
                 WHERE CAST(npi AS VARCHAR) IN (SELECT npi FROM num) GROUP BY 1""").df()
             df = df.drop(columns=["licensed_capacity"]).merge(cap, on="npi", how="left")
             df["occupancy_ratio"] = df["peak_lines_per_day"] / df["licensed_capacity"].where(df["licensed_capacity"] > 0)
+            # the two readings the kill round asked for: the open-day census (weekdays) against the
+            # licence, and against TWO approved shifts (N.J.A.C. 8:43F-2.6 lets a proposal declare a
+            # second shift; a facility still may not exceed its licensed capacity at any one time)
+            df["occupancy_weekday"] = df["peak_lines_per_weekday"] / df["licensed_capacity"].where(df["licensed_capacity"] > 0)
+            df["occupancy_two_shifts"] = df["occupancy_weekday"] / 2.0
     df["over_capacity"] = df["occupancy_ratio"].astype(float).gt(1.0).fillna(False) if df["occupancy_ratio"].notna().any() else False
     df["capacity_known"] = bool(df["licensed_capacity"].notna().any())
     out = classify(df, screen, verdicts, top=top)
@@ -433,7 +454,10 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
               + (f"; numerator lines / denominator lines >= {s.min_reflex} (or no denominator at all)" if s.denominator else "")
               + (f"; numerator lines per patient-month >= {s.min_intensity}" if s.min_intensity > 0 else "")
               + (f"; peak lines per calendar day >= {s.min_per_day}" if s.min_per_day is not None else "")
-              + ("; occupancy = peak lines a day over licensed capacity where a capacity is known (over 1.0 ranks first)"
+              + ("; occupancy = peak lines a calendar day over licensed capacity where a capacity is known (over 1.0 "
+                 "ranks first); open-day occ. = the same over weekdays (a five-day program); two-shift occ. = half of "
+                 "that, the reading when the licence approves two sessions a day: a row above 1.0 on two shifts is over "
+                 "the building on any lawful schedule"
                  if s.capacity_rule else "") + ".", "",
               "**Innocent explanations to rule out first.** " + " ".join(f"({i + 1}) {t}." for i, t in enumerate(s.innocent)), "",
               "**Who would know.** " + "; ".join(s.roles) + ".", "",
@@ -452,15 +476,18 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
         L.append(f"### Candidates (top {min(top, len(cand))} of {int(df['status'].eq('candidate').sum())}, {order_note})")
         L.append("")
         if s.per_day:
-            L.append("| rank | npi | name | st | numerator $ | share of all | per patient-month | peak lines/day (month) | median lines/day | capacity | occupancy | billers | first | last | peak year | last year $ |")
-            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+            L.append("| rank | npi | name | st | numerator $ | share of all | per patient-month | peak lines/day (month) | median lines/day | per weekday | capacity | occupancy | open-day occ. | two-shift occ. | billers | first | last | peak year | last year $ |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             for r in cand.itertuples():
                 cap = "" if pd.isna(r.licensed_capacity) else f"{float(r.licensed_capacity):,.0f}"
                 occ = "" if pd.isna(r.occupancy_ratio) else f"{float(r.occupancy_ratio):.2f}"
+                occw = "" if pd.isna(r.occupancy_weekday) else f"{float(r.occupancy_weekday):.2f}"
+                occ2 = "" if pd.isna(r.occupancy_two_shifts) else f"{float(r.occupancy_two_shifts):.2f}"
+                pwd = "" if pd.isna(r.peak_lines_per_weekday) else f"{float(r.peak_lines_per_weekday):.1f}"
                 L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | "
                          f"{(r.num_share or 0) * 100:.0f}% | {0 if pd.isna(r.intensity) else r.intensity:.1f} | "
                          f"{0 if pd.isna(r.peak_lines_per_day) else r.peak_lines_per_day:.1f} ({r.peak_day_month}) | "
-                         f"{0 if pd.isna(r.median_lines_per_day) else r.median_lines_per_day:.1f} | {cap} | {occ} | "
+                         f"{0 if pd.isna(r.median_lines_per_day) else r.median_lines_per_day:.1f} | {pwd} | {cap} | {occ} | {occw} | {occ2} | "
                          f"{int(r.n_billers or 0)} | {r.first_month} | {r.last_month} | "
                          f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
         else:
