@@ -2281,6 +2281,12 @@ first, then paste" above every move/done block.
   (task deactivated_billers_check greps them). MDL: the per-code split (87798 vs 87505-87507) is a
   pi_facts line (task mdl_code_split). Reliability so far: labs 20 picks -> 4 packets + 5 survivors;
   per-diem 4 picks -> 4 alive after court records, the cheapest field check of any theory.
+  GITHUB PUSH RESTORED (2026-10-29): the cloud session pushes to origin again (a classic personal
+  access token on the operator's Claude GitHub connector; the Claude GitHub App cannot be installed
+  on travishub09 from the operator's login because it is Travis's personal account). Bundles 414 to
+  425 were the workaround; from here the session pushes `claude/happy-mccarthy-3skrn3` directly and
+  the laptop takes it with `git pull --ff-only` (merge_push.bat stays as the fallback if a push 403s
+  again). The VM rule is unchanged: never `git pull` there while a run is going.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
