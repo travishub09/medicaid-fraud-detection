@@ -128,6 +128,10 @@ def main() -> None:
     df, c = overlap(Path(a.matrix), Path(a.listing), top=a.top, rank_col=a.rank_col)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(a.out, index=False)
+    # the names in rank order, one per line, for `first_to_file --names-file` (the public-docket pass)
+    names_out = Path(a.out).with_name(Path(a.out).stem + "_names.txt")
+    names = [n for n in df.sort_values("rank")["org_name"].astype(str).str.strip().tolist() if n]
+    names_out.write_text("\n".join(dict.fromkeys(names)) + ("\n" if names else ""), encoding="utf-8")
     print(f"[list_case_overlap] top {c['top']} of {a.listing}: {c['listed']} organizations listed; "
           f"resolved government case {c['doj_case']}; open indictment or government complaint {c['charged_case']}; "
           f"open whistleblower docket {c['docket_case']}; any case {c['any_case']} "
