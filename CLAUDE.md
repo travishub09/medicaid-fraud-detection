@@ -2314,6 +2314,16 @@ first, then paste" above every move/done block.
   during v27 by the operator; the diagnostics ran beside the embeddings without harm): v11 pursuit
   0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 under a 58-month FCA ruler (random 0.45 / 0.9 / 2.25), the main
   list 0 / 0 / 4 / 7, v25 pursuit 2 at 50 (task v11_answer_key_read pulls the folder for the rest).
+  THE HAND-OVER SET (2026-10-29): eleven SIU packets, all chat files for <data_root>/enforcement/
+  pi_reports/, never git, roles only: TrueTox, Genesis, National Labs, Accu (pending the Sims read)
+  and seven written the same day: Bergen Adult Day Care (the one-day card: a weekday count at the
+  door against a licence of 60; it does not wait for the records request, which decides the OTHER
+  three centres), American Forensic, ERSO, Lab24, Appalachian, Nepenthe, Emerald. The v11-vs-today
+  grade is slide 3 of the model-evolution deck (v11 0/1/4/6 at 36 months, 0/1/5/8 at 58; v25 2/2/4/7
+  at 58: the same hits, the head the weakest on both). The two NJ DOH records requests were filed
+  2026-10-29 (seven business days; task nj_amdc_opra). RULE: a packet's field card is written so
+  the investigator can act on it the same week; a records request runs beside the card, never ahead
+  of it, unless the card's reading depends on the file (Totowa, Forever Young, Golden).
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
