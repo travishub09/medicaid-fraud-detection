@@ -30,7 +30,7 @@ TAGS = ("doj_case", "charged_case", "docket_case")
 
 def overlap(matrix: Path, listing: Path, top: int = 250, rank_col: str | None = None) -> tuple[pd.DataFrame, dict]:
     con = duckdb.connect()
-    lcols = [r[1] for r in con.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{listing}', all_varchar=true)").fetchall()]
+    lcols = [r[0] for r in con.execute(f"DESCRIBE SELECT * FROM read_csv_auto('{listing}', all_varchar=true)").fetchall()]
     rank_col = rank_col or next((c for c in ("pursuit_rank", "pmax_rank", "large_rank", "priority_rank", "rank") if c in lcols), None)
     if rank_col is None:
         raise SystemExit(f"no rank column in {listing}: {lcols}")
