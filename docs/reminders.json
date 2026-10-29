@@ -636,10 +636,21 @@
   {
    "key": "capacity_rosters_next_states",
    "added": "2026-10-29",
-   "what": "The per-diem screen is decisive only where a licensed-capacity roster is loaded (NJ and NY today). 6,087 per-diem billers have no roster; by dollars the next states are NY ($5.9B on numbers the NY roster does not cover: adult day health and ALP lists), CA ($5.3B: CDSS community care licensing export + CDPH ADHC), MO ($4.8B: DMH licensed residential and day habilitation), NJ ($3.6B beyond the AMDC roster: DHS residential), ME ($3.3B), CO ($2.9B), MN ($2.8B), AZ ($2.5B), KY ($2.3B), MA ($2.3B). Taxonomies carrying the money: 261Q adult day care, 3209 / 3206 residential, 251C day training, 3104 assisted living, 3245 residential treatment. One state per download session: the roster CSV with facility name, address and licensed capacity -> preclean/state_capacity/<ST>_<what>.csv, then the loader on the VM (task capacity_on_vm) and the sweep again. Download first, then paste.",
+   "what": "NEXT STATE ROSTERS for the per-diem screen (one session each; download first, then paste). (1) CALIFORNIA, $5.3B of per-diem billing with no licence on file: data.chhs.ca.gov, dataset 'Community Care Licensing - Adult and Senior Care Facility Locations' (adult residential, adult day programs, RCFE; a Facility Capacity column) -> C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\CA_adult_senior_care.csv. (2) NEW YORK, $5.9B: health.data.ny.gov, 'Adult Care Facility Directory' (Total Capacity and ALP beds) -> NY_adult_care_facilities.csv in the same folder; the NY Adult Day Health Care list (DOH) as NY_adult_day_health.csv if it carries a capacity column. After the downloads: the preclean sync to the VM (preclean only, never a full down), the loader, then the sweep; the per-diem table then reads CA and NY rows as cards or clears them. Then MO (DMH licensed residential / day habilitation), ME, CO, MN, AZ, KY, MA in dollar order.",
    "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.ingest_cms.licensed_capacity --help | head -30\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh down-preclean 2>&1 | tail -3 && ls -la /data/medicaid/preclean/state_capacity/\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.ingest_cms.licensed_capacity --rosters /data/medicaid/preclean/state_capacity --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/processed/licensed_capacity.parquet 2>&1 | tail -15\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.theory_screens --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --verdicts /data/medicaid/model_a/pursuit_verdicts.csv --screen perdiem_occupancy --out /data/medicaid/enforcement/theory_screens && grep -n -A 30 '### Candidates' /data/medicaid/enforcement/theory_screens/THEORY_SCREENS.md | head -45\"",
     "python -m src.reminders --done-task capacity_rosters_next_states"
+   ],
+   "steps": [
+    "Open data.chhs.ca.gov and search 'Community Care Licensing Adult and Senior Care Facility Locations'; download the CSV; save as C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\CA_adult_senior_care.csv",
+    "Open health.data.ny.gov and search 'Adult Care Facility Directory'; Export -> CSV; save as C:\\Users\\treyr\\OneDrive\\Desktop\\data\\preclean\\state_capacity\\NY_adult_care_facilities.csv",
+    "Wait for OneDrive to finish syncing the two files, then paste the three lines in order"
+   ],
+   "proof": [
+    "preclean/state_capacity/CA_adult_senior_care.csv",
+    "preclean/state_capacity/NY_adult_care_facilities.csv"
    ]
   },
   {
