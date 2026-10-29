@@ -113,6 +113,10 @@ def _perdiem_fact(tmp: Path) -> tuple[Path, Path, Path]:
         add("3000000001", "4000000001", "T1019", m, 40_000, 80 * days, 3)     # aide A under agency 1
         add("3000000002", "4000000001", "T1019", m, 20_000, 40 * days, 2)     # aide A under agency 2
         add("3000000001", "4000000002", "T1019", m, 16_000, 32 * days, 2)     # aide B
+        add("2000000003", "2000000003", "H0019", m, 400_000, 35 * days, 35)   # no capacity on file
+        add("3000000001", "4000000003", "T1019", m, 90_000, 100 * days, 9)    # a physician's number as the aide
+        add("3000000001", "4000000004", "T1019", m, 90_000, 100 * days, 9)    # a number NPPES does not carry
+        add("3000000001", "1999999984", "T1019", m, 90_000, 100 * days, 9)    # a filler number
     fact = tmp / "spending_fact.parquet"
     pd.DataFrame(rows).to_parquet(fact, index=False)
     dim = pd.DataFrame([
@@ -122,6 +126,8 @@ def _perdiem_fact(tmp: Path) -> tuple[Path, Path, Path]:
         {"npi": "3000000002", "org_legal_name": "AGENCY TWO LLC", "provider_name": "", "entity_type": "2", "addr_state": "TX", "taxonomy_code": "253Z00000X"},
         {"npi": "4000000001", "org_legal_name": "", "provider_name": "AIDE, A", "entity_type": "1", "addr_state": "TX", "taxonomy_code": "373H00000X"},
         {"npi": "4000000002", "org_legal_name": "", "provider_name": "AIDE, B", "entity_type": "1", "addr_state": "TX", "taxonomy_code": "373H00000X"},
+        {"npi": "2000000003", "org_legal_name": "NOROSTER HOUSE LLC", "provider_name": "", "entity_type": "2", "addr_state": "PA", "taxonomy_code": "320800000X"},
+        {"npi": "4000000003", "org_legal_name": "", "provider_name": "DOCTOR, D", "entity_type": "1", "addr_state": "NY", "taxonomy_code": "207R00000X"},
     ])
     dimp = tmp / "provider_dim.parquet"
     dim.to_parquet(dimp, index=False)
@@ -136,23 +142,31 @@ def test_perdiem_occupancy_ranks_the_overfull_building_first(tmp_path):
     fact, dim, cap = _perdiem_fact(tmp_path)
     df = ts.run_screen(fact, ts.SCREENS["perdiem_occupancy"], provider_dim=dim, capacity=cap)
     by = df.set_index("npi")
-    assert by.loc["2000000001", "status"] == "candidate" and by.loc["2000000002", "status"] == "candidate"
+    assert by.loc["2000000001", "status"] == "candidate"
+    assert by.loc["2000000002", "status"] == "under_capacity"      # 20 a day in a 30-bed building
+    assert by.loc["2000000003", "status"] == "needs_capacity"      # no roster for its state
     assert abs(float(by.loc["2000000001", "peak_lines_per_day"]) - 40.0) < 1e-9
     assert abs(float(by.loc["2000000001", "occupancy_ratio"]) - 40 / 30) < 1e-9
     assert abs(float(by.loc["2000000002", "occupancy_ratio"]) - 20 / 30) < 1e-9
     assert bool(by.loc["2000000001", "over_capacity"]) and not bool(by.loc["2000000002", "over_capacity"])
-    # equal dollars: the over-capacity building ranks first
-    assert int(by.loc["2000000001", "rank"]) == 1 and int(by.loc["2000000002", "rank"]) == 2
+    assert int(by.loc["2000000001", "rank"]) == 1 and pd.isna(by.loc["2000000002", "rank"])
     assert "4000000001" not in by.index                       # T1019 is not a per-diem code
     md = ts.to_markdown({"perdiem_occupancy": df})
     assert "OVERFULL RESIDENTIAL" in md and "occupancy" in md and "Peak lines per calendar day" in md
+    assert "### needs_capacity" in md and "NOROSTER HOUSE" in md and "### under_capacity" in md
+    # with no capacity table at all, the census rule alone decides (the old behaviour)
+    df0 = ts.run_screen(fact, ts.SCREENS["perdiem_occupancy"], provider_dim=dim)
+    assert set(df0[df0["status"].eq("candidate")]["npi"]) == {"2000000001", "2000000002", "2000000003"}
 
 
 def test_attendant_hours_screens_the_servicing_npi_across_agencies(tmp_path):
     fact, dim, cap = _perdiem_fact(tmp_path)
     df = ts.run_screen(fact, ts.SCREENS["attendant_hours"], provider_dim=dim, capacity=cap)
     by = df.set_index("npi")
-    assert set(by.index) == {"4000000001", "4000000002"}      # the servicing grain: aides, not agencies
+    assert set(by.index) == {"4000000001", "4000000002", "4000000003", "4000000004", "1999999984"}
+    assert by.loc["4000000003", "status"] == "not_aide"          # a physician's number in the servicing field
+    assert by.loc["4000000004", "status"] == "not_in_nppes"      # a number the NPPES file does not carry
+    assert by.loc["1999999984", "status"] == "placeholder"
     a = by.loc["4000000001"]
     assert a["status"] == "candidate"
     assert abs(float(a["peak_lines_per_day"]) - 120.0) < 1e-9  # 80 + 40 units a day across two agencies
@@ -168,3 +182,12 @@ def test_attendant_hours_screens_the_servicing_npi_across_agencies(tmp_path):
     rows.to_parquet(f2, index=False)
     df2 = ts.run_screen(f2, ts.SCREENS["attendant_hours"], provider_dim=dim)
     assert df2.set_index("npi").loc["3000000001", "status"] == "other_type"
+    md = ts.to_markdown({"attendant_hours": df})
+    assert "### not_aide" in md and "DOCTOR, D" in md and "### not_in_nppes" in md and "4000000004" in md
+    # the agencies behind the top aides, for the court-record check
+    import duckdb
+    con = duckdb.connect()
+    ts._codes_table(con, "num_codes", ts.SCREENS["attendant_hours"].numerator)
+    ag = ts.agencies_for(con, fact, ts.SCREENS["attendant_hours"], ["4000000001"], dim)
+    assert set(ag["biller_name"]) == {"AGENCY ONE LLC", "AGENCY TWO LLC"}
+    assert abs(float(ag.set_index("biller_npi").loc["3000000001", "paid"]) - 120_000.0) < 1e-6

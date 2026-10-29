@@ -68,6 +68,9 @@ class Screen:
     min_per_day: float | None = None           # rule on that peak (None = reported, not ruled)
     entity_types: tuple[str, ...] = ()         # restrict to NPPES entity types ('1' individuals, '2' organizations)
     capacity_rule: bool = False                # join licensed capacity by NPI; occupancy = peak per day / capacity
+    min_occupancy: float | None = None         # with a capacity on file: candidate only above this (under_capacity otherwise)
+    candidate_taxonomies: tuple[str, ...] = () # the roles the theory is about (an individual outside them is 'not_<role>' and listed, not ranked)
+    report_statuses: tuple[str, ...] = ()      # statuses the report tables beside the candidates (the shapes worth a look)
 
 
 SCREENS: dict[str, Screen] = {
@@ -139,6 +142,8 @@ SCREENS: dict[str, Screen] = {
         min_intensity=15.0,
         per_day=True,
         capacity_rule=True,
+        min_occupancy=1.0,
+        report_statuses=("needs_capacity", "under_capacity"),
         innocent=("several licensed sites under one billing number (the capacity file sums a number's sites, "
                   "but a site the roster does not carry under the same name is missed)",
                   "a day program whose per-diem is a slot, not a bed (slots turn over inside a day)",
@@ -169,6 +174,12 @@ SCREENS: dict[str, Screen] = {
         per_day=True,
         min_per_day=64.0,
         entity_types=("1",),
+        # the aide roles: home health aide, personal care attendant / technician, homemaker, chore,
+        # nurse's aide, religious nonmedical nursing personnel. A physician, nurse practitioner, social
+        # worker or agency number in the servicing field is the 'whose number went on the claim' shape
+        # (the attending-concentration lens), listed under not_aide, never ranked as an aide's day.
+        candidate_taxonomies=("373H", "3747", "374U", "376J", "3725", "3726", "376K", "374T"),
+        report_statuses=("not_in_nppes", "not_aide", "placeholder"),
         innocent=("the file's line is a client-day, not a 15-minute unit (read the distribution line under the "
                   "table first: a median peak near 1 means lines are days and the rule re-runs on clients a day)",
                   "a live-in or 24-hour shared-care arrangement billed under one aide's number by rule",
@@ -304,13 +315,19 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
             df = df.drop(columns=["licensed_capacity"]).merge(cap, on="npi", how="left")
             df["occupancy_ratio"] = df["peak_lines_per_day"] / df["licensed_capacity"].where(df["licensed_capacity"] > 0)
     df["over_capacity"] = df["occupancy_ratio"].astype(float).gt(1.0).fillna(False) if df["occupancy_ratio"].notna().any() else False
-    return classify(df, screen, verdicts, top=top)
+    df["capacity_known"] = bool(df["licensed_capacity"].notna().any())
+    out = classify(df, screen, verdicts, top=top)
+    return out.drop(columns=["capacity_known"])
 
 
 _GOVERNMENT_RE = re.compile(
     r"^(STATE|CITY|COUNTY|TOWN|COMMONWEALTH|DEPARTMENT|DEPT|BOARD)\s+OF\b|\bPUBLIC HEALTH (LAB|DEPT|DEPARTMENT)\b"
-    r"|\b(COUNTY|CITY|STATE|PARISH) (HEALTH|LABORATORY|LAB|COMMISSION|HOSPITAL DISTRICT)\b|\bVETERANS AFFAIRS\b"
+    r"|\b(COUNTY|CITY|STATE|PARISH|TOWN) (OF|HEALTH|LABORATORY|LAB|COMMISSION|DEPARTMENT|DEPT|BOARD|HOSPITAL DISTRICT)\b"
+    r"|\bDEPARTMENT OF (PUBLIC HEALTH|HEALTH|MENTAL HEALTH|HUMAN SERVICES|SOCIAL SERVICES|BEHAVIORAL HEALTH)\b"
+    r"|\bBOARD OF (HEALTH|EDUCATION|DEVELOPMENTAL DISABILITIES|MENTAL HEALTH)\b"
+    r"|\b(HEALTH|HOSPITAL|SCHOOL) DISTRICT\b|\bUNIFIED SCHOOL\b|\bPUBLIC SCHOOLS\b|\bVETERANS AFFAIRS\b"
 )
+_PLACEHOLDER_NPI_RE = re.compile(r"^\d?([1-9])\1{6,}\d*$")   # 1999999984, 1111111112: a filler number (a run of zeros is a fixture)
 
 
 def is_government_name(name: str) -> bool:
@@ -334,8 +351,13 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
         tx = str(r.taxonomy or "")
         et = str(getattr(r, "entity_type", "") or "").strip()
         hit = v_by_name.get(nm) or next((v for k, v in v_by_name.items() if k and nm and (k in nm or nm in k)), None)
-        if hit:
+        in_nppes = bool(nm) or bool(tx) or bool(et)
+        if _PLACEHOLDER_NPI_RE.match(str(r.npi)):
+            status.append("placeholder"); reason.append("a filler number, not a provider")
+        elif hit:
             status.append(f"verdict:{hit}"); reason.append("standing verdict")
+        elif screen.grain == "servicing" and not in_nppes and float(r.paid_num or 0) >= screen.min_paid_num:
+            status.append("not_in_nppes"); reason.append("the number is not in the NPPES file: deactivated or invalid, check the deactivation report")
         elif nm and is_national_name(nm):
             status.append("national"); reason.append("national name")
         elif is_government_name(nm):
@@ -348,6 +370,14 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("other_type"); reason.append(f"entity type {et} outside the screen's provider type")
         elif float(r.paid_num or 0) < screen.min_paid_num:
             status.append("below_floor"); reason.append(f"numerator dollars under {screen.min_paid_num:,.0f}")
+        elif screen.candidate_taxonomies and tx and not any(tx.startswith(p) for p in screen.candidate_taxonomies):
+            status.append("not_aide"); reason.append(f"taxonomy {tx}: an individual's number at agency scale in the servicing field (whose number went on the claim)")
+        elif screen.capacity_rule and screen.min_occupancy is not None and bool(getattr(r, "capacity_known", False)) \
+                and pd.isna(getattr(r, "licensed_capacity", pd.NA)):
+            status.append("needs_capacity"); reason.append("no licensed capacity on file for this number (the roster for its state is not loaded)")
+        elif screen.capacity_rule and screen.min_occupancy is not None and not pd.isna(getattr(r, "occupancy_ratio", pd.NA)) \
+                and float(r.occupancy_ratio) < screen.min_occupancy:
+            status.append("under_capacity"); reason.append(f"peak census under the licensed capacity (occupancy {float(r.occupancy_ratio):.2f})")
         else:
             ratio = r.reflex_ratio
             inten = r.intensity
@@ -437,6 +467,23 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
                          f"{0 if pd.isna(r.flag_share) else r.flag_share * 100:.0f}% | {r.first_month} | {r.last_month} | "
                          f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
         L.append("")
+        for st in s.report_statuses:
+            sub = df[df["status"].eq(st)].sort_values("paid_num", ascending=False).head(15)
+            if not len(sub):
+                continue
+            why = sub["status_reason"].iloc[0]
+            L.append(f"### {st} ({int(df['status'].eq(st).sum())} rows; listed, not ranked): {why}")
+            L.append("")
+            L.append("| npi | name | st | taxonomy | numerator $ | per patient-month | peak lines/day (month) | capacity | occupancy | billers | first | last |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+            for r in sub.itertuples():
+                cap = "" if pd.isna(r.licensed_capacity) else f"{float(r.licensed_capacity):,.0f}"
+                occ = "" if pd.isna(r.occupancy_ratio) else f"{float(r.occupancy_ratio):.2f}"
+                L.append(f"| {r.npi} | {str(r.name)[:40]} | {r.state or ''} | {str(r.taxonomy)[:10]} | ${r.paid_num:,.0f} | "
+                         f"{0 if pd.isna(r.intensity) else r.intensity:.1f} | "
+                         f"{0 if pd.isna(r.peak_lines_per_day) else r.peak_lines_per_day:.1f} ({r.peak_day_month}) | {cap} | {occ} | "
+                         f"{int(r.n_billers or 0)} | {r.first_month} | {r.last_month} |")
+            L.append("")
         aside = df[df["status"].str.startswith("verdict") | df["status"].isin(["national", "hospital"])]
         aside = aside[aside["paid_num"] >= s.min_paid_num].head(25)
         if len(aside):
@@ -448,6 +495,35 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
                 L.append(f"| {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | {r.status} |")
             L.append("")
     return "\n".join(L) + "\n"
+
+
+def agencies_for(con, spending: Path, screen: Screen, servicing_npis: list[str], provider_dim: Path | None) -> pd.DataFrame:
+    """For a servicing-grain screen: every billing NPI that carried the given individuals on the
+    numerator codes, with dollars and the biller's NPPES name (blank when the biller is not in the
+    file), ordered by dollars. The court-record check runs on these names."""
+    con.execute("CREATE OR REPLACE TEMP TABLE sel(npi VARCHAR)")
+    con.executemany("INSERT INTO sel VALUES (?)", [(n,) for n in servicing_npis])
+    code = "UPPER(TRIM(CAST(hcpcs_code AS VARCHAR)))"
+    ag = con.execute(f"""
+        SELECT CAST(servicing_npi AS VARCHAR) AS servicing_npi, CAST(billing_npi AS VARCHAR) AS biller_npi,
+               SUM(CAST(total_paid AS DOUBLE)) AS paid, MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) AS first_month,
+               MAX(substr(CAST(service_month AS VARCHAR), 1, 7)) AS last_month
+        FROM read_parquet('{_sql_str(spending)}')
+        WHERE CAST(servicing_npi AS VARCHAR) IN (SELECT npi FROM sel) AND {code} IN (SELECT hcpcs FROM num_codes)
+        GROUP BY 1, 2 ORDER BY paid DESC""").df()
+    ag["biller_name"] = ""
+    ag["biller_state"] = ""
+    if provider_dim is not None and Path(provider_dim).exists() and len(ag):
+        pc = _cols(con, Path(provider_dim))
+        name = " || ' ' || ".join(f"COALESCE(CAST({c} AS VARCHAR), '')"
+                                  for c in ("org_legal_name", "provider_name") if c in pc) or "''"
+        st = "CAST(addr_state AS VARCHAR)" if "addr_state" in pc else "NULL"
+        dim = con.execute(f"""SELECT CAST(npi AS VARCHAR) AS biller_npi, TRIM({name}) AS biller_name, {st} AS biller_state
+                               FROM read_parquet('{_sql_str(provider_dim)}')""").df()
+        ag = ag.drop(columns=["biller_name", "biller_state"]).merge(dim, on="biller_npi", how="left")
+        ag["biller_name"] = ag["biller_name"].fillna("").astype(str).str.strip()
+        ag["biller_state"] = ag["biller_state"].fillna("")
+    return ag
 
 
 def main() -> None:
@@ -480,6 +556,13 @@ def main() -> None:
         cand = df[df["status"].eq("candidate")].sort_values("rank").head(a.top)
         names = [n for n in cand["name"].astype(str).str.strip().tolist() if n]
         (out / f"names_{k}.txt").write_text("\n".join(dict.fromkeys(names)) + ("\n" if names else ""), encoding="utf-8")
+        if SCREENS[k].grain == "servicing" and len(cand):
+            # the agencies that billed under the top aides: the court-record check belongs on them, not
+            # on a person's name (the 2026-10-29 attendant run searched twenty aides and read collisions)
+            ag = agencies_for(con, Path(a.spending), SCREENS[k], cand["npi"].tolist(), Path(a.provider_dim))
+            ag.to_csv(out / f"agencies_{k}.csv", index=False)
+            anames = [n for n in ag["biller_name"].astype(str).str.strip().tolist() if n]
+            (out / f"agencies_{k}.txt").write_text("\n".join(dict.fromkeys(anames)) + ("\n" if anames else ""), encoding="utf-8")
         results[k] = df
         print(f"[theory_screens] {k}: {len(df)} NPIs on the numerator; "
               f"{int(df['status'].eq('candidate').sum())} candidates; "

@@ -2239,6 +2239,28 @@ first, then paste" above every move/done block.
   Reliability per round is the comparison: the lab round read about half survival; the
   per-diem round is graded the same way. Task track2_sweep carries the sweep + court-record
   lines; the depth round 2 and the Emerald re-send were given the go the same day.
+  THE FIRST TRACK-2 SWEEP READ (2026-10-29, bundle 420): per-diem 11,573 numbers, 2,622 'candidates'
+  because only NJ (84) and NY (37) have a licensed-capacity roster loaded; where capacity exists the
+  shape is real and decisive: four NJ adult medical day care centers (S5102, taxonomy 261QA0600X)
+  bill a peak census of 1.2x to 2.0x their licence (Bergen Adult Day Care 121 a day on a 60 licence,
+  median 78; 2nd Home Totowa 152 on 104; Forever Young 266 on 200; Golden 264 on 220), a count at
+  the door on one day. Rules now: with a capacity table, candidate = occupancy above min_occupancy
+  (1.0), under_capacity and needs_capacity (no roster for the state) are listed, not ranked; without
+  any table the census rule alone decides. Attendant: 34 'candidates' were 16 Luhn-valid numbers NOT
+  in NPPES ($98M, $33M, $23M ... under numbers the file does not carry = deactivated or invalid: the
+  deactivation-report check, task line 4), physicians / NPs / agencies' individual numbers in the
+  servicing field (NY personal-care claims carry the ORDERING physician there: the Andes number at
+  981 units a day across four billers is that, not an aide; Mississippi's $38M 'aide' is an agency
+  billing under one person's number), and a filler number 1999999984; the file's line IS a 15-minute
+  unit (median peak 21.6 a day, p90 140). Rules now: candidate_taxonomies (373H / 3747 / 374U / 376J
+  / 3725 / 3726 / 376K / 374T) = the aide roles, else not_aide (listed: the 'whose number' shape,
+  the attending-concentration lens); not_in_nppes; placeholder (seven repeated non-zero digits);
+  the court-record check for aides runs on the AGENCIES behind them (agencies_<key>.txt / .csv,
+  `agencies_for`), never on a person's name (twenty aide names returned name collisions).
+  is_government_name widened (LOS ANGELES COUNTY DEPARTMENT OF PUBLIC HEALTH sat in the per-diem
+  table); NATIONAL MENTOR HEALTHCARE + REM <STATE> (Sevita) on the national list. RULE: a per-diem
+  card exists only where a licence is on file; the state rosters (task capacity_on_vm) are the
+  unlock, one state at a time, NJ first because the shape is already there.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
