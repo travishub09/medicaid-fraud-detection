@@ -2072,6 +2072,17 @@ first, then paste" above every move/done block.
   and the owners' other companies. The Shemias agreed to buy Extended in September 2019
   and closed in January 2022; "no link" reads "no direct link"; the $10M a month is the
   late-2024 run rate under his number, not an average.
+  CD1 RESEARCH READ (2026-10-29, the six dispatched 2026-10-28): Accu Reference Medical Lab
+  (NJ, $184M; former owner's 2018 kickback conviction, 2022 OIG billing settlement, new parent
+  NeoDNA 2025) and Genesis Reference Laboratories (FL/CO, $42M; 2023 DOJ FCA settlement for
+  2019-2021 marketer kickbacks; the case is the post-settlement billing) = pursue candidates;
+  Gravity Diagnostics and National Labs = watch; Childrens Health Care Associates (CHOP
+  practice plan) and Pediatria (Aveanna) = set aside. The verdicts file worked (the re-render
+  skipped the four decided names) and the refilled pick named three more subsidiaries (REM NJ =
+  Sevita, Home Care Delivered, Sleep Management = Viemed), now on the national list with
+  Pediatria and CHCA; Total Wellness Centers (MA, $117M) is the one new candidate. The plain
+  `--poll` through build() died silently three times in an ssh session; `--poll-only` and a
+  tmux-logged `--operator-book --poll` are the way (40 minutes of scoring).
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

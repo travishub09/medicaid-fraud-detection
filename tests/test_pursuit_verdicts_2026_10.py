@@ -47,6 +47,9 @@ def test_national_names_from_the_first_current_day_run():
               "UOFL HEALTH-LOUISVILLE INC", "FRED HUTCHINSON CANCER CENTER", "NASSAU HEALTH CARE CORPORATION",
               "MEDICAL TRANSPORTATION MANAGEMENT, INC.", "AMERICAN MEDICAL RESPONSE OF MARICOPA, LLC"]:
         assert is_national_name(n), n
+    for n in ["PEDIATRIA HEALTHCARE, LLC", "CHILDRENS HEALTH CARE ASSOCIATES, INC", "REM NEW JERSEY, INC.",
+              "HOME CARE DELIVERED, INC", "SLEEP MANAGEMENT, L.L.C."]:
+        assert is_national_name(n), n
     assert not is_national_name("GENESIS REFERENCE LABORATORIES, LLC")
     assert not is_national_name("ACCU REFERENCE MEDICAL LAB, LLC")
 

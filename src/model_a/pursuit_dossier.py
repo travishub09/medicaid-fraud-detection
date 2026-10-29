@@ -590,6 +590,12 @@ _NATIONAL_NAMES = (
     "UOFL HEALTH", "FRED HUTCHINSON", "OAKWOOD HEALTHCARE", "MERCY HEALTH", "NASSAU HEALTH CARE",
     "MEDICAL TRANSPORTATION MANAGEMENT", "AMERICAN MEDICAL RESPONSE", "ST. JOSEPH HEALTH",
     "FULGENT",
+    # the cd1 research read (2026-10-29): subsidiaries whose names carry no cue. Pediatria =
+    # Aveanna; Childrens Health Care Associates = the CHOP practice plan; REM = Sevita (the
+    # MENTOR Network); Home Care Delivered = a national supplier; Sleep Management = Viemed.
+    "PEDIATRIA", "CHILDRENS HEALTH CARE ASSOCIATES", "CHILDREN'S HEALTH CARE ASSOCIATES",
+    "CHILDREN'S HOSPITAL OF PHILADELPHIA", "REM NEW JERSEY", "SEVITA", "MENTOR NETWORK",
+    "HOME CARE DELIVERED", "SLEEP MANAGEMENT", "VIEMED",
 )
 _NATIONAL_NAMES_RE = re.compile(r"\b(?:" + "|".join(re.escape(n) for n in _NATIONAL_NAMES) + r")\b")
 
