@@ -634,13 +634,14 @@
  ],
  "tasks": [
   {
-   "key": "theory_screens_sweep",
-   "what": "Run the theory screens on the VM (every billing NPI ranked on definitive-drug-testing-on-everything and on urine-PCR-in-place-of-culture, national names and standing verdicts set aside), pack the folder and upload THEORY_SCREENS.md + the two csv files here for the read; then the court-record check on the top twenty candidates, then kill prompts on the top ten. Close when the read is back.",
+   "key": "screen_kill_round",
+   "what": "The twelve screen kill prompts (ERSO, Lab24, Southwest Labs, Appalachian, Emerald National, Combined Physicians Lab, Qualitox, Nepenthe, Principle Labs, American Forensic, CareNexa, Medical Diagnostic Laboratories) are written under enforcement/screen_kill/. Dispatch spends credits and runs only on the operator's word; then poll, pull attachments, pack the text and upload for the read. Close when the read is back.",
    "added": "2026-10-29",
    "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.theory_screens --out /data/medicaid/enforcement/theory_screens && cd /data/medicaid/enforcement && tar czf /home/ubuntu/theory_screens.tar.gz theory_screens\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/theory_screens.tar.gz C:\\Users\\treyr\\Downloads\\theory_screens.tar.gz",
-    "python -m src.reminders --done-task theory_screens_sweep"
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem C:\\Users\\treyr\\Downloads\\screen_kill_prompts.jsonl ubuntu@3.17.37.139:/data/medicaid/enforcement/screen_kill_prompts.jsonl",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && mkdir -p /data/medicaid/enforcement/screen_kill && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill --dispatch-file /data/medicaid/enforcement/screen_kill_prompts.jsonl\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill --pull-attachments && cd /data/medicaid/enforcement && tar czf /home/ubuntu/screen_kill_text.tar.gz --exclude='*.zip' --exclude='*.pdf' screen_kill\"",
+    "python -m src.reminders --done-task screen_kill_round"
    ]
   },
   {
@@ -1725,6 +1726,11 @@
    ],
    "closed_on": "2026-10-28",
    "closed_note": "all six completed 2026-10-28 17:27 UTC (--poll-only); the read is task cd1_dossier_read"
+  },
+  {
+   "key": "theory_screens_sweep",
+   "closed": "2026-10-29",
+   "note": "first sweep read: 83 definitive candidates, 12 urine-PCR; 12 clean names prompted"
   }
  ]
 }

@@ -2165,6 +2165,33 @@ first, then paste" above every move/done block.
   owners editions and is read as a replication, never as a list. Next screens to register
   when their inputs are in the fact: worthless services (nursing homes) and hospice
   ineligibility, the two shapes the model has validated on real cases.
+  THE FIRST SWEEP READ (2026-10-29): 83 candidates on definitive_reflex (4,360 numbers bill the
+  codes; 1,411 hospital, 337 national, 1,718 other provider types set aside; the verdict
+  name-match caught sixteen rows, all real), 12 on uti_pcr_reflex. Court records on the top
+  twenty-one plus the case file settled nine without a research credit: Precision Toxicology
+  (2024 DOJ, CIA), Radeas (2022 DOJ + NC, CIA), Aspirar (2023), Patients Choice of Indiana
+  ($9.62M), Mako (NC 2024), Pacific Toxicology (2024), Labtech (plea 2026) public; Medscan
+  enforcement-adjacent; Equaltox in bankruptcy. Twelve clean names got kill prompts
+  (enforcement/screen_kill/: ERSO, Lab24, Southwest Labs, Appalachian, Emerald National,
+  Combined Physicians Lab, Qualitox, Nepenthe, Principle Labs, American Forensic, CareNexa,
+  and Medical Diagnostic Laboratories on the urine-PCR theory). RULES: the court-record
+  search refuses one name in seven; a refused name reruns alone with --name-gap 8; a
+  case-file grep needs word boundaries (a loose pattern on "erso" returned every "person");
+  public-health labs under STATE OF / CITY OF / COUNTY names need a government status in the
+  screen (next edit). TRUETOX (the 2026-10-27 custom prompt, read 2026-10-29): ALIVE and the
+  first SIU packet (`TRUETOX_SIU_PACKET_2026-10-29.md` under enforcement/pi_reports/truetox/,
+  never git). The NJ comptroller's 2021 audit ($24.1M sought for 2015 to mid-2018) is the
+  roadmap: Medicaid charged $1,100-$1,500 where other clients paid $3-$8, per-client blanket
+  panels with definitive testing regardless of the screen, 28 of 82 episodes without a
+  documented definitive order, specimen-validity unbundling, free staff testing and
+  sponsorships to clinics; contested, no public decision or settlement; no NY or federal
+  action; the company operates (NPI active, 2026 plaintiff, about 36 staff) with the lab
+  director gone July 2025 and the president gone April 2026; 13 completed former tenures
+  found by role (sales 4, lab 5, director 2, compliance 1, courier 1, billing 0). A state
+  audit is not a federal report under the post-2010 bar and NY 2018-2024 claims are different
+  transactions; counsel's call. The three 2026-10-27 custom prompts DID go (truetox_next,
+  morrison_accusation, andes_next; the poll loop line failed on a literal variable); Morrison
+  and Andes added nothing to the kill-round verdicts.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

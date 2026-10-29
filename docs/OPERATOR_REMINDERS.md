@@ -24,12 +24,13 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
-- [ ] **theory_screens_sweep** — Run the theory screens on the VM (every billing NPI ranked on definitive-drug-testing-on-everything and on urine-PCR-in-place-of-culture, national names and standing verdicts set aside), pack the folder and upload THEORY_SCREENS.md + the two csv files here for the read; then the court-record check on the top twenty candidates, then kill prompts on the top ten. Close when the read is back. (added 2026-10-29)
+- [ ] **screen_kill_round** — The twelve screen kill prompts (ERSO, Lab24, Southwest Labs, Appalachian, Emerald National, Combined Physicians Lab, Qualitox, Nepenthe, Principle Labs, American Forensic, CareNexa, Medical Diagnostic Laboratories) are written under enforcement/screen_kill/. Dispatch spends credits and runs only on the operator's word; then poll, pull attachments, pack the text and upload for the read. Close when the read is back. (added 2026-10-29)
 
 ```bat
-ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.theory_screens --out /data/medicaid/enforcement/theory_screens && cd /data/medicaid/enforcement && tar czf /home/ubuntu/theory_screens.tar.gz theory_screens"
-scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/theory_screens.tar.gz C:\Users\treyr\Downloads\theory_screens.tar.gz
-python -m src.reminders --done-task theory_screens_sweep
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem C:\Users\treyr\Downloads\screen_kill_prompts.jsonl ubuntu@3.17.37.139:/data/medicaid/enforcement/screen_kill_prompts.jsonl
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && mkdir -p /data/medicaid/enforcement/screen_kill && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill --dispatch-file /data/medicaid/enforcement/screen_kill_prompts.jsonl"
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/screen_kill --pull-attachments && cd /data/medicaid/enforcement && tar czf /home/ubuntu/screen_kill_text.tar.gz --exclude='*.zip' --exclude='*.pdf' screen_kill"
+python -m src.reminders --done-task screen_kill_round
 ```
 
 - [ ] **omni_ruling_watch** — Re-check the ruling on the government's motion to dismiss the relator's complaint in United States ex rel. Omni Healthcare v. Thermo Fisher Scientific et al., N.D. Tex. 3:22-cv-01710 (docket 71053664). Accu Reference and Wellspring USA (Genesis) are named defendants on a urine-PCR theory (12 pct / 4 pct of their Medicaid dollars); HealthTrackRx under its old name too. While the case is pending a later case on the same facts is barred; our theories are different conduct and stay pursue. If the motion is granted, note the date in the verdicts file reasons. Monthly until ruled. (added 2026-10-29)
