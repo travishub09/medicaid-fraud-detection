@@ -56,7 +56,7 @@ def overlap(matrix: Path, listing: Path, top: int = 250, rank_col: str | None = 
     counts = {"top": int(top), "listed": n}
     for t in TAGS + ("any_case",):
         counts[t] = int(df[t].sum())
-    counts["open_only"] = int(((df["charged_case"] == 1) | (df["docket_case"] == 1)) & (df["doj_case"] == 0)).sum() if n else 0
+    counts["open_only"] = int((((df["charged_case"] == 1) | (df["docket_case"] == 1)) & (df["doj_case"] == 0)).sum()) if n else 0
     return df, counts
 
 
