@@ -181,10 +181,11 @@ ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C
 python -m src.reminders --done-task freeze_v25
 ```
 
-- [ ] **owners_2023_editions** — THE 2023-12 FREEZE HAS NO PRE-CUTOFF ALL-OWNERS EDITION (the 2026-10-26 data scan: 'owners: every edition is after 2023-12 or undated'): v26 runs without ownership turnover and with thinner owner edges. The unlock is the archived December-2023 (or nearest earlier) All-Owners editions for the six dataset families, saved into owners_prior/ with a dated name the picker reads (e.g. <family>_2023-12.csv). Where: data.cms.gov, each 'All Owners' dataset (Hospital / SNF / Home Health / Hospice / FQHC-RHC / Clinical Laboratory) -> 'Dataset history' / previous versions -> the 2023-12 (or 2023-11) release -> Download CSV. Save path: C:\Users\treyr\OneDrive\Desktop\data\owners_prior\<family>_2023-12.csv (the sync brings owners_prior/ to the VM). A v27 regrade on the second freeze then picks them up (the as-of graph rebuild: --rebuild-graph). DOWNLOAD FIRST, then paste the done line. (added 2026-10-26)
+- [ ] **owners_2023_editions** — DOWNLOADED BY JOSH (2026-10-27, owners_2023.zip, six files: hospital 2023-12-01 snapshot, SNF 2023-12-01, HHA 2023-10-02, hospice 2023-10-02, FQHC 2023-11-01, RHC 2023-11-01; no Clinical Laboratory All Owners dataset exists on data.cms.gov, so no lab file, which is correct). The picker now reads his short names (bundle 423 maps snf/hha/hospice/hospital/fqhc/rhc onto the CMS dataset tokens), so the files go in UNCHANGED under preclean\owners_prior\. Line 1 extracts the zip there on the laptop (Windows tar); OneDrive syncs; line 2 pulls preclean to the VM and lists the folder; line 3 is the proof-guarded close. Then v27 = the 2023-12 export again with --rebuild-graph (ownership_turnover and the owner edges at the second freeze, plus the hospice-edition fix). (added 2026-10-26)
 
 ```bat
-REM download first, then:
+cd /d C:\Users\treyr\OneDrive\Desktop\data\preclean && (if not exist owners_prior mkdir owners_prior) && tar -xf C:\Users\treyr\Downloads\owners_2023.zip -C C:\Users\treyr\OneDrive\Desktop\data\preclean\owners_prior --strip-components=1 && dir C:\Users\treyr\OneDrive\Desktop\data\preclean\owners_prior
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh down-preclean 2>&1 | tail -3 && ls -la /data/medicaid/preclean/owners_prior/ | tail -12"
 python -m src.reminders --done owners_2023_editions
 ```
 

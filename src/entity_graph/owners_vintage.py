@@ -84,11 +84,19 @@ def load_owner_pairs(folder: str | Path) -> tuple[pd.DataFrame, str]:
 
 
 _DATASET_RE = re.compile(r"([A-Za-z]+)_All_Owners", re.I)
+# a short family token at the front of the name (the archived 2023 editions arrived as
+# snf_2023-12.csv / hha_2023-10.csv ...; 2026-10-29) maps to the SAME token the CMS download
+# names yield under _DATASET_RE, so both namings chain in one per-dataset ladder
+_SHORT_FAMILY = {"hospital": "HOSPITAL", "snf": "FACILITY", "hha": "AGENCY", "hospice": "HOSPICE",
+                 "fqhc": "CENTER", "rhc": "CLINIC", "lab": "LABORATORY", "laboratory": "LABORATORY"}
 
 
 def _dataset_of(name: str) -> str:
     m = _DATASET_RE.search(name)
-    return m.group(1).upper() if m else "OWNERS"
+    if m:
+        return m.group(1).upper()
+    head = re.split(r"[._\-\s]", Path(name).stem, maxsplit=1)[0].lower()
+    return _SHORT_FAMILY.get(head, "OWNERS")
 
 
 def _read_pairs(p: Path) -> pd.DataFrame | None:

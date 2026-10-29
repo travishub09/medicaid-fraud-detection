@@ -574,3 +574,20 @@ def test_expectations_allow_signed_deltas_but_catch_broken_ones():
     assert "opioid_claim_share_slope" not in flagged
     assert "bad_share_yoy" in flagged
     assert (f.loc[f["scope"] == "bad_share_yoy", "check"] == "delta_out_of_bounds").all()
+
+
+def test_short_family_tokens_chain_with_the_cms_download_names():
+    """The archived 2023 editions arrived as snf_2023-12.csv / hha_2023-10.csv (2026-10-29); the
+    per-dataset ladder must file them under the same token the CMS names yield, or every family
+    would pool into one 'OWNERS' chain."""
+    from src.entity_graph.owners_vintage import _dataset_of
+    pairs = [("snf_2023-12.csv", "Skilled_Nursing_Facility_All_Owners_2026.06.01.csv"),
+             ("hha_2023-10.csv", "Home_Health_Agency_All_Owners_2026.06.01.csv"),
+             ("hospice_2023-10.csv", "Hospice_All_Owners_2026.06.01.csv"),
+             ("hospital_2023-12.csv", "Hospital_All_Owners_2026.06.01.csv"),
+             ("fqhc_2023-11.csv", "Federally_Qualified_Health_Center_All_Owners_2026.06.01.csv"),
+             ("rhc_2023-11.csv", "Rural_Health_Clinic_All_Owners_2026.06.01.csv")]
+    for short, cms in pairs:
+        assert _dataset_of(short) == _dataset_of(cms), (short, cms)
+    assert len({_dataset_of(s) for s, _ in pairs}) == 6
+    assert _dataset_of("something_2023-01.csv") == "OWNERS"
