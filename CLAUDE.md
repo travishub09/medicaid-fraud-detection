@@ -2324,6 +2324,40 @@ first, then paste" above every move/done block.
   2026-10-29 (seven business days; task nj_amdc_opra). RULE: a packet's field card is written so
   the investigator can act on it the same week; a records request runs beside the card, never ahead
   of it, unless the card's reading depends on the file (Totowa, Forever Young, Golden).
+  THE THIRD TRACK, BUILT AND GRADED IN ONE DAY (2026-10-29, before the Brad call): three more
+  visit-decided screens in `theory_screens` (ambulance_repetitive: A0428 / A0426 at dialysis
+  intensity with few emergency runs, taxonomy 3416; nemt_fleet: T2001-T2005 / A0080-A0140 legs a
+  day >= 100, taxonomy 34xx with brokers 347E set aside; dme_mailbox: the E / K0 / L / A4-A9 / B4
+  families on 332B suppliers whose practice line is a mailbox or a SUITE shared by 5+ organizations)
+  with `numerator_like` code families, `_address_table` (the one mailbox regex, in DuckDB, over
+  provider_dim), `address_basis`, mailbox-first ranking, `--screen a,b,c` writing ONE report, and
+  `_name_sql` (the VM's provider_dim fills both name columns with the same string: the first run
+  doubled every name and the docket search ran on the doubles). READ: ambulance = six companies
+  under $2.6M over seven years (a Medicare shape; dry at case size); DME = no mailbox above $1M,
+  the suite rule left three small suppliers (dry; Medicare); transport = 120 candidates, the file's
+  lines ARE trips (median 11 a day), the three largest were brokers under plain taxonomies
+  (ModivCare $2.65B, Access2Care, Call the Car: national list). TEN KILL PROMPTS, ten answers the
+  same evening: DEAD America West (a 99-vehicle fleet on record), All Town (a Kaiser network
+  supplier), TransCita PR (260 vehicles), Medi Trans LA (a broker since 2021 per its own LDH
+  proposal), the NM individual number (it bills for a certified carrier with a real fleet); HOLD
+  Safeway NM (a June 2026 federal civil-forfeiture complaint against about $2M of its bank funds:
+  the screen's highest-intensity pick is a company the government is already acting on); PURSUE
+  Medichair CA, Texass TX, Big Wheel NC (no fleet / broker / network record: one day at the base
+  each); WATCH Salute TX (contract drivers in their own cars; Texas pays per authorized seat).
+  Round score 10 -> 3 + 1 hold. LESSONS: (1) every agent attacked the HHS note that
+  TOTAL_CLAIM_LINES counts claim lines, not claims; our numerator excludes mileage / wait codes and
+  a leg can carry 2 units on one line, so lines UNDER-count legs; the premise stands but the
+  prompt must say so; (2) the transport card is weaker than the day-care card: a contractor-car
+  model has no fleet at any base and a broker's number carries a network, so a broker / network
+  check (the state NEMT program structure, the MCO network lists) goes BEFORE a transport prompt;
+  (3) CourtListener throttled the day's third batch (HTTP 429 on every name); a refused batch
+  reruns later with `--name-gap 12`, never back to back. `list_case_overlap` (the operator's
+  question 'how many of the top 250 have open FCA cases'): v26's 250 picked with 2023 data carry 7
+  resolved government cases today (about 1 by chance), 0 open dockets; the current-day list
+  carries 1 (it is built to leave caught companies out: the rollup scores non-excluded members).
+  The deck for Brad (six slides, plain words, no jargon: 'shape' -> 'pattern', 'earmark' -> 'money
+  set aside') is a chat file; the table-row IDs must be unique per table (duplicated <a:tr> copies
+  carried the same a16:rowId and PowerPoint edited the wrong cell).
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
