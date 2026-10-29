@@ -634,9 +634,49 @@
  ],
  "tasks": [
   {
+   "key": "capacity_rosters_next_states",
+   "added": "2026-10-29",
+   "what": "The per-diem screen is decisive only where a licensed-capacity roster is loaded (NJ and NY today). 6,087 per-diem billers have no roster; by dollars the next states are NY ($5.9B on numbers the NY roster does not cover: adult day health and ALP lists), CA ($5.3B: CDSS community care licensing export + CDPH ADHC), MO ($4.8B: DMH licensed residential and day habilitation), NJ ($3.6B beyond the AMDC roster: DHS residential), ME ($3.3B), CO ($2.9B), MN ($2.8B), AZ ($2.5B), KY ($2.3B), MA ($2.3B). Taxonomies carrying the money: 261Q adult day care, 3209 / 3206 residential, 251C day training, 3104 assisted living, 3245 residential treatment. One state per download session: the roster CSV with facility name, address and licensed capacity -> preclean/state_capacity/<ST>_<what>.csv, then the loader on the VM (task capacity_on_vm) and the sweep again. Download first, then paste.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.ingest_cms.licensed_capacity --help | head -30\"",
+    "python -m src.reminders --done-task capacity_rosters_next_states"
+   ]
+  },
+  {
+   "key": "mdl_code_split",
+   "added": "2026-10-29",
+   "what": "Medical Diagnostic Laboratories (NJ): $61.9M on the urine-PCR family (75 pct of its Medicaid dollars) but the family mixes 87798 (per organism, the UTI shape) with the stool-panel codes 87505-87507. The per-code split is the pi_facts top-codes table (one line, no credits). Read: if 87798 carries the money the Omni court-record read is next; if 87505-87507 do, the theory is a stool-panel question and the hold stands.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pi_facts --run-dir /data/medicaid/model_a/current_202610_cd1 --deep --npis 1750373908 --out-prefix pi_facts_mdl && grep -n -B2 -A25 -i 'top codes' /data/medicaid/model_a/current_202610_cd1/PI_FACTS_MDL.md | head -60\"",
+    "python -m src.reminders --done-task mdl_code_split"
+   ]
+  },
+  {
+   "key": "deactivated_billers_check",
+   "added": "2026-10-29",
+   "what": "Free: the attendant screen listed 55 billing numbers the NPPES file no longer carries (deactivated by mid-2026), $98M / $33M / $23M under the largest. A deactivation AFTER the last billed month is an ordinary closure; a deactivation BEFORE it is the Tier A billing_after_deactivation fact the cd1 contradictions report already computes. Grep the sixteen largest in cd1's contradictions files; a hit is a card, silence closes the item.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -h -E '1609156769|1245573443|1013441492|1861859613|1114450194|1518037274|1245403484|1538304514|1568689289|1962961425|1730735101|1689051153|1437112406|1992015986|1093135170|1801390133' /data/medicaid/model_a/current_202610_cd1/contradictions.csv /data/medicaid/model_a/current_202610_cd1/contradictions_setaside.csv | cut -c1-220 | head -40; echo exit $?\"",
+    "python -m src.reminders --done-task deactivated_billers_check"
+   ]
+  },
+  {
+   "key": "nj_amdc_kill",
+   "added": "2026-10-29",
+   "gated": true,
+   "what": "GATED (credits, four tasks): the kill prompts for the four New Jersey adult medical day care centers the per-diem screen ranked above licence (Bergen Adult Day Care 2.02x, 2nd Home Totowa 1.46x, Forever Young 1.33x, Golden 1.20x; court records clean on all four). The prompt asks for the DOH licence and every site under the owner, whether N.J.A.C. 8:43F lets a centre run two sessions a day, posted hours and bus routes, the comptroller / MFCU / DOH history, owners and their transport companies, size, formers by role. Save nj_amdc_prompts.jsonl (sent in chat 2026-10-29) to Downloads first. The PI card that does not wait for research: a weekday count at the door of Bergen Adult Day Care, Palisades Park, against a licence of 60.",
+   "commands": [
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem C:\\Users\\treyr\\Downloads\\nj_amdc_prompts.jsonl ubuntu@3.17.37.139:/data/medicaid/enforcement/nj_amdc_prompts.jsonl",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && mkdir -p /data/medicaid/enforcement/nj_amdc && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/nj_amdc --dispatch-file /data/medicaid/enforcement/nj_amdc_prompts.jsonl\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/nj_amdc --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/nj_amdc --pull-attachments && cd /data/medicaid/enforcement && tar czf /home/ubuntu/nj_amdc_text.tar.gz --exclude='*.zip' --exclude='*.pdf' --exclude='*.docx' nj_amdc\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/nj_amdc_text.tar.gz C:\\Users\\treyr\\Downloads\\nj_amdc_text.tar.gz",
+    "python -m src.reminders --done-task nj_amdc_kill"
+   ]
+  },
+  {
    "key": "track2_sweep",
    "added": "2026-10-29",
-   "what": "THE SECOND TRACK, second pass (bundle 420 fixes the first sweep's read: the per-diem candidates are the rows ABOVE licensed capacity only, rows without a roster are 'needs_capacity'; the attendant candidates are aide-taxonomy individuals only, a physician's or agency's number in the servicing field is 'not_aide', a number NPPES does not carry is 'not_in_nppes' (16 Luhn-valid numbers carrying $98M to $2M each: the deactivation-report check), 1999999984 is a placeholder; the court-record check for aides runs on the AGENCIES behind them, agencies_attendant_hours.txt). Needs bundle 420 merged and pulled. Line 1 re-runs the sweep; line 2 prints the two tables; line 3 the court-record check on the per-diem names (the NJ adult medical day care centers over capacity) and on the agencies; line 4 the code mix and the 'whose number' read on the NPPES-missing servicing numbers; then pack and upload.",
+   "what": "SECOND TRACK, READ 2026-10-29 (the second sweep): per-diem = 4 candidates, the four NJ adult medical day care centers above licence (task nj_amdc_kill), 36 NJ/NY rows under capacity, 6,087 rows with no roster (task capacity_rosters_next_states); attendant = the seven 'aides' were agencies enrolled under a person's own number (servicing = billing; status self_billed in bundle 421), so this file carries no aide-level identity for personal care and the attendant card needs EVV or claims-level data; 55 billing numbers not in NPPES (task deactivated_billers_check). Close with --done-task once read.",
    "commands": [
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.theory_screens --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --verdicts /data/medicaid/model_a/pursuit_verdicts.csv --out /data/medicaid/enforcement/theory_screens\"",
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -n -A 40 '(`perdiem_occupancy`)' /data/medicaid/enforcement/theory_screens/THEORY_SCREENS.md | grep -E '^[0-9]+[-:](\\||Status|Peak|###)' | head -60; echo ======; grep -n -A 80 '(`attendant_hours`)' /data/medicaid/enforcement/theory_screens/THEORY_SCREENS.md | grep -E '^[0-9]+[-:](\\||Status|Peak|###)' | head -90\"",

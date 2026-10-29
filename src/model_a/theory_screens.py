@@ -179,9 +179,11 @@ SCREENS: dict[str, Screen] = {
         # worker or agency number in the servicing field is the 'whose number went on the claim' shape
         # (the attending-concentration lens), listed under not_aide, never ranked as an aide's day.
         candidate_taxonomies=("373H", "3747", "374U", "376J", "3725", "3726", "376K", "374T"),
-        report_statuses=("not_in_nppes", "not_aide", "placeholder"),
+        report_statuses=("self_billed", "not_in_nppes", "not_aide", "placeholder"),
         innocent=("the file's line is a client-day, not a 15-minute unit (read the distribution line under the "
                   "table first: a median peak near 1 means lines are days and the rule re-runs on clients a day)",
+                  "the servicing field is the biller's own number (most states' personal-care claims carry no aide "
+                  "identity in this file; the aide's day lives in the state's EVV aggregator or claims-level data)",
                   "a live-in or 24-hour shared-care arrangement billed under one aide's number by rule",
                   "an agency that puts its supervisor's or owner's NPI in the servicing field for every aide "
                   "(then the number is the agency's, and the question is who rendered)",
@@ -239,7 +241,8 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
                SUM(CASE WHEN {code} IN (SELECT hcpcs FROM flag_codes) THEN {lines} ELSE 0 END) lines_flag,
                COUNT(DISTINCT {month}) months_num,
                MIN({month}) first_month, MAX({month}) last_month,
-               COUNT(DISTINCT CAST(billing_npi AS VARCHAR)) n_billers
+               COUNT(DISTINCT CAST(billing_npi AS VARCHAR)) n_billers,
+               SUM(CASE WHEN CAST(billing_npi AS VARCHAR) = CAST({key} AS VARCHAR) THEN {lines} ELSE 0 END) lines_self
         FROM read_parquet('{p}')
         WHERE {key} IS NOT NULL AND {code} IN (SELECT hcpcs FROM num_codes)
         GROUP BY 1""")
@@ -273,6 +276,7 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
                CASE WHEN n.pm_num > 0 THEN n.lines_num / n.pm_num END AS intensity,
                CASE WHEN n.lines_num > 0 THEN n.lines_flag / n.lines_num END AS flag_share,
                COALESCE(d.paid_den, 0) AS paid_den, n.months_num, n.first_month, n.last_month, n.n_billers,
+               CASE WHEN n.lines_num > 0 THEN n.lines_self / n.lines_num END AS self_share,
                (SELECT yr FROM byyear b WHERE b.npi = n.npi ORDER BY paid DESC, yr DESC LIMIT 1) AS peak_year,
                (SELECT MAX(paid) FROM byyear b WHERE b.npi = n.npi) AS peak_year_paid,
                (SELECT paid FROM byyear b WHERE b.npi = n.npi
@@ -372,6 +376,8 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("below_floor"); reason.append(f"numerator dollars under {screen.min_paid_num:,.0f}")
         elif screen.candidate_taxonomies and tx and not any(tx.startswith(p) for p in screen.candidate_taxonomies):
             status.append("not_aide"); reason.append(f"taxonomy {tx}: an individual's number at agency scale in the servicing field (whose number went on the claim)")
+        elif screen.grain == "servicing" and float(getattr(r, "self_share", 0) or 0) >= 0.9:
+            status.append("self_billed"); reason.append("the servicing field is the biller's own number (an agency enrolled under a person's number): the aide grain is absent for these claims")
         elif screen.capacity_rule and screen.min_occupancy is not None and bool(getattr(r, "capacity_known", False)) \
                 and pd.isna(getattr(r, "licensed_capacity", pd.NA)):
             status.append("needs_capacity"); reason.append("no licensed capacity on file for this number (the roster for its state is not loaded)")

@@ -2261,6 +2261,26 @@ first, then paste" above every move/done block.
   table); NATIONAL MENTOR HEALTHCARE + REM <STATE> (Sevita) on the national list. RULE: a per-diem
   card exists only where a licence is on file; the state rosters (task capacity_on_vm) are the
   unlock, one state at a time, NJ first because the shape is already there.
+  THE SECOND TRACK-2 SWEEP READ (2026-10-29, bundle 421): per-diem under the occupancy rule = FOUR
+  candidates, all New Jersey adult medical day care (S5102; Bergen 2.02x on a 60 licence, 2nd Home
+  Totowa 1.46x, Forever Young 1.33x, Golden 1.20x; the calendar-day denominator UNDERSTATES a
+  weekday program's census, so the ratio is conservative; the two-session day is the innocent
+  explanation to kill); court records clean on all four; 36 NJ / NY rows under capacity (Broadway
+  AMDC 0.94); 6,087 numbers with no roster, led by NY $5.9B / CA $5.3B / MO $4.8B / NJ $3.6B / ME
+  $3.3B on 261Q adult day, 3209 / 3206 residential, 251C day training and 3104 assisted-living
+  taxonomies (task capacity_rosters_next_states: one state roster per download session is the
+  unlock). The kill prompts for the four are written (nj_amdc_prompts.jsonl, gated); the PI card
+  that needs no research is a weekday count at the door against the licence. ATTENDANT: the seven
+  aide-taxonomy 'candidates' were agencies enrolled under a person's own number (servicing = billing,
+  $38M under one Mississippi homemaker's number): `self_billed` status (lines_self / lines_num >=
+  0.9, listed not ranked). RULE: this spending file carries no aide-level identity for personal care
+  in most states; the attendant-hours card needs the state EVV aggregator or claims-level data, and
+  the screen stays registered as the probe that says so. The 55 not_in_nppes rows are BILLING numbers
+  deactivated by mid-2026 (bills_own_number_only, $113M under the largest): a deactivation after the
+  last billed month is a closure, before it is the Tier A fact cd1's contradictions already compute
+  (task deactivated_billers_check greps them). MDL: the per-code split (87798 vs 87505-87507) is a
+  pi_facts line (task mdl_code_split). Reliability so far: labs 20 picks -> 4 packets + 5 survivors;
+  per-diem 4 picks -> 4 alive after court records, the cheapest field check of any theory.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

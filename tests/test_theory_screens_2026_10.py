@@ -117,6 +117,7 @@ def _perdiem_fact(tmp: Path) -> tuple[Path, Path, Path]:
         add("3000000001", "4000000003", "T1019", m, 90_000, 100 * days, 9)    # a physician's number as the aide
         add("3000000001", "4000000004", "T1019", m, 90_000, 100 * days, 9)    # a number NPPES does not carry
         add("3000000001", "1999999984", "T1019", m, 90_000, 100 * days, 9)    # a filler number
+        add("4000000005", "4000000005", "T1019", m, 300_000, 400 * days, 30)   # an agency under a person's number
     fact = tmp / "spending_fact.parquet"
     pd.DataFrame(rows).to_parquet(fact, index=False)
     dim = pd.DataFrame([
@@ -128,6 +129,7 @@ def _perdiem_fact(tmp: Path) -> tuple[Path, Path, Path]:
         {"npi": "4000000002", "org_legal_name": "", "provider_name": "AIDE, B", "entity_type": "1", "addr_state": "TX", "taxonomy_code": "373H00000X"},
         {"npi": "2000000003", "org_legal_name": "NOROSTER HOUSE LLC", "provider_name": "", "entity_type": "2", "addr_state": "PA", "taxonomy_code": "320800000X"},
         {"npi": "4000000003", "org_legal_name": "", "provider_name": "DOCTOR, D", "entity_type": "1", "addr_state": "NY", "taxonomy_code": "207R00000X"},
+        {"npi": "4000000005", "org_legal_name": "", "provider_name": "OWNER, O", "entity_type": "1", "addr_state": "MS", "taxonomy_code": "376J00000X"},
     ])
     dimp = tmp / "provider_dim.parquet"
     dim.to_parquet(dimp, index=False)
@@ -163,7 +165,9 @@ def test_attendant_hours_screens_the_servicing_npi_across_agencies(tmp_path):
     fact, dim, cap = _perdiem_fact(tmp_path)
     df = ts.run_screen(fact, ts.SCREENS["attendant_hours"], provider_dim=dim, capacity=cap)
     by = df.set_index("npi")
-    assert set(by.index) == {"4000000001", "4000000002", "4000000003", "4000000004", "1999999984"}
+    assert set(by.index) == {"4000000001", "4000000002", "4000000003", "4000000004", "1999999984", "4000000005"}
+    assert by.loc["4000000005", "status"] == "self_billed"       # servicing = the biller's own number
+    assert abs(float(by.loc["4000000001", "self_share"])) < 1e-9
     assert by.loc["4000000003", "status"] == "not_aide"          # a physician's number in the servicing field
     assert by.loc["4000000004", "status"] == "not_in_nppes"      # a number the NPPES file does not carry
     assert by.loc["1999999984", "status"] == "placeholder"
