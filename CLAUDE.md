@@ -2083,6 +2083,29 @@ first, then paste" above every move/done block.
   Pediatria and CHCA; Total Wellness Centers (MA, $117M) is the one new candidate. The plain
   `--poll` through build() died silently three times in an ssh session; `--poll-only` and a
   tmux-logged `--operator-book --poll` are the way (40 minutes of scoring).
+  THE THERMO FISHER DOCKET (2026-10-29, the kill round's court-record check): Accu Reference
+  and Wellspring USA d/b/a Genesis (and HealthTrackRx under its old name AIT) are named
+  defendants in U.S. ex rel. Omni Healthcare v. Thermo Fisher Scientific, N.D. Tex.
+  3:22-cv-01710 (docket 71053664), a serial relator's 2022 qui tam against Thermo Fisher and
+  twenty labs on ONE theory: urine-infection PCR panels on Thermo Fisher's kit as medically
+  unnecessary, won by client-bill pricing and copay waivers. The government intervened for
+  the purpose of dismissal (Aug 2025), the dismissal was vacated on reconsideration (Jul
+  2026), the motion is pending before a judge assigned 2026-10-13; the complaint is free on
+  the docket archive. READ: the urine-PCR family (87798 / 87505-07 / 87801 / 87481-87661) is
+  12 percent of Accu's Medicaid dollars and 4 percent of Genesis's (org_find --codes), so the
+  first-to-file bar (same material facts, while pending) and the public-disclosure bar
+  (substantially the same allegations) do not reach our theories (Accu: unbundling + daily
+  volume; Genesis: definitive drug testing after its 2023 settlement); both stay pursue with
+  the case cited and the dossier case size reduced by those shares; task omni_ruling_watch
+  re-checks the ruling monthly. RULES: a first-to-file hit is read by CONDUCT, never by name
+  (a party on another relator's docket is a scoping fact, not a kill); the parties column of
+  first_to_file.csv and the `parties` / `docket-entries` / `recap-documents` API endpoints
+  (token in ~/.medicaid_env) give the case in three ssh lines without PACER; CourtListener and
+  Law360 are not reachable from the cloud session, so the VM runs the lines. The same check
+  found Morrison clean on both name forms, Gravity (an individual plaintiff, E.D. Ky.) and
+  National Labs (a 2018 qui tam dismissed in eight months, likely a name collision) unaffected,
+  Vantage clean, the Andes hit a different person, and TrueTox v. Navis Clinical Laboratories
+  (E.D.N.Y. 2026-07, contract) a public file of TrueTox's own statements for its prompt.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-10-28. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-10-29. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -23,6 +23,13 @@ Nothing due. Good.
 - leie — due 2026-11-21: OIG LEIE exclusion list (THE label source — new bans are training labels)
 
 ## STANDING TASK QUEUE
+
+- [ ] **omni_ruling_watch** — Re-check the ruling on the government's motion to dismiss the relator's complaint in United States ex rel. Omni Healthcare v. Thermo Fisher Scientific et al., N.D. Tex. 3:22-cv-01710 (docket 71053664). Accu Reference and Wellspring USA (Genesis) are named defendants on a urine-PCR theory (12 pct / 4 pct of their Medicaid dollars); HealthTrackRx under its old name too. While the case is pending a later case on the same facts is barred; our theories are different conduct and stay pursue. If the motion is granted, note the date in the verdicts file reasons. Monthly until ruled. (added 2026-10-29)
+
+```bat
+ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "set -a && source ~/.medicaid_env && set +a && curl -s -H 'Authorization: Token '$COURTLISTENER_TOKEN 'https://www.courtlistener.com/api/rest/v4/docket-entries/?docket=71053664&order_by=-date_filed' | python3 -m json.tool | grep -E 'date_filed|description' | head -12"
+python -m src.reminders --done-task omni_ruling_watch
+```
 
 - [ ] **cd1_dossier_read** — READ THE SIX cd1 RESEARCH ANSWERS (all completed 2026-10-28 17:27 UTC). After merge 412 + the VM pull: pull the attachments before the signed links expire, re-render the operator-book dossier with the research folded in (a few minutes of scoring), tar + scp + upload cd1_dossier.tar.gz to the chat; Claude reads the six against the v26 bar and the operator records a verdict per name with `pursuit_verdicts --add`. (added 2026-10-28)
 
