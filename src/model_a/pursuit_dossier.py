@@ -577,6 +577,11 @@ _NATIONAL_NAMES = (
     # Minnesota hospital system on the shared-building rule
     "TANDEM DIABETES", "OPTUMRX", "BYRAM HEALTHCARE", "FAIRVIEW HEALTH", "COOK CHILDRENS", "COOK CHILDREN'S",
     "ACTIVSTYLE", "AMERITA",
+    # the transport screen's first run (2026-10-29): the national NEMT brokers and the broker-scale
+    # platforms enrolled under plain transport taxonomies (a broker's number carries a network's trips),
+    # and a national wheelchair-seating chain (Numotion's predecessor name)
+    "MODIVCARE", "ACCESS2CARE", "CALL THE CAR", "SECURE TRANSPORTATION", "EPICMD", "VEYO", "LOGISTICARE",
+    "UNITED SEATING AND MOBILITY", "NUMOTION",
     # v26 rebuilt pick (2026-10-26): three laboratory ARMS of national or hospital-system
     # owners enrolled under their own names (Sunrise = Sonic Healthcare USA, LabOne = Quest
     # Diagnostics, ACM = Rochester Regional Health). A subsidiary's name carries no cue.
