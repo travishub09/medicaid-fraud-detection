@@ -31,6 +31,12 @@ ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C
 python -m src.reminders --done-task omni_ruling_watch
 ```
 
+- [ ] **sims_complaint_counsel** — Counsel pulls the Sims qui tam complaint against Accu Reference (D.N.J., filed 2021-03-04, declined, dismissed without prejudice 2023-06-15; CourtListener docket 67387905, no free copy) from PACER and reads it against the definitive-drug-testing theory before any Accu write-up: a declined, unsealed complaint on the same conduct is a public disclosure. Close when counsel reports the theory it pleaded. (added 2026-10-29)
+
+```bat
+python -m src.reminders --done-task sims_complaint_counsel
+```
+
 - [ ] **v21_run** — FINISHED 2026-10-23 00:51 UTC; packet read; verdict HOLD on Jaccard only (read-out in docs/). Close. (added 2026-10-22)
 
 ```bat

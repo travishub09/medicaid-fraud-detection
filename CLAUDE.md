@@ -2106,6 +2106,44 @@ first, then paste" above every move/done block.
   National Labs (a 2018 qui tam dismissed in eight months, likely a name collision) unaffected,
   Vantage clean, the Andes hit a different person, and TrueTox v. Navis Clinical Laboratories
   (E.D.N.Y. 2026-07, contract) a public file of TrueTox's own statements for its prompt.
+  THE KILL ROUND (2026-10-29, six deep public-record prompts through pursuit_dossier
+  --dispatch-file in enforcement/kill_round, read with org_find --codes and pi_facts on the
+  cd1 fact): ANDES DEAD (the NY institutional claim's attending field IS the ordering
+  physician; NY statute PBH 3602, 42 CFR 440.70 and 10 NYCRR 763.5 let nurse practitioners
+  order home health aide services; the Housecalls group listed 8 NPs and 6 physicians in
+  the August 2023 state directory; the ordering physician may document a face-to-face
+  another clinician performed; the October 2023 wage step was delayed to January 2024; no
+  referral or financial tie to the five agencies, no 2023-24 patient transfer; the
+  Americare matter is wage parity, 1:17-cv-02938 E.D.N.Y. filed 2017-05-15 by LHCSA I/II/III
+  LLC, settlement Document 40 of 2025-12-17, the AOD binds Americare Inc. and its
+  principals and successors, not the certified agency: a physician NPI on orders for
+  patients his group's NPs managed is the PA-rule lesson again, no rate damages).
+  MORRISON WOUNDED, watch: the April 2026 board accusation is negligence and records, the
+  graft codes were invoice-priced By Report with a TAR, the two counties were about ninety
+  percent managed care so fee-schedule arithmetic was the wrong frame, the DOJ invoice case
+  is an Iowa physician, his own Medicare line shows debridements and no grafts (the grafts
+  sit with the four organizations he reassigned to). GRAVITY SET ASIDE (COVID testing under
+  state capacity contracts; the one FCA docket was against Med-Lake, declined and dismissed
+  2024, a lab Gravity's parent bought in 2026). THE THREE LABS ARE ONE SHAPE, definitive
+  drug testing on everything: Genesis FL 56 pct of $40.9M on G0480-83 at 2.7 definitive
+  panels per patient-month against 1 pct presumptive, peak 2024 AFTER the Nov 2023
+  settlement (which released Medicare conduct to Oct 2021 only), CO number 100 pct
+  definitive from 2024-02; National Labs 48 pct of $52.3M definitive with 305,658 definitive
+  against 299,949 presumptive lines at methadone programs (monthly testing is required by
+  rule; the definitive line is the theory); Accu 23 pct ($41.6M) definitive, G0483 the
+  largest drug code, plus 16 pct U0003 COVID (the impossible-day driver was the Jan 2022
+  COVID surge, innocent) and 12 pct urine PCR; chemistry components $78k, so the NJ panel
+  rule (N.J.A.C. 10:61-3.5(a)1) and the unbundling driver have nothing to bite on. Accu's
+  2019 state and 2022 OIG settlements were specimen-validity add-ons on the same
+  drug-testing line; a Sims qui tam (D.N.J. 3/4/2021, declined, dismissed without prejudice
+  2023-06-15, docket 67387905, an employee relator) is not free to read: counsel pulls it
+  before any Accu write-up (public-disclosure check). RULES: a kill verdict is read by
+  CONDUCT against OUR theory (the Andes agent killed the wrong theory and the law killed
+  ours; the Accu agent's unbundling rule was right and our dollars were elsewhere); the
+  code-mix line (org_find --codes, presumptive vs definitive, components vs panels) is run
+  BEFORE a research prompt is written, never after; a lab's shape is settled by pi_facts
+  top codes in one line. Verdicts file: Genesis and National Labs pursue (definitive
+  theory), Accu pursue pending the Sims read, Gravity / Vantage / Housecalls set aside.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
