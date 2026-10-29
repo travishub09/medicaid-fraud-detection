@@ -573,6 +573,10 @@ _NATIONAL_NAMES = (
     "KINGMAN HEALTHCARE", "SONORA QUEST",
     # v26 dossier (2026-10-26): two hospital systems and a national reference-lab chain
     "SANFORD", "STANFORD HEALTH", "EUROFINS",
+    # the DME screen's first run (2026-10-29): national equipment / pharmacy-benefit chains and a
+    # Minnesota hospital system on the shared-building rule
+    "TANDEM DIABETES", "OPTUMRX", "BYRAM HEALTHCARE", "FAIRVIEW HEALTH", "COOK CHILDRENS", "COOK CHILDREN'S",
+    "ACTIVSTYLE", "AMERITA",
     # v26 rebuilt pick (2026-10-26): three laboratory ARMS of national or hospital-system
     # owners enrolled under their own names (Sunrise = Sonic Healthcare USA, LabOne = Quest
     # Diagnostics, ACM = Rochester Regional Health). A subsidiary's name carries no cue.

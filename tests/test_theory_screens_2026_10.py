@@ -285,8 +285,8 @@ def test_dme_mailbox_reads_the_code_family_and_the_address(tmp_path):
          "addr_line1": "1234 Main St PMB 44", "addr_zip": "77002"},
         {"npi": "1000000032", "org_legal_name": "SUITE DME INC", "taxonomy_code": "332BX2000X",
          "addr_line1": "500 Commerce Pkwy Ste 210", "addr_zip": "77001"},
-        {"npi": "1000000033", "org_legal_name": "REAL STORE MEDICAL", "taxonomy_code": "332B00000X",
-         "addr_line1": "77 Oak Ave", "addr_zip": "77003"},
+        {"npi": "1000000033", "org_legal_name": "REAL STORE MEDICAL", "provider_name": "REAL STORE MEDICAL",
+         "taxonomy_code": "332B00000X", "addr_line1": "77 Oak Ave", "addr_zip": "77003"},
         {"npi": "1000000034", "org_legal_name": "CORNER PHARMACY", "taxonomy_code": "333600000X",
          "addr_line1": "9 Elm St PO Box 12", "addr_zip": "77004"},
         {"npi": "1000000035", "org_legal_name": "BIG CLINIC", "taxonomy_code": "207Q00000X",
@@ -299,9 +299,11 @@ def test_dme_mailbox_reads_the_code_family_and_the_address(tmp_path):
     assert st["1000000032"] == "candidate"
     assert st["1000000033"] == "address_clean"
     assert st["1000000034"] == "other_type"
+    # both name columns filled with the same string -> the name once, never doubled (2026-10-29)
+    assert df.loc[df["npi"] == "1000000033", "name"].iloc[0] == "REAL STORE MEDICAL"
     basis = dict(zip(df["npi"], df["address_basis"]))
     assert basis["1000000031"] == "mailbox"
-    assert basis["1000000032"].startswith("shared:7")        # six tenants + the supplier itself
+    assert basis["1000000032"].startswith("shared suite:7")  # six tenants + the supplier itself, in one suite
     # the mailbox ranks first even though the shared suite bills more
     assert int(df.loc[df["npi"] == "1000000031", "rank"].iloc[0]) == 1
     md = ts.to_markdown({"dme_mailbox": df})

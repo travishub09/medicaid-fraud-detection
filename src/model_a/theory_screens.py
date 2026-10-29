@@ -307,12 +307,23 @@ def _codes_table(con, name: str, codes) -> None:
     con.executemany(f"INSERT INTO {name} VALUES (?)", [(c.upper(),) for c in codes])
 
 
+def _name_sql(pc: list[str]) -> str:
+    """The display name from provider_dim: the organization's legal name when it is non-empty,
+    else the person's name. Never the two glued together (a provider table that fills both
+    columns with the same string doubled every name, and the docket search ran on the doubles)."""
+    parts = [f"NULLIF(TRIM(CAST({c} AS VARCHAR)), '')" for c in ("org_legal_name", "provider_name") if c in pc]
+    return "COALESCE(" + ", ".join(parts + ["''"]) + ")"
+
+
 def _num_pred(code: str, screen: Screen) -> str:
     """The numerator predicate: exact codes in num_codes, plus any LIKE families (a DME screen's
     numerator is a code family, not a list)."""
     parts = [f"{code} IN (SELECT hcpcs FROM num_codes)"]
     parts += [f"{code} LIKE '{pat.upper()}'" for pat in screen.numerator_like]
     return "(" + " OR ".join(parts) + ")"
+
+
+_UNIT_RE = r"(?i)\b(STE|SUITE|UNIT|APT|RM|ROOM|BLDG|FL|FLOOR|PMB|BOX)\b|#"   # a unit on the line: suite-level sharing
 
 
 def _address_table(con, provider_dim: Path) -> None:
@@ -328,7 +339,7 @@ def _address_table(con, provider_dim: Path) -> None:
                     "addr_distinct_orgs BIGINT, addr_npis BIGINT)")
         return
     zipc = "substr(CAST(addr_zip AS VARCHAR), 1, 5)" if "addr_zip" in pc else "''"
-    org = " || ' ' || ".join(f"COALESCE(CAST({c} AS VARCHAR), '')" for c in ("org_legal_name", "provider_name") if c in pc) or "''"
+    org = _name_sql(pc)
     pattern = "(?i)" + _MAILBOX.pattern
     con.execute(f"""
         CREATE OR REPLACE TEMP TABLE addr_all AS
@@ -341,12 +352,13 @@ def _address_table(con, provider_dim: Path) -> None:
         CREATE OR REPLACE TEMP TABLE addr_flags AS
         SELECT a.npi, a.line1 AS addr_line1,
                regexp_matches(a.line1, ?) AS addr_is_mailbox,
-               c.n_orgs AS addr_distinct_orgs, c.n_npis AS addr_npis
+               c.n_orgs AS addr_distinct_orgs, c.n_npis AS addr_npis,
+               regexp_matches(a.line1, ?) AS addr_has_unit
         FROM addr_all a
         JOIN (SELECT line1, zip5, COUNT(DISTINCT orgname) AS n_orgs, COUNT(*) AS n_npis
               FROM addr_all WHERE line1 <> '' GROUP BY 1, 2) c
           ON a.line1 = c.line1 AND a.zip5 = c.zip5
-        WHERE a.npi IN (SELECT npi FROM num)""", [pattern])
+        WHERE a.npi IN (SELECT npi FROM num)""", [pattern, _UNIT_RE])
 
 
 def _days_in_month_sql(month_expr: str) -> str:
@@ -450,8 +462,7 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
         ORDER BY n.paid_num DESC""").df()
     if provider_dim is not None and Path(provider_dim).exists() and len(df):
         pc = _cols(con, Path(provider_dim))
-        name = " || ' ' || ".join(f"COALESCE(CAST({c} AS VARCHAR), '')"
-                                  for c in ("org_legal_name", "provider_name") if c in pc) or "''"
+        name = _name_sql(pc)
         et = "CAST(entity_type AS VARCHAR)" if "entity_type" in pc else "NULL"
         st = "CAST(addr_state AS VARCHAR)" if "addr_state" in pc else "NULL"
         tx = "CAST(taxonomy_code AS VARCHAR)" if "taxonomy_code" in pc else "NULL"
@@ -488,14 +499,17 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
             df["occupancy_two_shifts"] = df["occupancy_weekday"] / 2.0
     df["over_capacity"] = df["occupancy_ratio"].astype(float).gt(1.0).fillna(False) if df["occupancy_ratio"].notna().any() else False
     df["capacity_known"] = bool(df["licensed_capacity"].notna().any())
-    for c, v in (("addr_line1", ""), ("addr_is_mailbox", False), ("addr_distinct_orgs", pd.NA), ("addr_npis", pd.NA)):
+    for c, v in (("addr_line1", ""), ("addr_is_mailbox", False), ("addr_distinct_orgs", pd.NA), ("addr_npis", pd.NA),
+                 ("addr_has_unit", False)):
         df[c] = v
     if screen.address_rule and provider_dim is not None and Path(provider_dim).exists() and len(df):
         _address_table(con, Path(provider_dim))
         af = con.execute("SELECT * FROM addr_flags").df()
         if len(af):
-            df = df.drop(columns=["addr_line1", "addr_is_mailbox", "addr_distinct_orgs", "addr_npis"]).merge(af, on="npi", how="left")
+            df = df.drop(columns=["addr_line1", "addr_is_mailbox", "addr_distinct_orgs", "addr_npis", "addr_has_unit"]) \
+                   .merge(af, on="npi", how="left")
             df["addr_is_mailbox"] = df["addr_is_mailbox"].fillna(False).astype(bool)
+            df["addr_has_unit"] = df["addr_has_unit"].fillna(False).astype(bool)
             df["addr_line1"] = df["addr_line1"].fillna("")
     out = classify(df, screen, verdicts, top=top)
     return out.drop(columns=["capacity_known"])
@@ -517,6 +531,14 @@ def is_government_name(name: str) -> bool:
     2026-10-29)."""
     nm = (name or "").upper().strip()
     return bool(nm) and bool(_GOVERNMENT_RE.search(nm))
+
+
+def _shared_suite(r, screen: Screen) -> bool:
+    """The shared-address basis: a UNIT on the line (suite, floor, box) shared by min_addr_orgs
+    distinct organizations. 5640 HUDSON INDUSTRIAL PKWY with 17 tenants is a building (the first
+    run ranked Tandem Diabetes and OptumRx on it); 1234 NW 7TH ST STE 200 with 12 is a cluster."""
+    n = getattr(r, "addr_distinct_orgs", pd.NA)
+    return bool(getattr(r, "addr_has_unit", False)) and not pd.isna(n) and int(n) >= screen.min_addr_orgs
 
 
 def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, top: int = 50) -> pd.DataFrame:
@@ -557,11 +579,10 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("not_aide"); reason.append(f"taxonomy {tx}: an individual's number at agency scale in the servicing field (whose number went on the claim)")
         elif screen.grain == "servicing" and float(getattr(r, "self_share", 0) or 0) >= 0.9:
             status.append("self_billed"); reason.append("the servicing field is the biller's own number (an agency enrolled under a person's number): the aide grain is absent for these claims")
-        elif screen.address_rule and not (bool(getattr(r, "addr_is_mailbox", False))
-                                          or (not pd.isna(getattr(r, "addr_distinct_orgs", pd.NA))
-                                              and int(r.addr_distinct_orgs) >= screen.min_addr_orgs)):
-            status.append("address_clean"); reason.append("the practice address is neither a mailbox nor shared by "
-                                                           f"{screen.min_addr_orgs}+ organizations")
+        elif screen.address_rule and not (bool(getattr(r, "addr_is_mailbox", False)) or _shared_suite(r, screen)):
+            status.append("address_clean"); reason.append("the practice address is neither a mailbox nor a SUITE shared by "
+                                                           f"{screen.min_addr_orgs}+ organizations (a building without a unit "
+                                                           "on the line is an office park, not a cluster)")
         elif screen.capacity_rule and screen.min_occupancy is not None and bool(getattr(r, "capacity_known", False)) \
                 and pd.isna(getattr(r, "licensed_capacity", pd.NA)):
             status.append("needs_capacity"); reason.append("no licensed capacity on file for this number (the roster for its state is not loaded)")
@@ -592,8 +613,8 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
         def _basis(r):
             if bool(r.addr_is_mailbox):
                 return "mailbox"
-            if not pd.isna(r.addr_distinct_orgs) and int(r.addr_distinct_orgs) >= screen.min_addr_orgs:
-                return f"shared:{int(r.addr_distinct_orgs)} orgs"
+            if _shared_suite(r, screen):
+                return f"shared suite:{int(r.addr_distinct_orgs)} orgs"
             return ""
         df["address_basis"] = [_basis(r) for r in df.itertuples()]
     cand = df["status"].eq("candidate")
@@ -630,8 +651,8 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
               + (f"; numerator lines / denominator lines >= {s.min_reflex} (or no denominator at all)" if s.denominator else "")
               + (f"; numerator lines per patient-month >= {s.min_intensity}" if s.min_intensity > 0 else "")
               + (f"; peak lines per calendar day >= {s.min_per_day}" if s.min_per_day is not None else "")
-              + (f"; the practice address is a mailbox / PO box or shared by {s.min_addr_orgs}+ distinct organizations "
-                 "(a mailbox ranks first, then dollars)" if s.address_rule else "")
+              + (f"; the practice address is a mailbox / PO box, or a SUITE (a unit on the line) shared by {s.min_addr_orgs}+ "
+                 "distinct organizations (a mailbox ranks first, then dollars)" if s.address_rule else "")
               + ("; occupancy = peak lines a calendar day over licensed capacity where a capacity is known (over 1.0 "
                  "ranks first); open-day occ. = the same over weekdays (a five-day program); two-shift occ. = half of "
                  "that, the reading when the licence approves two sessions a day: a row above 1.0 on two shifts is over "
@@ -736,8 +757,7 @@ def agencies_for(con, spending: Path, screen: Screen, servicing_npis: list[str],
     ag["biller_state"] = ""
     if provider_dim is not None and Path(provider_dim).exists() and len(ag):
         pc = _cols(con, Path(provider_dim))
-        name = " || ' ' || ".join(f"COALESCE(CAST({c} AS VARCHAR), '')"
-                                  for c in ("org_legal_name", "provider_name") if c in pc) or "''"
+        name = _name_sql(pc)
         st = "CAST(addr_state AS VARCHAR)" if "addr_state" in pc else "NULL"
         dim = con.execute(f"""SELECT CAST(npi AS VARCHAR) AS biller_npi, TRIM({name}) AS biller_name, {st} AS biller_state
                                FROM read_parquet('{_sql_str(provider_dim)}')""").df()
@@ -755,13 +775,13 @@ def main() -> None:
     ap.add_argument("--verdicts", default=None, help=f"verdicts file (default <data_root>/model_a/pursuit_verdicts.csv)")
     ap.add_argument("--capacity", default=str(root / "processed" / "licensed_capacity_by_npi.parquet"),
                     help="licensed capacity by NPI (ingest_cms.licensed_capacity) for the occupancy screens")
-    ap.add_argument("--screen", default=None, help="one screen key (default: every screen)")
+    ap.add_argument("--screen", default=None, help="screen key(s), comma-separated (default: every screen); one report per run")
     ap.add_argument("--top", type=int, default=50)
     ap.add_argument("--out", required=True, help="output folder")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    keys = [a.screen] if a.screen else list(SCREENS)
+    keys = [k.strip() for k in a.screen.split(",") if k.strip()] if a.screen else list(SCREENS)
     for k in keys:
         if k not in SCREENS:
             raise SystemExit(f"unknown screen {k}; choose from {list(SCREENS)}")
