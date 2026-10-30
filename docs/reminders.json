@@ -667,9 +667,10 @@
   {
    "key": "v26_top250_docket_read",
    "added": "2026-10-30",
-   "what": "MORNING READ of the overnight court-record pass on v26's top 250 (started 2026-10-30 ~01:10 UTC in tmux ftf250; about two hours at a 12-second gap). The question it answers: how many of the 250 have an open or past False Claims Act case on the PUBLIC docket (the NPI-tagged count is 7 resolved / 0 open; the exact-name pass against the case database found no more). Line 1 prints the summary (names searched, dockets found, FCA-shaped) and every FCA-shaped docket with its company; names the service REFUSED (HTTP 429) rerun later as a names file with --name-gap 20, never back to back. Paste the output; the combined figure goes on slide 2 of the Brad deck if it moves. A sealed whistleblower case is invisible to every public search: the count is a floor.",
+   "what": "MORNING READ of the overnight court-record pass on v26's top 250 (started 2026-10-30 ~01:10 UTC in tmux ftf250; about two hours at a 12-second gap). The question it answers: how many of the 250 have an open or past False Claims Act case on the PUBLIC docket (the NPI-tagged count is 7 resolved / 0 open; the exact-name pass against the case database found no more). Line 1 prints the summary (names searched, dockets found, FCA-shaped) and every FCA-shaped docket with its company; names the service REFUSED (HTTP 429) rerun later as a names file with --name-gap 20, never back to back. Paste the output; the combined figure goes on slide 2 of the Brad deck if it moves. A sealed whistleblower case is invisible to every public search: the count is a floor. FIRST PASS READ 2026-10-30 07:00: 33 of 250 names searched before the service refused the rest (217 refused). Among the 33: open unsealed FCA dockets on Inova (Santry v. Inova, D.D.C. 2019, no termination) and Accu Reference (the Thermo Fisher case); past FCA dockets on Quest, Stanford Health Care, Nassau Health Care, Assurex, UCHealth. The retry runs the 217 refused names in chunks of 25 with a 20-second gap and 30 minutes between chunks (ops/vm/ftf_retry.sh, about five hours) in tmux ftf250b; the read line prints every chunk's summary and the FCA rows.",
    "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls 2>/dev/null; tail -2 /data/medicaid/enforcement/ftf250.log; grep -h '^Names searched' /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md; grep -c 'Not searched' /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md; grep -h -B 3 '| yes \\|375\\|376\\|ex rel\\|qui tam' /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md | grep -E '^## |^\\| ' | head -80\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git pull --ff-only 2>&1 | tail -1 && tmux new -d -s ftf250b 'bash ops/vm/ftf_retry.sh /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md /data/medicaid/enforcement/ftf250_retry 25 20 1800 > /data/medicaid/enforcement/ftf250b.log 2>&1' && echo started\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls 2>/dev/null; tail -3 /data/medicaid/enforcement/ftf250b.log; grep -h '^Names searched' /data/medicaid/enforcement/ftf250_retry/chunk_*_out/FIRST_TO_FILE.md 2>/dev/null; grep -h -B 3 '| YES ' /data/medicaid/enforcement/ftf250_retry/chunk_*_out/FIRST_TO_FILE.md 2>/dev/null | grep -E '^## |^\\| YES' | head -80\"",
     "python -m src.reminders --done-task v26_top250_docket_read"
    ]
   },
@@ -1193,6 +1194,40 @@
    "commands": [
     "python -m src.reminders --done-task registry_verdict__frozen_2023-12_v26"
    ]
+  },
+  {
+   "key": "run_packet__frozen_2023-12_v27",
+   "what": "Send the v27 run packet (every report, audit and csv, every arm, zero raw data): the run finished on the VM 2026-10-30 (the DONE banner was read at the morning check). The tar is the run's arrival for the read-out.",
+   "added": "2026-10-30",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a && tar czf /home/ubuntu/frozen_2023-12_v27_packet.tar.gz --exclude='*.parquet' --exclude='_resume_cache' --exclude='research_attachments' frozen_2023-12_v27 && ls -la /home/ubuntu/frozen_2023-12_v27_packet.tar.gz\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/frozen_2023-12_v27_packet.tar.gz C:\\Users\\treyr\\Downloads\\frozen_2023-12_v27_packet.tar.gz",
+    "REM then drop frozen_2023-12_v27_packet.tar.gz into the chat",
+    "python -m src.reminders --done-task run_packet__frozen_2023-12_v27"
+   ]
+  },
+  {
+   "key": "pursuit_dossier__frozen_2023-12_v27",
+   "what": "The runner built v27's dossier (PURSUIT_DOSSIER.md in the run folder). DISPATCH IS GATED: no credits until the read-out says PROMOTE or the operator says send (the v26 rule). Decide after the packet is read; the freeze-pair line is the first read.",
+   "added": "2026-10-30",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2021-12_v25 /data/medicaid/model_a/frozen_2023-12_v27 --out /data/medicaid/model_a/frozen_2023-12_v27/FREEZE_PAIR_v25_v27.md 2>&1 | tail -3; python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2023-12_v26 /data/medicaid/model_a/frozen_2023-12_v27 --out /data/medicaid/model_a/frozen_2023-12_v27/FREEZE_PAIR_v26_v27.md 2>&1 | tail -3; bash ops/vm/sync_data.sh up frozen_2023-12_v27 2>&1 | tail -2\"",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v27"
+   ]
+  },
+  {
+   "key": "dossier_poll__frozen_2023-12_v27",
+   "what": "Only after a v27 dispatch (gated): poll on the VM with --poll-only, pull attachments, tar the text, scp it down. Close as skipped if v27 is not dispatched.",
+   "added": "2026-10-30",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --pull-attachments\"",
+    "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v27"
+   ]
+  },
+  {
+   "key": "registry_verdict__frozen_2023-12_v27",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v27 \u2014 close only when you have them",
+   "added": "2026-10-30"
   }
  ],
  "closed": [
