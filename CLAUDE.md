@@ -2434,6 +2434,19 @@ first, then paste" above every move/done block.
   insider's first-hand ordering and billing facts are the original-source material; no NY
   or federal action; OSC listed the audit among repayment orders in March 2026. Five
   replacement handoffs + Addendum 2 went to ChatGPT the same evening.
+  V27 DOSSIER CLOSED (2026-10-30 evening): champion run, baseline pinned to v27, the two labs
+  read by code mix (Empire City = a general lab, COVID 20 percent, screens outnumber
+  definitive: watch, no credit; Simple Laboratories = the definitive shape at reflex 7 but
+  $1.2M a year: one kill prompt, WOUNDED on the standard innocent explanation, stays watch
+  with 14 formers by role in the research file), one credit spent, no field work. RULES:
+  the Illinois rule (89 Ill. Adm. Code 140.430(c) + handbook L-204/L-205) is a patient-
+  specific order naming the exact tests, frequency and duration with blanket orders barred,
+  no screen-first requirement; CountyCare PA on G0482/83 since 2020-06 and a presumptive
+  within a week since 2023-12. COURT-RECORD PASSES: CourtListener refuses a second
+  concurrent session; ONE tmux session at a time, 15 names a chunk, 30 s gap, 40 min
+  between chunks; the 108-name third pass (ftf250c) runs overnight 2026-10-30 and the 67
+  leftover names run last. Loving Care Agency (a v27 dossier name) had its own 2011-2018
+  D.N.J. qui tam and Lifecare Medical Transports (v26 top 250) a 2017-2020 E.D. Va. one.
   V11 AGAINST TODAY'S ANSWER KEY, READ (2026-10-30): the shipped v11 pursuit list under the
   58-month FCA ruler = 0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 (random 0.45 / 0.9 / 2.25; p
   0.001 at 100 and 250; lead 29 months; the hits: Cleveland Clinic 27, Genomic Health 53,
