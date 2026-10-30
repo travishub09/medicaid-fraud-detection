@@ -43,15 +43,6 @@ scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/sims_
 python -m src.reminders --done-task sims_complaint_read
 ```
 
-- [ ] **v27_owners_empty_file** — FOUND 2026-10-30: ALL SIX December-2023 owner editions are 0 BYTES on the VM, in owners/ AND owners_prior/ (fqhc_2023-11, hha_2023-10, hospice_2023-10, hospital_2023-12, rhc_2023-11, snf_2023-12; created 2026-10-29 12:48 by the preclean sync). Either the OneDrive copies are 0 bytes (Josh's save never finished, or OneDrive placeholders) or the rclone pull wrote empties. Line 1 (laptop) prints the OneDrive sizes; if they are 0 there too, Josh re-downloads the six CMS All-Owners archive editions (the 2023 releases) and saves them under preclean/owners/ with the same names; if they are real on OneDrive, re-run the preclean sync on the VM (line 2) and check with line 3. Then v28 = the 2023-12 export again. The runner's owners_archive copies owners/ into owners_prior/, so the fix goes into owners/ only. (added 2026-10-30)
-
-```bat
-dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\owners\*2023*"
-ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && bash ops/vm/sync_data.sh down-preclean 2>&1 | tail -3"
-ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "ls -la /data/medicaid/preclean/owners/*2023* /data/medicaid/preclean/owners_prior/*2023*"
-python -m src.reminders --done-task v27_owners_empty_file
-```
-
 - [ ] **v27_dossier_rerender** — Re-render v27's operator-book dossier on the VM with the pulled code (free, no credits): the run's pick named Tandem Diabetes (on the national list only after the run), Venice Family Clinic (FQHC), Habit OPCO (Acadia), Spero Health (chain) and Integrated Home Care Services (a Florida MCO benefit manager), all on _NATIONAL_NAMES now. Read the refilled pick; the two labs (Simple Laboratories IL, Empire City Laboratories NY) go through org_find --codes (definitive vs presumptive, components vs panels) BEFORE any prompt is written. DISPATCH IS GATED on the operator's word; the v27 read-out says all seventeen checks pass. RUNNING 2026-10-30 13:37 laptop time in the operator's cmd window (the pull landed 1d688b9; the build scores the operator book for about 40 minutes and tail -5 holds the output). If the window dies first, the tmux line below re-runs it logged. (added 2026-10-30)
 
 ```bat
