@@ -2461,6 +2461,20 @@ first, then paste" above every move/done block.
   after the run): re-render on the VM with the pulled code before any dispatch decision
   (task v27_dossier_rerender); Simple Laboratories and Empire City Laboratories are the two
   rows for the definitive code-mix line first. Not dispatched.
+  OHIO RESEARCH READ (2026-10-30, five Manus answers; HANDOFF_ohio_wesleyan.md went to ChatGPT):
+  CMS enrollment puts WV Healthcare Management LLC in operational control of Wesleyan since
+  2019-07-03 with the Lahasky officers; Arroyo v. Wesleyan Village (N.D. Ohio 2020, settled
+  2023) states Northwood managed day-to-day operations under a management contract from
+  2019-07-04; the Gifford FLSA order (S.D. Ohio 2023) records Northwood and Garden as one
+  enterprise. CORRECTION: the Ayden / Buckeye Forest six ARE Lahasky homes on the CMS record
+  (Piqua 100 percent in 2022, Euclid 100 percent indirect, Minerva 70, Oregon 51/49, eight
+  CHOWs to Buckeye Forest on 2021-12-31), so the Ohio filings' blank officer lists beside
+  PECOS's owner rows are the contradiction, not a sign of a different group. The recorded
+  lenders are not owner-related, so the claimed related-party loan interest comes from loans
+  the public record does not show. The Ohio SOS / UCC portals block the agent: a person does
+  that pull. RULE: a records case gets a desk-first plan (state filings, recorder images,
+  the home-office cost statement) and interviews by role; no building to count. The handoff
+  builder takes PLAN_OVERRIDES[key] for a case outside the PI plan's parts.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
