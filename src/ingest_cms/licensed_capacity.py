@@ -255,15 +255,25 @@ def capacity_by_npi(roster: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.Data
             pdim[c] = ""
         pdim[c] = pdim[c].fillna("").astype(str)
     r = roster.copy()
-    # one row per licensed site: max capacity over duplicate rows of a site
+    for c in ("addr_key", "name_key", "state"):
+        if c not in r.columns:
+            r[c] = ""
+        r[c] = r[c].fillna("").astype(str)
+    # one row per licensed site: max capacity over duplicate rows of a site (an address
+    # with two roster rows is one building, never two); rows without an address stay as
+    # their own sites so the name path still counts them
     site = (r[r["addr_key"] != ""].groupby(["addr_key"], as_index=False)
-             .agg(capacity=("capacity", "max"), license_type=("license_type", "first")))
-    by_addr = pdim[pdim["addr_key"] != ""][["npi", "addr_key"]].merge(site, on="addr_key", how="inner")
+             .agg(capacity=("capacity", "max"), license_type=("license_type", "first"),
+                  name_key=("name_key", "first"), state=("state", "first")))
+    sites = pd.concat([site, r[r["addr_key"] == ""][["addr_key", "capacity", "license_type", "name_key", "state"]]],
+                      ignore_index=True)
+    by_addr = pdim[pdim["addr_key"] != ""][["npi", "addr_key"]].merge(
+        site[["addr_key", "capacity", "license_type"]], on="addr_key", how="inner")
     a = by_addr.groupby("npi").agg(licensed_capacity=("capacity", "sum"), n_sites=("capacity", "size"),
                                    license_type=("license_type", "first")).reset_index()
     a["match_basis"] = "address"
     rem = pdim[~pdim["npi"].isin(a["npi"])]
-    byname = (r[r["name_key"] != ""].groupby(["state", "name_key"], as_index=False)
+    byname = (sites[sites["name_key"] != ""].groupby(["state", "name_key"], as_index=False)
                .agg(capacity=("capacity", "sum"), license_type=("license_type", "first"),
                     n_sites=("capacity", "size")))
     b = rem[["npi", "name_key", "addr_state"]].rename(columns={"addr_state": "state"}).merge(
@@ -271,6 +281,25 @@ def capacity_by_npi(roster: pd.DataFrame, provider_dim: pd.DataFrame) -> pd.Data
     b = b.groupby("npi").agg(licensed_capacity=("capacity", "max"), n_sites=("n_sites", "max"),
                              license_type=("license_type", "first")).reset_index()
     b["match_basis"] = "name+state"
+    # An operator that bills several licensed homes under ONE number from ONE address
+    # (the California assisted-living-waiver shape: six-bed RCFEs under a brand name,
+    # 2026-10-30: Right Choice Senior Living read 2.7x a six-bed licence) matched one
+    # site by address. When the licensee's exact name key covers MORE capacity in the
+    # same state, the operator's capacity is that sum (basis address+name); the single
+    # site stays in n_sites_addr for the card.
+    if len(a):
+        a_named = a.merge(pdim[["npi", "name_key", "addr_state"]].rename(columns={"addr_state": "state"}),
+                          on="npi", how="left").merge(
+            byname.rename(columns={"capacity": "name_capacity", "n_sites": "name_sites",
+                                   "license_type": "name_license_type"}),
+            on=["state", "name_key"], how="left")
+        wider = a_named["name_capacity"].fillna(0) > a_named["licensed_capacity"]
+        a_named.loc[wider, "licensed_capacity"] = a_named.loc[wider, "name_capacity"]
+        a_named.loc[wider, "n_sites"] = a_named.loc[wider, "name_sites"]
+        a_named.loc[wider, "match_basis"] = "address+name"
+        a = a_named.groupby("npi", as_index=False).agg(
+            licensed_capacity=("licensed_capacity", "max"), n_sites=("n_sites", "max"),
+            license_type=("license_type", "first"), match_basis=("match_basis", "first"))
     out = pd.concat([a, b], ignore_index=True)
     return out[cols] if len(out) else pd.DataFrame(columns=cols)
 

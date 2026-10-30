@@ -45,3 +45,30 @@ def test_new_york_adult_care_directory_headers_resolve(tmp_path):
     assert row["license_number"] == "530-S-005"
     assert row["license_type"] == "Enriched Housing Program"
     assert row["addr_key"].startswith("190 ASHTON COURT")
+
+
+def test_operator_capacity_takes_the_licensee_name_sum_when_wider():
+    """Three six-bed homes under one brand name; the NPI's address matches one of them.
+    The operator's capacity is the three homes (18), basis address+name."""
+    from src.ingest_cms.licensed_capacity import capacity_by_npi
+    roster = pd.DataFrame({
+        "state": ["CA"] * 3 + ["CA"], "name_key": ["RIGHT CHOICE SENIOR LIVING"] * 3 + ["OTHER HOME"],
+        "addr_key": ["1 A ST X CA 90001", "2 B ST X CA 90001", "3 C ST X CA 90001", "9 Z ST X CA 90001"],
+        "capacity": [6, 6, 6, 40], "license_type": ["RESIDENTIAL-ELDERLY"] * 4,
+    })
+    pdim = pd.DataFrame({"npi": ["1234567893", "1111111116"],
+                         "name_key": ["RIGHT CHOICE SENIOR LIVING", "OTHER HOME"],
+                         "addr_key": ["1 A ST X CA 90001", "9 Z ST X CA 90001"], "addr_state": ["CA", "CA"]})
+    out = capacity_by_npi(roster, pdim).set_index("npi")
+    assert out.loc["1234567893", "licensed_capacity"] == 18
+    assert out.loc["1234567893", "match_basis"] == "address+name"
+    assert out.loc["1234567893", "n_sites"] == 3
+    assert out.loc["1111111116", "licensed_capacity"] == 40 and out.loc["1111111116", "match_basis"] == "address"
+
+
+def test_county_programme_is_a_government_name():
+    from src.model_a.theory_screens import is_government_name
+    assert is_government_name("SHASTA COUNTY ALCOHOL AND DRUG PROGRAMS")
+    assert is_government_name("LOS ANGELES COUNTY DEPARTMENT OF PUBLIC HEALTH")
+    assert not is_government_name("RIGHT CHOICE SENIOR LIVING LLC")
+    assert not is_government_name("COUNTY LINE HOME CARE LLC")
