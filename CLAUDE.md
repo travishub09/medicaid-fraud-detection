@@ -2419,6 +2419,21 @@ first, then paste" above every move/done block.
   base (about 19 vans at the peak). Texass pending. RULE: the transport card = vans at the
   base against legs a day at the peak month / 8 legs a van; a mailbox location on a
   transport NPI is the DME-mailbox fact and goes first in the packet.
+  TEXASS + THE TWO READS (2026-10-30 evening): Texass = the third transport PURSUE (no fleet,
+  carrier, city approval, workers-comp or staff record anywhere; a 2016 abandoned trade name
+  at 10227 Southcreek, Converse TX; the card is whether the address is a yard or a house).
+  Transport round score: 3 of 3 survivors, each one PI day. SIMS: the docket facts came back
+  (declined 2023-05-08, unsealed 2023-05-15, dismissed without prejudice by stipulation
+  2023-06-15, refiling possible) but the agent had NO PACER LOGIN, so the complaint text is
+  unread: the operator buys ECF 1 for at most $3 (task sims_complaint_pacer) and we read
+  it. RULE: a research prompt that needs PACER says so up front, and the operator's PACER
+  account is the route, not the agent's. TRUETOX: the NJ comptroller audit's 2015-2018
+  allegations WERE carried by independent news media (NorthJersey.com, POLITICO Pro, NJ
+  Spotlight), so they are publicly disclosed through channel (iii); none of it mentions New
+  York or federal claims, so the NY 2018-2024 theory is different transactions and a NY
+  insider's first-hand ordering and billing facts are the original-source material; no NY
+  or federal action; OSC listed the audit among repayment orders in March 2026. Five
+  replacement handoffs + Addendum 2 went to ChatGPT the same evening.
   V11 AGAINST TODAY'S ANSWER KEY, READ (2026-10-30): the shipped v11 pursuit list under the
   58-month FCA ruler = 0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 (random 0.45 / 0.9 / 2.25; p
   0.001 at 100 and 250; lead 29 months; the hits: Cleveland Clinic 27, Genomic Health 53,
