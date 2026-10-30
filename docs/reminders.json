@@ -687,20 +687,11 @@
    ]
   },
   {
-   "key": "v11_answer_key_read",
-   "added": "2026-10-29",
-   "what": "The v11 re-grade against today's answer key ran (2026-10-29, during v27): v11 pursuit book under the 58-month FCA ruler reads 0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 (random 0.45 at 50, 0.9 at 100, 2.25 at 250), main list 0 / 0 / 4 / 7, v25 pursuit 2 at 50 (the rest of its table was cut off in the console). Pull the three report folders for the read and the comparison write-up; the folder is small.",
-   "commands": [
-    "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a && tar czf /home/ubuntu/v11_answer_key.tar.gz v11_answer_key_2026-10\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/v11_answer_key.tar.gz C:\\Users\\treyr\\Downloads\\v11_answer_key.tar.gz",
-    "python -m src.reminders --done-task v11_answer_key_regrade && python -m src.reminders --done-task v11_answer_key_read"
-   ]
-  },
-  {
    "key": "nemt_fleet_round2",
    "added": "2026-10-30",
-   "what": "GATED (credits, three tasks; Brad 2026-10-30: 'more research, then a recommendation on the transport companies, if anything'): fleet / payment path / driver model for Texass (TX), Medichair (CA), Big Wheel (NC): every registry that shows vehicles (state NEMT licence or enrollment vehicle list, PUC / motor-carrier / taxi permits, FMCSA USDOT, insurance filings, municipal licences, listings, dated imagery), whether the state pays the company directly or through a broker / plan / county, whether it runs contract drivers in their own cars, formers by role. DECISION RULE: a registered fleet under a third of what the typical month needs (10 / 6 / 5 vans) AND direct billing = one investigator day to count vans at the base; otherwise dropped. The file nemt_fleet2_prompts.jsonl was sent in chat 2026-10-30: save it to Downloads first. Poll in an hour; pull; pack; the read gives Brad the yes / no per company.",
+   "what": "GATED (credits, three tasks; Brad 2026-10-30: 'more research, then a recommendation on the transport companies, if anything'): fleet / payment path / driver model for Texass (TX), Medichair (CA), Big Wheel (NC): every registry that shows vehicles (state NEMT licence or enrollment vehicle list, PUC / motor-carrier / taxi permits, FMCSA USDOT, insurance filings, municipal licences, listings, dated imagery), whether the state pays the company directly or through a broker / plan / county, whether it runs contract drivers in their own cars, formers by role. DECISION RULE: a registered fleet under a third of what the typical month needs (10 / 6 / 5 vans) AND direct billing = one investigator day to count vans at the base; otherwise dropped. The file nemt_fleet2_prompts.jsonl was sent in chat 2026-10-30: save it to Downloads first. Poll in an hour; pull; pack; the read gives Brad the yes / no per company. READ 2026-10-30 (two of three back): MEDICHAIR: no public fleet record of any kind (DMV MCP list, CPUC portal, FMCSA census all empty for the exact name; DMV insurance is confidential), the NPI practice location 1271 Washington Ave Ste 654 San Leandro is a UPS Store private mailbox, the current Medi-Cal FFS directory returns 0 for the NPI (managed care via a broker is the likely path), two former staff found by role (a billing specialist 2022-03 to 2023-10, a dispatcher 2023-11 to 2025-02; names stay in the research csv). Verdict PURSUE: the strongest transport card (no base on record for $16M of 2024 trips); the PI's day is to find the yard through the city business licence and the insurance certificate and count vans against about 23 needed at the September 2024 peak. BIG WHEEL: a real company (Guilford County NEMT contractor 2015-16 at $25 in-county / $60 out, $467k YTD; workers-comp policies 2018-2024) but USDOT 1710432 is INACTIVE with a 2011 filing of 0 vehicles, no public fleet since, NC managed care pays PHP -> broker -> provider, no formers found. Verdict PURSUE: one day at the Greensboro base (36.048, -79.774) counting vans against about 19 needed at the January 2020 peak and the current month. TEXASS pending (poll again). Verdict lines below record the two reads.",
    "commands": [
+    "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --add org:npi:1457966715 pursue 'round 2 2026-10-30: no public fleet record, NPI location a UPS Store mailbox, 16M of 2024 trips; one PI day to find the yard and count' --name 'MEDICHAIR TRANSPORTATION LLC' --run cd1 && python -m src.model_a.pursuit_verdicts --add org:npi:1124429451 pursue 'round 2 2026-10-30: real 2015-16 county contractor, USDOT inactive since a 2011 zero-vehicle filing, no public fleet; one PI day at the Greensboro base' --name 'BIG WHEEL TRANSPORTATION, INC' --run cd1 && tail -3 /data/medicaid/model_a/pursuit_verdicts.csv\"",
     "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem C:\\Users\\treyr\\Downloads\\nemt_fleet2_prompts.jsonl ubuntu@3.17.37.139:/data/medicaid/enforcement/nemt_fleet2_prompts.jsonl",
     "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && mkdir -p /data/medicaid/enforcement/nemt_fleet2 && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/nemt_fleet2 --dispatch-file /data/medicaid/enforcement/nemt_fleet2_prompts.jsonl\"",
     "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/nemt_fleet2 --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/enforcement/nemt_fleet2 --pull-attachments && cd /data/medicaid/enforcement && tar czf /home/ubuntu/nemt_fleet2_text.tar.gz --exclude='*.zip' --exclude='*.pdf' --exclude='*.docx' nemt_fleet2\"",
@@ -2069,6 +2060,18 @@
    ],
    "closed": "2026-10-30",
    "close_note": "operator 2026-10-30: counsel never reads a complaint first; Manus or we read it (task sims_complaint_read)"
+  },
+  {
+   "key": "v11_answer_key_read",
+   "added": "2026-10-29",
+   "what": "The v11 re-grade against today's answer key ran (2026-10-29, during v27): v11 pursuit book under the 58-month FCA ruler reads 0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 (random 0.45 at 50, 0.9 at 100, 2.25 at 250), main list 0 / 0 / 4 / 7, v25 pursuit 2 at 50 (the rest of its table was cut off in the console). Pull the three report folders for the read and the comparison write-up; the folder is small.",
+   "commands": [
+    "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a && tar czf /home/ubuntu/v11_answer_key.tar.gz v11_answer_key_2026-10\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/v11_answer_key.tar.gz C:\\Users\\treyr\\Downloads\\v11_answer_key.tar.gz",
+    "python -m src.reminders --done-task v11_answer_key_regrade && python -m src.reminders --done-task v11_answer_key_read"
+   ],
+   "closed": "2026-10-30",
+   "close_note": "tar read 2026-10-30: v11 pursuit 0/1/5/8, main 0/0/1/7, v25 pursuit 2/2/4/7 under the 58-month FCA ruler (random 0.45/0.9/2.25); the excl58 ruler read 0 pool hits everywhere (the exclusion ruler rebuilt from the current graph found no positive in the pool: a ruler defect to check, not a model fact); recorded in CLAUDE.md"
   }
  ]
 }

@@ -2404,6 +2404,31 @@ first, then paste" above every move/done block.
   packets are SEPARATE from any frozen run: they come from the current-day screens, the
   research rounds and the court records, never from a v-number's matrix, so no packet waits
   on a model fix.
+  TRANSPORT ROUND 2 (2026-10-30, two of three back): the fleet / payment-path / driver-model
+  prompts found NO public fleet record for either company (DMV motor-carrier list, CPUC
+  portal, FMCSA census, insurance all empty or confidential): a transport fleet is not on
+  any public register, so the count is the PI's day, never a research answer. MEDICHAIR
+  (CA, $26M, $16M in 2024): the NPI practice location 1271 Washington Ave Ste 654 San
+  Leandro is a UPS Store private mailbox, the current Medi-Cal FFS directory returns 0 for
+  the NPI (managed care through a broker is the likely path), two former staff found by
+  role (billing, dispatch): PURSUE, the strongest transport card (find the yard through the
+  city business licence and the insurance certificate; about 23 vans needed at the peak of
+  185 legs a day). BIG WHEEL (NC, $18M): a real 2015-16 Guilford County NEMT contractor
+  ($25 / $60 a trip), workers-comp policies 2018-2024, but USDOT 1710432 INACTIVE since a
+  2011 filing of 0 vehicles and no public fleet since: PURSUE, one day at the Greensboro
+  base (about 19 vans at the peak). Texass pending. RULE: the transport card = vans at the
+  base against legs a day at the peak month / 8 legs a van; a mailbox location on a
+  transport NPI is the DME-mailbox fact and goes first in the packet.
+  V11 AGAINST TODAY'S ANSWER KEY, READ (2026-10-30): the shipped v11 pursuit list under the
+  58-month FCA ruler = 0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 (random 0.45 / 0.9 / 2.25; p
+  0.001 at 100 and 250; lead 29 months; the hits: Cleveland Clinic 27, Genomic Health 53,
+  Providence 54, Medline 66, Dana-Farber 100, Providence 180, BioReference 209, LabCorp
+  221), the main list 0 / 0 / 1 / 7, v25's pursuit list on the same ruler 2 / 2 / 4 / 7
+  (lead 22). The same hits at the same depth across fifteen versions: the model's head has
+  been institutional labs and health systems since v11, and the method's precision lives
+  at 100 to 250. The rebuilt exclusion ruler (`excl58`) read 0 pool hits on every list: a
+  ruler defect (the current-graph exclusion nodes did not join the pool), not a result;
+  check before it is used again.
   V27 READ-OUT (2026-10-30, `docs/ACCURACY_READOUT_v27_2026-10-30.md`): the 2023-12 export
   again with the hospice fix. ALL SEVENTEEN pre-registered checks PASS for the first time in
   the series (pursuit 1 / 2 / 3 / 6, large 1 / 3 / 3 / 6, Jaccard 0.616, NPI lift 23.4 the
