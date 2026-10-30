@@ -24,6 +24,7 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
+- [ ] **vm_ssh_rule** — see above (added 2026-10-30)
 - [ ] **ssh_paste_rule** — PASTE RULE (found 2026-10-30): an ssh line pasted together with the line after it SWALLOWS that next line (ssh feeds the queued keystrokes to the remote command's stdin), so the three scp tars never ran and the dossier re-render never ran. From now on every ssh line in the reminders carries -n (ssh never reads stdin) and an scp line is pasted ALONE after the ssh line returns. Close once the three tars below are in chat. (added 2026-10-30)
 
 ```bat
