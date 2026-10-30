@@ -634,6 +634,24 @@
  ],
  "tasks": [
   {
+   "key": "v27_baseline_pin",
+   "added": "2026-10-30",
+   "what": "OPERATOR DECISION 2026-10-30: the baseline pin moves from v25 to v27 (champion, 17 of 17, two years fresher data). Paste line 1 alone; it prints BASELINE.json. The v25 freeze tag stays as the code fallback.",
+   "commands": [
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --pin-baseline frozen_2023-12_v27 --reason 'champion 2026-10-30: 17 of 17 under gate rule b; replaces v25' --freeze-tag freeze-v25-2026-10-25 && cat /data/medicaid/model_a/BASELINE.json\"",
+    "python -m src.reminders --done-task v27_baseline_pin"
+   ]
+  },
+  {
+   "key": "v27_two_labs",
+   "added": "2026-10-30",
+   "what": "OPERATOR DECISION 2026-10-30: the v27 dossier is NOT dispatched whole (six of ten names are hospital-affiliated, national or home-care agencies with no field test). Only Simple Laboratories (IL) and Empire City Laboratories (NY) go, and only if the code-mix line shows the definitive-drug-testing pattern. Line 1 = the code-mix line (free); paste its output in chat; Claude writes the two prompts (v27labs_prompts.jsonl) and the dispatch runs through pursuit_dossier --dispatch-file in its own folder (two credits), on the operator's go.",
+   "commands": [
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.org_find --name 'SIMPLE LABORATORIES|EMPIRE CITY LAB' --run-dir /data/medicaid/model_a/cd1 --codes G0480,G0481,G0482,G0483,80305,80306,80307,87798,87801,U0003,80053,80048 --no-national --out /data/medicaid/enforcement/org_find_v27labs.md && grep -n -B1 -A14 'dollars and share' /data/medicaid/enforcement/org_find_v27labs.md | head -60\"",
+    "python -m src.reminders --done-task v27_two_labs"
+   ]
+  },
+  {
    "key": "sims_complaint_pacer",
    "added": "2026-10-30",
    "what": "BUY THE SIMS COMPLAINT (at most $3; the one document still to read on Accu): the research agent confirmed it is unsealed (D.N.J., Sims v. Accu Reference Medical Lab, filed 2021-03-04, government declined 2023-05-08, unsealed 2023-05-15, dismissed without prejudice by stipulation 2023-06-15) but had no PACER account. STEPS: (1) open https://www.courtlistener.com/docket/67387905/sims-v-accu-reference-medical-lab-llc/ ; (2) on docket entry 1 (the Complaint) click 'Buy on PACER' (a PACER login is needed: pacer.uscourts.gov, Register, individual account, no fee under $30 a quarter); (3) save the PDF as <data_root>\\enforcement\\pi_reports\\accu\\Sims_complaint_ECF1.pdf (work product, never git) and drop it in chat; Claude reads it element by element against the definitive-testing theory (same transactions, same years, what a post-2021 insider adds) and the Accu handoff is re-sent. Also worth $3 each if present: the unsealing order (entry 15) and the stipulation (entry 16).",
@@ -668,17 +686,6 @@
     "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/nemt_fleet2_text.tar.gz C:\\Users\\treyr\\Downloads\\nemt_fleet2_text.tar.gz",
     "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/v11_answer_key.tar.gz C:\\Users\\treyr\\Downloads\\v11_answer_key.tar.gz",
     "python -m src.reminders --done-task ssh_paste_rule"
-   ]
-  },
-  {
-   "key": "v27_dossier_rerender",
-   "added": "2026-10-30",
-   "what": "Re-render v27's operator-book dossier on the VM with the pulled code (free, no credits): the run's pick named Tandem Diabetes (on the national list only after the run), Venice Family Clinic (FQHC), Habit OPCO (Acadia), Spero Health (chain) and Integrated Home Care Services (a Florida MCO benefit manager), all on _NATIONAL_NAMES now. Read the refilled pick; the two labs (Simple Laboratories IL, Empire City Laboratories NY) go through org_find --codes (definitive vs presumptive, components vs panels) BEFORE any prompt is written. DISPATCH IS GATED on the operator's word; the v27 read-out says all seventeen checks pass. RUNNING 2026-10-30 13:37 laptop time in the operator's cmd window (the pull landed 1d688b9; the build scores the operator book for about 40 minutes and tail -5 holds the output). If the window dies first, the tmux line below re-runs it logged.",
-   "commands": [
-    "REM on the laptop: git pull first, then the VM pulls the code (no run is going)",
-    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v27dos 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book > /data/medicaid/model_a/frozen_2023-12_v27/dossier_rerender.log 2>&1' && echo started; sleep 2; tmux ls\"",
-    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book 2>&1 | tail -5 && grep -n '^## ' /data/medicaid/model_a/frozen_2023-12_v27/PURSUIT_DOSSIER.md | head -12\"",
-    "python -m src.reminders --done-task v27_dossier_rerender"
    ]
   },
   {
@@ -2132,6 +2139,19 @@
    ],
    "closed": "2026-10-30",
    "close_note": "recorded 2026-10-30 (row 58)"
+  },
+  {
+   "key": "v27_dossier_rerender",
+   "added": "2026-10-30",
+   "what": "Re-render v27's operator-book dossier on the VM with the pulled code (free, no credits): the run's pick named Tandem Diabetes (on the national list only after the run), Venice Family Clinic (FQHC), Habit OPCO (Acadia), Spero Health (chain) and Integrated Home Care Services (a Florida MCO benefit manager), all on _NATIONAL_NAMES now. Read the refilled pick; the two labs (Simple Laboratories IL, Empire City Laboratories NY) go through org_find --codes (definitive vs presumptive, components vs panels) BEFORE any prompt is written. DISPATCH IS GATED on the operator's word; the v27 read-out says all seventeen checks pass. RUNNING 2026-10-30 13:37 laptop time in the operator's cmd window (the pull landed 1d688b9; the build scores the operator book for about 40 minutes and tail -5 holds the output). If the window dies first, the tmux line below re-runs it logged.",
+   "commands": [
+    "REM on the laptop: git pull first, then the VM pulls the code (no run is going)",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v27dos 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book > /data/medicaid/model_a/frozen_2023-12_v27/dossier_rerender.log 2>&1' && echo started; sleep 2; tmux ls\"",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book 2>&1 | tail -5 && grep -n '^## ' /data/medicaid/model_a/frozen_2023-12_v27/PURSUIT_DOSSIER.md | head -12\"",
+    "python -m src.reminders --done-task v27_dossier_rerender"
+   ],
+   "closed": "2026-10-30",
+   "close_note": "re-rendered 2026-10-30 18:06 UTC: Simple Laboratories, Empire City Laboratories, Mini Pharmacy, Family Counseling Center, Michigan Healthcare Professionals, four home-care / private-duty agencies, Mayo Collaborative (national list now). Operator decision: send only the two labs after the code-mix line (task v27_two_labs)."
   }
  ]
 }
