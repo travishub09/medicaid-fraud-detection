@@ -644,6 +644,15 @@
    ]
   },
   {
+   "key": "v26_top250_docket_read",
+   "added": "2026-10-30",
+   "what": "MORNING READ of the overnight court-record pass on v26's top 250 (started 2026-10-30 ~01:10 UTC in tmux ftf250; about two hours at a 12-second gap). The question it answers: how many of the 250 have an open or past False Claims Act case on the PUBLIC docket (the NPI-tagged count is 7 resolved / 0 open; the exact-name pass against the case database found no more). Line 1 prints the summary (names searched, dockets found, FCA-shaped) and every FCA-shaped docket with its company; names the service REFUSED (HTTP 429) rerun later as a names file with --name-gap 20, never back to back. Paste the output; the combined figure goes on slide 2 of the Brad deck if it moves. A sealed whistleblower case is invisible to every public search: the count is a floor.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tmux ls 2>/dev/null; tail -2 /data/medicaid/enforcement/ftf250.log; grep -h '^Names searched' /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md; grep -c 'Not searched' /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md; grep -h -B 3 '| yes \\|375\\|376\\|ex rel\\|qui tam' /data/medicaid/enforcement/first_to_file_v26top250/FIRST_TO_FILE.md | grep -E '^## |^\\| ' | head -80\"",
+    "python -m src.reminders --done-task v26_top250_docket_read"
+   ]
+  },
+  {
    "key": "track3_sweep",
    "added": "2026-10-29",
    "what": "THE THIRD TRACK (visit-decided shapes beyond labs and day care; built 2026-10-29 for the pre-presentation round): three screens on the cd1 fact, ambulance_repetitive (stretcher runs at dialysis intensity with no emergencies: the card is watching who walks to the rig), nemt_fleet (trips a day a fleet cannot make: the card is counting vehicles at the base), dme_mailbox (equipment suppliers billing from a mailbox / PO box or a suite shared by 5+ organizations: the card is the storefront). ORDER: v27 is running, so the code goes into a SECOND checkout (~/mfd_screens, line 1; the running tree is never pulled mid-run; the repo is not pip-installed, so the main venv runs the clone's code), run the sweep (line 2), paste the three Candidates tables, court records on the top twenty names per screen (line 3, about 15 minutes each, silent), then the kill prompts are written from the tables and dispatched on the operator's go (credits). Read the distribution line above each per-day table before the rank (a median peak in the thousands means lines are miles, not trips). FIRST RUN 2026-10-29: the names came out doubled (provider_dim fills both name columns; the docket search ran on the doubles and found nothing), each --screen overwrote the report, and the DME screen found no mailbox above $1M (every row was the shared-building rule on office parks). Fixed: one name, one report per run, suite-level sharing only. Rerun lines 1 to 3. Close when the round is read.",
