@@ -30,13 +30,6 @@ Nothing due. Good.
 python -m src.reminders --done-task sims_complaint_pacer
 ```
 
-- [ ] **nemt_texass_verdict** — Record the Texass round-2 verdict on the VM (the other two were recorded earlier today): PURSUE, one PI day at 10227 Southcreek, Converse TX (no fleet, carrier, city approval, workers-comp or staff record anywhere; a 2016 abandoned trade name at that address; about 46 vans needed at the March 2018 peak of 368 legs a day). Then the three transport handoffs are already with ChatGPT (Addendum 2). (added 2026-10-30)
-
-```bat
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --add org:npi:1912388851 pursue 'round 2 2026-10-30: no public fleet, carrier, city approval, workers-comp or staff record; 2016 abandoned trade name at 10227 Southcreek; one PI day to see whether the address is a yard or a house' --name 'TEXASS MEDICAL TRANSPORTATION' --run cd1 && tail -1 /data/medicaid/model_a/pursuit_verdicts.csv"
-python -m src.reminders --done-task nemt_texass_verdict
-```
-
 - [ ] **ssh_retry_rule** — SSH LINE FORMAT from 2026-10-30 18:40: every VM line carries -n (never reads the next pasted line) and -o ConnectionAttempts=6 -o ConnectTimeout=10 (six tries ten seconds apart, so the laptop's minute-long path drops no longer fail a line). The security group has been open to 0.0.0.0/0 all day; fail2ban is on; auth.log showed one failed login, so nothing is flooding the VM: the drops are on the laptop's network path. If a line still times out after the six tries, wait a minute and paste it again; if it happens on one particular network every time, say 'do 443' and SSH gets a second port hotspots never block. Close once a day passes without a timeout. (added 2026-10-30)
 
 ```bat
