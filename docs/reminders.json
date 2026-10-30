@@ -634,6 +634,34 @@
  ],
  "tasks": [
   {
+   "key": "v27_owners_empty_file",
+   "added": "2026-10-30",
+   "what": "v27's one real defect: the frozen owner-edition diff died on an EMPTY csv under preclean/owners_prior/ (log: 'vintage diff failed (No columns to parse from file)'), so ownership_turnover at 2023-12 was never computed, which was the point of v27. The code now skips an empty edition by name (bundle after v27). Line 1 names the empty file(s) on the VM (0-byte rows); re-download that edition from the CMS All-Owners archive into owners_prior/ (same file name) via OneDrive + sync_data.sh down-preclean; line 2 prints the v27 registry row's HOLD reasons so the gate rule can be decided from the record. Then v28 = the 2023-12 export again (the first run that reads the owner layer at the second freeze).",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"ls -la /data/medicaid/preclean/owners_prior/ /data/medicaid/preclean/owners/ | awk '$5==0 || NR<3'; find /data/medicaid/preclean/owners_prior /data/medicaid/preclean/owners -name '*.csv' -size -2k -printf 'EMPTY-OR-TINY %p %s bytes\\n'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -n -A12 'frozen_2023-12_v27' /data/medicaid/model_a/MODEL_RUNS.md | grep -i -m8 'reason\\|HOLD\\|network\\|ablation\\|check'\"",
+    "python -m src.reminders --done-task v27_owners_empty_file"
+   ]
+  },
+  {
+   "key": "v27_dossier_rerender",
+   "added": "2026-10-30",
+   "what": "Re-render v27's operator-book dossier on the VM with the pulled code (free, no credits): the run's pick named Tandem Diabetes (on the national list only after the run), Venice Family Clinic (FQHC), Habit OPCO (Acadia), Spero Health (chain) and Integrated Home Care Services (a Florida MCO benefit manager), all on _NATIONAL_NAMES now. Read the refilled pick; the two labs (Simple Laboratories IL, Empire City Laboratories NY) go through org_find --codes (definitive vs presumptive, components vs panels) BEFORE any prompt is written. DISPATCH IS GATED on the operator's word; the v27 read-out says all seventeen checks pass.",
+   "commands": [
+    "REM on the laptop: git pull first, then the VM pulls the code (no run is going)",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book 2>&1 | tail -5 && grep -n '^## ' /data/medicaid/model_a/frozen_2023-12_v27/PURSUIT_DOSSIER.md | head -12\"",
+    "python -m src.reminders --done-task v27_dossier_rerender"
+   ]
+  },
+  {
+   "key": "v27_registry_gate_rule",
+   "added": "2026-10-30",
+   "what": "DECISION FOR THE OPERATOR (docs/ACCURACY_READOUT_v27_2026-10-30.md): v27 passes all seventeen pre-registered checks but run_registry prints HOLD because of two standing mechanical gates nothing in the series can pass: a KEEP network verdict (the graph family has read NO MEASURABLE SIGNAL since v12) and an ablation lift CI clear of zero (the registration step runs before the measurement step that writes it). Pick one: (a) keep the gates and add 'network = KEEP' to every pre-registration (the series stays HOLD until the graph family earns it), or (b) make the two gates advisory rows on MODEL_RUNS.md and let the pre-registered checks decide PROMOTE (a registered semantics change in run_registry.recommend, with a test, applied to v28 onward, never re-written onto old rows). Claude recommends (b): the pre-registration is the bar the operator set; the network gate was a 2026-09 design choice before the embeddings were measured. Say 'gate rule a' or 'gate rule b'.",
+   "commands": [
+    "python -m src.reminders --done-task v27_registry_gate_rule"
+   ]
+  },
+  {
    "key": "v11_answer_key_read",
    "added": "2026-10-29",
    "what": "The v11 re-grade against today's answer key ran (2026-10-29, during v27): v11 pursuit book under the 58-month FCA ruler reads 0 / 1 / 5 / 8 at 16 / 50 / 100 / 250 (random 0.45 at 50, 0.9 at 100, 2.25 at 250), main list 0 / 0 / 4 / 7, v25 pursuit 2 at 50 (the rest of its table was cut off in the console). Pull the three report folders for the read and the comparison write-up; the folder is small.",
@@ -700,7 +728,7 @@
   {
    "key": "siu_packets_handoff",
    "added": "2026-10-29",
-   "what": "SEVEN PACKETS SENT 2026-10-29 (chat files; save under <data_root>\\enforcement\\pi_reports\\<org>\\, work product, never git): Bergen Adult Day Care (the one-day card: a weekday count at the door at 139 E Central Blvd, Palisades Park, arrivals and departures across the whole day, the posted hours, the vehicles; sixty at one time is the licence; do it NOW, it does not wait for the records request), American Forensic (NY bars lab reflex; Cordant CIA covered it 2020-2025), ERSO, Lab24, Appalachian, Nepenthe (Oregon D23 covers definitive only on a discrepant screen), Emerald (Oregon D23). The four earlier packets (TrueTox, Genesis, National Labs, Accu pending the Sims read) complete the hand-over set of eleven. Hand the set to Sage / the SIU with the roles tables; the former-staff names stay in the research CSVs under enforcement\\. BERGEN GOES TO SAGE (operator 2026-10-29: Sage is in the area): a NEW case, never in packet v11, never visited; Brad's approval for one investigator day is slide 5 + decision row 4 of the model-evolution deck (v3). Close when Brad has approved and Sage has the Bergen packet. BRAD 2026-10-30: GO on the four New Jersey day-care counts (Bergen first, then Totowa, Forever Young, Golden: one day each, the licence file arrives in parallel); GO on the recommended labs with the written proof plan (PI_PLAN_2026-10-30.md, sent in chat: interviews by role, no visits; National Labs and Genesis first, TrueTox after counsel, the Oregon pair, then the rest; Accu after counsel's read); transport = one more research round, then a yes/no per company (task nemt_fleet_round2). The Bergen packet and the plan go to Sage; the lab packets go to the investigators doing interviews.",
+   "what": "SEVEN PACKETS SENT 2026-10-29 (chat files; save under <data_root>\\enforcement\\pi_reports\\<org>\\, work product, never git): Bergen Adult Day Care (the one-day card: a weekday count at the door at 139 E Central Blvd, Palisades Park, arrivals and departures across the whole day, the posted hours, the vehicles; sixty at one time is the licence; do it NOW, it does not wait for the records request), American Forensic (NY bars lab reflex; Cordant CIA covered it 2020-2025), ERSO, Lab24, Appalachian, Nepenthe (Oregon D23 covers definitive only on a discrepant screen), Emerald (Oregon D23). The four earlier packets (TrueTox, Genesis, National Labs, Accu pending the Sims read) complete the hand-over set of eleven. Hand the set to Sage / the SIU with the roles tables; the former-staff names stay in the research CSVs under enforcement\\. BERGEN GOES TO SAGE (operator 2026-10-29: Sage is in the area): a NEW case, never in packet v11, never visited; Brad's approval for one investigator day is slide 5 + decision row 4 of the model-evolution deck (v3). Close when Brad has approved and Sage has the Bergen packet. BRAD 2026-10-30: GO on the four New Jersey day-care counts (Bergen first, then Totowa, Forever Young, Golden: one day each, the licence file arrives in parallel); GO on the recommended labs with the written proof plan (PI_PLAN_2026-10-30.md, sent in chat: interviews by role, no visits; National Labs and Genesis first, TrueTox after counsel, the Oregon pair, then the rest; Accu after counsel's read); transport = one more research round, then a yes/no per company (task nemt_fleet_round2). The Bergen packet and the plan go to Sage; the lab packets go to the investigators doing interviews. OPERATOR 2026-10-30, THE SPLIT: Sage takes the NJ adult day cares and any transport investigation local to NJ/NY (none of the three transport candidates is: Medichair CA, Texass TX, Big Wheel NC); every other case goes to a NEW first-time SIU group. HANDOFF RULE (standing, every packet for Brad, Sage or the new SIU from now on): Claude writes a detail-heavy HANDOFF_<case>.md (packet + every data field + every research answer verbatim + court records + the plan part + the rules) and ChatGPT distills it into the final short packets (one page for Brad, a two-to-three page field packet with an investigator-only appendix) under CHATGPT_INSTRUCTIONS.md; more is better for the distiller. The first set (19 handoffs + the instructions, handoff_2026-10-30.zip) went in chat 2026-10-30: file under <data_root>\\enforcement\\handoffs\\2026-10-30\\ (work product, never git), paste the instructions file first and one HANDOFF per ChatGPT thread; the distilled <case>_BRAD.md / <case>_FIELD.md come back to the same folder.",
    "commands": []
   },
   {
@@ -710,16 +738,6 @@
    "commands": [
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_verdicts --add org:name:2ND_HOME_TOTOWA pursue 'Brad 2026-10-30: count at the door now; 152 a calendar day on a licence of 104 (about 214 an open day vs 208 on two shifts); the licence file reads the approved shifts' --name '2ND HOME TOTOWA LLC' --run nj_amdc && python -m src.model_a.pursuit_verdicts --add org:name:FOREVER_YOUNG_MEDICAL_DAY_CARE pursue 'Brad 2026-10-30: count at the door now; 266 a calendar day on 200 (about 367 an open day vs 400 on two shifts); the licence file reads the approved shifts' --name 'FOREVER YOUNG MEDICAL DAY CARE' --run nj_amdc && python -m src.model_a.pursuit_verdicts --add org:name:GOLDEN_ADULT_DAY_CARE pursue 'Brad 2026-10-30: count at the door now; 264 a calendar day on 220 (about 372 an open day vs 440 on two shifts; the March 2025 survey recorded two shifts); the licence file reads the approved shifts' --name 'GOLDEN ADULT DAY CARE INC' --run nj_amdc\"",
     "python -m src.reminders --done-task nj_amdc_opra"
-   ]
-  },
-  {
-   "key": "v27_run",
-   "added": "2026-10-29",
-   "what": "v27 = THE SECOND FREEZE WITH ITS INPUTS COMPLETE (operator 2026-10-29: 'pre-register v27'): the 2023-12 export again on the December-2023 All-Owners editions Josh pulled (owners_prior/, bundle 423 reads his names) and the hospice-edition fix (bundle 395), same policy as v26, graded under the v26 seventeen. PRECONDITIONS: bundle 423 merged and pulled on the VM; owners_prior/ synced (task owners_2023_editions closed); no other run on the VM (the runner refuses to start beside one). Line 1 pre-registers; line 2 launches under tmux (about six hours; --rebuild-graph builds graph_asof_2023-12_full again with the owner editions); line 3 watches. Tell Claude 'v27 finished' with the DONE banner; the post-run checklist (packet, read-out, freeze pair v26/v27, dossier decision, registry verdict) queues then.",
-   "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v27 --expected 'the 2023-12 export again with the December-2023 All-Owners editions on the as-of graph (ownership_turnover and owner edges at the second freeze for the first time) and the hospice-edition fix (subscore_hospice_ineligibility was all-NaN in v26); same policy as v26 (no priors, pmax_basis50, train hard, 33-month ruler); a replication read: the pursuit book holds 2 / 4 at 100 / 250 and the top-50 Jaccard reaches 0.6 (v26 0.588 with the owner layer missing)' --goal 'v27 = the second freeze with its inputs complete: owners editions + hospice edition; graded under the v26 seventeen; a pass on both freezes is the PROMOTE case and the operator decides whether v27 replaces the v25 baseline pin' --check 'hits100 >= 2' 'hits250 >= 4' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'npi_lift1pct >= 3' 'score_scale >= 0.1' 'eval_policy = fca' 'horizon = 33' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = none' 'prune = none' 'prior_inner >= 5'\"",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v27 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && HORIZON=33 SEEDS=10 CLASS_PRIORS= PRIOR_ARMS= PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1 PURSUIT_ORDER=pmax_basis50 TRAIN_TIER=hard bash ops/vm/run_frozen_night.sh v27 2023-12 --rebuild-graph > /data/medicaid/model_a/night_v27.log 2>&1'\"",
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -5 /data/medicaid/model_a/night_v27.log; tail -3 /data/medicaid/model_a/frozen_2023-12_v27/night_run.log 2>/dev/null\""
    ]
   },
   {
@@ -1208,26 +1226,6 @@
    ]
   },
   {
-   "key": "run_packet__frozen_2023-12_v27",
-   "what": "Send the v27 run packet (every report, audit and csv, every arm, zero raw data): the run finished on the VM 2026-10-30 (the DONE banner was read at the morning check). The tar is the run's arrival for the read-out.",
-   "added": "2026-10-30",
-   "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a && tar czf /home/ubuntu/frozen_2023-12_v27_packet.tar.gz --exclude='*.parquet' --exclude='_resume_cache' --exclude='research_attachments' frozen_2023-12_v27 && ls -la /home/ubuntu/frozen_2023-12_v27_packet.tar.gz\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/frozen_2023-12_v27_packet.tar.gz C:\\Users\\treyr\\Downloads\\frozen_2023-12_v27_packet.tar.gz",
-    "REM then drop frozen_2023-12_v27_packet.tar.gz into the chat",
-    "python -m src.reminders --done-task run_packet__frozen_2023-12_v27"
-   ]
-  },
-  {
-   "key": "pursuit_dossier__frozen_2023-12_v27",
-   "what": "The runner built v27's dossier (PURSUIT_DOSSIER.md in the run folder). DISPATCH IS GATED: no credits until the read-out says PROMOTE or the operator says send (the v26 rule). Decide after the packet is read; the freeze-pair line is the first read.",
-   "added": "2026-10-30",
-   "commands": [
-    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2021-12_v25 /data/medicaid/model_a/frozen_2023-12_v27 --out /data/medicaid/model_a/frozen_2023-12_v27/FREEZE_PAIR_v25_v27.md 2>&1 | tail -3; python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2023-12_v26 /data/medicaid/model_a/frozen_2023-12_v27 --out /data/medicaid/model_a/frozen_2023-12_v27/FREEZE_PAIR_v26_v27.md 2>&1 | tail -3; bash ops/vm/sync_data.sh up frozen_2023-12_v27 2>&1 | tail -2\"",
-    "python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v27"
-   ]
-  },
-  {
    "key": "dossier_poll__frozen_2023-12_v27",
    "what": "Only after a v27 dispatch (gated): poll on the VM with --poll-only, pull attachments, tar the text, scp it down. Close as skipped if v27 is not dispatched.",
    "added": "2026-10-30",
@@ -1235,11 +1233,6 @@
     "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --pull-attachments\"",
     "python -m src.reminders --done-task dossier_poll__frozen_2023-12_v27"
    ]
-  },
-  {
-   "key": "registry_verdict__frozen_2023-12_v27",
-   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v27 \u2014 close only when you have them",
-   "added": "2026-10-30"
   }
  ],
  "closed": [
@@ -2002,6 +1995,49 @@
     "python -m src.reminders --done-task ohio_medicaid_cost_report_request"
    ],
    "closed_on": "2026-10-30"
+  },
+  {
+   "key": "run_packet__frozen_2023-12_v27",
+   "what": "Send the v27 run packet (every report, audit and csv, every arm, zero raw data): the run finished on the VM 2026-10-30 (the DONE banner was read at the morning check). The tar is the run's arrival for the read-out.",
+   "added": "2026-10-30",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd /data/medicaid/model_a && tar czf /home/ubuntu/frozen_2023-12_v27_packet.tar.gz --exclude='*.parquet' --exclude='_resume_cache' --exclude='research_attachments' frozen_2023-12_v27 && ls -la /home/ubuntu/frozen_2023-12_v27_packet.tar.gz\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/frozen_2023-12_v27_packet.tar.gz C:\\Users\\treyr\\Downloads\\frozen_2023-12_v27_packet.tar.gz",
+    "REM then drop frozen_2023-12_v27_packet.tar.gz into the chat",
+    "python -m src.reminders --done-task run_packet__frozen_2023-12_v27"
+   ],
+   "closed": "2026-10-30",
+   "close_note": "packet tar arrived in chat 2026-10-30 and was read (docs/ACCURACY_READOUT_v27_2026-10-30.md)"
+  },
+  {
+   "key": "pursuit_dossier__frozen_2023-12_v27",
+   "what": "The runner built v27's dossier (PURSUIT_DOSSIER.md in the run folder). DISPATCH IS GATED: no credits until the read-out says PROMOTE or the operator says send (the v26 rule). Decide after the packet is read; the freeze-pair line is the first read.",
+   "added": "2026-10-30",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2021-12_v25 /data/medicaid/model_a/frozen_2023-12_v27 --out /data/medicaid/model_a/frozen_2023-12_v27/FREEZE_PAIR_v25_v27.md 2>&1 | tail -3; python -m src.model_a.freeze_pair --runs /data/medicaid/model_a/frozen_2023-12_v26 /data/medicaid/model_a/frozen_2023-12_v27 --out /data/medicaid/model_a/frozen_2023-12_v27/FREEZE_PAIR_v26_v27.md 2>&1 | tail -3; bash ops/vm/sync_data.sh up frozen_2023-12_v27 2>&1 | tail -2\"",
+    "python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v27"
+   ],
+   "closed": "2026-10-30",
+   "close_note": "freeze_pair v25/v27 and v26/v27 ran (8/8 both) and sync up ran, operator paste 2026-10-30; dispatch stays gated (task v27_dossier_rerender)"
+  },
+  {
+   "key": "registry_verdict__frozen_2023-12_v27",
+   "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v27 \u2014 close only when you have them",
+   "added": "2026-10-30",
+   "closed": "2026-10-30",
+   "close_note": "verdict delivered 2026-10-30: all seventeen pre-registered checks PASS; registry prints HOLD on the two standing mechanical gates (network KEEP, ablation CI) which no run can pass: operator decides the gate rule (task v27_registry_gate_rule)"
+  },
+  {
+   "key": "v27_run",
+   "added": "2026-10-29",
+   "what": "v27 = THE SECOND FREEZE WITH ITS INPUTS COMPLETE (operator 2026-10-29: 'pre-register v27'): the 2023-12 export again on the December-2023 All-Owners editions Josh pulled (owners_prior/, bundle 423 reads his names) and the hospice-edition fix (bundle 395), same policy as v26, graded under the v26 seventeen. PRECONDITIONS: bundle 423 merged and pulled on the VM; owners_prior/ synced (task owners_2023_editions closed); no other run on the VM (the runner refuses to start beside one). Line 1 pre-registers; line 2 launches under tmux (about six hours; --rebuild-graph builds graph_asof_2023-12_full again with the owner editions); line 3 watches. Tell Claude 'v27 finished' with the DONE banner; the post-run checklist (packet, read-out, freeze pair v26/v27, dossier decision, registry verdict) queues then.",
+   "commands": [
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v27 --expected 'the 2023-12 export again with the December-2023 All-Owners editions on the as-of graph (ownership_turnover and owner edges at the second freeze for the first time) and the hospice-edition fix (subscore_hospice_ineligibility was all-NaN in v26); same policy as v26 (no priors, pmax_basis50, train hard, 33-month ruler); a replication read: the pursuit book holds 2 / 4 at 100 / 250 and the top-50 Jaccard reaches 0.6 (v26 0.588 with the owner layer missing)' --goal 'v27 = the second freeze with its inputs complete: owners editions + hospice edition; graded under the v26 seventeen; a pass on both freezes is the PROMOTE case and the operator decides whether v27 replaces the v25 baseline pin' --check 'hits100 >= 2' 'hits250 >= 4' 'lead_ge_gap >= 0.5' 'inst_share50 <= 0.4' 'top50_jaccard >= 0.6' 'npi_lift1pct >= 3' 'score_scale >= 0.1' 'eval_policy = fca' 'horizon = 33' 'frozen = True' 'seeds >= 10' 'groups = case_cluster' 'broadcast = weight' 'train = hard' 'priors = none' 'prune = none' 'prior_inner >= 5'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v27 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && HORIZON=33 SEEDS=10 CLASS_PRIORS= PRIOR_ARMS= PRIOR_INNER=5 PRIOR_MIN_N=300 PRIOR_WEIGHTED=1 PURSUIT_ORDER=pmax_basis50 TRAIN_TIER=hard bash ops/vm/run_frozen_night.sh v27 2023-12 --rebuild-graph > /data/medicaid/model_a/night_v27.log 2>&1'\"",
+    "ssh -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"tail -5 /data/medicaid/model_a/night_v27.log; tail -3 /data/medicaid/model_a/frozen_2023-12_v27/night_run.log 2>/dev/null\""
+   ],
+   "closed": "2026-10-30",
+   "close_note": "v27 finished on the VM 2026-10-30 01:06 UTC (DONE banner read at the morning check); packet read 2026-10-30"
   }
  ]
 }

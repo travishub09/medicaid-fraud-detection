@@ -2348,8 +2348,15 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             # frozen run: chain ONLY editions dated on/before the cutoff —
             # the diff window ends at the freeze, so the feature is
             # leakage-correct (needs >=2 pre-cutoff editions per dataset)
-            merged = merge_editions(load_editions(prior_dir),
-                                    load_editions(cur_dir))
+            bad_files: list[str] = []
+            merged = merge_editions(load_editions(prior_dir, bad_files),
+                                    load_editions(cur_dir, bad_files))
+            if bad_files:
+                # an empty or mis-laid-out edition never aborts the chain (v27:
+                # one empty file threw the whole frozen diff onto the snapshot
+                # path); it is named here so the operator re-downloads it
+                log(f"    [ownership_churn] {len(bad_files)} edition file(s) set "
+                    f"aside: {'; '.join(bad_files)}")
             pri, cur, skipped = asof_editions(merged, str(asof_cutoff))
             if pri:
                 turn, chains = multi_edition_turnover(pri, cur)

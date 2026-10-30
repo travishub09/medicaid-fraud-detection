@@ -64,6 +64,8 @@ def load_owner_pairs(folder: str | Path) -> tuple[pd.DataFrame, str]:
     d = Path(folder)
     frames, dates = [], []
     for p in sorted(d.glob("*.csv")) if d.is_dir() else []:
+        if is_empty_edition(p):
+            continue                       # a 0-byte download never aborts the pair build
         raw = read_csv_text(p)
         resolved = _resolve_columns(list(raw.columns), OWNER_VINTAGE_COLS)
         if len(resolved) < 2:
@@ -99,8 +101,27 @@ def _dataset_of(name: str) -> str:
     return _SHORT_FAMILY.get(head, "OWNERS")
 
 
+def is_empty_edition(p: Path) -> bool:
+    """A 0-byte or header-less All-Owners file (a download that never finished, the
+    v27 lesson: pandas raised 'No columns to parse from file' inside the frozen churn
+    block and the WHOLE vintage diff was abandoned for a snapshot path that had one
+    snapshot). Such a file is skipped BY NAME and never aborts the chain."""
+    try:
+        if p.stat().st_size == 0:
+            return True
+        with open(p, "rb") as fh:
+            return fh.read(64).strip(b"\r\n\t \xef\xbb\xbf\xff\xfe") == b""
+    except OSError:
+        return True
+
+
 def _read_pairs(p: Path) -> pd.DataFrame | None:
-    raw = read_csv_text(p)
+    if is_empty_edition(p):
+        return None
+    try:
+        raw = read_csv_text(p)
+    except pd.errors.EmptyDataError:
+        return None
     resolved = _resolve_columns(list(raw.columns), OWNER_VINTAGE_COLS)
     if len(resolved) < 2:
         return None
@@ -113,9 +134,12 @@ def _read_pairs(p: Path) -> pd.DataFrame | None:
             .drop_duplicates().reset_index(drop=True))
 
 
-def load_editions(folder: str | Path) -> dict[str, list[tuple[str, pd.DataFrame]]]:
+def load_editions(folder: str | Path,
+                  skipped: list[str] | None = None) -> dict[str, list[tuple[str, pd.DataFrame]]]:
     """All-Owners CSVs grouped PER DATASET, then by edition date -> a dict
-    {dataset: sorted [(edition_date, pairs), ...]}.
+    {dataset: sorted [(edition_date, pairs), ...]}. ``skipped`` (optional) collects
+    the file names set aside: empty files and non-All-Owners layouts, so the caller's
+    log names them instead of a bare "vintage diff failed".
 
     Per-dataset matters: the operator's editions have MIXED cadences (FQHC is
     December-dated, SNF/HHA/etc are June-dated). A single global date chain
@@ -128,8 +152,14 @@ def load_editions(folder: str | Path) -> dict[str, list[tuple[str, pd.DataFrame]
         ed = _edition_date(p.name)
         if not ed:
             continue
+        if is_empty_edition(p):
+            if skipped is not None:
+                skipped.append(f"{p.name} (empty file)")
+            continue
         pairs = _read_pairs(p)
         if pairs is None:
+            if skipped is not None:
+                skipped.append(f"{p.name} (not an All-Owners layout)")
             continue
         by_ds.setdefault(_dataset_of(p.name), {}).setdefault(ed, []).append(pairs)
     out: dict[str, list[tuple[str, pd.DataFrame]]] = {}

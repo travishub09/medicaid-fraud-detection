@@ -2381,6 +2381,40 @@ first, then paste" above every move/done block.
   with no management contractor on the $10k+ list. Officer groups: Northwood / Eastwood (13 homes,
   one SVP in common with Wesleyan's president) and Ayden (4 homes) are distinct; the Ayden /
   Buckeye Forest six are not the Lahasky stack on the Ohio filings. Task ohio_cost_report_followups.
+  THE HANDOFF RULE (operator 2026-10-30, standing for every packet to Brad, Sage or the new
+  SIU group): Claude writes a DETAIL-HEAVY handoff per case (HANDOFF_<case>.md: the packet
+  already written, every field of the data row, every research answer verbatim with its
+  findings table, the court-record result, the investigator plan for the group, the standing
+  rules; more is better) and ChatGPT distills it into the final short packets under
+  CHATGPT_INSTRUCTIONS.md (one page for Brad in plain words with no names; a two-to-three
+  page field packet with an investigator-only appendix for the former-staff names). The
+  builder is scratchpad handoff/build_handoffs.py (the case table carries destination +
+  verdict + research folders + court pattern + plan part); the set is a zip in chat, filed
+  under <data_root>/enforcement/handoffs/<date>/, never git. THE SPLIT: Sage takes the NJ
+  adult day cares and any transport case local to NJ/NY; everything else goes to a NEW
+  first-time SIU group (Medichair CA, Texass TX, Big Wheel NC, the labs). The first set:
+  19 handoffs, 2026-10-30.
+  V27 READ-OUT (2026-10-30, `docs/ACCURACY_READOUT_v27_2026-10-30.md`): the 2023-12 export
+  again with the hospice fix. ALL SEVENTEEN pre-registered checks PASS for the first time in
+  the series (pursuit 1 / 2 / 3 / 6, large 1 / 3 / 3 / 6, Jaccard 0.616, NPI lift 23.4 the
+  best yet, score scale 0.219, inst 0; the same six hits as v26; freeze pairs 8/8 on both).
+  The registry still prints HOLD on two STANDING MECHANICAL GATES in run_registry.recommend
+  (network verdict KEEP, which the graph family has never earned since v12, and an ablation
+  lift CI clear of zero, written by the measurement step that runs AFTER registration): the
+  operator decides gate rule (a) carry `network = KEEP` or (b) make the gates advisory
+  (task v27_registry_gate_rule; Claude recommends b). THE ONE DEFECT: the owner-edition diff
+  died on an EMPTY csv under owners_prior/ ("No columns to parse from file"), the except
+  around the block swallowed it, and ownership_turnover at 2023-12 (v27's purpose) never
+  computed. Fixed: `owners_vintage.is_empty_edition` + `load_editions(skipped=)` skip a
+  0-byte / header-less edition BY NAME and the export logs the names; v28 is the first run
+  that can read the owner layer. The hospice subscore is back (coverage 0.5%, AUC 0.69).
+  Nested class priors beat the shipped refit on this draw (operator book 2/3/5/6 vs 2/2/3/6)
+  after tying on v26 and adding nothing on v24: priors stay none, the arm keeps running. The
+  dossier pick named an FQHC (Venice Family Clinic), Habit OPCO (Acadia), Spero Health and
+  Integrated Home Care Services (all on _NATIONAL_NAMES now) and Tandem Diabetes (listed
+  after the run): re-render on the VM with the pulled code before any dispatch decision
+  (task v27_dossier_rerender); Simple Laboratories and Empire City Laboratories are the two
+  rows for the definitive code-mix line first. Not dispatched.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded

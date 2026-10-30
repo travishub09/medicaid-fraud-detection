@@ -576,6 +576,9 @@ _NATIONAL_NAMES = (
     # the DME screen's first run (2026-10-29): national equipment / pharmacy-benefit chains and a
     # Minnesota hospital system on the shared-building rule
     "TANDEM DIABETES", "OPTUMRX", "BYRAM HEALTHCARE", "FAIRVIEW HEALTH", "COOK CHILDRENS", "COOK CHILDREN'S",
+    # the v27 dossier pick (2026-10-30): an FQHC, an Acadia OTP brand, a multi-state
+    # addiction-treatment chain and a Florida MCO home-health benefit manager
+    "VENICE FAMILY CLINIC", "HABIT OPCO", "SPERO HEALTH", "INTEGRATED HOME CARE SERVICES",
     "ACTIVSTYLE", "AMERITA",
     # the transport screen's first run (2026-10-29): the national NEMT brokers and the broker-scale
     # platforms enrolled under plain transport taxonomies (a broker's number carries a network's trips),
