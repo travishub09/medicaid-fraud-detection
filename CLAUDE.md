@@ -2394,6 +2394,16 @@ first, then paste" above every move/done block.
   adult day cares and any transport case local to NJ/NY; everything else goes to a NEW
   first-time SIU group (Medichair CA, Texass TX, Big Wheel NC, the labs). The first set:
   19 handoffs, 2026-10-30.
+  COUNSEL NEVER GATES A READ (operator 2026-10-30): a complaint, an audit, an order or a
+  docket entry is pulled by the research agent (PACER through the agent when the docket has
+  no free copy, a few dollars inside its run) or read by us, and the first-to-file /
+  public-disclosure / original-source reading is DERIVED from the text (element by element
+  against our theory: same transactions, same years, what a later insider adds). "Counsel
+  pulls it first" is never a packet status; the Sims complaint (Accu) and the news coverage
+  of the TrueTox audit are task sims_complaint_read (gated prompts). The handoffs and the
+  packets are SEPARATE from any frozen run: they come from the current-day screens, the
+  research rounds and the court records, never from a v-number's matrix, so no packet waits
+  on a model fix.
   V27 READ-OUT (2026-10-30, `docs/ACCURACY_READOUT_v27_2026-10-30.md`): the 2023-12 export
   again with the hospice fix. ALL SEVENTEEN pre-registered checks PASS for the first time in
   the series (pursuit 1 / 2 / 3 / 6, large 1 / 3 / 3 / 6, Jaccard 0.616, NPI lift 23.4 the
