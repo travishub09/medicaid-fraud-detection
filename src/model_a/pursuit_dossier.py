@@ -579,6 +579,7 @@ _NATIONAL_NAMES = (
     # the v27 dossier pick (2026-10-30): an FQHC, an Acadia OTP brand, a multi-state
     # addiction-treatment chain and a Florida MCO home-health benefit manager
     "VENICE FAMILY CLINIC", "HABIT OPCO", "SPERO HEALTH", "INTEGRATED HOME CARE SERVICES",
+    "MAYO COLLABORATIVE",   # Mayo Clinic Laboratories' billing entity (the v27 re-render, 2026-10-30)
     "ACTIVSTYLE", "AMERITA",
     # the transport screen's first run (2026-10-29): the national NEMT brokers and the broker-scale
     # platforms enrolled under plain transport taxonomies (a broker's number carries a network's trips),
