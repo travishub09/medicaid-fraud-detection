@@ -675,14 +675,23 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
         reasons.append("no expectations report found (treating as HOLD)")
     elif fails > 0:
         reasons.append(f"{fails} expectation FAIL(s)")
+    # GATE RULE B (operator 2026-10-30): when the run carries pre-registered machine
+    # checks, the three MEASUREMENT gates below (network KEEP, ablation lift CI, the
+    # lift-delta drop vs the champion) are ADVISORY: shown on the report, never
+    # blocking. The graph family has read NO MEASURABLE SIGNAL since v12 and the
+    # ablation CI is written by the measurement step that runs after registration, so
+    # the two gates held every run of the series regardless of the bar the operator
+    # set. A run with NO pre-registered checks keeps the September-2026 behaviour
+    # (the gates decide), so an unregistered run is never promoted on nothing.
+    gate_reasons = []
     verdict = latest.get("network_verdict") or ""
     if not verdict.startswith("KEEP"):
-        reasons.append(f"network verdict is '{verdict or 'missing'}', not KEEP")
+        gate_reasons.append(f"network verdict is '{verdict or 'missing'}', not KEEP")
     lo = latest.get("ablation_lift_lo")
     if lo is None:
-        reasons.append("no ablation lift CI found")
+        gate_reasons.append("no ablation lift CI found")
     elif lo <= 0:
-        reasons.append(f"ablation lift CI includes zero (lo={lo:+.3f})")
+        gate_reasons.append(f"ablation lift CI includes zero (lo={lo:+.3f})")
     core_note = None
     if champion is not None:
         prev = champion.get("ablation_lift_delta")
@@ -692,8 +701,8 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
         comparable = not (fp_new and fp_old and fp_new != fp_old)
         if prev is not None and cur is not None and cur < prev - 0.15:
             if comparable:
-                reasons.append(f"lift delta dropped {prev - cur:.2f} vs champion "
-                               f"'{champion.get('tag')}' (>0.15 threshold)")
+                gate_reasons.append(f"lift delta dropped {prev - cur:.2f} vs champion "
+                                    f"'{champion.get('tag')}' (>0.15 threshold)")
             else:
                 # The yardstick moved, not necessarily the model: an extra
                 # source reached the CORE feature set (typically via the graph
@@ -708,6 +717,11 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
     for c in checks:
         if not c["ok"]:
             reasons.append(f"pre-registered check failed — {c['why']}")
+    advisories: list[str] = []
+    if checks:
+        advisories = gate_reasons          # gate rule b: advisory beside a pre-registered bar
+    else:
+        reasons.extend(gate_reasons)       # no declared bar: the gates still decide
     decision = "HOLD" if reasons else "PROMOTE"
     new_champion = latest if decision == "PROMOTE" else champion
     # An acceptance bar written in prose with no machine checks behind it is a
@@ -715,7 +729,7 @@ def recommend(rows: list[dict], prereg: list[dict] | None = None) -> dict:
     # imply the whole declared bar was verified.
     entry = pr_by_tag.get(latest.get("tag"))
     unenforced = bool(entry and entry.get("expected") and not checks)
-    return {"decision": decision, "reasons": reasons,
+    return {"decision": decision, "reasons": reasons, "advisories": advisories,
             "champion": (new_champion or {}).get("tag"),
             "champion_dir": (new_champion or {}).get("run_dir"),
             "series": series, "series_note": series_note,
@@ -741,10 +755,11 @@ def to_markdown(rows: list[dict], rec: dict,
     pr_by_tag = {p.get("tag"): p for p in prereg}
     L = ["# MODEL RUNS — the release audit log", ""]
     L.append("**Policy.** Every major run is registered here with its KPIs and "
-             "file locations. PROMOTE requires: zero expectation FAILs, a KEEP "
-             "network verdict, an ablation lift CI clear of zero, and no more "
-             "than a 0.15 lift-delta drop vs the reigning champion — plus every "
-             "machine check the run's own pre-registration declared. Anything "
+             "file locations. PROMOTE requires zero expectation FAILs plus every "
+             "machine check the run's own pre-registration declared (gate rule b, "
+             "2026-10-30: the network verdict, the ablation lift CI and the "
+             "lift-delta drop vs the champion are ADVISORY beside a pre-registered "
+             "bar; a run with no declared checks is still held to them). Anything "
              "else is HOLD: investigate before shipping, and keep pointing "
              "consumers (Travis handoffs, company lists, dossiers) at the "
              "champion run's folder below. Run folders are immutable — "
@@ -767,6 +782,9 @@ def to_markdown(rows: list[dict], rec: dict,
     L.append(f"**Latest run decision:** **{rec.get('decision')}**"
              + ("" if not rec.get("reasons")
                 else " — " + "; ".join(rec["reasons"])))
+    if rec.get("advisories"):
+        L.append(f"**Advisory (gate rule b, 2026-10-30; shown, not blocking):** "
+                 + "; ".join(rec["advisories"]))
     if rec.get("series_note"):
         L.append("")
         L.append(f"> ℹ {rec['series_note']}")
@@ -1107,6 +1125,10 @@ def _rec_html(rec: dict, warns: list[str]) -> str:
     if rec.get("reasons"):
         full.append(f"<p>Why not {_dfn('PROMOTE')}:</p><ul>")
         full += [f"<li>{_gloss(_esc(x))}</li>" for x in rec["reasons"]]
+        full.append("</ul>")
+    if rec.get("advisories"):
+        full.append("<p>Advisory (shown, not blocking):</p><ul>")
+        full += [f"<li>{_gloss(_esc(x))}</li>" for x in rec["advisories"]]
         full.append("</ul>")
     else:
         full.append(f"<p>All four promotion requirements met: zero "

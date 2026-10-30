@@ -2429,6 +2429,13 @@ first, then paste" above every move/done block.
   at 100 to 250. The rebuilt exclusion ruler (`excl58`) read 0 pool hits on every list: a
   ruler defect (the current-graph exclusion nodes did not join the pool), not a result;
   check before it is used again.
+  GATE RULE B (operator 2026-10-30, `run_registry.recommend`): beside a PRE-REGISTERED bar
+  the three measurement gates (network verdict KEEP, ablation lift CI clear of zero, the
+  0.15 lift-delta drop vs the champion) are ADVISORY (`rec["advisories"]`, an "Advisory"
+  line on MODEL_RUNS.md and the HTML), never blocking; expectation FAILs and the declared
+  `--check` expressions decide PROMOTE. A run with no declared checks is still held to the
+  gates (an unregistered run is never promoted on nothing). Applies from the v27
+  re-registration forward; earlier rows are not rewritten. tests/test_gate_rule_b_2026_10.py.
   V27 READ-OUT (2026-10-30, `docs/ACCURACY_READOUT_v27_2026-10-30.md`): the 2023-12 export
   again with the hospice fix. ALL SEVENTEEN pre-registered checks PASS for the first time in
   the series (pursuit 1 / 2 / 3 / 6, large 1 / 3 / 3 / 6, Jaccard 0.616, NPI lift 23.4 the

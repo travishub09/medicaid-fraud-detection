@@ -634,6 +634,16 @@
  ],
  "tasks": [
   {
+   "key": "v27_reregister_rule_b",
+   "added": "2026-10-30",
+   "what": "GATE RULE B IS IN THE CODE (operator's choice 2026-10-30): beside a pre-registered bar the network verdict, the ablation lift CI and the lift-delta drop are advisory lines on MODEL_RUNS.md, never blocking; expectation FAILs and the declared checks decide. Re-register v27 under it (line 1: laptop pull; line 2: VM pull + re-register the same tag, which appends a superseding row): v27 should read PROMOTE and become the champion of the 2023-12 | hard series (its seventeen checks all pass). The BASELINE pin stays v25 until you say otherwise (--pin-baseline is your word). Paste line 2's output here.",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection && git pull --ff-only",
+    "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only | tail -1 && python -m src.model_a.run_registry --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --tag frozen_2023-12_v27 2>&1 | tail -4 && grep -n -A3 'Latest run decision' /data/medicaid/model_a/MODEL_RUNS.md | head -8\"",
+    "python -m src.reminders --done-task v27_reregister_rule_b"
+   ]
+  },
+  {
    "key": "ssh_paste_rule",
    "added": "2026-10-30",
    "what": "PASTE RULE (found 2026-10-30): an ssh line pasted together with the line after it SWALLOWS that next line (ssh feeds the queued keystrokes to the remote command's stdin), so the three scp tars never ran and the dossier re-render never ran. From now on every ssh line in the reminders carries -n (ssh never reads stdin) and an scp line is pasted ALONE after the ssh line returns. Close once the three tars below are in chat.",
@@ -665,14 +675,6 @@
     "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v27dos 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book > /data/medicaid/model_a/frozen_2023-12_v27/dossier_rerender.log 2>&1' && echo started; sleep 2; tmux ls\"",
     "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --operator-book 2>&1 | tail -5 && grep -n '^## ' /data/medicaid/model_a/frozen_2023-12_v27/PURSUIT_DOSSIER.md | head -12\"",
     "python -m src.reminders --done-task v27_dossier_rerender"
-   ]
-  },
-  {
-   "key": "v27_registry_gate_rule",
-   "added": "2026-10-30",
-   "what": "DECISION FOR THE OPERATOR (docs/ACCURACY_READOUT_v27_2026-10-30.md): v27 passes all seventeen pre-registered checks but run_registry prints HOLD because of two standing mechanical gates nothing in the series can pass: a KEEP network verdict (the graph family has read NO MEASURABLE SIGNAL since v12) and an ablation lift CI clear of zero (the registration step runs before the measurement step that writes it). Pick one: (a) keep the gates and add 'network = KEEP' to every pre-registration (the series stays HOLD until the graph family earns it), or (b) make the two gates advisory rows on MODEL_RUNS.md and let the pre-registered checks decide PROMOTE (a registered semantics change in run_registry.recommend, with a test, applied to v28 onward, never re-written onto old rows). Claude recommends (b): the pre-registration is the bar the operator set; the network gate was a 2026-09 design choice before the embeddings were measured. Say 'gate rule a' or 'gate rule b'.",
-   "commands": [
-    "python -m src.reminders --done-task v27_registry_gate_rule"
    ]
   },
   {
@@ -2074,6 +2076,16 @@
    ],
    "closed": "2026-10-30",
    "close_note": "resolved 2026-10-30: the OneDrive copies were real (Josh six + seventeen archive editions); the 2026-10-29 rclone pull had written 0-byte copies; the 2026-10-30 preclean sync replaced them (all six 10-28 MB on the VM, the stray 0-byte copies in owners/ removed by the mirror). v28 can chain the owner layer at 2023-12."
+  },
+  {
+   "key": "v27_registry_gate_rule",
+   "added": "2026-10-30",
+   "what": "DECISION FOR THE OPERATOR (docs/ACCURACY_READOUT_v27_2026-10-30.md): v27 passes all seventeen pre-registered checks but run_registry prints HOLD because of two standing mechanical gates nothing in the series can pass: a KEEP network verdict (the graph family has read NO MEASURABLE SIGNAL since v12) and an ablation lift CI clear of zero (the registration step runs before the measurement step that writes it). Pick one: (a) keep the gates and add 'network = KEEP' to every pre-registration (the series stays HOLD until the graph family earns it), or (b) make the two gates advisory rows on MODEL_RUNS.md and let the pre-registered checks decide PROMOTE (a registered semantics change in run_registry.recommend, with a test, applied to v28 onward, never re-written onto old rows). Claude recommends (b): the pre-registration is the bar the operator set; the network gate was a 2026-09 design choice before the embeddings were measured. Say 'gate rule a' or 'gate rule b'.",
+   "commands": [
+    "python -m src.reminders --done-task v27_registry_gate_rule"
+   ],
+   "closed": "2026-10-30",
+   "close_note": "operator chose gate rule b 2026-10-30; built (run_registry.recommend advisories; tests/test_gate_rule_b_2026_10.py)"
   }
  ]
 }
