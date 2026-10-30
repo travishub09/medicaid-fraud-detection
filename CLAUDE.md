@@ -2358,6 +2358,29 @@ first, then paste" above every move/done block.
   The deck for Brad (six slides, plain words, no jargon: 'shape' -> 'pattern', 'earmark' -> 'money
   set aside') is a chat file; the table-row IDs must be unique per table (duplicated <a:tr> copies
   carried the same a16:rowId and PowerPoint edited the wrong cell).
+  OHIO COST REPORTS (2026-10-30, the records request of 2026-10-06 answered: 21 homes, CY2021-2024,
+  redacted PDFs, work product under enforcement/pi_reports/wesleyan/, never git):
+  `ingest_cms/ohio_cost_report.py` reads the ODM 02524N text (pdftotext -layout; a file carries
+  several years, split at the Schedule A cover; a PDF can carry another home's reports, de-dup on
+  ccn + period + filing type) into one row per facility-year: identity, the chain home office and
+  its affiliation box, Schedule C-3 (Q1 related-party costs yes/no read by CHECKBOX POSITION: the X
+  precedes the label it marks; Q2 / Q6 / Q7; officers; Q3 mortgage holders; Q5 related facilities,
+  two per row with a bed count where the provider number is blank; Q8 the $10,000+ contracts, read
+  from the C-3 pages only), the cost lines 6210 / 6230 / 7610 / 7695 / 8090 / 2420 / 2430 / 5510 /
+  5620, patient days, total costs; and FLAGS = contradictions inside a certified filing (42 CFR
+  455.18 on the form): rp_denied_with_management_fees, rp_denied_with_rp_loan_interest,
+  related_facilities_blank (officers shared across homes, name-typo tolerant),
+  home_office_declared_no_cost, mgmt_fees_without_named_contractor, no_officers_listed,
+  contracts_copied_forward. THE READ: Wesleyan says No to related-party costs in all four years
+  while booking rising management fees ($23k to $275k), $1.2M / $2.8M of related-party loan
+  interest, a blank related-facilities list though its president is SVP on 13 sister homes, and an
+  empty contract list in 2023-24; Buckeye Forest Greenville / Piqua say No while naming financial
+  and operations management contractors and $10.8M / $13.1M of related-party loan interest, with
+  no officers listed; 34 facility-years declare a home office with zero on every home-office cost
+  line (the home office is paid as 'consulting & management fees'); 51 book $10k+ of such fees
+  with no management contractor on the $10k+ list. Officer groups: Northwood / Eastwood (13 homes,
+  one SVP in common with Wesleyan's president) and Ayden (4 homes) are distinct; the Ayden /
+  Buckeye Forest six are not the Lahasky stack on the Ohio filings. Task ohio_cost_report_followups.
   V26 CRASH + RESUME (2026-10-26, bundle 394): v26 (the second freeze) died at step 8 after
   five finished hours: the prune arm's "skipped" echo read `$PRUNE_AB` under `set -u` (no
   previous 2023-12 run = no prune list, a branch no run had taken). Guarded
