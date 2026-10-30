@@ -24,14 +24,6 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
-- [ ] **v27_reregister_rule_b** — GATE RULE B IS IN THE CODE (operator's choice 2026-10-30): beside a pre-registered bar the network verdict, the ablation lift CI and the lift-delta drop are advisory lines on MODEL_RUNS.md, never blocking; expectation FAILs and the declared checks decide. Re-register v27 under it (line 1: laptop pull; line 2: VM pull + re-register the same tag, which appends a superseding row): v27 should read PROMOTE and become the champion of the 2023-12 | hard series (its seventeen checks all pass). The BASELINE pin stays v25 until you say otherwise (--pin-baseline is your word). Paste line 2's output here. (added 2026-10-30)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection && git pull --ff-only
-ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only | tail -1 && python -m src.model_a.run_registry --data-root /data/medicaid --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --tag frozen_2023-12_v27 2>&1 | tail -4 && grep -n -A3 'Latest run decision' /data/medicaid/model_a/MODEL_RUNS.md | head -8"
-python -m src.reminders --done-task v27_reregister_rule_b
-```
-
 - [ ] **ssh_paste_rule** — PASTE RULE (found 2026-10-30): an ssh line pasted together with the line after it SWALLOWS that next line (ssh feeds the queued keystrokes to the remote command's stdin), so the three scp tars never ran and the dossier re-render never ran. From now on every ssh line in the reminders carries -n (ssh never reads stdin) and an scp line is pasted ALONE after the ssh line returns. Close once the three tars below are in chat. (added 2026-10-30)
 
 ```bat

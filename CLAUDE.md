@@ -2436,6 +2436,10 @@ first, then paste" above every move/done block.
   `--check` expressions decide PROMOTE. A run with no declared checks is still held to the
   gates (an unregistered run is never promoted on nothing). Applies from the v27
   re-registration forward; earlier rows are not rewritten. tests/test_gate_rule_b_2026_10.py.
+  v27 RE-REGISTERED under it 2026-10-30: PROMOTE, the FIRST CHAMPION of the series (series
+  2023-12 | hard; 17 of 17 PASS; advisories: network NO MEASURABLE SIGNAL, no ablation CI at
+  registration time). The baseline pin stays v25 until the operator moves it; dossier
+  consumers may now read @champion = v27.
   V27 READ-OUT (2026-10-30, `docs/ACCURACY_READOUT_v27_2026-10-30.md`): the 2023-12 export
   again with the hospice fix. ALL SEVENTEEN pre-registered checks PASS for the first time in
   the series (pursuit 1 / 2 / 3 / 6, large 1 / 3 / 3 / 6, Jaccard 0.616, NPI lift 23.4 the
