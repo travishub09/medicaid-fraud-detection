@@ -636,8 +636,12 @@
   {
    "key": "vm_ssh_rule",
    "added": "2026-10-30",
-   "what": "see above",
-   "commands": []
+   "what": "DECIDED 2026-10-30 (operator: ease over safety; the /32 rule timed out three times in one day as the home IP rotated): open the SSH rule to 0.0.0.0/0 ONCE and leave it. The instance accepts key-only logins (AWS Ubuntu images ship with PasswordAuthentication no), so the .pem on the laptop is the lock; the only cost is scanner noise, which fail2ban (line 2, after the next successful ssh) throttles. Console: EC2 us-east-2 > Security Groups > sg-01ed08aca02724f15 > Edit inbound rules > the SSH row Source = Anywhere-IPv4 (0.0.0.0/0) > Save. CLI alternative = line 1 (needs the aws cli configured on the laptop). Also allocate an ELASTIC IP and attach it to the instance so the address never changes on a stop/start (EC2 > Elastic IPs > Allocate > Associate; free while attached to a running instance). Close when a cold ssh works from a new network.",
+   "commands": [
+    "aws ec2 authorize-security-group-ingress --region us-east-2 --group-id sg-01ed08aca02724f15 --protocol tcp --port 22 --cidr 0.0.0.0/0",
+    "ssh -n -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -i '^PasswordAuthentication' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null; sudo apt-get install -y -qq fail2ban >/dev/null 2>&1 && sudo systemctl enable --now fail2ban && echo fail2ban on\"",
+    "python -m src.reminders --done-task vm_ssh_rule"
+   ]
   },
   {
    "key": "ssh_paste_rule",
