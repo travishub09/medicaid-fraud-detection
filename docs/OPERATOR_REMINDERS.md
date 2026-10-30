@@ -473,13 +473,6 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v26
 python -m src.reminders --done-task registry_verdict__frozen_2023-12_v26
 ```
 
-- [ ] **dossier_poll__frozen_2023-12_v27** — Only after a v27 dispatch (gated): poll on the VM with --poll-only, pull attachments, tar the text, scp it down. Close as skipped if v27 is not dispatched. DECIDED 2026-10-30: the v27 dossier is not dispatched as a dossier; only Simple Laboratories goes (task v27_two_labs, its own folder). Close this one as skipped. (added 2026-10-30)
-
-```bat
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --poll-only && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v27 --pull-attachments"
-python -m src.reminders --done-task dossier_poll__frozen_2023-12_v27
-```
-
 
 ## After ANY download session (standing rule)
 
