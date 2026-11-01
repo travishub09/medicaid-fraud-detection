@@ -112,7 +112,10 @@ def test_policy_lane_builds_dispatches_and_loads_through_the_gates(tmp_path):
     ml.run_cycle(root, ["policy"], None, build=True, dispatch=True, poll=True, load=True, max_new=None,
                  total_budget=None, wait_minutes=0, poll_every=1, transport=svc, fetch=lambda u: "",
                  sleep=lambda s: None, log=lambda *_: None, states=["NJ"])
-    assert svc.n == len(pr.TOPICS)                                     # one task per topic for the one state
+    # one task per PARAMETERISED topic for the one state (audit_findings is a loader-only topic:
+    # the state_audits lane fills it, the policy lane never asks for it)
+    assert svc.n == len([t for t in pr.TOPICS.values() if t.params])
+    assert svc.n == len(pr.TOPICS) - 1
     df = pd.read_parquet(root / "processed" / "policy" / "state_policy.parquet")
     assert len(df) == 2 and set(df["param"]) == {"perdiem_min_hours", "second_shift_allowed"}
     assert pr.policy_param(df, "NJ", "perdiem_day_program", "perdiem_min_hours") == 5.0
