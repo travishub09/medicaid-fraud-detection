@@ -290,8 +290,14 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
         if is_index_url(url):
             continue                                   # a listing page cites no case (label_gates)
         date = str(r.get("announced_date") or "").strip()
-        cid = url or f"mfcu:{st.lower()}:{abs(hash((st, defendant, date))) & 0xFFFFFFFF:x}"
-        text = f"{defendant}. {summary}"
+        # one case row per defendant even when several share a release URL (url#<name key>,
+        # the DOJ feed's convention; a sweep year's release often names co-defendants)
+        key = norm_org_name(defendant).upper().replace(" ", "_") if defendant else ""
+        cid = (f"{url}#{key}" if url and key else url) or \
+            f"mfcu:{st.lower()}:{abs(hash((st, defendant, date))) & 0xFFFFFFFF:x}"
+        outcome = str(r.get("outcome") or "").strip()
+        text = f"{defendant}. {outcome}. {summary}" if outcome else f"{defendant}. {summary}"
+        npi = str(r.get("npi") or "").strip()
         rows.append({
             "case_id": cid,
             "announced_date": date,
@@ -305,11 +311,18 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
             "intervened": pd.NA,
             "jurisdiction": f"{st} MFCU",
             "source_url": url,
-            "summary": summary[:500],
+            # the outcome word the agent gave is part of the summary so the outcome
+            # gate below (and the strict export's) reads it
+            "summary": ((f"{outcome}. " if outcome else "") + summary)[:500],
+            # the NPI the agent looked up is kept as npi_in_source (a Luhn-valid one only);
+            # case_labels reads it as the named_npi basis, ahead of any name resolution
+            "npi_in_source": npi if (re.fullmatch(r"\d{10}", npi) and is_valid_npi(npi)) else "",
         })
     if not rows:
         return pd.DataFrame(columns=CASE_COLUMNS)
     out = build_case_db(rows)
+    by_id = {r["case_id"]: r["npi_in_source"] for r in rows}
+    out["npi_in_source"] = out["case_id"].map(lambda c: by_id.get(c, ""))
     # PLATFORM_AUDIT C.F12: an MFCU row with a dollar amount and no outcome words trained
     # as a hard doj_case positive while the strict export quarantined it. The outcome gate
     # is the strict export's own regexes; a row without one is kept, usable = 0, with the

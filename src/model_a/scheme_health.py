@@ -109,6 +109,24 @@ def leak_suspect(label_auc, fca_auc, n_label_pos, n_fca_pos) -> bool:
     return (float(fca_auc) - float(label_auc)) >= LEAK_GAP and float(fca_auc) >= 0.70
 
 
+# THE SCHEME'S OWN RULER (2026-11-01): a scheme is judged on the outcomes that can see
+# its conduct. The DOJ ruler sees the federal, institutional cases; the STATE ruler
+# (prospective_label --sources state: terminations for cause, enrollment ends for cause,
+# MFCU / AG cases, the employers of convicted individuals) sees personal care, home
+# health, transport and community behavioral health, which the state fraud units
+# prosecute and the DOJ feed never prints. `ruler_auc` / `ruler_verdict` grade each
+# scheme on its own ruler; `fca_*` and `state_*` stay beside it so the read is explicit.
+SCHEME_RULER = {
+    "evv_personal_care": "state", "home_health_intensity": "state", "nemt_fraud": "state",
+    "behavioral_health": "state", "session_inflation": "state", "rendering_identity": "state",
+    "invalid_identity": "state", "impossible_day": "state", "dme_ring": "state",
+}
+
+
+def scheme_ruler(scheme: str) -> str:
+    return SCHEME_RULER.get(scheme, "fca")
+
+
 def fca_verdict(auc, n_pos) -> str:
     if auc is None or n_pos is None or n_pos < FCA_MIN_POS:
         return "thin"
@@ -121,7 +139,8 @@ def fca_verdict(auc, n_pos) -> str:
 
 def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
                         weights: dict | None = None,
-                        forward: pd.DataFrame | None = None) -> pd.DataFrame:
+                        forward: pd.DataFrame | None = None,
+                        state_forward: pd.DataFrame | None = None) -> pd.DataFrame:
     """Per-scheme calc integrity + separation. ``forward`` (a prospective_label /
     FCA-ruler CSV) adds ``fca_auc`` / ``n_fca_pos`` / ``fca_verdict``: the per-scheme
     AUC on the FORWARD FCA ruler, the label the business is graded on (2026-10-14,
@@ -131,6 +150,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
     cols = set(matrix.columns)
     n = len(matrix)
     y_fca, keep_fca = forward_label_vector(matrix, forward)
+    y_st, keep_st = forward_label_vector(matrix, state_forward)
     # optional empirical direction check: a scheme's subscore should point the
     # SAME way as fraud. If it fires on the clean (AUC well below 0.5 on enough
     # known positives), that is either a direction bug OR the label being blind
@@ -156,6 +176,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
         cov, constant, tie_flood = None, None, None
         label_auc, n_pos, direction = None, None, ""
         fca_auc, n_fca_pos = None, None
+        state_auc, n_state_pos = None, None
         split: dict = {"fca_auc_ind": None, "n_fca_pos_ind": None, "fca_auc_org": None, "n_fca_pos_org": None}
         if sub in cols:
             s = pd.to_numeric(matrix[sub], errors="coerce")
@@ -194,6 +215,11 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
                             a, p_ = _label_auc(y_fca[keep_fca][msk], sv[msk])
                             split[f"fca_auc_{key}"] = None if np.isnan(a) else round(a, 3)
                             split[f"n_fca_pos_{key}"] = int(p_)
+            if y_st is not None and not constant:
+                sv = s.to_numpy(float)[keep_st]
+                sauc, spos = _label_auc(y_st[keep_st], sv)
+                n_state_pos = int(spos)
+                state_auc = None if np.isnan(sauc) else round(sauc, 3)
         # status
         if sub not in cols or not present_inputs:
             status = "DORMANT"
@@ -221,6 +247,13 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
             "n_fca_pos": n_fca_pos,
             "fca_verdict": (fca_verdict(fca_auc, n_fca_pos) if y_fca is not None
                             and sub in cols and not constant else ""),
+            "state_auc": state_auc,
+            "n_state_pos": n_state_pos,
+            "state_verdict": (fca_verdict(state_auc, n_state_pos) if y_st is not None
+                              and sub in cols and not constant else ""),
+            "ruler": scheme_ruler(scheme),
+            **_own_ruler(scheme, fca_auc, n_fca_pos, state_auc, n_state_pos, y_fca is not None, y_st is not None,
+                         sub in cols and not constant),
             "leak_suspect": leak_suspect(label_auc, fca_auc, n_pos, n_fca_pos),
             **split,
         })
@@ -298,8 +331,13 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
                  "scheme that separates one population and not the other is aimed at the wrong "
                  "population, not noise._")
         L.append("")
-        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | FCA AUC ind (pos) | FCA AUC org (pos) | missing inputs |")
-        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|--:|--:|---|")
+        L.append("_Own ruler = the ruler that can see the scheme's conduct (SCHEME_RULER: the state ruler for "
+                 "personal care, home health, transport, community behavioral health, identity and impossible-day "
+                 "schemes; the DOJ ruler for the rest). ruler verdict is the prune rule's input; a state-ruled "
+                 "scheme graded on the DOJ ruler alone says 'no state ruler given'._")
+        L.append("")
+        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | FCA AUC ind (pos) | FCA AUC org (pos) | own ruler | ruler AUC (pos) | ruler verdict | missing inputs |")
+        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|--:|--:|---|--:|:-:|---|")
     else:
         L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | missing inputs |")
         L.append("|---|---|--:|--:|--:|--:|:-:|---|")
@@ -321,6 +359,10 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
                 p_ = getattr(r, f"n_fca_pos_{key}", None)
                 ok = a_ is not None and a_ == a_
                 line += (f"{a_} ({int(p_)})" if ok else "-") + " | "
+            ra, rp = getattr(r, "ruler_auc", None), getattr(r, "n_ruler_pos", None)
+            ok = ra is not None and ra == ra
+            line += (f"{getattr(r, 'ruler_used', '') or '-'} | "
+                     f"{(f'{ra} ({int(rp)})' if ok else '-')} | {getattr(r, 'ruler_verdict', '') or ''} | ")
         L.append(line + f"{r.missing_inputs} |")
     return "\n".join(L)
 
@@ -351,6 +393,20 @@ def write_health(matrix: pd.DataFrame, manifest: dict, out_dir: Path,
             "regressions": regressions}
 
 
+def _own_ruler(scheme, fca_auc, n_fca, state_auc, n_state, have_fca, have_state, judged) -> dict:
+    """ruler_auc / ruler_verdict = the scheme's OWN ruler when that ruler was given;
+    a state-ruled scheme with no state file falls back to the FCA ruler and says so."""
+    want = scheme_ruler(scheme)
+    if want == "state" and have_state:
+        return {"ruler_used": "state", "ruler_auc": state_auc, "n_ruler_pos": n_state,
+                "ruler_verdict": fca_verdict(state_auc, n_state) if judged else ""}
+    if have_fca:
+        used = "fca" if want == "fca" else "fca (no state ruler given)"
+        return {"ruler_used": used, "ruler_auc": fca_auc, "n_ruler_pos": n_fca,
+                "ruler_verdict": fca_verdict(fca_auc, n_fca) if judged else ""}
+    return {"ruler_used": "", "ruler_auc": None, "n_ruler_pos": None, "ruler_verdict": ""}
+
+
 def prune_candidates(data: dict) -> list[str]:
     """The ONE prune rule (run_issues and the runners' ab_prune arm read it): a scheme
     coin-flip or inverted on the FCA ruler AND below 0.58 on the exclusion label with
@@ -360,7 +416,9 @@ def prune_candidates(data: dict) -> list[str]:
     for s in (data or {}).get("schemes") or []:
         st = str(s.get("status", ""))
         auc, npos = s.get("label_auc"), s.get("n_label_pos")
-        fv = s.get("fca_verdict")
+        # the scheme's OWN ruler decides (2026-11-01): a state-prosecuted scheme that is
+        # coin-flip on the DOJ ruler and a signal on the state ruler is never a prune candidate
+        fv = s.get("ruler_verdict") or s.get("fca_verdict")
         try:
             ok = (fv in ("coin-flip", "inverted") and auc is not None and npos
                   and float(npos) >= 20 and float(auc) < 0.58 and st in ("HEALTHY", "DEGRADED"))
@@ -385,6 +443,9 @@ def main() -> None:
     ap.add_argument("--future-label", default=None,
                     help="the forward ruler CSV (future_bans_after_<cut>__fca36.csv): adds the "
                          "per-scheme AUC on the FCA ruler + a verdict column")
+    ap.add_argument("--state-label", default=None,
+                    help="the STATE ruler CSV (prospective_label --sources state ...): the schemes in "
+                         "SCHEME_RULER are judged on it (ruler_auc / ruler_verdict)")
     ap.add_argument("--json-out", default=None,
                     help="also write the table as json (the runner's scheme_health.json refresh)")
     args = ap.parse_args()
@@ -398,7 +459,10 @@ def main() -> None:
     m = pd.read_parquet(args.matrix)
     manifest = json.loads(Path(args.manifest).read_text())
     fl = pd.read_csv(args.future_label, dtype=str) if args.future_label else None
-    df = audit_scheme_health(m, manifest, forward=fl)
+    sl = pd.read_csv(args.state_label, dtype=str) if args.state_label and Path(args.state_label).exists() else None
+    if args.state_label and sl is None:
+        print(f"[scheme_health] no state ruler at {args.state_label}: state-ruled schemes fall back to the FCA ruler")
+    df = audit_scheme_health(m, manifest, forward=fl, state_forward=sl)
     baseline = None
     if args.baseline and Path(args.baseline).exists():
         baseline = pd.DataFrame(json.loads(Path(args.baseline).read_text())["schemes"])

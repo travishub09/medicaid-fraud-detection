@@ -85,7 +85,15 @@ BROADCAST_BASES = ("org_billing", "affiliated_individual")
 #                   the composite helps, not whether its facts do).
 BROADCAST_BASES = ("org_billing", "affiliated_individual")
 _TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None, "drop_schemes": None,
-                          "prior_min_n": None, "prior_weighted": None, "prior_inner_folds": None}
+                          "prior_min_n": None, "prior_weighted": None, "prior_inner_folds": None,
+                          "settlement_weight": None, "feature_set": None}
+
+# the analyst's two experiments (2026-11-01, docs ANALYST_QUESTIONS_2026-10-31): FEATURE_SETS
+# names the three column sets a refit arm can train on (the 27 scheme subscores alone, the
+# other features alone, all), and settlement_weight scales the sample weight of positives
+# whose outcome was a CIVIL settlement (matrix fca_strict_tier == civil_fca) below the
+# convictions. Both are arms graded on the operator book, never a ship without a sweep.
+FEATURE_SETS = ("all", "subscores", "other")
 
 
 def _parse_bool(v) -> bool:
@@ -107,7 +115,8 @@ def parse_schemes(spec) -> list[str]:
 def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None,
                         class_priors=None, drop_schemes=None,
                         prior_min_n: int | None = None, prior_weighted=None,
-                        prior_inner_folds: int | None = None) -> None:
+                        prior_inner_folds: int | None = None,
+                        settlement_weight: float | None = None, feature_set: str | None = None) -> None:
     """None = no override for that key ('' overrides class_priors / drop_schemes to none).
 
     v23: ``prior_min_n`` (the class-size floor of the prior encoder; 0 = none, the v21
@@ -125,6 +134,12 @@ def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None
         raise ValueError("prior_min_n must be >= 0")
     if prior_inner_folds is not None and (int(prior_inner_folds) < 0 or int(prior_inner_folds) == 1):
         raise ValueError("prior_inner_folds must be 0 (leave-one-out) or >= 2")
+    if settlement_weight is not None and not (0.0 <= float(settlement_weight) <= 1.0):
+        raise ValueError("settlement_weight must be within [0, 1] (1 = settlements weigh like convictions)")
+    if feature_set is not None and str(feature_set) not in FEATURE_SETS:
+        raise ValueError(f"feature_set must be one of {FEATURE_SETS}")
+    _TRAINING_POLICY.update(settlement_weight=(float(settlement_weight) if settlement_weight is not None else None),
+                            feature_set=(str(feature_set) if feature_set is not None else None))
     _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
                             broadcast=broadcast,
                             class_priors=(parse_spec(class_priors) if class_priors is not None else None),
@@ -154,10 +169,27 @@ def training_policy(manifest: dict | None) -> dict:
     from .class_priors import PRIOR_INNER_FOLDS
     pif = (_TRAINING_POLICY["prior_inner_folds"] if _TRAINING_POLICY["prior_inner_folds"] is not None
            else int(tp["prior_inner_folds"]) if tp.get("prior_inner_folds") is not None else PRIOR_INNER_FOLDS)
+    sw = (_TRAINING_POLICY["settlement_weight"] if _TRAINING_POLICY["settlement_weight"] is not None
+          else float(tp["settlement_weight"]) if tp.get("settlement_weight") is not None else 1.0)
+    fs = (_TRAINING_POLICY["feature_set"] if _TRAINING_POLICY["feature_set"] is not None
+          else str(tp.get("feature_set") or "all"))
     return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
             "group_policy": str(tp.get("group_policy") or "org"),
             "class_priors": list(priors), "drop_schemes": list(drop),
-            "prior_min_n": int(pmn), "prior_weighted": bool(pw), "prior_inner_folds": int(pif)}
+            "prior_min_n": int(pmn), "prior_weighted": bool(pw), "prior_inner_folds": int(pif),
+            "settlement_weight": float(sw), "feature_set": fs}
+
+
+def apply_feature_set(cols: list[str], pol: dict, log=print) -> list[str]:
+    """The analyst's feature-group ablation: 'subscores' keeps subscore_<s> (+ evidence_n_<s>)
+    only, 'other' drops them, 'all' is the shipped set. Logged by count."""
+    fs = str((pol or {}).get("feature_set") or "all")
+    if fs == "all":
+        return cols
+    is_sub = lambda c: c.startswith("subscore_") or c.startswith("evidence_n_")   # noqa: E731
+    keep = [c for c in cols if (is_sub(c) if fs == "subscores" else not is_sub(c))]
+    log(f"[company_list] feature set '{fs}': {len(keep):,} of {len(cols):,} trainable columns kept")
+    return keep
 
 
 def prior_encoder_args(matrix: pd.DataFrame, pol: dict) -> dict:
@@ -402,18 +434,28 @@ def _training_label(matrix: pd.DataFrame, label_col: str) -> np.ndarray:
     return y
 
 
-def training_weights(matrix: pd.DataFrame) -> np.ndarray | None:
+def training_weights(matrix: pd.DataFrame, settlement_weight: float | None = None) -> np.ndarray | None:
     """The scorer's sample weights: the matrix's ``label_weight`` column (the
     per-case fan-out budget from case_labels), NaN read as 1.0 and clipped to
-    [0, 1]; None when the column is absent so older matrices train unweighted."""
-    if "label_weight" not in matrix.columns:
+    [0, 1]; None when the column is absent so older matrices train unweighted.
+    ``settlement_weight`` < 1 (the analyst's arm, 2026-11-01) further scales the
+    positives whose outcome was a civil settlement (``fca_strict_tier`` civil_fca)."""
+    sw = 1.0 if settlement_weight is None else float(settlement_weight)
+    if "label_weight" not in matrix.columns and sw >= 1.0:
         return None
-    w = (pd.to_numeric(matrix["label_weight"], errors="coerce").fillna(1.0)
-         .clip(0.0, 1.0).to_numpy(dtype=float))
+    w = (pd.to_numeric(matrix["label_weight"], errors="coerce").fillna(1.0).clip(0.0, 1.0).to_numpy(dtype=float)
+         if "label_weight" in matrix.columns else np.ones(len(matrix), dtype=float))
     n_dil = int((w < 1.0).sum())
     if n_dil:
         print(f"[company_list] sample weights: {n_dil:,} broadcast case positives "
               f"down-weighted by the per-case budget (min weight {w.min():.3f})")
+    if sw < 1.0:
+        if "fca_strict_tier" in matrix.columns:
+            civ = matrix["fca_strict_tier"].fillna("").astype(str).str.lower().eq("civil_fca").to_numpy()
+            w = np.where(civ, w * sw, w)
+            print(f"[company_list] settlement weight {sw:.2f}: {int(civ.sum()):,} civil-settlement positives scaled")
+        else:
+            print("[company_list] settlement weight requested but the matrix carries no fca_strict_tier column: unweighted")
     return w
 
 
@@ -564,8 +606,11 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     # cases supplied 64% of v7's DOJ positives), so no single settlement teaches
     # the model what fraud looks like. 1.0 everywhere else; absent column = no
     # weighting (v8 and earlier matrices train exactly as before).
-    w = training_weights(matrix)
     pol = training_policy(manifest)
+    w = training_weights(matrix, pol.get("settlement_weight"))
+    if pol["feature_set"] != "all":
+        cols = apply_feature_set(cols, pol)
+        X = matrix[cols].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
     if pol["broadcast"] == "mask":
         bmask = broadcast_only_mask(matrix) & (np.asarray(y) == 1)
         if bmask.any():
@@ -577,7 +622,8 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
           f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}, "
           f"drop_schemes={pol['drop_schemes'] or 'none'}, prior_min_n={pol['prior_min_n']}, "
-          f"prior_weighted={pol['prior_weighted']}, prior_inner_folds={pol['prior_inner_folds']}")
+          f"prior_weighted={pol['prior_weighted']}, prior_inner_folds={pol['prior_inner_folds']}, "
+          f"settlement_weight={pol['settlement_weight']}, feature_set={pol['feature_set']}")
     keys = prior_keys_for(matrix, pol)
     if keys is not None:
         from .class_priors import rate_table

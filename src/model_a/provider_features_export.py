@@ -62,7 +62,7 @@ V3_CONCEPTS = ["concentration", "payment_intensity", "service_intensity",
                "specialty_mismatch", "temporal"]
 
 # Entity-graph features (bounded 0/1 or normalized in the engine) — pass through.
-GRAPH_FEATURES = ["within_2_hops_of_exclusion", "shell_score",
+GRAPH_FEATURES = ["within_2_hops_of_exclusion", "excluded_within_2_hops", "excluded_within_2_hops_norm", "shell_score",
                   "related_party_density", "related_party_density_norm",
                   "co_location_cluster_size", "betweenness", "ownership_turnover"]
 
@@ -82,7 +82,14 @@ ANALYTICS_FEATURES = ["clinical_implausibility",
 # whole invalid_identity subscore (0 percent coverage in v9, v10 and v11). A percentile of a
 # sparse event flag is also meaningless (every zero would sit at the 49th percentile), so these
 # columns bypass peer normalization: the clipped 0..1 share is the subscore input.
-RAW_SUBSCORE_INPUTS = {"billing_after_deactivation", "billing_after_death"}
+RAW_SUBSCORE_INPUTS = {"billing_after_deactivation", "billing_after_death",
+                       # CLASS A (docs/SCHEME_DEEP_DIVE_2026-10-22 finding 2, built 2026-11-01): a
+                       # one-sided percentile of a share that is zero for 97-99 percent of the
+                       # universe is a tie block with a thin tail, and the subscore inherits the
+                       # ties. These are bounded 0..1 shares / an HHI already: they drive their
+                       # subscore RAW (clipped), the same treatment as the deactivation flags.
+                       "contract_pharmacy_concentration", "px_opioid_la_share", "rx_spread_top_share",
+                       "code_concentration_hhi"}
 
 ADAPTER_FEATURE_COLS = sorted({
     col for wmap in DEFAULT_SCHEME_WEIGHTS.values() for col in wmap
@@ -108,7 +115,7 @@ LEAKAGE_HARD = ["billed_after_exclusion", "excluded_after_billing",
 # Exclusion-PROXIMITY features: predictive (rings get caught together) but
 # correlated with the label — use only under a strict out-of-time split. Includes
 # the NPI-grain owner-role signals (sharper than the smeared graph proximity).
-LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "shell_score",
+LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "excluded_within_2_hops", "excluded_within_2_hops_norm", "shell_score",
                     "related_party_density", "related_party_density_norm",
                     "subscore_ownership_integrity", "has_excluded_owner",
                     "facility_has_excluded_owner_high",
@@ -361,6 +368,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           class_priors: str | list | None = None,
                           prior_min_n: int = 300, prior_weighted: bool = True,
                           prior_inner_folds: int = 5,
+                          settlement_weight: float = 1.0, feature_set: str = "all",
                           drop_schemes: str | list | None = None,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
@@ -957,6 +965,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             "prior_weighted": bool(prior_weighted),
             # v24: training rows encoded from an inner K-fold (0 = the v21..v23 leave-one-out leak)
             "prior_inner_folds": int(prior_inner_folds),
+            # 2026-11-01: the analyst's two arms are policy keys with ship-neutral defaults
+            # (1.0 = settlements weigh like convictions; 'all' = every trainable column)
+            "settlement_weight": float(settlement_weight),
+            "feature_set": str(feature_set),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2695,6 +2707,10 @@ def main() -> None:
     ap.add_argument("--prior-inner-folds", type=int, default=5,
                     help="training policy (v24): training rows' prior from an inner K-fold; 0 = leave-one-out "
                          "(the v21..v23 encoder, a label leak: arm only)")
+    ap.add_argument("--settlement-weight", type=float, default=1.0,
+                    help="training policy (2026-11-01): sample-weight scale on civil-settlement positives (1 = ship)")
+    ap.add_argument("--feature-set", default="all", choices=["all", "subscores", "other"],
+                    help="training policy (2026-11-01): the trainable column set (all = ship)")
     ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
@@ -3301,7 +3317,8 @@ def main() -> None:
         group_policy=args.group_policy, n_seeds=args.seeds, broadcast_rows=args.broadcast_rows,
         class_priors=args.class_priors, drop_schemes=args.drop_schemes,
         prior_min_n=args.prior_min_n, prior_weighted=(args.prior_weighted == "1"),
-        prior_inner_folds=args.prior_inner_folds)
+        prior_inner_folds=args.prior_inner_folds,
+        settlement_weight=args.settlement_weight, feature_set=args.feature_set)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.
@@ -3456,6 +3473,8 @@ _DICT_NOTES = {
     "billed_after_exclusion": "LEAKAGE (hard) — derived from the provider's own exclusion; do not train on it.",
     "excluded_after_billing": "LEAKAGE (hard) — derived from the provider's own exclusion; do not train on it.",
     "within_2_hops_of_exclusion": "Exclusion-proximity (leakage-adjacent): predictive but correlated with the label; use under a strict out-of-time split.",
+    "excluded_within_2_hops": "Count of excluded parties within two graph hops of the organization (leakage-adjacent, 2026-11-01): one is proximity, five is a ring; the 0/1 flag was a 97-percent tie block.",
+    "excluded_within_2_hops_norm": "excluded_within_2_hops saturated at 5 (0..1); drives ownership_integrity in place of the flag when present.",
 }
 
 

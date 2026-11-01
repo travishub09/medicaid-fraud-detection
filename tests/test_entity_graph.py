@@ -86,6 +86,9 @@ def test_excluded_party_distance(built):
     assert feats.loc[excl_org, "within_2_hops_of_exclusion"] == 1
     assert 0 < feats.loc[excl_org, "excluded_party_distance"] <= 2
 
+    # the COUNT of excluded parties within two hops rides beside the flag (2026-11-01)
+    assert "excluded_within_2_hops" in feats.columns and feats.loc[excl_org, "excluded_within_2_hops"] >= 1
+
     # and the nearest excluded party is NAMED, not anonymous (dossier feature 3)
     assert "nearest_exclusion_name" in feats.columns
     assert str(feats.loc[excl_org, "nearest_exclusion_name"]).strip() != ""

@@ -39,6 +39,13 @@ import pandas as pd
 from src.feeds.client import default_fetch_json, cache_raw, DEFAULT_SLEEP
 
 CL_SEARCH_URL = "https://www.courtlistener.com/api/rest/v4/search/"
+# 2026-11-01: THE DOCKETS ENDPOINT. The search endpoint refused the list after a few dozen
+# names in every pass (HTTP 429 with a token: 141 of 242 names owed after four passes on
+# v26's top 250). The REST dockets endpoint is a filtered listing, not a search, and sits
+# under the ordinary authenticated REST limit; a caption filter (case_name__icontains) finds
+# the defendant's dockets because an FCA caption names the defendant. The search endpoint
+# stays as the fallback (`--endpoint search`) and for the party-field match.
+CL_DOCKETS_URL = "https://www.courtlistener.com/api/rest/v4/dockets/"
 FEED = "courtlistener_first_to_file"
 FCA_NOS = {"375", "376"}
 FCA_WORDS = re.compile(r"false claims|qui tam|ex rel", re.I)
@@ -106,21 +113,72 @@ def search_party(name: str, fetch_json=default_fetch_json, since: str | None = N
     return pd.DataFrame(rows, columns=COLS)
 
 
+def _caption_phrase(name: str) -> str:
+    """The distinctive phrase a caption carries: 'LAST, FIRST' -> 'LAST', a company minus
+    its legal tail (the dockets filter is a plain substring match, so shorter is safer)."""
+    s = str(name or "").strip()
+    if "," in s and len(s.split(",")) == 2 and not re.search(r"\b(inc|llc|corp|pc|pllc|ltd|lp)\b", s, re.I):
+        return s.split(",", 1)[0].strip()
+    s = re.sub(r"[,.]?\s*\b(inc|llc|l\.l\.c|corp|corporation|co|pc|p\.c|pllc|ltd|lp|dpm|md)\b\.?$", "", s, flags=re.I).strip()
+    return s.replace('"', "")
+
+
+def search_party_dockets(name: str, fetch_json=default_fetch_json, since: str | None = None,
+                         max_pages: int = 5, raw_root: Path | None = None, sleep_s: float = DEFAULT_SLEEP) -> pd.DataFrame:
+    """Every docket whose caption carries the name, through the dockets listing (newest first)."""
+    rows: list[dict] = []
+    url: str | None = CL_DOCKETS_URL
+    params: dict | None = {"case_name__icontains": _caption_phrase(name), "order_by": "-date_filed"}
+    if since:
+        params["date_filed__gte"] = since
+    for page in range(max_pages):
+        if url is None:
+            break
+        payload = fetch_json(url, params=params, headers=_auth_headers())
+        cache_raw(FEED, f"d_{re.sub(r'[^A-Za-z0-9]+', '_', name)[:40]}_{page:02d}", payload, root=raw_root)
+        for d in payload.get("results") or []:
+            nos = str(d.get("nature_of_suit") or "")
+            cn = str(d.get("case_name") or d.get("case_name_full") or "")
+            court = str(d.get("court_id") or d.get("court") or "")
+            court = court.rstrip("/").split("/")[-1] if "/" in court else court
+            rows.append({
+                "query": name,
+                "docket_id": str(d.get("id") or ""),
+                "case_name": cn,
+                "court": court,
+                "date_filed": str(d.get("date_filed") or "")[:10],
+                "date_terminated": str(d.get("date_terminated") or "")[:10],
+                "nature_of_suit": nos,
+                "docket_number": str(d.get("docket_number") or ""),
+                "parties": "",
+                "docket_url": str(d.get("absolute_url") or ""),
+                "fca_shaped": _fca_shaped(nos, cn),
+            })
+        url, params = payload.get("next"), None
+        if sleep_s and url:
+            time.sleep(sleep_s)
+    return pd.DataFrame(rows, columns=COLS)
+
+
 NAME_GAP_S = 3.0   # the search endpoint rate-limits anonymous callers; a free token lifts it
 
 
 def check_names(names: list[str], fetch_json=default_fetch_json, since: str | None = None,
                 raw_root: Path | None = None, sleep_s: float = DEFAULT_SLEEP,
-                name_gap_s: float = NAME_GAP_S, errors: list | None = None) -> pd.DataFrame:
-    """One search per name, a pause between names; a name whose search fails (HTTP 429
+                name_gap_s: float = NAME_GAP_S, errors: list | None = None,
+                endpoint: str = "dockets") -> pd.DataFrame:
+    """One lookup per name, a pause between names; a name whose lookup fails (HTTP 429
     rate limit, a network error) is recorded in `errors` as (name, reason) and the
-    rest continue, so one refusal never empties the report."""
+    rest continue, so one refusal never empties the report. ``endpoint`` 'dockets'
+    (default from 2026-11-01) reads the dockets listing by caption; 'search' is the
+    party-and-caption search that throttles a long list."""
     frames = []
+    lookup = search_party_dockets if endpoint == "dockets" else search_party
     for i, n in enumerate(n for n in names if str(n).strip()):
         if i and name_gap_s:
             time.sleep(name_gap_s)
         try:
-            frames.append(search_party(n, fetch_json=fetch_json, since=since, raw_root=raw_root, sleep_s=sleep_s))
+            frames.append(lookup(n, fetch_json=fetch_json, since=since, raw_root=raw_root, sleep_s=sleep_s))
         except Exception as exc:                      # noqa: BLE001 - the reason is reported, never hidden
             if errors is not None:
                 errors.append((n, str(exc)[:200]))
@@ -173,6 +231,8 @@ def main() -> None:
     ap.add_argument("--since", default=None, help="filed on/after YYYY-MM-DD (default: no limit)")
     ap.add_argument("--out", required=True, help="output folder")
     ap.add_argument("--name-gap", type=float, default=NAME_GAP_S, help="seconds between names (rate limit)")
+    ap.add_argument("--endpoint", default="dockets", choices=["dockets", "search"],
+                    help="dockets = the caption listing (default, no search throttle); search = party + caption search")
     a = ap.parse_args()
     names: list[str] = []
     if a.names:
@@ -185,7 +245,7 @@ def main() -> None:
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     errors: list = []
-    t = check_names(names, since=a.since, name_gap_s=a.name_gap, errors=errors)
+    t = check_names(names, since=a.since, name_gap_s=a.name_gap, errors=errors, endpoint=a.endpoint)
     t.to_csv(out / "first_to_file.csv", index=False)
     (out / "FIRST_TO_FILE.md").write_text(to_markdown(t, names, a.since, errors), encoding="utf-8")
     print(f"[first_to_file] {len(names)} names -> {len(t)} dockets ({int(t['fca_shaped'].sum()) if len(t) else 0} FCA-shaped); "

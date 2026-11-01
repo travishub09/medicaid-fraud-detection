@@ -35,7 +35,7 @@ def test_query_shapes():
 
 
 def test_check_names_flags_fca_and_pages(tmp_path: Path):
-    t = check_names(["Acme Home Care LLC", "Nobody Corp"], fetch_json=_fake, raw_root=tmp_path, sleep_s=0)
+    t = check_names(["Acme Home Care LLC", "Nobody Corp"], fetch_json=_fake, raw_root=tmp_path, sleep_s=0, endpoint="search")
     acme = t[t["query"] == "Acme Home Care LLC"]
     assert len(acme) == 3 and acme.iloc[0]["fca_shaped"] and acme.iloc[0]["docket_id"] == "1"   # FCA first
     assert not acme.iloc[1]["fca_shaped"] and not acme.iloc[2]["fca_shaped"]
@@ -57,7 +57,7 @@ def test_rate_limited_name_is_recorded_not_fatal(tmp_path: Path):
         return _fake(url, params, headers)
     errors: list = []
     t = check_names(["Acme Home Care LLC", "Nobody Corp"], fetch_json=flaky, raw_root=tmp_path, sleep_s=0,
-                    name_gap_s=0, errors=errors)
+                    name_gap_s=0, errors=errors, endpoint="search")
     assert len(t) == 3 and errors and errors[0][0] == "Nobody Corp" and "429" in errors[0][1]
     md = to_markdown(t, ["Acme Home Care LLC", "Nobody Corp"], None, errors)
     assert "NOT SEARCHED" in md and "Not searched: the service refused" in md

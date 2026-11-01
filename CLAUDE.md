@@ -1369,6 +1369,58 @@ first, then paste" above every move/done block.
   any bar moves: measurement in the runner, the as-of v3 scores + the vintage
   exclusion, a label-conditioned enrichment report, the Manus label lanes (CIA
   and names first) + hcf_commercial, then v18 on the surviving scheme set.
+  THE LABEL LEVERS BUILD (2026-11-01, operator: "build all of it; proceed with research
+  lane dispatch, state harvest prompts etc."; tests/test_lanes_mfcu_employer_2026_11.py +
+  tests/test_label_levers_2026_11.py): (1) THREE NEW RESEARCH LANES in manus_lanes: `mfcu`
+  (state MFCU / AG sweeps, SE + ten largest Medicaid states, 2019-2025 -> case rows through
+  load_mfcu_cases, one row per defendant, the agent's NPI kept as npi_in_source, a row
+  without a resolved outcome usable=0), `employer` (src/model_a/employer_lane.py: hard-tier
+  convicted INDIVIDUALS with no billing AND no rendering row in the fact -> the business that
+  billed for them + its NPI; gates = the person is one we sent, Luhn, NPPES organization,
+  name_agrees, confidence >= medium, employment window contains the record date, a chain
+  guard at 25 individuals per employer; outputs processed/affiliated_research.parquet in the
+  AFF_COLS schema for `prospective_label --affiliated` (now several files) and
+  processed/exclusions_employer_resolved.parquet with excl_type
+  "affiliated:<the individual's excl_type>|research_employer", which fca_relevance tiers from
+  the individual's statute), `federal_reports` (takedown / year-in-review / HCFAC / OIG SAR
+  sweeps through the CIA case path). manus_lanes.sh dispatches all ten under the budget.
+  (2) THE STATE RULER: `prospective_label --sources state|federal|<regex>` (SOURCE_PRESETS)
+  and `--case-jurisdiction <regex>`; the runners build
+  future_bans_after_<cut>__state<H>.csv (terminations / enrollment ends for cause, MFCU +
+  AG cases, employers); accuracy_diagnostics discovers it as `state`; scheme_health
+  `--state-label` + SCHEME_RULER (personal care, home health, transport, behavioral health,
+  session inflation, identity, impossible day, DME = state) -> ruler_used / ruler_auc /
+  ruler_verdict, and prune_candidates reads the OWN-ruler verdict; registry aliases
+  state_hits* / state_base* / state_reach / fca_reach. (3) CLASS A: `excluded_within_2_hops`
+  (the COUNT of excluded parties within two hops, both graph paths) with its _norm (/5)
+  superseding the 0/1 flag in ownership_integrity; contract_pharmacy_concentration,
+  px_opioid_la_share, rx_spread_top_share, code_concentration_hhi join RAW_SUBSCORE_INPUTS.
+  (4) EMBEDDINGS ARE AN ARM: EMBEDDINGS=0 (default) on run_frozen_night.sh / run_current_day
+  .sh passes --no-embeddings and drops graph_embeddings from the stop list; the registry row
+  carries `embeddings` (0/1). (5) THE excl58 "DEFECT" WAS A REACH FACT: 436 exclusion
+  positives in the universe, none inside a listed organization's roster (excluded
+  individuals are tiny billers whose orgs never rank). `accuracy_diagnostics.ruler_reach`
+  (positives in the universe / inside listed rosters / orgs with a hit / share) is a table in
+  section 1, a log warning at zero, and the KPIs acc_ruler_reach_<ruler> /
+  acc_ruler_pool_hits_<ruler>; `fca_reach >= 0.02` is a v28 check. (6) COURT RECORDS:
+  `first_to_file --endpoint dockets` (default) reads the CourtListener DOCKETS listing by
+  caption (case_name__icontains; no search throttle), `--endpoint search` is the old path;
+  `src/enforcement/recap_fetch.py` buys a docket entry's PDF through the RECAP Fetch API
+  (COURTLISTENER_TOKEN + PACER_USERNAME + PACER_PASSWORD in ~/.medicaid_env; `--dry-run`
+  says archived-free vs the cost; sealed / no-entry / failed statuses). (7) FIELD OUTCOMES
+  (`src/enforcement/field_outcomes.py`): <data_root>/enforcement/field_outcomes.csv (org_id
+  | npi, date, outcome over_capacity | no_fleet | confirmed | contradiction | cleared |
+  inconclusive, basis, note, source; work product) -> processed/exclusions_field.parquet
+  (field:<outcome>; adverse = hard-tier TRAINING positives at the next graph build; cleared /
+  inconclusive kept, never positives); `prospective_label.filter_sources` drops field: rows
+  from EVERY ruler. (8) THE ANALYST'S ARMS: training-policy keys `feature_set` (all |
+  subscores | other) and `settlement_weight` (civil-settlement positives' sample-weight
+  scale via the matrix's fca_strict_tier) on the export manifest, the dossier and the
+  diagnostics CLIs; the runner grades ab_feature_subscores / ab_feature_other /
+  ab_settlement_05 (FEATURE_SET_AB, SETTLEMENT_AB). RULES: a settlement weighs like a
+  conviction until a sweep says otherwise; a state-ruled scheme is never pruned on the DOJ
+  ruler; v28 = the first run on all of it (task v28_run), pre-registered under the v27
+  seventeen + `embeddings = 0` + `fca_reach >= 0.02`, the state ruler read, not barred.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

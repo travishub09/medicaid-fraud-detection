@@ -260,6 +260,9 @@ def parse_run_dir(run_dir: str | Path) -> dict:
     srp = _read(d / "SOURCES_REPORT.md")
     if srp:
         row["sources_used"] = _search(r"_(\d+) source\(s\) contributed", srp, int)
+        # 2026-11-01: embeddings are an arm (EMBEDDINGS env on the runners); the row says
+        # whether the graph embeddings were USED so `--check "embeddings = 0"` is enforceable
+        row["embeddings"] = 1 if re.search(r"^\| `graph_embeddings` \| *used", srp, re.M) else 0
         row["sources_skipped"] = _search(r";\s*(\d+) skipped", srp, int)
 
     # the business-outcome KPIs (model_a/accuracy_diagnostics.py): read from its JSON,
@@ -464,6 +467,13 @@ CHECK_ALIASES = {
     "pmax_hits100": "acc_pmax_org_hits100", "pmax_hits250": "acc_pmax_org_hits250",
     "pmax_prec50_lo": "acc_pmax_org_prec50_lo", "pmax_base50": "acc_pmax_base50",
     "list_order": "acc_list_order",
+    # the STATE ruler (prospective_label --sources state, 2026-11-01): the owner-run,
+    # Medicaid-side outcomes graded beside the FCA ruler on the same book
+    "state_hits16": "acc_org_hits16_state", "state_hits50": "acc_org_hits50_state",
+    "state_hits100": "acc_org_hits100_state", "state_hits250": "acc_org_hits250_state",
+    "state_base50": "acc_base50_state", "state_base100": "acc_base100_state", "state_base250": "acc_base250_state",
+    "state_p100_vs_random": "acc_org_p100_vs_random_state", "state_p250_vs_random": "acc_org_p250_vs_random_state",
+    "state_reach": "acc_ruler_reach_state", "fca_reach": "acc_ruler_reach_fca",
 }
 _CHECK_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*"
                        r"(>=|<=|==|!=|=|>|<)\s*(.+?)\s*$")

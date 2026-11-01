@@ -28,6 +28,16 @@ prompts jsonl, task registry, results json and results/ for the raw answers):
                       (evidence; LABEL_VERIFICATION.md tallies them)
   label_review        the learning loop's suspect / candidate queue -> identity and
                       public-record findings (evidence only, never a label change)
+  mfcu                state-year sweeps of the state Medicaid Fraud Control Unit / AG
+                      outcomes (SE + the ten largest Medicaid states) -> case rows
+                      (research_evidence.load_mfcu_cases: a row without a resolved
+                      outcome is kept usable=0); the Medicaid-side, owner-run label
+  federal_reports     the takedown / Fraud Section / HCFAC / OIG semiannual report
+                      sweeps -> case rows the press-release feed never carried
+  employer            hard-tier convicted INDIVIDUALS with no billing or rendering row
+                      -> the business that billed for them + its NPI (employer_lane:
+                      Luhn, NPPES org, name agreement, window overlap) -> the
+                      affiliated schema (forward ruler) + exclusion rows (training)
 
   python -m src.model_a.manus_lanes --data-root D [--run-dir R] --lanes cia,names
          [--build] [--dispatch --max-new N] [--poll] [--load] [--report]
@@ -52,7 +62,7 @@ import pandas as pd
 from src.enforcement.label_gates import is_index_url
 
 LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
-         "label_verification", "label_review")
+         "label_verification", "label_review", "mfcu", "employer", "federal_reports")
 DEFAULT_STATES = ["FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY",
                   "CA", "NY", "TX", "PA", "IL", "OH", "MI"]
 DEFAULT_YEARS = list(range(2019, 2026))
@@ -106,6 +116,12 @@ def inputs(data_root: Path, run_dir: Path | None = None) -> dict:
                                      if p.exists()), r / "processed" / "fca_label_strong" / "verification_sample_strata.csv"),
         "current_labels": r / "processed" / "fca_label_strong" / "labels_fca_strict.csv",
         "label_review_prompts": (Path(run_dir) / "label_review_prompts.jsonl") if run_dir else None,
+        # the employer lane (2026-11-01)
+        "exclusion_nodes": r / "graph" / "nodes" / "exclusion_nodes.parquet",
+        "spending": r / "processed" / "spending_fact.parquet",
+        "employer_candidates": r / "processed" / "manus_lanes" / "employer" / "employer_candidates.csv",
+        "affiliated_research": r / "processed" / "affiliated_research.parquet",
+        "exclusions_employer": r / "processed" / "exclusions_employer_resolved.parquet",
     }
 
 
@@ -271,6 +287,34 @@ def build_lane(lane: str, data_root: Path, run_dir: Path | None = None, states=N
             log("[manus_lanes:label_review] no label_review_prompts.jsonl in the run folder (learning loop not run)")
         else:
             prompts = _read_jsonl(src)
+    elif lane == "mfcu":
+        prompts = chp.build_prompts(["mfcu"], years or DEFAULT_YEARS, states or DEFAULT_STATES)
+    elif lane == "federal_reports":
+        # the takedown court-document pages, the Fraud Section year in review, the HCFAC
+        # annual report and the OIG semiannual reports (case_harvest_prompts sets 4-6):
+        # every case the press-release feed never printed, loaded through the CIA
+        # loader's case path (one row per defendant, the outcome gate, the page check)
+        prompts = chp.build_prompts(["takedown", "yir", "hcfac", "oig_sar"], years or DEFAULT_YEARS,
+                                    states or DEFAULT_STATES)
+    elif lane == "employer":
+        from src.model_a import employer_lane as el
+        nodes = _read_table(inp["exclusion_nodes"])
+        if nodes is None:
+            log(f"[manus_lanes:employer] no {inp['exclusion_nodes']} (build the graph first)")
+        else:
+            pdim = _read_table(inp["provider_dim"])
+            cdb = _read_table(inp["case_db"])
+            dn = _read_table(inp["defendant_npis"])
+            if not inp["spending"].exists():
+                log(f"[manus_lanes:employer] no {inp['spending']}: every individual is a candidate (no billing filter)")
+            cand = el.employer_candidates(nodes, inp["spending"] if inp["spending"].exists() else None,
+                                          defendant_npis=dn, case_db=cdb, provider_dim=pdim)
+            if states:
+                cand = cand[cand["state"].astype(str).str.upper().isin([s.upper() for s in states]) | cand["state"].eq("")]
+            inp["employer_candidates"].parent.mkdir(parents=True, exist_ok=True)
+            cand.to_csv(inp["employer_candidates"], index=False)
+            prompts = el.employer_prompts(cand, per_prompt=per_prompt or 10)
+            log(el.summary_line(cand, prompts))
     else:
         raise ValueError(f"unknown lane {lane!r} (one of {LANES})")
     _write_jsonl(prompts, files["prompts"])
@@ -393,7 +437,7 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
         return tally
     quarantine_rows: list[pd.DataFrame] = []
 
-    if lane in ("cia", "commercial"):
+    if lane in ("cia", "commercial", "federal_reports"):
         case_rows, ent_rows = [], []
         for oid, env in done.items():
             tabs = tables_from_answer(env.get("output"), env.get("attachments"), fetch)
@@ -543,6 +587,70 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
             tally["files"].append(str(files["dir"] / "LABEL_VERIFICATION.md"))
             vc = rows["verdict"].value_counts().to_dict()
             tally["notes"].append("verdicts: " + ", ".join(f"{k} {v}" for k, v in vc.items()))
+    elif lane == "mfcu":
+        case_rows = []
+        for oid, env in done.items():
+            tabs = [t for t in tables_from_answer(env.get("output"), env.get("attachments"), fetch) if _has(t, "defendant")]
+            if not tabs:
+                tally["no_table"] += 1
+                continue
+            st = str(items.get(oid, {}).get("state") or "XX")
+            for t in tabs:
+                cases = rev.load_mfcu_cases(t, st)
+                if len(cases):
+                    case_rows.append(cases)
+                    if "usable" in cases.columns:
+                        q = cases[pd.to_numeric(cases["usable"], errors="coerce").fillna(1).astype(int) == 0]
+                        if len(q):
+                            quarantine_rows.append(q.assign(drop_reason="no resolved outcome in the MFCU summary (kept usable=0)"))
+                            tally["quarantined"] += int(len(q))
+        if case_rows:
+            new_cases = pd.concat(case_rows, ignore_index=True)
+            cdb0 = _read_table(inp["case_db"])
+            before = len(cdb0) if cdb0 is not None else 0
+            merged = rev.merge_into_case_db(new_cases, inp["case_db"])
+            tally["loaded"] += int(len(merged) - before)
+            tally["files"].append(str(inp["case_db"]))
+            page_fetch = fetch if fetch is not None else rev.browser_fetch_text
+            try:
+                n_abs = rev.quarantine_absent_defendants(inp["case_db"], page_fetch, log=log)
+                tally["notes"].append(f"{n_abs} harvested rows marked defendant_not_on_page")
+            except Exception as e:                          # best effort; the rows stay usable=1
+                tally["notes"].append(f"page verification FAILED ({type(e).__name__}: {str(e)[:120]}): "
+                                      "run `research_evidence verify-sources` before training")
+    elif lane == "employer":
+        from src.model_a import employer_lane as el
+        cand = _read_table(inp["employer_candidates"])
+        pdim = _read_table(inp["provider_dim"])
+        if pdim is None:
+            tally["notes"].append("no provider_dim: employer NPIs NOT checked against NPPES (every row quarantined)")
+        ok_rows = []
+        for oid, env in done.items():
+            tabs = [t for t in tables_from_answer(env.get("output"), env.get("attachments"), fetch)
+                    if _has(t, "person_npi") or _has(t, "employer_npi")]
+            if not tabs:
+                tally["no_table"] += 1
+                continue
+            sent = set(items.get(oid, {}).get("person_npis") or [])
+            for t in tabs:
+                sub = cand[cand["person_npi"].astype(str).isin(sent)] if (cand is not None and sent) else cand
+                ok, bad = el.load_employer_rows(t, sub, pdim if pdim is not None else pd.DataFrame())
+                if pdim is None and len(ok):
+                    bad = pd.concat([bad, ok.assign(drop_reason="no provider_dim to verify the employer NPI")], ignore_index=True)
+                    ok = ok.iloc[0:0]
+                if len(ok):
+                    ok_rows.append(ok)
+                if len(bad):
+                    quarantine_rows.append(bad)
+                    tally["quarantined"] += int(len(bad))
+        if ok_rows:
+            research = pd.concat(ok_rows, ignore_index=True)
+            n = el.append_parquet(inp["affiliated_research"], research, ["npi", "excluded_npi"])
+            n2 = el.append_parquet(inp["exclusions_employer"], el.to_exclusion_rows(research), ["npi", "excl_type", "excl_date"])
+            tally["loaded"] += n
+            tally["files"] += [str(inp["affiliated_research"]), str(inp["exclusions_employer"])]
+            tally["notes"].append(f"{n2} employer exclusion rows: rebuild the graph so they become exclusion nodes; "
+                                  "prospective_label --affiliated takes affiliated_research.parquet")
     elif lane == "label_review":
         from src.feeds.manus_research import _parse_json_text, fetch_json_attachment
         out_rows = []
@@ -608,6 +716,11 @@ def write_report(data_root: Path, lanes, out: Path | None = None) -> Path:
           "- defendant_research answers were folded into processed/case_defendant_npis.parquet (research_high / medium).",
           "- label_verification and label_review are EVIDENCE: read LABEL_VERIFICATION.md and label_review_results.csv; "
           "a tighten-or-ship verdict is the operator's call.",
+          "- mfcu rows went into enforcement/doj_cases_v3.csv (jurisdiction '<ST> MFCU'; a row without a resolved "
+          "outcome is usable=0): the Medicaid-side, owner-run label the DOJ feed never carries.",
+          "- employer rows went into processed/affiliated_research.parquet (prospective_label --affiliated) and "
+          "processed/exclusions_employer_resolved.parquet (the next graph build makes the employer an exclusion "
+          "node, tiered from the individual's statute); the chain guard and the NPPES name gate wrote the quarantine.",
           "- Every quarantine file is the human review: a row there was refused by a rule, never by a guess."]
     out = Path(out) if out else Path(data_root) / "processed" / "manus_lanes" / "MANUS_LANES.md"
     out.parent.mkdir(parents=True, exist_ok=True)

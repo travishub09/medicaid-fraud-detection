@@ -348,3 +348,38 @@ python -m src.model_a.medicare_export --medicare-dir processed/medicare --precle
 (moratoria.csv / revalidation_due.csv / sff.csv → the CMS-wave overlay flags),
 `preclean/dmf/dmf.csv` (billing-after-death), the DMEPOS by-Referring-AND-Service
 re-pull, and `preclean/docgraph/` shared-patient (referral rings).
+
+## 8. The label levers (2026-11-01) — the research lanes, the state ruler, the field file
+
+Every line runs on the VM (`source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid` first).
+
+```bash
+# all ten research lanes, unattended: build -> dispatch (credits) -> poll -> load -> report
+MANUS_MAX_NEW=40 MANUS_TOTAL=300 MANUS_WAIT_MINUTES=240 bash ops/vm/manus_lanes.sh cd1
+# re-poll and re-load the tasks still running (free)
+python -m src.model_a.manus_lanes --data-root /data/medicaid --poll --load
+
+# the state ruler (what the state fraud units see), beside the FCA ruler
+python -m src.model_a.prospective_label --exclusion-nodes graph/nodes/exclusion_nodes.parquet --cutoff 2023-12 \
+    --fca-tier hard --sources state --case-db enforcement/doj_cases_v3_plus_cia.csv --graph-dir graph \
+    --defendant-npis processed/case_defendant_npis_plus_cia.parquet --horizon-months 33 \
+    --case-jurisdiction "MFCU|Attorney General|state" --out <run>/future_bans_after_2023-12__state33.csv
+python -m src.model_a.scheme_health --matrix <run>/provider_features_for_model.parquet --manifest <run>/feature_manifest.json \
+    --future-label <run>/future_bans_after_2023-12__fca33.csv --state-label <run>/future_bans_after_2023-12__state33.csv \
+    --out <run>/SCHEME_HEALTH.md --json-out <run>/scheme_health.json
+
+# a verified field result (the file is work product; never git)
+python -m src.enforcement.field_outcomes --data-root /data/medicaid
+
+# a complaint from the court record (PACER login + CourtListener token in ~/.medicaid_env)
+python -m src.enforcement.recap_fetch --docket 67387905 --entry 1 --out /data/medicaid/enforcement/pi_reports/accu --dry-run
+python -m src.enforcement.recap_fetch --docket 67387905 --entry 1 --out /data/medicaid/enforcement/pi_reports/accu
+
+# the court-record check on the dockets listing (no search throttle); --endpoint search is the old path
+python -m src.enforcement.first_to_file --names-file names.txt --since 2010-01-01 --out <folder>
+
+# a frozen run without the embeddings (the default from v28); EMBEDDINGS=1 restores the full walks
+HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v28 2023-12 --rebuild-graph
+```
+
+The employer lane's rows and the field rows become exclusion nodes at the next graph build (the frozen runner's step 2b rebuilds the current-day graph when an exclusion file is newer); the analyst's arms (`--feature-set subscores|other`, `--settlement-weight 0.5`) are graded by the runner as `ab_feature_*` / `ab_settlement_*`.

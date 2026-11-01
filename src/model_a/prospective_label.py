@@ -44,6 +44,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import re
+
 import pandas as pd
 
 
@@ -144,6 +146,37 @@ def _load(path: str) -> pd.DataFrame:
     if p.suffix == ".parquet":
         return pd.read_parquet(p)
     return pd.read_csv(p, dtype=str)
+
+
+# SCHEME-SPECIFIC RULERS (2026-11-01, the questions doc's "class C" finding): half the
+# coin-flip schemes describe conduct the STATES prosecute (personal care, home health,
+# transport, community behavioral health) which never reaches the DOJ ruler. A ruler is
+# the forward label restricted to the sources that see that conduct: `--sources state`
+# keeps the state termination lists, the enrollment ends for cause, the MFCU / state
+# research rows and the employer-of-a-convicted-individual rows; `--sources federal`
+# keeps the LEIE statutes, DOJ cases, revocations, SAM and the preclusion list. A raw
+# regex is accepted too. The case-DB half of a ruler takes `--case-jurisdiction` (a regex
+# on the case row's jurisdiction, e.g. "MFCU|Attorney General" for the state ruler).
+SOURCE_PRESETS = {
+    "state": r"^(?:state_term|mcd_enroll|mfcu|affiliated:|[a-z]+_[a-z]{2}:)",
+    "federal": r"^(?:1128|brch|doj|case|medicare_revocation|preclusion|sam)",
+}
+
+
+NEVER_A_RULER = re.compile(r"^field:", re.I)   # our own field results train, never grade (enforcement.field_outcomes)
+
+
+def filter_sources(exclusion_nodes: pd.DataFrame, sources: str | None) -> pd.DataFrame:
+    """Keep the exclusion records whose excl_type matches the preset / regex; the
+    field-outcome rows are dropped from EVERY ruler, preset or not."""
+    if exclusion_nodes is None or not len(exclusion_nodes):
+        return exclusion_nodes
+    et = exclusion_nodes.get("excl_type", pd.Series("", index=exclusion_nodes.index)).fillna("").astype(str)
+    keep = ~et.str.contains(NEVER_A_RULER)
+    if sources:
+        pat = SOURCE_PRESETS.get(str(sources).lower(), str(sources))
+        keep &= et.str.contains(pat, case=False, regex=True)
+    return exclusion_nodes[keep.to_numpy()].reset_index(drop=True)
 
 
 
@@ -275,9 +308,17 @@ def main() -> None:
                     help="write ONLY the FCA-case ruler (ignore the exclusion ruler)")
     ap.add_argument("--qui-tam-only", action="store_true",
                     help="the case ruler counts only qui tam / whistleblower cases (relator-originated)")
-    ap.add_argument("--affiliated", default=None,
+    ap.add_argument("--affiliated", default=None, nargs="+",
                     help="processed/affiliated_convictions.parquet (label_expansion affiliated): the billers "
-                         "whose claims carried a convicted individual become positives dated by the exclusion")
+                         "whose claims carried a convicted individual become positives dated by the exclusion; "
+                         "several files are concatenated (processed/affiliated_research.parquet from the "
+                         "employer research lane carries the same columns)")
+    ap.add_argument("--sources", default=None,
+                    help="restrict the exclusion half of the ruler to these sources: a preset (state | federal) "
+                         "or a regex on excl_type (SOURCE_PRESETS); the scheme-specific rulers")
+    ap.add_argument("--case-jurisdiction", default=None,
+                    help="restrict the case-DB half of the ruler to rows whose jurisdiction matches this regex "
+                         "(the state ruler: 'MFCU|Attorney General|commercial-plan')")
     ap.add_argument("--tier-report", default=None,
                     help="write the per-tier/basis positive counts as Markdown "
                          "(default: <out>.TIERS.md)")
@@ -286,6 +327,10 @@ def main() -> None:
     from .fca_relevance import tier_report
 
     nodes = _load(args.exclusion_nodes)
+    n0 = len(nodes)
+    nodes = filter_sources(nodes, args.sources)
+    if args.sources or len(nodes) != n0:
+        print(f"[prospective_label] sources {args.sources or 'all (field rows out)'}: {len(nodes):,} of {n0:,} exclusion records kept")
     if str(args.fca_tier).lower().replace("_", "+") == "hard+charged":
         ap.error("--fca-tier hard+charged is a TRAINING policy; the forward ruler grades on outcomes (use hard)")
     label = build_prospective_label(nodes, args.cutoff, fca_tier=args.fca_tier)
@@ -302,6 +347,11 @@ def main() -> None:
         g = Path(args.graph_dir)
         case_db = pd.read_csv(args.case_db, dtype=str) if str(args.case_db).endswith(".csv") \
             else pd.read_parquet(args.case_db)
+        if args.case_jurisdiction and "jurisdiction" in case_db.columns:
+            n0 = len(case_db)
+            case_db = case_db[case_db["jurisdiction"].fillna("").astype(str)
+                              .str.contains(args.case_jurisdiction, case=False, regex=True)].reset_index(drop=True)
+            print(f"[prospective_label] --case-jurisdiction {args.case_jurisdiction!r}: {len(case_db):,} of {n0:,} case rows kept")
         dn = pd.read_parquet(args.defendant_npis) if args.defendant_npis else None
         case_label = build_forward_case_label(case_db, args.cutoff, pd.read_parquet(g / "nodes" / "org_nodes.parquet"),
                                               pd.read_parquet(g / "npi_to_org.parquet"), defendant_npis=dn,
@@ -311,11 +361,15 @@ def main() -> None:
         label = case_label if args.fca_case_only else merge_forward_labels(label, case_label)
     if args.affiliated:
         from .label_expansion import merge_affiliated
-        aff = pd.read_parquet(args.affiliated)
-        before = int(label["is_prospective_positive"].sum())
-        label = merge_affiliated(label, aff, args.cutoff, horizon_months=args.horizon_months)
-        print(f"[prospective_label] affiliated convictions: +{int(label['is_prospective_positive'].sum()) - before:,} "
-              f"biller positives from {args.affiliated}")
+        files = [f for f in args.affiliated if Path(f).exists()]
+        for missing in [f for f in args.affiliated if not Path(f).exists()]:
+            print(f"[prospective_label] affiliated file not found, skipped: {missing}")
+        if files:
+            aff = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+            before = int(label["is_prospective_positive"].sum())
+            label = merge_affiliated(label, aff, args.cutoff, horizon_months=args.horizon_months)
+            print(f"[prospective_label] affiliated convictions: +{int(label['is_prospective_positive'].sum()) - before:,} "
+                  f"biller positives from {', '.join(files)}")
     pos = int(label["is_prospective_positive"].sum())
     pre = int(label["was_excluded_pre_cutoff"].sum())
     und = int(label["undated_exclusion"].sum())

@@ -32,6 +32,9 @@ PRIOR_INNER="${PRIOR_INNER:-5}"
 PRIOR_FLAGS="--prior-min-n $PRIOR_MIN_N --prior-weighted $PRIOR_WEIGHTED --prior-inner-folds $PRIOR_INNER"
 DROP_SCHEMES="${DROP_SCHEMES:-}"
 GRAPH="$DATA/graph"
+# 2026-11-01: embeddings are an arm (see run_frozen_night.sh); EMBEDDINGS=1 restores the full walks
+EMBEDDINGS="${EMBEDDINGS:-0}"
+EMBED_FLAGS="--max-embed-nodes 0 --light-walks-above 0"; [ "$EMBEDDINGS" = "1" ] || EMBED_FLAGS="--no-embeddings"
 EXCL="$GRAPH/nodes/exclusion_nodes.parquet"
 CASES_BASE="$DATA/enforcement/doj_cases_v3.csv"
 DEFENDANTS_BASE="$DATA/processed/case_defendant_npis.parquet"
@@ -81,11 +84,11 @@ python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --
 fi
 
 if run_step 1; then
-step 1/6 "the current-day graph WITH FULL EMBEDDINGS (rebuilt when an exclusion source is newer than it, or REBUILD_CURRENT=1)"
+step 1/6 "the current-day graph (embeddings=${EMBEDDINGS}) (rebuilt when an exclusion source is newer than it, or REBUILD_CURRENT=1)"
 NEWER=$(find "$DATA/processed" -maxdepth 1 -name 'exclusions*.parquet' -newer "$EXCL" 2>/dev/null | head -5)
 if [ ! -f "$EXCL" ] || [ -n "$NEWER" ] || [ "${REBUILD_CURRENT:-0}" = "1" ]; then
   echo "[$TAG]   rebuilding $GRAPH (newer exclusion sources: ${NEWER:-none / forced})"
-  python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH" --max-embed-nodes 0 --light-walks-above 0 || fail 1
+  python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH" $EMBED_FLAGS || fail 1
 else
   echo "[$TAG]   current-day graph is newer than every exclusion source: reused"
 fi

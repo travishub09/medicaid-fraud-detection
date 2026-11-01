@@ -29,6 +29,7 @@ MATRIX="$RUN/provider_features_for_model.parquet"
 MANIFEST="$RUN/feature_manifest.json"
 FCA="$RUN/future_bans_after_${CUT}__fca${HORIZON}.csv"
 [ -f "$FCA" ] || FCA="$RUN/future_bans_after_${CUT}.csv"
+STATE="$RUN/future_bans_after_${CUT}__state${HORIZON}.csv"   # 2026-11-01: the state ruler (scheme_health --state-label)
 SPEND="$DATA/interim/spending_asof_${CUT}.parquet"
 [ -f "$SPEND" ] || SPEND="$DATA/processed/spending_fact.parquet"
 cd "$REPO"
@@ -55,6 +56,7 @@ else
 fi
 m 1/5 "scheme health on BOTH labels (exclusion label + the FCA ruler)"
 python -u -m src.model_a.scheme_health --matrix "$MATRIX" --manifest "$MANIFEST" --future-label "$FCA" \
+    $( [ -f "$STATE" ] && echo --state-label "$STATE" ) \
     --baseline "$BASELINE" --out "$RUN/SCHEME_HEALTH.md" --json-out "$RUN/scheme_health.json" || mfail 1
 
 m 2/5 "signal ranking (per-feature separation on covered rows)"

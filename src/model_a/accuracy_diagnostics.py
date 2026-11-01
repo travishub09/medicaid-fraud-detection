@@ -244,11 +244,13 @@ def eval_frame(matrix: pd.DataFrame, ruler: pd.DataFrame, cutoff: str,
 def _screened_columns(matrix: pd.DataFrame, manifest: dict, y_screen: np.ndarray) -> list[str]:
     from .label_ablation import _screened_features
     from .company_list import apply_drop_schemes, training_policy
+    from .company_list import apply_feature_set
     cols, leaked = _screened_features(matrix, manifest, y_screen)
     if leaked:
         print("[accuracy_diagnostics] auto-dropped label-leaking feature(s): "
               + ", ".join(f"{c} (AUC {a})" for c, a in leaked))
-    return apply_drop_schemes(cols, training_policy(manifest))       # the prune A/B (v21)
+    pol = training_policy(manifest)
+    return apply_feature_set(apply_drop_schemes(cols, pol), pol)     # the prune A/B (v21) + the feature-set arm
 
 
 def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_train: np.ndarray,
@@ -270,8 +272,8 @@ def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_trai
     # the same training policy as the shipped scorer (v9): label_weight as the
     # sample weight, seed bagging, and the broadcast-row policy from the manifest
     # or the CLI override; the class priors (v21 A/B) encoded per fold
-    w = training_weights(matrix)
     pol = training_policy(manifest)
+    w = training_weights(matrix, pol.get("settlement_weight"))
     keys = prior_keys_for(matrix, pol)
     ambiguous = ambiguous | unassessable_mask(matrix)
     if pol["broadcast"] == "mask":
@@ -439,6 +441,23 @@ def org_outcomes(orgs: pd.DataFrame, ev: pd.DataFrame) -> pd.DataFrame:
         n_uni = g["in_uni"].sum()
         out.loc[n_uni.index, "members_in_universe"] = n_uni.to_numpy().astype(int)
     return out
+
+
+def ruler_reach(oh: pd.DataFrame, ev: pd.DataFrame) -> dict:
+    """How far a ruler reaches INTO the graded book (2026-10-30, the excl58 read: the
+    exclusion ruler rebuilt from the current graph had 436 positives in the universe and 0
+    hits on every list, which read as a defect and was a reach fact: the excluded
+    individuals are tiny billers whose organizations never ranked). positives_in_universe
+    = eval rows with y = 1; positives_in_listed_rosters = those inside some listed
+    organization's member roster; orgs_with_hit = listed organizations with any; share =
+    the reach the registry can hold (`fca_reach >= 0.02`)."""
+    pos = set(ev.loc[ev["y"] == 1, "npi"].astype(str)) if len(ev) else set()
+    members = oh["member_npis"].fillna("").astype(str).str.split(";") if "member_npis" in oh.columns else pd.Series([], dtype=object)
+    listed = set(n for m in members for n in m if n)
+    inside = pos & listed
+    return {"positives_in_universe": int(len(pos)), "positives_in_listed_rosters": int(len(inside)),
+            "orgs_with_hit": int(oh["hit"].sum()) if "hit" in oh.columns else 0,
+            "share_in_listed": (len(inside) / len(pos)) if pos else None}
 
 
 # --------------------------------------------------------------------------- #
@@ -929,6 +948,10 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
         _log(f"ruler {name}: budgets, lead time, taxonomy, segments, calibration")
         block = res["rulers"][name]
         oh = org_outcomes(orgs, ev)
+        block["reach"] = ruler_reach(oh, ev)
+        if block["reach"]["positives_in_universe"] and not block["reach"]["positives_in_listed_rosters"]:
+            _log(f"ruler {name}: NONE of its {block['reach']['positives_in_universe']:,} positives sits in a listed "
+                 "organization's roster -- the ruler does not reach this book; its hit counts are a reach fact, not a grade")
         block["org_budgets"] = budget_rows_org(oh, budgets_org)
         if pursuit_refit is not None and len(pursuit_refit):
             # v23: the refit's operator book under the shipped order (acc_pursuit_* KPIs)
@@ -1013,6 +1036,10 @@ def kpi_block(res: dict) -> dict:
                 out[f"acc_base{k}_{name}"] = r["random_expected"] / k if k else None
                 out[f"acc_org_p{k}_vs_random_{name}"] = r["random_p"]
                 out[f"acc_org_lift{k}_vs_dollar_{name}"] = (r["hits"] / r["dollar_ranked_hits"]) if r["dollar_ranked_hits"] else None
+        rc = res["rulers"][name].get("reach") or {}
+        if rc:
+            out[f"acc_ruler_reach_{name}"] = rc.get("share_in_listed")
+            out[f"acc_ruler_pool_hits_{name}"] = rc.get("orgs_with_hit")
         lt = res["rulers"][name].get("lead_time", {})
         out[f"acc_lead_median_mo_{name}"] = lt.get("median_lead_months")
         out[f"acc_hits_lead_ge_gap_share_{name}"] = lt.get("share_lead_ge_gap")
@@ -1100,6 +1127,17 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
     L += ["", "_Known at the freeze = a pre-cutoff record under the ruler, an in-matrix positive, or a DOJ case "
           "the export resolved before the cutoff. Ambiguous = positive under another ruler only; section 6 "
           "re-runs the budgets without them._"]
+    if any(b.get("reach") for b in res["rulers"].values()):
+        L += ["", "| ruler | positives in the eval universe | inside a listed organization's roster | listed organizations with a hit | reach |",
+              "|---|--:|--:|--:|--:|"]
+        for name, b in res["rulers"].items():
+            rc = b.get("reach") or {}
+            if rc:
+                L.append(f"| {name} | {rc['positives_in_universe']:,} | {rc['positives_in_listed_rosters']:,} | "
+                         f"{rc['orgs_with_hit']:,} | {_f(rc['share_in_listed'], '{:.1%}')} |")
+        L += ["", "_Reach = the share of the ruler's positives that sit inside a listed organization at all. A ruler "
+              "with zero reach cannot grade the book (its zeros are a reach fact, not a miss): the exclusion "
+              "rulers are mostly individuals whose organizations never rank, the case rulers are organizations._"]
     L += ["", "## 2. Precision at review budgets (organizations, the shipped grain)", ""]
     for name, b in res["rulers"].items():
         L += [f"### {name}", "", "| budget | hits | tie-aware | ties at k | precision | Wilson 95% | exact 95% | recall | random expected | p vs random | dollar-ranked hits | size-matched expected |",
@@ -1273,6 +1311,12 @@ def main() -> None:
     ap.add_argument("--active-within", type=int, default=12)
     ap.add_argument("--min-damages", type=float, default=10_000_000.0)
     ap.add_argument("--repeats", type=int, default=0, help="extra re-shuffled fold assignments for stability")
+    ap.add_argument("--feature-set", default=None, choices=["all", "subscores", "other"],
+                    help="training policy arm (2026-11-01): train on the scheme subscores only, the other "
+                         "features only, or all (the analyst's feature-group ablation)")
+    ap.add_argument("--settlement-weight", type=float, default=None,
+                    help="training policy arm (2026-11-01): scale civil-settlement positives' sample weight "
+                         "(1 = like convictions, the ship)")
     ap.add_argument("--seeds", type=int, default=None,
                     help="refit only: LightGBM fits averaged per fold (default: the manifest's "
                          "training_policy.n_seeds, else 1)")
@@ -1321,15 +1365,17 @@ def main() -> None:
         print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
     if (a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None
             or a.drop_schemes is not None or a.prior_min_n is not None or a.prior_weighted is not None
-            or a.prior_inner_folds is not None):
+            or a.prior_inner_folds is not None or a.feature_set is not None or a.settlement_weight is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors,
                             drop_schemes=a.drop_schemes, prior_min_n=a.prior_min_n,
-                            prior_weighted=a.prior_weighted, prior_inner_folds=a.prior_inner_folds)
+                            prior_weighted=a.prior_weighted, prior_inner_folds=a.prior_inner_folds,
+                            settlement_weight=a.settlement_weight, feature_set=a.feature_set)
         print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, "
               f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}, drop_schemes={a.drop_schemes}, "
               f"prior_min_n={a.prior_min_n}, prior_weighted={a.prior_weighted}, "
-              f"prior_inner_folds={a.prior_inner_folds}")
+              f"prior_inner_folds={a.prior_inner_folds}, feature_set={a.feature_set}, "
+              f"settlement_weight={a.settlement_weight}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:

@@ -241,6 +241,22 @@ def fca_tier(excl_type) -> tuple[str, str]:
     # Manus answer); the pipes inside a SAM / state / enrollment body ("TERMINATED |
     # CONVICTED OF MEDICAID FRAUD") are the reason text and stay
     t = PROVENANCE_SUFFIX.sub("", t)
+    if t.startswith("affiliated:"):
+        # the EMPLOYER of a convicted individual (label_expansion.merge_affiliated writes
+        # "affiliated:<the individual's excl_type>"; the employer research lane writes the
+        # same shape into processed/exclusions_employer_resolved.parquet so the graph makes
+        # it an exclusion node): the individual's own statute sets the tier, the basis
+        # says the row is the biller, not the person (2026-11-01)
+        tier, basis = fca_tier(t[len("affiliated:"):])
+        return tier, f"employer of a convicted individual ({basis})"
+    if t.startswith("field:"):
+        # the operator's own verified field outcome (enforcement.field_outcomes): a
+        # count at the door over the licence, a yard with no fleet. TRAINING-only
+        # evidence at our exact grain; prospective_label never admits it to a ruler.
+        what = t.split(":", 1)[1]
+        if re.search(r"over_capacity|no_fleet|confirmed|contradiction", what):
+            return "hard", f"field-verified outcome: {what[:40]}"
+        return "excluded", f"field check without an adverse finding: {what[:40]} (never a positive)"
     if t.startswith("opensanctions"):
         return "excluded", "OpenSanctions: not an FCA source"
     if t.startswith("sam"):

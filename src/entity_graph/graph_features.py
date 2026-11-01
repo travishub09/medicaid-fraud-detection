@@ -259,6 +259,40 @@ def _distance_to_exclusions_sparse(nodes, A, exclusion_ids: set[str],
     return {nodes[i]: int(dist_arr[i]) for i in np.flatnonzero(dist_arr >= 0)}
 
 
+def _count_within_2_hops_sparse(nodes, A, exclusion_ids) -> dict:
+    """``count[node_id]`` = distinct exclusion nodes within two hops (the sparse path):
+    two sparse matrix-vector products on the exclusion indicator, so the count is cheap
+    at 13M nodes and never names a party. A 0/1 flag was 97 percent one value; the
+    count has a tail (one neighbour is proximity, five is a ring)."""
+    import numpy as np
+    pos = {nid: i for i, nid in enumerate(nodes)}
+    seed = [pos[x] for x in exclusion_ids if x in pos]
+    if not seed:
+        return {}
+    e = np.zeros(len(nodes), dtype=np.float32)
+    e[seed] = 1.0
+    one = A @ e                              # exclusion nodes adjacent to each node
+    two = A @ (one > 0).astype(np.float32)   # nodes with an exclusion-adjacent neighbour (a count of such neighbours)
+    # distinct exclusions within 2 hops is bounded above by one + the two-hop reach; the
+    # exact distinct count needs A @ A (too dense); the sum is the ring signal we want
+    cnt = one + two
+    cnt[seed] = 0.0
+    idx = np.flatnonzero(cnt > 0)
+    return {nodes[i]: int(min(cnt[i], 1_000_000)) for i in idx}
+
+
+def _count_within_2_hops_nx(G, exclusion_ids) -> dict:
+    import networkx as nx
+    out: dict = {}
+    for x in exclusion_ids:
+        if x not in G:
+            continue
+        for n, d in nx.single_source_shortest_path_length(G, x, cutoff=2).items():
+            if n != x and n not in exclusion_ids:
+                out[n] = out.get(n, 0) + 1
+    return out
+
+
 def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                            exclusion_nodes: pd.DataFrame, member_edges: pd.DataFrame,
                            owned_by_edges: pd.DataFrame, excluded_in_edges: pd.DataFrame,
@@ -302,6 +336,7 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
             owned_by_edges, exin, co_located_edges,
             max_colocation_cluster=max_colocation_cluster)
         dist = _distance_to_exclusions_sparse(nodes, A, excl_ids, max_hops=3)
+        n2 = _count_within_2_hops_sparse(nodes, A, excl_ids)
         nearest = {}
         community, betweenness = {}, {}
     else:
@@ -309,6 +344,7 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
                         owned_by_edges, exin, co_located_edges,
                         max_colocation_cluster=max_colocation_cluster)
         dist, nearest = _distance_to_exclusions(G, excl_ids)
+        n2 = _count_within_2_hops_nx(G, excl_ids)
         community = _community_partition(G) if G.number_of_edges() else {}
         betweenness = _betweenness(G)
 
@@ -375,6 +411,7 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
             "org_node_id": nid,
             "excluded_party_distance": ex_dist if ex_dist is not None else -1,
             "within_2_hops_of_exclusion": int(ex_dist is not None and ex_dist <= 2),
+            "excluded_within_2_hops": int(n2.get(nid, 0)),
             "nearest_exclusion_name": ident.get("name", ""),
             "nearest_exclusion_type": ident.get("type", ""),
             "nearest_exclusion_date": ident.get("date", ""),

@@ -82,7 +82,12 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
                    "growth_level_shift": 0.8, "new_code_burst": 0.5},
     # available today: entity-graph features (src/entity_graph/graph_features.py)
     "ownership_integrity": {
+        # the 0/1 proximity flag and its COUNT (excluded parties within two hops,
+        # entity_graph.graph_features 2026-11-01) are one signal listed twice: when the
+        # count lands its bounded _norm wins (the either/or rule below), so the input
+        # has a distribution instead of a 97-percent tie block (class A, deep dive F2)
         "within_2_hops_of_exclusion": 0.6,
+        "excluded_within_2_hops_norm": 0.6,
         "shell_score": 0.5,
         # the graph emits related_party_density; the _norm variant exists only
         # on the company path — accept both (skip-missing)
@@ -256,6 +261,12 @@ def normalize_graph_features(features: pd.DataFrame) -> pd.DataFrame:
     within_2_hops_of_exclusion and shell_score are already 0/1 and 0–1.
     """
     out = features.copy()
+    if "excluded_within_2_hops" in out.columns:
+        # the count of excluded parties within two hops saturates at 5: one neighbour is
+        # proximity, five is a ring; a legitimate system near many excluded clinicians
+        # should not keep climbing on size alone
+        out["excluded_within_2_hops_norm"] = (
+            pd.to_numeric(out["excluded_within_2_hops"], errors="coerce").clip(lower=0) / 5.0).clip(upper=1.0)
     if "related_party_density" in out.columns:
         # /25 (was /10): a small shared-owner shell cluster is the concealment
         # signal; a large legitimate integrated system shares an owner with
@@ -290,6 +301,8 @@ def compute_subscores(features: pd.DataFrame,
         for c in list(present):
             if f"{c}_norm" in present:
                 del present[c]
+        if "excluded_within_2_hops_norm" in present and "within_2_hops_of_exclusion" in present:
+            del present["within_2_hops_of_exclusion"]          # the count supersedes the flag
         if not present:
             continue
         # NULL-aware weighted mean: a missing feature means "provider absent from

@@ -35,6 +35,8 @@ DEFENDANTS_BASE="$DATA/processed/case_defendant_npis.parquet"
 CIA_CASES="$DATA/enforcement/cia_cases.csv"
 CIA_NPIS="$DATA/processed/cia_defendant_npis.parquet"
 AFFILIATED="$DATA/processed/affiliated_convictions.parquet"
+AFF_RESEARCH="$DATA/processed/affiliated_research.parquet"
+AFF_FILES="$AFFILIATED"; [ -f "$AFF_RESEARCH" ] && AFF_FILES="$AFFILIATED $AFF_RESEARCH"
 CASES="$DATA/enforcement/doj_cases_v3_plus_cia.csv"
 DEFENDANTS="$DATA/processed/case_defendant_npis_plus_cia.parquet"
 REBUILD_RULERS="${REBUILD_RULERS:-}"
@@ -92,12 +94,16 @@ if [ -n "$REBUILD_RULERS" ]; then
       --out "$RUN/future_bans_after_${CUT}__fca${HORIZON}.csv" || fail 0
   if [ -f "$AFFILIATED" ]; then
     python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-        --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --affiliated "$AFFILIATED" \
+        --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --affiliated $AFF_FILES \
         --out "$RUN/future_bans_after_${CUT}__aff${HORIZON}.csv" || fail 0
   fi
   python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
       --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only --qui-tam-only \
       --out "$RUN/future_bans_after_${CUT}__quitam${HORIZON}.csv" || fail 0
+  python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+      --sources state --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
+      --case-jurisdiction "MFCU|Attorney General|state" $( [ -f "$AFF_RESEARCH" ] && echo --affiliated "$AFF_RESEARCH" ) \
+      --out "$RUN/future_bans_after_${CUT}__state${HORIZON}.csv" || fail 0
 else
   [ -f "$CASES" ] || CASES="$CASES_BASE"
   [ -f "$DEFENDANTS" ] || DEFENDANTS="$DEFENDANTS_BASE"

@@ -67,6 +67,18 @@ DEFENDANTS_BASE="$DATA/processed/case_defendant_npis.parquet"
 CIA_CASES="$DATA/enforcement/cia_cases.csv"
 CIA_NPIS="$DATA/processed/cia_defendant_npis.parquet"
 AFFILIATED="$DATA/processed/affiliated_convictions.parquet"
+# 2026-11-01: the employer research lane's rows ride beside the rendering-join rows on the
+# affiliated ruler (prospective_label --affiliated takes several files)
+AFF_RESEARCH="$DATA/processed/affiliated_research.parquet"
+AFF_FILES="$AFFILIATED"; [ -f "$AFF_RESEARCH" ] && AFF_FILES="$AFFILIATED $AFF_RESEARCH"
+# 2026-11-01: THE EMBEDDINGS ARE AN ARM. Full-density node embeddings cost one to three hours
+# a run and have read no measurable signal since v12 (NETWORK_AB, every run); the ownership /
+# address structure reaches the scorer through the rollup, the mailbox / co-location features
+# and the fraud-proximity field, which do score. EMBEDDINGS=0 (default) passes --no-embeddings
+# (graph_emb_* absent, the source skipped by name in SOURCES_REPORT, the stop list below skips
+# it); EMBEDDINGS=1 restores the v12..v27 build. The registry records it as `embeddings`.
+EMBEDDINGS="${EMBEDDINGS:-0}"
+EMBED_FLAGS="--max-embed-nodes 0 --light-walks-above 0"; [ "$EMBEDDINGS" = "1" ] || EMBED_FLAGS="--no-embeddings"
 CASES="$DATA/enforcement/doj_cases_v3_plus_cia.csv"
 DEFENDANTS="$DATA/processed/case_defendant_npis_plus_cia.parquet"
 export MEDICAID_DUCKDB_TMP="${MEDICAID_DUCKDB_TMP:-$DATA/interim/duckdb_tmp}"
@@ -154,12 +166,12 @@ python -u -m src.model_a.label_expansion merge-inputs --case-db "$CASES_BASE" --
 fi
 
 if run_step 1; then
-step 1/13 "point-in-time graph WITH FULL EMBEDDINGS, every node, full walks (rebuilt into $GRAPH_ASOF unless present)"
+step 1/13 "point-in-time graph (embeddings=${EMBEDDINGS}: 0 = none, the arm; 1 = full walks) (rebuilt into $GRAPH_ASOF unless present)"
 if [ -f "$GRAPH_ASOF/nodes/exclusion_nodes.parquet" ] && [ -z "$REBUILD" ]; then
   echo "[$TAG]   reusing $GRAPH_ASOF  (pass --rebuild-graph when processed/exclusions_*.parquet changed: v15 did)"
 else
   python -u -m src.entity_graph --input "$DATA/processed" --out "$GRAPH_ASOF" --asof "$CUT" --asof-nppes "$NPPES_ASOF" \
-      --max-embed-nodes 0 --light-walks-above 0 || fail 1
+      $EMBED_FLAGS || fail 1
 fi
 fi
 
@@ -172,7 +184,8 @@ python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH_ASOF" --as
     --processed "$DATA/processed" --out "$RUN" ${FROZEN_SKIP:+--skip-sources "$FROZEN_SKIP"} || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }
 grep -q "\[asof_v3\] restored" "$RUN/night_run.log" || { echo "[$TAG] the as-of v3 scores were NOT restored (no '[asof_v3] restored' line) -- stop"; fail 2; }
-for s in servicing mue sector_schemes medicaid_enrollment billing_lm graph_embeddings; do
+STOP_SOURCES="servicing mue sector_schemes medicaid_enrollment billing_lm"; [ "$EMBEDDINGS" = "1" ] && STOP_SOURCES="$STOP_SOURCES graph_embeddings"
+for s in $STOP_SOURCES; do
   if grep -E "^\| \`$s\` \| .*skipped" "$RUN/SOURCES_REPORT.md" >/dev/null; then
     echo "[$TAG] source $s was SKIPPED -- not a full-feature run; stop and paste its SOURCES_REPORT line"; fail 2
   fi
@@ -211,14 +224,14 @@ CUR="$DATA/graph/nodes/exclusion_nodes.parquet"
 NEWER=$(find "$DATA/processed" -maxdepth 1 -name 'exclusions*.parquet' -newer "$CUR" 2>/dev/null | head -5)
 if [ ! -f "$CUR" ] || [ -n "$NEWER" ] || [ "${REBUILD_CURRENT:-0}" = "1" ]; then
   echo "[$TAG]   rebuilding $DATA/graph (newer exclusion sources: ${NEWER:-none / forced})"
-  python -u -m src.entity_graph --input "$DATA/processed" --out "$DATA/graph" --max-embed-nodes 0 --light-walks-above 0 || fail 2b
+  python -u -m src.entity_graph --input "$DATA/processed" --out "$DATA/graph" $EMBED_FLAGS || fail 2b
 else
   echo "[$TAG]   current-day graph is newer than every exclusion source: reused"
 fi
 fi
 
 if run_step 3; then
-step 3/13 "forward labels (exclusion ruler, hard tier; FCA case ruler, 36 months)"
+step 3/13 "forward labels (exclusion ruler, hard tier; FCA case ruler; affiliated; qui tam; the STATE ruler, $HORIZON months)"
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --out "$RUN/future_bans_after_${CUT}.csv" || fail 3
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
@@ -226,12 +239,21 @@ python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/
     --out "$RUN/future_bans_after_${CUT}__fca${HORIZON}.csv" || fail 3
 if [ -f "$AFFILIATED" ]; then
   python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
-      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --affiliated "$AFFILIATED" \
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --affiliated $AFF_FILES \
       --out "$RUN/future_bans_after_${CUT}__aff${HORIZON}.csv" || fail 3
 fi
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only --qui-tam-only \
     --out "$RUN/future_bans_after_${CUT}__quitam${HORIZON}.csv" || fail 3
+# THE STATE RULER (2026-11-01): the outcomes the state fraud units produce (terminations for
+# cause, enrollment ends for cause, MFCU / AG cases, employers of convicted individuals), the
+# ruler that can see personal care, home health, transport and community behavioral health;
+# the diagnostics discover it as `state`, scheme_health grades the state-ruled schemes on it,
+# the registry reads state_hits* / state_reach
+python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+    --sources state --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
+    --case-jurisdiction "MFCU|Attorney General|state" $( [ -f "$AFF_RESEARCH" ] && echo --affiliated "$AFF_RESEARCH" ) \
+    --out "$RUN/future_bans_after_${CUT}__state${HORIZON}.csv" || fail 3
 fi
 
 if run_step 4; then
@@ -291,6 +313,21 @@ if [ -n "$CLASS_PRIORS" ]; then
 elif [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
   python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
+fi
+# 2026-11-01, THE ANALYST'S TWO ARMS (docs ANALYST_QUESTIONS_2026-10-31): the feature-group
+# ablation (the 27 scheme subscores alone / the other features alone, against the shipped
+# all-columns refit = ab_broadcast_weight above) and the settlement weight (civil-settlement
+# positives at SETTLEMENT_AB of a conviction's weight; empty skips). Arms, graded on the main
+# list AND the operator book; a policy moves only on a sweep that wins across the budgets.
+if [ "${FEATURE_SET_AB:-1}" = "1" ]; then
+  for fs in subscores other; do
+    python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+        --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --feature-set "$fs" --out "$RUN/ab_feature_${fs}/ACCURACY_DIAGNOSTICS.md" || fail 8
+  done
+fi
+if [ -n "${SETTLEMENT_AB-0.5}" ]; then
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --settlement-weight "${SETTLEMENT_AB-0.5}" --out "$RUN/ab_settlement_$(echo "${SETTLEMENT_AB-0.5}" | tr -d .)/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
 fi
 
