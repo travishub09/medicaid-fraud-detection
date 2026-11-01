@@ -876,7 +876,8 @@ def lane_status(lane: str, data_root: Path) -> dict:
     loaded = json.loads(files["loaded"].read_text(encoding="utf-8")) if files["loaded"].exists() else {}
     return {"lane": lane, "prompts": len(prompts), "dispatched": sum(1 for v in reg.values() if v.get("task_id")),
             "completed": sum(1 for v in res.values() if v.get("status") == "completed"),
-            "errors": sum(1 for v in res.values() if v.get("status") in ("error", "failed", "waiting")),
+            "errors": sum(1 for v in res.values() if v.get("status") in ("error", "failed")),
+            "open": sum(1 for v in res.values() if v.get("status") not in ("completed", "error", "failed")),
             "loaded": loaded.get("loaded", 0), "quarantined": loaded.get("quarantined", 0),
             "no_table": loaded.get("no_table", 0), "notes": loaded.get("notes", []), "files": loaded.get("files", [])}
 
@@ -901,10 +902,10 @@ def write_report(data_root: Path, lanes, out: Path | None = None) -> Path:
          "the label inputs (the same loader a human review would call: Luhn-valid NPI, confidence >= medium, "
          "the NPI among OUR candidates, a resolved outcome); quarantined = rows the gate refused, kept in "
          "<lane>_quarantine.csv for the human read. The raw answers are under processed/manus_lanes/<lane>/results/._",
-         "", "| lane | prompts | dispatched | completed | errors | loaded | quarantined | no table | notes |",
-         "|---|--:|--:|--:|--:|--:|--:|--:|---|"]
+         "", "| lane | prompts | dispatched | completed | open | errors | loaded | quarantined | no table | notes |",
+         "|---|--:|--:|--:|--:|--:|--:|--:|--:|---|"]
     for r in rows:
-        L.append(f"| {r['lane']} | {r['prompts']} | {r['dispatched']} | {r['completed']} | {r['errors']} | "
+        L.append(f"| {r['lane']} | {r['prompts']} | {r['dispatched']} | {r['completed']} | {r.get('open', 0)} | {r['errors']} | "
                  f"{r['loaded']} | {r['quarantined']} | {r['no_table']} | {'; '.join(r['notes'])[:200]} |")
     L += ["", "## What happens next", "",
           "- cia / outcome_refresh / commercial rows went into enforcement/doj_cases_v3.csv (case_type set per row); "
@@ -960,7 +961,9 @@ def run_cycle(data_root: Path, lanes, run_dir: Path | None, build: bool, dispatc
             pending = 0
             for lane in lanes:
                 res = poll_lane(lane, data_root, transport=transport, log=log)
-                pending += sum(1 for v in res.values() if v.get("status") not in ("completed", "error", "failed", "waiting"))
+                # "waiting" is the agent narrating a long step and "poll_failed" is OUR read that
+                # did not land: both are still open (2026-11-01)
+                pending += sum(1 for v in res.values() if v.get("status") not in ("completed", "error", "failed"))
             if pending == 0 or time.time() >= deadline:
                 break
             log(f"[manus_lanes] {pending} task(s) still running; next poll in {poll_every:.0f}s")

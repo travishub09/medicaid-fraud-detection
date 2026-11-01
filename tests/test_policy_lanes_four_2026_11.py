@@ -139,3 +139,46 @@ def test_append_any_dedups_within_the_first_batch(tmp_path):
     p = tmp_path / "r.parquet"
     assert ml._append_any(p, rows, ["state", "facility_type", "url"]) == 1
     assert len(pd.read_parquet(p)) == 1
+
+
+def test_policy_gate_reads_markdown_links_and_official_code_hosts():
+    """2026-11-01: 528 rows refused on the domain were markdown links the parser read as
+    no host; the official state codes on govt.westlaw.com / flrules.org are government."""
+    assert pr.clean_url("[www.healthnet.com](https://www.healthnet.com/x.pdf)") == "https://www.healthnet.com/x.pdf"
+    assert pr.clean_url("https://www.dhcs.ca.gov/a).") == "https://www.dhcs.ca.gov/a"
+    assert pr.government_domain("[www.lacare.org](https://www.lacare.org/providers/x)")
+    assert pr.government_domain("https://govt.westlaw.com/calregs/Document/x")
+    assert pr.government_domain("https://laws.flrules.org/2024/1")
+    assert not pr.government_domain("https://cop-p-001.sitecorecontenthub.cloud/api/x")
+
+
+def test_poll_research_backs_off_on_429_and_never_marks_the_task_errored(tmp_path):
+    """2026-11-01: 234 tasks read as 'error' because OUR read drew HTTP 429; a transport
+    failure is poll_failed (open), and a 429 is retried with a back-off."""
+    import json
+    from src.model_a import pursuit_dossier as pdm
+
+    class T:
+        def __init__(self, fail):
+            self.fail, self.calls = fail, 0
+
+        def get(self, tid):
+            self.calls += 1
+            if self.calls <= self.fail:
+                raise RuntimeError("429 Client Error: Too Many Requests for url: x")
+            return {"status": "completed", "output": "done", "attachments": []}
+
+    reg = tmp_path / "reg.json"
+    reg.write_text(json.dumps({"o1": {"task_id": "t1"}}), encoding="utf-8")
+    out = tmp_path / "res.json"
+    waits = []
+    res = pdm.poll_research(reg, out, transport=T(fail=2), sleep=waits.append)
+    assert res["o1"]["status"] == "completed" and waits[:2] == [2, 4]
+    res = pdm.poll_research(reg, tmp_path / "res2.json", transport=T(fail=99), sleep=waits.append)
+    assert res["o1"]["status"] == "poll_failed"
+
+    class Dead:
+        def get(self, tid):
+            raise RuntimeError("connection reset")
+    res = pdm.poll_research(reg, tmp_path / "res3.json", transport=Dead(), sleep=waits.append)
+    assert res["o1"]["status"] == "poll_failed"

@@ -387,8 +387,21 @@ def pull_attachments(results_path: Path, out_dir: Path, fetch=None, timeout: int
     return rows
 
 
-def poll_research(registry_path: Path, out_path: Path, transport=None) -> dict:
-    """Collect finished research; returns {org_id: envelope} for the renderer."""
+POLL_PACE_SECONDS = 0.4          # between two task reads (the service rate-limits bursts)
+POLL_BACKOFF = (2, 4, 8, 16, 32)  # after an HTTP 429, before the next try on the same task
+
+
+def poll_research(registry_path: Path, out_path: Path, transport=None, sleep=None) -> dict:
+    """Collect finished research; returns {org_id: envelope} for the renderer.
+
+    2026-11-01: a burst of 400 task reads drew HTTP 429 from the service and the
+    exception was recorded as the TASK's status ("error"), so the cycle stopped asking
+    about 234 tasks that were fine (mfcu / employer / federal_reports read 40 / 40 / 35
+    errors with 0 completed). A transport failure is never the task's status: the poll
+    paces its reads, backs off on 429, and records what it could not read as
+    ``poll_failed`` (non-terminal: the next poll asks again)."""
+    import time as _time
+    sleep = sleep or _time.sleep
     if not registry_path.exists():
         return {}
     if transport is None:
@@ -400,22 +413,37 @@ def poll_research(registry_path: Path, out_path: Path, transport=None) -> dict:
     reg = json.loads(registry_path.read_text(encoding="utf-8"))
     results = (json.loads(out_path.read_text(encoding="utf-8"))
                if out_path.exists() else {})
+    first = True
     for oid, info in reg.items():
         if oid in results and results[oid].get("status") == "completed":
             continue
         tid = info.get("task_id")
         if not tid:
             continue
-        try:
-            env = transport.get(tid)
+        if not first:
+            sleep(POLL_PACE_SECONDS)
+        first = False
+        env, last_err = None, None
+        for attempt, wait in enumerate((0,) + POLL_BACKOFF):
+            if wait:
+                sleep(wait)
+            try:
+                env = transport.get(tid)
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                if "429" not in str(e):
+                    break
+        if env is not None:
             results[oid] = {"status": env.get("status"),
                             "output": env.get("output"),
                             "attachments": env.get("attachments") or [],
                             # the service's own reason for a failure ("You don't have
                             # enough credits ..."), so a tally can say WHY
                             "error_detail": env.get("error_detail")}
-        except Exception as e:
-            results[oid] = {"status": "error", "output": str(e)}
+        else:
+            results[oid] = {"status": "poll_failed", "output": str(last_err)[:300],
+                            "error_detail": f"poll failed: {str(last_err)[:200]}"}
     out_path.write_text(json.dumps(results, indent=2, ensure_ascii=False,
                                    default=str), encoding="utf-8")
     return results

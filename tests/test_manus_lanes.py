@@ -107,7 +107,7 @@ def test_cycle_builds_dispatches_polls_and_loads_with_the_gates(tmp_path):
     assert len(q) == 1 and "Dr Pending" in q.iloc[0]["defendant_name"]
     # the report
     rep = (root / "processed" / "manus_lanes" / "MANUS_LANES.md").read_text(encoding="utf-8")
-    assert "| names | 1 | 1 | 1 | 0 | 1 |" in rep and "| commercial | 1 | 1 | 1 | 0 | 1 | 1 |" in rep
+    assert "| names | 1 | 1 | 1 | 0 | 0 | 1 |" in rep and "| commercial | 1 | 1 | 1 | 0 | 0 | 1 | 1 |" in rep   # open col 2026-11-01
     st = {r["lane"]: r for r in json.loads((root / "processed" / "manus_lanes" / "manus_lanes.json").read_text())}
     assert st["outcome_refresh"]["loaded"] == 1
     # loading again is idempotent
@@ -195,4 +195,4 @@ def test_one_lane_load_failure_does_not_stop_the_others(tmp_path, monkeypatch):
     assert "LOAD FAILED" in res["tallies"]["cia"]["notes"][0]
     assert res["tallies"]["names"]["loaded"] == 1
     rep = (root / "processed" / "manus_lanes" / "MANUS_LANES.md").read_text(encoding="utf-8")
-    assert "LOAD FAILED" in rep and "| names | 1 | 1 | 1 | 0 | 1 |" in rep
+    assert "LOAD FAILED" in rep and "| names | 1 | 1 | 1 | 0 | 0 | 1 |" in rep

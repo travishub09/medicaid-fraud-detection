@@ -37,7 +37,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.policy.registry import (DEFAULT_STATES, POLICY_COLS, _col, _date, _num, _state_names, append_rows,
-                                 government_domain)
+                                 government_domain, clean_url)
 
 # --------------------------------------------------------------------------- roster finder
 
@@ -88,7 +88,7 @@ def load_roster_rows(table: pd.DataFrame, state: str, ftype: str, task_id: str =
                      retrieved_at: str | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     st = str(state).upper()
     retrieved_at = retrieved_at or pd.Timestamp.now("UTC").strftime("%Y-%m-%d")
-    url, name = _col(table, "url"), _col(table, "roster_name")
+    url, name = _col(table, "url").map(clean_url), _col(table, "roster_name")
     method = _col(table, "download_method").str.lower()
     ok, bad = [], []
     for i in range(len(table)):
@@ -182,7 +182,7 @@ def load_fee_rows(table: pd.DataFrame, state: str, task_id: str = "", retrieved_
     st = str(state).upper()
     retrieved_at = retrieved_at or pd.Timestamp.now("UTC").strftime("%Y-%m-%d")
     hc, yr, rate, url = (_col(table, "hcpcs").str.upper().str.replace(r"\s", "", regex=True), _col(table, "year"),
-                         _col(table, "rate"), _col(table, "url"))
+                         _col(table, "rate"), _col(table, "url").map(clean_url))
     ok, bad = [], []
     for i in range(len(table)):
         reason = ""
@@ -288,7 +288,7 @@ def load_audit_rows(table: pd.DataFrame, state: str, task_id: str = "") -> tuple
     from src.entity_graph.resolve_entities import norm_org_name
     st = str(state).upper()
     rows, pol, bad = [], [], []
-    name, url, date = _col(table, "provider_name"), _col(table, "report_url"), _col(table, "audit_date")
+    name, url, date = _col(table, "provider_name"), _col(table, "report_url").map(clean_url), _col(table, "audit_date")
     for i in range(len(table)):
         reason = ""
         if not name.iloc[i]:

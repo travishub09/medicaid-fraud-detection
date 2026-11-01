@@ -170,11 +170,21 @@ POLICY_PROMPT = (
 # medi-cal, the *mmis portals, Gainwell / Conduent / DXC operate most of them)
 _GOV_HOST = re.compile(r"\.(gov|us|state\.[a-z]{2}\.us)$|\.(gov|us)/|(medicaid|healthcare|dhs|dhhs|hhs|dss|dmas|ahca|hfs|"
                        r"mass\.gov|emedny|medi-cal|ohca|dch|dhcs|hhsc|dmahs|omig|ahcccs|tmhp|emedicaid|mmis|gainwell|"
-                       r"conduent|dxc|forwardhealth|mihealth|ctdssmap|kymmis|mmisportal)", re.I)
+                       r"conduent|dxc|forwardhealth|mihealth|ctdssmap|kymmis|mmisportal|"
+                       # 2026-11-01: official codes and state portals on .com / .org hosts
+                       r"govt\.westlaw|flrules|myflorida|myflfamilies|wadsworth|casetext\.com/regulation|"
+                       r"regulations\.justia|law\.cornell|ecfr)", re.I)
 _PLAN_HOST = re.compile(r"(molina|centene|wellcare|amerigroup|anthem|uhc|unitedhealth|aetna|humana|caresource|"
                         r"horizon|fidelis|healthfirst|metroplus|emblem|meridian|bcbs|bluecross|sunshine|simply|"
                         r"superior|amerihealth|upmc|geisinger|carefirst|neighborhood|tufts|priority|mdwise|"
-                        r"passport|peachstate|magnolia|absolute|ambetter)", re.I)
+                        r"passport|peachstate|magnolia|absolute|ambetter|"
+                        # the plans the plan_policy lane asks about (PLANS_BY_STATE) answered from
+                        # their own provider sites (2026-11-01: 234 rows refused)
+                        r"healthnet|texaschildrens|lacare|driscoll|iehp|wellpoint|parkland|cookchp|elpaso|"
+                        r"hpsm|hfproviders|healthfirst|molina|kaiser|blueshield|calopt|ccah|partnership|"
+                        r"alameda|sfhp|goldcoast|kernfamily|scfhp|communityhealthchoice|amerigroup|"
+                        r"superiorhealth|dellchildrens|firstcare|sendero|bcbstx|sunshinehealth|"
+                        r"humana|aetnabetterhealth|simplyhealthcare|vivida|mcna|uhccommunityplan)", re.I)
 
 
 def _state_names() -> dict[str, str]:
@@ -208,8 +218,25 @@ def _col(df: pd.DataFrame, name: str) -> pd.Series:
     return df[c].fillna("").astype(str).str.strip() if c else pd.Series("", index=df.index)
 
 
+def clean_url(value: str) -> str:
+    """The URL as the agent wrote it -> a bare URL. 2026-11-01: 294 + 234 rows carried a
+    markdown link ("[www.healthnet.com](https://www.healthnet.com/...)"), which urlparse
+    reads as no host at all, so the domain gate refused every one of them."""
+    s = str(value or "").strip()
+    m = re.search(r"https?://[^\s)\]>\"']+", s)
+    if m:
+        return m.group(0).rstrip(".,;")
+    m = re.search(r"\[([^\]]+)\]", s)                  # "[www.x.gov]" with no href
+    if m:
+        s = m.group(1).strip()
+    if s and not s.lower().startswith("http") and re.match(r"^[\w.-]+\.[a-z]{2,}(/|$)", s, re.I):
+        return "https://" + s
+    return s
+
+
 def government_domain(url: str) -> bool:
     try:
+        url = clean_url(url)
         host = urlparse(str(url or "").strip()).netloc.lower()
     except Exception:
         return False
@@ -258,7 +285,7 @@ def load_policy_rows(table: pd.DataFrame, state: str, topic: str, task_id: str =
     retrieved_at = retrieved_at or pd.Timestamp.now('UTC').strftime("%Y-%m-%d")
     rs, rt = _col(table, "state").map(norm_state), _col(table, "topic")
     param, value, text = _col(table, "param").str.lower().str.replace(" ", "_"), _col(table, "value"), _col(table, "rule_text")
-    cit, url, conf = _col(table, "citation"), _col(table, "url"), _col(table, "confidence").str.lower()
+    cit, url, conf = _col(table, "citation"), _col(table, "url").map(clean_url), _col(table, "confidence").str.lower()
     ef, et, note, prog = _col(table, "effective_from"), _col(table, "effective_to"), _col(table, "note"), _col(table, "program")
     ok, bad = [], []
     for i in range(len(table)):
