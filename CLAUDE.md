@@ -1453,6 +1453,27 @@ first, then paste" above every move/done block.
   = a candidate replacement). RULES: a formula replaces a subscore only through a pre-registered
   run; a rule in the library is evidence for a human read, never a legal conclusion; the policy
   values never go in a packet without the citation.
+  THE RECORDS LANES (2026-11-01, operator: "build all four and tell me what to paste";
+  src/policy/lanes.py, tests/test_policy_lanes_four_2026_11.py): four more lanes in manus_lanes,
+  each on the state's own records beside its rules: `roster_finder` (one task per state x
+  facility type: where the licensed-facility roster is published, whether it carries the licence
+  number and the capacity, the download method; gated on a government URL ->
+  processed/policy/state_rosters.parquet + STATE_ROSTERS.md, the per-diem unlock as a download
+  checklist, never a label), `fee_schedule` (one task per state x code family: the rate per
+  theory code and year; gates = a five-character code, a year, a numeric rate, a government /
+  fiscal-agent / plan URL -> fee_schedule.parquet + FEE_SCHEDULE.md with the G0483 / 80307 ratio
+  per state; `lanes.fee(df, state, hcpcs, year)` = the payer's own number for a damages line),
+  `state_audits` (one task per state x year: auditor / comptroller / Medicaid IG audit reports
+  naming a provider -> case rows typed `state_audit` in the case DB, jurisdiction "<ST> audit
+  (<agency>)", usable only with a final outcome (repayment ordered / settled / final /
+  referred), the agent's NPI kept as npi_in_source, PLUS the rule the report applied into the
+  policy library under the `audit_findings` topic), `plan_policy` (one task per state x plan x
+  topic for PLANS_BY_STATE's top plans in 11 states on rendering_supervision + drug_testing ->
+  the policy library with program = the plan's name; a row that says the plan follows the state
+  rule keeps program FFS). All four are in manus_lanes.sh's default set; the first cycle runs
+  through the module directly in a second tmux session (task lanes_dispatch_records) so it never
+  collides with a running cycle's step 0. RULE: a roster, a rate or an audit finding is evidence
+  for a human read; a state_audit case row trains only under the hard tier's outcome gate.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

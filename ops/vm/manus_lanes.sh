@@ -25,7 +25,7 @@ RUN="${RUN_DIR:-$DATA/model_a/frozen_${CUT}_${TAG}}"
 # 2026-11-01: mfcu (the state Medicaid Fraud Control Unit sweeps, the owner-run Medicaid-side
 # label) and employer (convicted individuals -> the business that billed for them) join the
 # default set; the budget lines below cap each lane
-LANES="${MANUS_LANES:-cia,names,outcome_refresh,label_verification,commercial,defendant_research,label_review,mfcu,employer,federal_reports,policy}"
+LANES="${MANUS_LANES:-cia,names,outcome_refresh,label_verification,commercial,defendant_research,label_review,mfcu,employer,federal_reports,policy,roster_finder,fee_schedule,state_audits,plan_policy}"
 MAX_NEW="${MANUS_MAX_NEW:-40}"
 TOTAL="${MANUS_TOTAL:-250}"
 WAIT="${MANUS_WAIT_MINUTES:-240}"

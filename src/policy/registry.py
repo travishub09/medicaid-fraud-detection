@@ -137,6 +137,10 @@ TOPICS: dict[str, Topic] = {
         "face-to-face requirements for the main DME families.",
         ("prior_auth_required", "rental_cap_months", "face_to_face_required"),
         ("dme_mailbox", "dme_ring")),
+    "audit_findings": Topic(
+        "audit_findings", "Rules applied in state audit reports (filled by the state_audits lane)",
+        "The billing rule a state audit report applied to a named provider, quoted from the report.",
+        (), ()),
     "hospice": Topic(
         "hospice", "Hospice election and nursing-facility room-and-board rules",
         "The election and certification requirements, the room-and-board pass-through for nursing-facility "

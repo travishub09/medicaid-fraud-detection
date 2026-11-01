@@ -403,3 +403,12 @@ python -m src.model_a.scheme_health --matrix <run>/provider_features_for_model.p
     --future-label <run>/future_bans_after_2023-12__fca33.csv --typed-dir <run> --out <run>/SCHEME_HEALTH.md --json-out <run>/scheme_health.json
 python -m src.model_a.scheme_alternatives --run-dir <run> --spending interim/spending_asof_2023-12.parquet --cutoff 2023-12
 ```
+
+## 10. The records lanes (2026-11-01)
+
+```bash
+# the five record lanes beside a running cycle (no step 0; their registries are their own)
+python -m src.model_a.manus_lanes --data-root /data/medicaid --lanes policy,roster_finder,fee_schedule,state_audits,plan_policy --build --dispatch --max-new 40 --total-budget 200
+python -m src.model_a.manus_lanes --data-root /data/medicaid --lanes policy,roster_finder,fee_schedule,state_audits,plan_policy --poll --load
+# the reports: processed/policy/STATE_POLICY.md, STATE_ROSTERS.md (the download checklist), FEE_SCHEDULE.md
+```

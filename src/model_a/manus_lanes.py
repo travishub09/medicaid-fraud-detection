@@ -38,6 +38,16 @@ prompts jsonl, task registry, results json and results/ for the raw answers):
                       task per state x topic; rows gated on a government / plan URL, a
                       quotation and a date -> processed/policy/state_policy.parquet; the
                       screens read the parameters, the kill prompts carry the text)
+  roster_finder       where each state publishes its licensed-facility roster (capacity,
+                      licence number, download method) -> STATE_ROSTERS.md, the download
+                      checklist that unlocks the per-diem card state by state
+  fee_schedule        the state's rate per theory code and year -> fee_schedule.parquet
+                      (a packet's damages line is the payer's own number)
+  state_audits        state auditor / comptroller / Medicaid IG audit reports naming a
+                      provider -> case rows (case_type state_audit; no final outcome =
+                      usable 0) + the rule they applied into the policy library
+  plan_policy         the managed-care plans' own rendering and drug-testing rules for the
+                      top plans in the largest states -> the policy library, program = plan
   employer            hard-tier convicted INDIVIDUALS with no billing or rendering row
                       -> the business that billed for them + its NPI (employer_lane:
                       Luhn, NPPES org, name agreement, window overlap) -> the
@@ -66,7 +76,8 @@ import pandas as pd
 from src.enforcement.label_gates import is_index_url
 
 LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
-         "label_verification", "label_review", "mfcu", "employer", "federal_reports", "policy")
+         "label_verification", "label_review", "mfcu", "employer", "federal_reports", "policy",
+         "roster_finder", "fee_schedule", "state_audits", "plan_policy")
 DEFAULT_STATES = ["FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY",
                   "CA", "NY", "TX", "PA", "IL", "OH", "MI"]
 DEFAULT_YEARS = list(range(2019, 2026))
@@ -128,6 +139,8 @@ def inputs(data_root: Path, run_dir: Path | None = None) -> dict:
         "exclusions_employer": r / "processed" / "exclusions_employer_resolved.parquet",
         # the policy lane (2026-11-01)
         "policy": r / "processed" / "policy" / "state_policy.parquet",
+        "rosters": r / "processed" / "policy" / "state_rosters.parquet",
+        "fees": r / "processed" / "policy" / "fee_schedule.parquet",
     }
 
 
@@ -299,6 +312,18 @@ def build_lane(lane: str, data_root: Path, run_dir: Path | None = None, states=N
         from src.policy import registry as pr
         topics = None
         prompts = pr.policy_prompts(states or pr.DEFAULT_STATES, topics)
+    elif lane == "roster_finder":
+        from src.policy import lanes as pl
+        prompts = pl.roster_prompts(states or pl.DEFAULT_STATES)
+    elif lane == "fee_schedule":
+        from src.policy import lanes as pl
+        prompts = pl.fee_prompts(states or pl.DEFAULT_STATES)
+    elif lane == "state_audits":
+        from src.policy import lanes as pl
+        prompts = pl.audit_prompts(states or pl.DEFAULT_STATES, years or DEFAULT_YEARS)
+    elif lane == "plan_policy":
+        from src.policy import lanes as pl
+        prompts = pl.plan_prompts(states)
     elif lane == "federal_reports":
         # the takedown court-document pages, the Fraud Section year in review, the HCFAC
         # annual report and the OIG semiannual reports (case_harvest_prompts sets 4-6):
@@ -418,6 +443,23 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
         cases["case_type"] = cases["case_id"].map(lambda c: by_id.get(c, {}).get("case_type", ""))
         cases["npi_in_source"] = cases["case_id"].map(lambda c: by_id.get(c, {}).get("npi_in_source", ""))
     return cases, pd.DataFrame(bad)
+
+
+def _append_any(path: Path, rows: pd.DataFrame, keys: list[str]) -> int:
+    """Append + dedup on keys (the policy lanes' stores); returns the rows added."""
+    path = Path(path)
+    if path.exists():
+        old = pd.read_parquet(path)
+        both = pd.concat([old, rows], ignore_index=True)
+        for k in keys:
+            both[k] = both[k].astype(str)
+        both = both.drop_duplicates(keys, keep="first")
+        n = len(both) - len(old)
+    else:
+        both, n = rows, len(rows)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    both.to_parquet(path, index=False)
+    return int(n)
 
 
 def _append_parquet(path: Path, rows: pd.DataFrame, keys: list[str]) -> int:
@@ -653,6 +695,78 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
             rep = inp["policy"].with_name("STATE_POLICY.md")
             rep.write_text(pr.report(pr.load_policy(path=inp["policy"])), encoding="utf-8")
             tally["files"].append(str(rep))
+    elif lane in ("roster_finder", "fee_schedule", "plan_policy"):
+        from src.policy import lanes as pl
+        from src.policy import registry as pr
+        kept = []
+        need = {"roster_finder": "url", "fee_schedule": "hcpcs", "plan_policy": "rule_text"}[lane]
+        for oid, env in done.items():
+            it = items.get(oid, {})
+            tabs = [t for t in tables_from_answer(env.get("output"), env.get("attachments"), fetch) if _has(t, need)]
+            if not tabs:
+                tally["no_table"] += 1
+                continue
+            for t in tabs:
+                if lane == "roster_finder":
+                    ok, bad = pl.load_roster_rows(t, str(it.get("state") or ""), str(it.get("facility_type") or ""), task_id=oid)
+                elif lane == "fee_schedule":
+                    ok, bad = pl.load_fee_rows(t, str(it.get("state") or ""), task_id=oid)
+                else:
+                    ok, bad = pl.load_plan_rows(t, str(it.get("state") or ""), str(it.get("topic") or ""), str(it.get("plan") or ""), task_id=oid)
+                if len(ok):
+                    kept.append(ok)
+                if len(bad):
+                    quarantine_rows.append(bad)
+                    tally["quarantined"] += int(len(bad))
+        if kept:
+            rows = pd.concat(kept, ignore_index=True)
+            if lane == "roster_finder":
+                n = _append_any(inp["rosters"], rows, ["state", "facility_type", "url"])
+                inp["rosters"].with_name("STATE_ROSTERS.md").write_text(pl.roster_report(pd.read_parquet(inp["rosters"])), encoding="utf-8")
+                tally["files"] += [str(inp["rosters"]), str(inp["rosters"].with_name("STATE_ROSTERS.md"))]
+            elif lane == "fee_schedule":
+                n = _append_any(inp["fees"], rows, ["state", "program", "hcpcs", "year", "url"])
+                inp["fees"].with_name("FEE_SCHEDULE.md").write_text(pl.fee_report(pd.read_parquet(inp["fees"])), encoding="utf-8")
+                tally["files"] += [str(inp["fees"]), str(inp["fees"].with_name("FEE_SCHEDULE.md"))]
+            else:
+                n = pr.append_rows(inp["policy"], rows)
+                pr._CACHE.clear()
+                inp["policy"].with_name("STATE_POLICY.md").write_text(pr.report(pr.load_policy(path=inp["policy"])), encoding="utf-8")
+                tally["files"].append(str(inp["policy"]))
+            tally["loaded"] += n
+    elif lane == "state_audits":
+        from src.policy import lanes as pl
+        from src.policy import registry as pr
+        case_rows, pol_rows = [], []
+        for oid, env in done.items():
+            it = items.get(oid, {})
+            tabs = [t for t in tables_from_answer(env.get("output"), env.get("attachments"), fetch) if _has(t, "provider_name")]
+            if not tabs:
+                tally["no_table"] += 1
+                continue
+            for t in tabs:
+                cases, pol, bad = pl.load_audit_rows(t, str(it.get("state") or ""), task_id=oid)
+                if len(cases):
+                    case_rows.append(cases)
+                if len(pol):
+                    pol_rows.append(pol)
+                if len(bad):
+                    quarantine_rows.append(bad)
+                    tally["quarantined"] += int(len(bad))
+        if case_rows:
+            new_cases = pd.concat(case_rows, ignore_index=True)
+            cdb0 = _read_table(inp["case_db"])
+            before = len(cdb0) if cdb0 is not None else 0
+            merged = rev.merge_into_case_db(new_cases, inp["case_db"])
+            tally["loaded"] += int(len(merged) - before)
+            tally["files"].append(str(inp["case_db"]))
+            n_final = int(pd.to_numeric(new_cases.get("usable", 0), errors="coerce").fillna(0).sum())
+            tally["notes"].append(f"{n_final} audit rows with a final outcome (usable); the rest usable=0 pending")
+        if pol_rows:
+            n = pr.append_rows(inp["policy"], pd.concat(pol_rows, ignore_index=True))
+            pr._CACHE.clear()
+            tally["notes"].append(f"{n} audit-applied rules into the policy library (topic audit_findings)")
+            tally["files"].append(str(inp["policy"]))
     elif lane == "employer":
         from src.model_a import employer_lane as el
         cand = _read_table(inp["employer_candidates"])
@@ -756,6 +870,10 @@ def write_report(data_root: Path, lanes, out: Path | None = None) -> Path:
           "- policy rows went into processed/policy/state_policy.parquet (STATE_POLICY.md beside it): the "
           "theory screens read the numeric parameters per state, `python -m src.policy.registry --state ST` "
           "prints the rule paragraph a kill prompt carries.",
+          "- roster_finder rows went into processed/policy/state_rosters.parquet (STATE_ROSTERS.md = the analyst's "
+          "download checklist); fee_schedule rows into fee_schedule.parquet (FEE_SCHEDULE.md); state_audits rows "
+          "into the case DB (case_type state_audit, usable only with a final outcome) and the policy library "
+          "(topic audit_findings); plan_policy rows into the policy library with program = the plan.",
           "- employer rows went into processed/affiliated_research.parquet (prospective_label --affiliated) and "
           "processed/exclusions_employer_resolved.parquet (the next graph build makes the employer an exclusion "
           "node, tiered from the individual's statute); the chain guard and the NPPES name gate wrote the quarantine.",
