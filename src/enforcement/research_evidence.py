@@ -54,10 +54,43 @@ def _html_text(html: str) -> str:
     return re.sub(r"&nbsp;|&amp;|&#\d+;|&\w+;", " ", s)
 
 
+_WALL = re.compile(r"incapsula|imperva|request unsuccessful|just a moment|attention required|"
+                   r"verify you are (?:a )?human|are you a robot|enable javascript|javascript is (?:disabled|required)|"
+                   r"access denied|pardon our interruption|checking your browser|cf-browser-verification|"
+                   r"captcha|bot detection|unusual traffic|too many requests|service unavailable|"
+                   r"page not found|404 not found|the page you requested", re.I)
+WALL_MIN_WORDS = 5        # fewer words than a sentence = nothing was served
+WALL_MAX_WORDS = 400      # a challenge page is short; a release that mentions 'captcha' is not
+
+
+def page_is_wall(text: str) -> str:
+    """'' when the text reads like a real page, else WHY it does not (a bot wall, a challenge
+    page, a soft 404, or too little text to carry a press release). 2026-11-01: the gate
+    read 117 of 117 reachable pages as 'defendant absent', DOJ releases included: a
+    challenge page served with HTTP 200 is not a page the name can be absent from."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    words = len(t.split())
+    if words < WALL_MIN_WORDS:
+        return f"empty page ({words} words)"
+    m = _WALL.search(t[:1500])
+    if m and words < WALL_MAX_WORDS:
+        return f"challenge page ({m.group(0)}, {words} words)"
+    return ""
+
+
 def _page_text(url: str, fetch_page) -> str:
     """The page as text: HTML stripped of tags; a PDF (state AG and OIG releases are often
     PDFs) read through pypdf when it is installed, else left unreadable (unknown, never a
-    false 'absent')."""
+    false 'absent'). A bot wall / challenge / soft-404 page RAISES (unreachable), it is
+    never read as a page the defendant is absent from."""
+    text = _page_text_raw(url, fetch_page)
+    why = page_is_wall(text)
+    if why:
+        raise RuntimeError(f"not a readable page: {why}")
+    return text
+
+
+def _page_text_raw(url: str, fetch_page) -> str:
     if url.lower().split("?")[0].endswith(".pdf"):
         try:
             from pypdf import PdfReader  # optional dependency
@@ -133,6 +166,7 @@ def verify_names_on_pages(cases: pd.DataFrame, fetch_page, kind_col: str | None 
 
 
 ABSENT_NOTE = "defendant_not_on_page"
+UNVERIFIED_NOTE = "page unreadable on re-check: unverified"
 
 
 def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: str = r"MFCU|AG\b|state|commercial",
@@ -181,6 +215,16 @@ def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: s
         db.loc[restored, "qc_note"] = "re-verified: on page"
         log(f"    [verify_sources] {len(restored):,} rows RESTORED (the defendant is on the page; the earlier mark "
             "came from a refusal page)")
+    # 2026-11-01: a row marked absent whose page cannot be read today goes back to the
+    # UNVERIFIED state (usable=1, the note says so): the mark was made by a read that
+    # counted challenge pages as real pages, and an unreadable page is unknown, never
+    # evidence of absence. The next readable fetch re-applies a real absence.
+    unknown = [i for i in checked.index[~read] if marked.get(i, False)]
+    if unknown:
+        db.loc[unknown, "usable"] = "1"
+        db.loc[unknown, "qc_note"] = UNVERIFIED_NOTE
+        log(f"    [verify_sources] {len(unknown):,} rows back to UNVERIFIED (page unreadable on re-check; "
+            "the earlier mark is withdrawn, the row carries the note)")
     db.to_csv(p, index=False)
     log(f"    [verify_sources] {len(absent):,} rows marked usable=0 ({ABSENT_NOTE}) in {p}")
     return int(len(absent))

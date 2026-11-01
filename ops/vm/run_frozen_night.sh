@@ -252,7 +252,7 @@ python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/
 # the registry reads state_hits* / state_reach
 python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
     --sources state --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
-    --case-jurisdiction "MFCU|Attorney General|state" $( [ -f "$AFF_RESEARCH" ] && echo --affiliated "$AFF_RESEARCH" ) \
+    --case-jurisdiction "^(?!.*\baudit\b).*(?:MFCU|Attorney General|\bAG\b|\bstate\b)" $( [ -f "$AFF_RESEARCH" ] && echo --affiliated "$AFF_RESEARCH" ) \
     --out "$RUN/future_bans_after_${CUT}__state${HORIZON}.csv" || fail 3
 # THE SCHEME-TYPED RULERS (2026-11-01): one forward case ruler per conduct type so a scheme is
 # graded on the cases it was written for (scheme_health --typed-dir, scheme_alternatives);

@@ -88,10 +88,27 @@ from src.model_a.fca_label_export import _CHARGED_ONLY as _CHARGE_ONLY  # noqa: 
 from src.model_a.fca_label_export import _CIVIL_OUTCOME, _CRIMINAL_OUTCOME  # noqa: E402
 
 
+# 2026-11-01: the harvest sets answer with a CATEGORICAL outcome cell ("plea", "conviction",
+# "settlement", "charged", "exclusion"); the export's regexes read sentences ("pleaded guilty",
+# "agreed to pay") and refused 462 federal-report convictions as "no resolved outcome". A bare
+# category is a resolved outcome when it names a plea / conviction / sentence / settlement /
+# judgment / verdict and nothing in the cell says not guilty, acquitted or dismissed.
+_CATEGORY_OK = re.compile(r"^\s*(?:guilty\s+)?(?:plea|plead|pleaded|conviction|convicted|sentenc\w*|"
+                          r"settle\w*|civil\s+settlement|judgment|judgement|consent\s+judgment|verdict|"
+                          r"jury\s+verdict|guilty)\b", re.I)
+_CATEGORY_NOT = re.compile(r"not\s+guilty|acquit|dismiss|pending|withdrawn|vacat|overturn", re.I)
+
+
 class _OutcomeOK:
     @staticmethod
     def search(text):
-        return _CRIMINAL_OUTCOME.search(text or "") or _CIVIL_OUTCOME.search(text or "")
+        t = text or ""
+        hit = _CRIMINAL_OUTCOME.search(t) or _CIVIL_OUTCOME.search(t)
+        if hit:
+            return hit
+        if _CATEGORY_OK.search(t) and not _CATEGORY_NOT.search(t):
+            return _CATEGORY_OK.search(t)
+        return None
 
 
 _OUTCOME_OK = _OutcomeOK()
@@ -492,7 +509,7 @@ def _append_any(path: Path, rows: pd.DataFrame, keys: list[str]) -> int:
         for k in keys:
             both[k] = both[k].astype(str)
         both = both.drop_duplicates(keys, keep="first")
-        n = len(both) - len(old)
+        n = max(0, len(both) - len(old))      # a store that shrinks on dedup reads 0, not -18
     else:
         both, n = rows, len(rows)
     path.parent.mkdir(parents=True, exist_ok=True)

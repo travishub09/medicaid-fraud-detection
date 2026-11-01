@@ -179,3 +179,34 @@ def test_harvest_loaders_quarantine_index_urls():
     assert len(q) == 1 and "index page" in q.iloc[0]["drop_reason"]
     cases2, q2 = load_commercial_cases(t.rename(columns={"conduct_summary": "summary"}), "FL")
     assert list(cases2["defendant_name"]) == ["Real Clinic LLC"] and len(q2) == 1
+
+
+def test_challenge_pages_are_unreachable_never_absent(tmp_path):
+    """2026-11-01: the gate read 117 of 117 reachable pages as 'defendant absent': a bot
+    wall served with HTTP 200 is not a page a name can be absent from."""
+    from src.enforcement import research_evidence as rev
+    assert rev.page_is_wall("<html><body>Just a moment... Enable JavaScript and cookies to continue</body></html>")
+    assert rev.page_is_wall("Request unsuccessful. Incapsula incident ID: 123-456")
+    assert rev.page_is_wall("")
+    assert not rev.page_is_wall("Attorney General announces that Acme Clinic Inc agreed to pay $1M to settle allegations.")
+    long_release = " ".join(["word"] * 500) + " please enable javascript for the video"
+    assert not rev.page_is_wall(long_release)                          # a long real page mentioning the words
+    db = pd.DataFrame([{"case_id": "https://ag.state.x/a#ACME", "defendant_name": "Acme Clinic Inc",
+                        "source_url": "https://ag.state.x/a", "jurisdiction": "state MFCU", "summary": "s"}])
+    wall = {"https://ag.state.x/a": "<html><head><title>Just a moment...</title></head><body>Checking your browser before accessing ag.state.x</body></html>"}
+    checked = rev.verify_names_on_pages(db, lambda u: wall[u], log=lambda *a: None)
+    assert list(checked["name_in_source"]) == [""]                      # unknown, not 0
+    p = tmp_path / "cases.csv"
+    db.to_csv(p, index=False)
+    assert rev.quarantine_absent_defendants(p, lambda u: wall[u], log=lambda *a: None) == 0
+    assert pd.read_csv(p, dtype=str).fillna("").iloc[0]["usable"] in ("1", "")
+
+
+def test_categorical_outcome_cells_are_resolved_outcomes():
+    """2026-11-01: the federal-reports lane refused 462 rows whose outcome cell said 'plea'
+    or 'conviction'; the export's sentence regexes never saw a bare category."""
+    from src.model_a.manus_lanes import _OUTCOME_OK
+    for ok in ("plea", "Plea agreement", "conviction", "Conviction (jury)", "sentenced", "settlement", "judgment", "guilty plea"):
+        assert _OUTCOME_OK.search(ok), ok
+    for bad in ("charged", "indictment", "exclusion", "not guilty", "plea withdrawn", "conviction vacated", "dismissed", ""):
+        assert not _OUTCOME_OK.search(bad), bad

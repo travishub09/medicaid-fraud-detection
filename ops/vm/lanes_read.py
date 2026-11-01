@@ -8,6 +8,8 @@ heads of the three policy reports (STATE_POLICY / STATE_ROSTERS / FEE_SCHEDULE).
 
     python ops/vm/lanes_read.py /data/medicaid            # everything
     python ops/vm/lanes_read.py /data/medicaid --no-heads # table + quarantines + audits only
+    python ops/vm/lanes_read.py /data/medicaid --page-probe 6   # fetch six 'absent' pages and
+                                                                # show what the VM really got
 """
 from __future__ import annotations
 
@@ -20,8 +22,44 @@ import pandas as pd
 REASON_COLS = ("drop_reason", "reason", "qc_note", "gate_note", "status")
 
 
+def page_probe(root: Path, n: int) -> None:
+    """Fetch n pages behind rows marked defendant_not_on_page / unverified and print what the
+    VM actually received (length, wall verdict, the first 300 characters, whether the
+    defendant's first word is anywhere in the raw HTML): the question is whether the
+    'absent' marks were real reads or challenge pages (2026-11-01)."""
+    from src.enforcement import research_evidence as rev
+    cases = root / "enforcement" / "doj_cases_v3.csv"
+    c = pd.read_csv(cases, dtype=str, low_memory=False)
+    q = c[c["qc_note"].fillna("").str.contains("defendant_not_on_page|unverified", regex=True)]
+    q = q[q.get("source_url", q["case_id"]).fillna("").str.startswith("http")] if "source_url" in c.columns else q
+    print(f"== page probe: {len(q)} marked rows; fetching {n}")
+    seen = set()
+    for _, r in q.iterrows():
+        url = str(r.get("source_url") or r["case_id"]).split("#")[0]
+        if url in seen:
+            continue
+        seen.add(url)
+        if len(seen) > n:
+            break
+        name = str(r.get("defendant_name") or "")
+        try:
+            html = rev.browser_fetch_text(url)
+            text = rev._html_text(html)
+            why = rev.page_is_wall(text)
+            tok = name.split()[0].lower() if name else ""
+            print(f"-- {url[:110]}\n   defendant {name[:60]!r} | html {len(html):,} | words {len(text.split()):,} | "
+                  f"wall: {why or 'no'} | first word in raw html: {tok in html.lower() if tok else 'n/a'}")
+            print("   " + " ".join(text.split())[:300])
+        except Exception as e:  # noqa: BLE001
+            print(f"-- {url[:110]}\n   FETCH FAILED {type(e).__name__}: {str(e)[:160]}")
+
+
 def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "/data/medicaid")
+    if "--page-probe" in sys.argv:
+        k = sys.argv.index("--page-probe")
+        page_probe(root, int(sys.argv[k + 1]) if k + 1 < len(sys.argv) and sys.argv[k + 1].isdigit() else 6)
+        return
     heads = "--no-heads" not in sys.argv
     rep = root / "processed" / "manus_lanes" / "MANUS_LANES.md"
     if rep.exists():
