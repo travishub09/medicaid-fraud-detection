@@ -1280,6 +1280,8 @@ def _discover_rulers(run_dir: Path, cutoff: str) -> dict[str, Path]:
         out["all"] = base
     for p in sorted(run_dir.glob(f"future_bans_after_{cutoff}__*.csv")):
         tag = p.name[len(f"future_bans_after_{cutoff}__"):-4]
+        if tag.startswith("typed_"):
+            continue                      # the scheme-typed rulers are scheme_health's (2026-11-01), never a book grade
         key = re.sub(r"\d+$", "", tag) or tag
         key = {"fca": "fca_file", "quitam": "qui_tam_file"}.get(key, key)
         out.setdefault(key, p)

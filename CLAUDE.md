@@ -1421,6 +1421,38 @@ first, then paste" above every move/done block.
   conviction until a sweep says otherwise; a state-ruled scheme is never pruned on the DOJ
   ruler; v28 = the first run on all of it (task v28_run), pre-registered under the v27
   seventeen + `embeddings = 0` + `fca_reach >= 0.02`, the state ruler read, not barred.
+  THE RULE IS THE RULER (2026-11-01, operator: "use browser-based agents to pull broad state-level
+  Medicaid billing policies to check against; look at the schemes that aren't working; calculate the
+  same scheme a different way" -> "let's do all of this"; tests/test_policy_and_typed_rulers_2026_11.py):
+  (1) THE STATE POLICY LIBRARY `src/policy/registry.py`: TOPICS (rendering_supervision, drug_testing,
+  perdiem_day_program, personal_care, nemt, home_health, lab_panels, behavioral_health, psychotherapy,
+  telehealth, dme, hospice) each with its parameter keys and the screens / schemes that consume it;
+  the `policy` lane in manus_lanes (one task per state x topic, DEFAULT_STATES = the ten largest +
+  the Southeast) -> `load_policy_rows` gates (the state asked, the topic asked, a known parameter
+  key, a quotation >= 40 chars, a URL on a .gov / .us / fiscal-agent / plan domain, parseable
+  dates, a confidence) -> processed/policy/state_policy.parquet (dedup on state + program + topic +
+  param + url + text) + STATE_POLICY.md; `policy_param(df, state, topic, param, asof=)` (newest
+  effective, highest confidence), `rule_text`, `policy_context` (the paragraph a kill prompt
+  carries), CLI `--state/--topic/--report/--topics`. CONSUMERS: `theory_screens` Screen.policy =
+  (topic, param, column) joins `policy_bar` per row by state and `over_policy` (definitive_reflex
+  reads max_definitive_per_year against intensity x 12), the report prints the state's rule text
+  under the innocent explanations; `--policy` on the CLI. (2) THE SCHEME-TYPED RULERS:
+  `prospective_label --case-scheme <regex>` on the case rows' conduct tags (case_db
+  _SCHEME_KEYWORDS: kickback | upcoding | medical_necessity | phantom_billing | eligibility |
+  worthless_services | pill_mill); the runners build future_bans_after_<cut>__typed_<type><H>.csv
+  for all seven at step 3; `_discover_rulers` skips typed_* (never a book grade);
+  `scheme_health.SCHEME_CASE_TYPE` maps every scheme to its type (a test refuses a scheme without
+  one), `--typed-dir` -> typed_auc / n_typed_pos / typed_verdict, and the OWN ruler is the typed
+  ruler when it carries >= 20 positives, else state, else FCA; prune_candidates reads the own ruler.
+  (3) SCHEME ALTERNATIVES `src/model_a/scheme_alternatives.py` (measure_run step 1b): ALTERNATIVES =
+  the weak schemes rewritten the screens' way (ratio / intensity / share / peak / ramp over the
+  as-of fact in DuckDB, plus `peer_state_tax` = the current subscore's percentile within state x
+  taxonomy), written as alt_<scheme>__<name> columns (scheme_alternatives.parquet) and graded
+  beside the current subscore on the fca / state / typed rulers -> SCHEME_ALTERNATIVES.md + .csv +
+  .json with "The read" (the best formula on the scheme's own ruler; >= +0.05 AUC over the current
+  = a candidate replacement). RULES: a formula replaces a subscore only through a pre-registered
+  run; a rule in the library is evidence for a human read, never a legal conclusion; the policy
+  values never go in a packet without the citation.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

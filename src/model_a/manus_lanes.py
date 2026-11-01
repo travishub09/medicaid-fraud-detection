@@ -34,6 +34,10 @@ prompts jsonl, task registry, results json and results/ for the raw answers):
                       outcome is kept usable=0); the Medicaid-side, owner-run label
   federal_reports     the takedown / Fraud Section / HCFAC / OIG semiannual report
                       sweeps -> case rows the press-release feed never carried
+  policy              the state Medicaid billing-policy library (src/policy/registry: one
+                      task per state x topic; rows gated on a government / plan URL, a
+                      quotation and a date -> processed/policy/state_policy.parquet; the
+                      screens read the parameters, the kill prompts carry the text)
   employer            hard-tier convicted INDIVIDUALS with no billing or rendering row
                       -> the business that billed for them + its NPI (employer_lane:
                       Luhn, NPPES org, name agreement, window overlap) -> the
@@ -62,7 +66,7 @@ import pandas as pd
 from src.enforcement.label_gates import is_index_url
 
 LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
-         "label_verification", "label_review", "mfcu", "employer", "federal_reports")
+         "label_verification", "label_review", "mfcu", "employer", "federal_reports", "policy")
 DEFAULT_STATES = ["FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY",
                   "CA", "NY", "TX", "PA", "IL", "OH", "MI"]
 DEFAULT_YEARS = list(range(2019, 2026))
@@ -122,6 +126,8 @@ def inputs(data_root: Path, run_dir: Path | None = None) -> dict:
         "employer_candidates": r / "processed" / "manus_lanes" / "employer" / "employer_candidates.csv",
         "affiliated_research": r / "processed" / "affiliated_research.parquet",
         "exclusions_employer": r / "processed" / "exclusions_employer_resolved.parquet",
+        # the policy lane (2026-11-01)
+        "policy": r / "processed" / "policy" / "state_policy.parquet",
     }
 
 
@@ -289,6 +295,10 @@ def build_lane(lane: str, data_root: Path, run_dir: Path | None = None, states=N
             prompts = _read_jsonl(src)
     elif lane == "mfcu":
         prompts = chp.build_prompts(["mfcu"], years or DEFAULT_YEARS, states or DEFAULT_STATES)
+    elif lane == "policy":
+        from src.policy import registry as pr
+        topics = None
+        prompts = pr.policy_prompts(states or pr.DEFAULT_STATES, topics)
     elif lane == "federal_reports":
         # the takedown court-document pages, the Fraud Section year in review, the HCFAC
         # annual report and the OIG semiannual reports (case_harvest_prompts sets 4-6):
@@ -618,6 +628,31 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
             except Exception as e:                          # best effort; the rows stay usable=1
                 tally["notes"].append(f"page verification FAILED ({type(e).__name__}: {str(e)[:120]}): "
                                       "run `research_evidence verify-sources` before training")
+    elif lane == "policy":
+        from src.policy import registry as pr
+        kept = []
+        for oid, env in done.items():
+            it = items.get(oid, {})
+            tabs = [t for t in tables_from_answer(env.get("output"), env.get("attachments"), fetch) if _has(t, "rule_text")]
+            if not tabs:
+                tally["no_table"] += 1
+                continue
+            for t in tabs:
+                ok, bad = pr.load_policy_rows(t, str(it.get("state") or ""), str(it.get("topic") or ""), task_id=oid)
+                if len(ok):
+                    kept.append(ok)
+                if len(bad):
+                    quarantine_rows.append(bad)
+                    tally["quarantined"] += int(len(bad))
+        if kept:
+            rows = pd.concat(kept, ignore_index=True)
+            n = pr.append_rows(inp["policy"], rows)
+            tally["loaded"] += n
+            tally["files"].append(str(inp["policy"]))
+            pr._CACHE.clear()
+            rep = inp["policy"].with_name("STATE_POLICY.md")
+            rep.write_text(pr.report(pr.load_policy(path=inp["policy"])), encoding="utf-8")
+            tally["files"].append(str(rep))
     elif lane == "employer":
         from src.model_a import employer_lane as el
         cand = _read_table(inp["employer_candidates"])
@@ -718,6 +753,9 @@ def write_report(data_root: Path, lanes, out: Path | None = None) -> Path:
           "a tighten-or-ship verdict is the operator's call.",
           "- mfcu rows went into enforcement/doj_cases_v3.csv (jurisdiction '<ST> MFCU'; a row without a resolved "
           "outcome is usable=0): the Medicaid-side, owner-run label the DOJ feed never carries.",
+          "- policy rows went into processed/policy/state_policy.parquet (STATE_POLICY.md beside it): the "
+          "theory screens read the numeric parameters per state, `python -m src.policy.registry --state ST` "
+          "prints the rule paragraph a kill prompt carries.",
           "- employer rows went into processed/affiliated_research.parquet (prospective_label --affiliated) and "
           "processed/exclusions_employer_resolved.parquet (the next graph build makes the employer an exclusion "
           "node, tiered from the individual's statute); the chain guard and the NPPES name gate wrote the quarantine.",

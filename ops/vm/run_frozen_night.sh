@@ -254,6 +254,14 @@ python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/
     --sources state --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
     --case-jurisdiction "MFCU|Attorney General|state" $( [ -f "$AFF_RESEARCH" ] && echo --affiliated "$AFF_RESEARCH" ) \
     --out "$RUN/future_bans_after_${CUT}__state${HORIZON}.csv" || fail 3
+# THE SCHEME-TYPED RULERS (2026-11-01): one forward case ruler per conduct type so a scheme is
+# graded on the cases it was written for (scheme_health --typed-dir, scheme_alternatives);
+# never a book grade (the diagnostics skip typed_*)
+for ct in kickback upcoding medical_necessity phantom_billing eligibility worthless_services pill_mill; do
+  python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
+      --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only \
+      --case-scheme "$ct" --out "$RUN/future_bans_after_${CUT}__typed_${ct}${HORIZON}.csv" || fail 3
+done
 fi
 
 if run_step 4; then

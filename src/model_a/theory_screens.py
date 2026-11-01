@@ -70,6 +70,9 @@ class Screen:
     capacity_rule: bool = False                # join licensed capacity by NPI; occupancy = peak per day / capacity
     min_occupancy: float | None = None         # with a capacity on file: candidate only above this (under_capacity otherwise)
     candidate_taxonomies: tuple[str, ...] = () # the roles the theory is about (an individual outside them is 'not_<role>' and listed, not ranked)
+    # the state policy library (src/policy/registry, 2026-11-01): (topic, param, column) = the state's own
+    # number for this screen, joined per row as `policy_bar`; `over_policy` = the row's column above it
+    policy: tuple[str, str, str] | None = None
     report_statuses: tuple[str, ...] = ()      # statuses the report tables beside the candidates (the shapes worth a look)
     numerator_like: tuple[str, ...] = ()       # SQL LIKE patterns added to the numerator (a code FAMILY: 'E%' for DME)
     exclude_taxonomy_prefixes: tuple[str, ...] = ()  # NUCC prefixes set aside as 'other_type' (a broker is not a fleet)
@@ -103,6 +106,7 @@ SCREENS: dict[str, Screen] = {
         precedent="Millennium Health (2015, $256M), Genesis Reference Laboratories (2023), the 2024 "
                   "marketer-kickback laboratory settlements: definitive testing without individualized need.",
         taxonomy_prefixes=("291U",),
+        policy=("drug_testing", "max_definitive_per_year", "intensity_per_year"),
     ),
     "uti_pcr_reflex": Screen(
         key="uti_pcr_reflex",
@@ -376,7 +380,8 @@ def _weekdays_in_month_sql(month_expr: str) -> str:
 
 
 def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | None = None,
-               verdicts: pd.DataFrame | None = None, top: int = 50, capacity: Path | None = None) -> pd.DataFrame:
+               verdicts: pd.DataFrame | None = None, top: int = 50, capacity: Path | None = None,
+               policy_df: pd.DataFrame | None = None) -> pd.DataFrame:
     """Every NPI on the screen's numerator (the billing NPI, or the servicing NPI when the
     screen's grain is 'servicing') with the ratios, the dollars by year, the status
     (candidate / national / hospital / government / verdict:<v> / below_floor / fails_<rule>)
@@ -498,6 +503,22 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
             df["occupancy_weekday"] = df["peak_lines_per_weekday"] / df["licensed_capacity"].where(df["licensed_capacity"] > 0)
             df["occupancy_two_shifts"] = df["occupancy_weekday"] / 2.0
     df["over_capacity"] = df["occupancy_ratio"].astype(float).gt(1.0).fillna(False) if df["occupancy_ratio"].notna().any() else False
+    # THE STATE'S OWN NUMBER (2026-11-01): the policy library's parameter for this screen, per
+    # row by state; `intensity_per_year` = numerator lines per patient-month x 12 (the unit the
+    # coverage rules speak in); over_policy = above the state's covered count where one is on file
+    df["policy_bar"] = pd.NA
+    df["over_policy"] = pd.NA
+    if screen.policy and policy_df is not None and len(policy_df) and len(df):
+        from src.policy.registry import policy_param
+        topic, param, col = screen.policy
+        if col == "intensity_per_year":
+            df["intensity_per_year"] = pd.to_numeric(df["intensity"], errors="coerce") * 12.0
+        bars = {st: policy_param(policy_df, st, topic, param) for st in df["state"].fillna("").astype(str).unique() if st}
+        df["policy_bar"] = df["state"].map(bars)
+        if col in df.columns:
+            v = pd.to_numeric(df[col], errors="coerce")
+            b = pd.to_numeric(df["policy_bar"], errors="coerce")
+            df["over_policy"] = (v > b).where(b.notna())
     df["capacity_known"] = bool(df["licensed_capacity"].notna().any())
     for c, v in (("addr_line1", ""), ("addr_is_mailbox", False), ("addr_distinct_orgs", pd.NA), ("addr_npis", pd.NA),
                  ("addr_has_unit", False)):
@@ -637,7 +658,26 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
     return df
 
 
-def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
+def _policy_lines(s: Screen, df: pd.DataFrame, policy_df: pd.DataFrame | None) -> list[str]:
+    """The state rules on file for the candidates' states (the library's text + citation),
+    so the innocent explanation is answered by the payer's own words where we have them."""
+    if policy_df is None or not len(policy_df) or not s.policy:
+        return []
+    from src.policy.registry import rule_text
+    topic = s.policy[0]
+    cand = df[df["status"].eq("candidate")] if "status" in df.columns else df
+    states = [st for st in cand["state"].fillna("").astype(str).value_counts().index.tolist() if st][:6]
+    L = []
+    for st in states:
+        for r in rule_text(policy_df, st, topic, max_rows=2):
+            L.append(f"- **{st} rule on file** ({r['citation']}; {r['url']}): \"{str(r['rule_text'])[:400]}\"")
+    if L:
+        L = ["**The state's own rule (policy library).** The `policy_bar` column is the state's covered count; "
+             "`over_policy` marks a row above it."] + L + [""]
+    return L
+
+
+def to_markdown(results: dict[str, pd.DataFrame], top: int = 50, policy_df: pd.DataFrame | None = None) -> str:
     L = ["# THEORY SCREENS: every billing NPI ranked on a prosecuted conduct", "",
          "_From the Medicaid spending fact. A row is a question for the field and for counsel: the "
          "innocent explanations under each screen are ruled out first, the court-record check runs on "
@@ -662,6 +702,7 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50) -> str:
                  "the building on any lawful schedule"
                  if s.capacity_rule else "") + ".", "",
               "**Innocent explanations to rule out first.** " + " ".join(f"({i + 1}) {t}." for i, t in enumerate(s.innocent)), "",
+              *_policy_lines(s, df, policy_df),
               "**Who would know.** " + "; ".join(s.roles) + ".", "",
               f"**Precedent.** {s.precedent}", ""]
         tally = df["status"].value_counts().to_dict()
@@ -779,6 +820,8 @@ def main() -> None:
     ap.add_argument("--capacity", default=str(root / "processed" / "licensed_capacity_by_npi.parquet"),
                     help="licensed capacity by NPI (ingest_cms.licensed_capacity) for the occupancy screens")
     ap.add_argument("--screen", default=None, help="screen key(s), comma-separated (default: every screen); one report per run")
+    ap.add_argument("--policy", default=str(root / "processed" / "policy" / "state_policy.parquet"),
+                    help="the state policy library (src/policy/registry; the policy lane writes it); '' = none")
     ap.add_argument("--top", type=int, default=50)
     ap.add_argument("--out", required=True, help="output folder")
     a = ap.parse_args()
@@ -789,11 +832,17 @@ def main() -> None:
         if k not in SCREENS:
             raise SystemExit(f"unknown screen {k}; choose from {list(SCREENS)}")
     verdicts = load_verdicts(Path(a.verdicts) if a.verdicts else None)
+    policy_df = None
+    if a.policy and Path(a.policy).exists():
+        from src.policy.registry import load_policy
+        policy_df = load_policy(path=Path(a.policy))
+        print(f"[theory_screens] policy library: {len(policy_df)} rows from {a.policy}")
     con = _duck_connect()
     results = {}
     for k in keys:
         df = run_screen(Path(a.spending), SCREENS[k], con=con, provider_dim=Path(a.provider_dim),
-                        verdicts=verdicts, top=a.top, capacity=Path(a.capacity) if a.capacity else None)
+                        verdicts=verdicts, top=a.top, capacity=Path(a.capacity) if a.capacity else None,
+                        policy_df=policy_df)
         df.to_csv(out / f"screen_{k}.csv", index=False)
         # the top candidates' names, one per line, for `first_to_file --names-file` (the free court-record
         # check that runs on every candidate before a research prompt)
@@ -811,7 +860,7 @@ def main() -> None:
         print(f"[theory_screens] {k}: {len(df)} NPIs on the numerator; "
               f"{int(df['status'].eq('candidate').sum())} candidates; "
               + ", ".join(f"{s} {n}" for s, n in sorted(df['status'].value_counts().items())))
-    (out / "THEORY_SCREENS.md").write_text(to_markdown(results, top=a.top), encoding="utf-8")
+    (out / "THEORY_SCREENS.md").write_text(to_markdown(results, top=a.top, policy_df=policy_df), encoding="utf-8")
     print(f"[theory_screens] -> {out / 'THEORY_SCREENS.md'}")
 
 

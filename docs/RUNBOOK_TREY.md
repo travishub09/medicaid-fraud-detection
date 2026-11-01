@@ -383,3 +383,23 @@ HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v28 2023-12 --rebuild-graph
 ```
 
 The employer lane's rows and the field rows become exclusion nodes at the next graph build (the frozen runner's step 2b rebuilds the current-day graph when an exclusion file is newer); the analyst's arms (`--feature-set subscores|other`, `--settlement-weight 0.5`) are graded by the runner as `ab_feature_*` / `ab_settlement_*`.
+
+## 9. The policy library, the typed rulers and the scheme alternatives (2026-11-01)
+
+```bash
+# the state Medicaid billing-policy library: the policy lane fills it (one task per state x topic);
+# the screens read the numeric parameters per state; a kill prompt carries the rule paragraph
+python -m src.policy.registry --data-root /data/medicaid --topics            # the topics and their parameter keys
+python -m src.policy.registry --data-root /data/medicaid --report           # processed/policy/STATE_POLICY.md
+python -m src.policy.registry --data-root /data/medicaid --state NJ --topic drug_testing,perdiem_day_program
+
+# one forward case ruler per conduct type (the runners build all seven at step 3)
+python -m src.model_a.prospective_label --exclusion-nodes graph/nodes/exclusion_nodes.parquet --cutoff 2023-12 --fca-tier hard \
+    --case-db enforcement/doj_cases_v3_plus_cia.csv --graph-dir graph --defendant-npis processed/case_defendant_npis_plus_cia.parquet \
+    --horizon-months 33 --fca-case-only --case-scheme upcoding --out <run>/future_bans_after_2023-12__typed_upcoding33.csv
+
+# every scheme graded on its own cases (scheme_health --typed-dir) and the same scheme calculated another way
+python -m src.model_a.scheme_health --matrix <run>/provider_features_for_model.parquet --manifest <run>/feature_manifest.json \
+    --future-label <run>/future_bans_after_2023-12__fca33.csv --typed-dir <run> --out <run>/SCHEME_HEALTH.md --json-out <run>/scheme_health.json
+python -m src.model_a.scheme_alternatives --run-dir <run> --spending interim/spending_asof_2023-12.parquet --cutoff 2023-12
+```

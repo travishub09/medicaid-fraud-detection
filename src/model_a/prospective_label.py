@@ -316,6 +316,10 @@ def main() -> None:
     ap.add_argument("--sources", default=None,
                     help="restrict the exclusion half of the ruler to these sources: a preset (state | federal) "
                          "or a regex on excl_type (SOURCE_PRESETS); the scheme-specific rulers")
+    ap.add_argument("--case-scheme", default=None,
+                    help="restrict the case-DB half of the ruler to rows whose scheme tag matches this regex "
+                         "(case_db._SCHEME_KEYWORDS keys: kickback | upcoding | medical_necessity | phantom_billing | "
+                         "eligibility | worthless_services | pill_mill): the SCHEME-TYPED rulers (2026-11-01)")
     ap.add_argument("--case-jurisdiction", default=None,
                     help="restrict the case-DB half of the ruler to rows whose jurisdiction matches this regex "
                          "(the state ruler: 'MFCU|Attorney General|commercial-plan')")
@@ -347,6 +351,11 @@ def main() -> None:
         g = Path(args.graph_dir)
         case_db = pd.read_csv(args.case_db, dtype=str) if str(args.case_db).endswith(".csv") \
             else pd.read_parquet(args.case_db)
+        if args.case_scheme and "scheme" in case_db.columns:
+            n0 = len(case_db)
+            case_db = case_db[case_db["scheme"].fillna("").astype(str)
+                              .str.contains(args.case_scheme, case=False, regex=True)].reset_index(drop=True)
+            print(f"[prospective_label] --case-scheme {args.case_scheme!r}: {len(case_db):,} of {n0:,} case rows kept")
         if args.case_jurisdiction and "jurisdiction" in case_db.columns:
             n0 = len(case_db)
             case_db = case_db[case_db["jurisdiction"].fillna("").astype(str)

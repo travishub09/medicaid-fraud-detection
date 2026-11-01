@@ -127,6 +127,47 @@ def scheme_ruler(scheme: str) -> str:
     return SCHEME_RULER.get(scheme, "fca")
 
 
+# THE SCHEME-TYPED RULER (2026-11-01, the operator: "a fresh look at the schemes that are not
+# working"): a scheme was graded on the WHOLE forward ruler, so an upcoding scheme was marked
+# on kickback and hospice cases. The case rows carry the conduct type (case_db._SCHEME_KEYWORDS
+# tags, ';'-joined); prospective_label --case-scheme builds one ruler per type
+# (future_bans_after_<cut>__typed_<type><H>.csv) and this map says which type each scheme was
+# written for. typed_auc / n_typed_pos grade the scheme on ITS OWN cases; the own ruler takes
+# the typed ruler when it carries >= FCA_MIN_POS positives, else the state / FCA ruler as before.
+SCHEME_CASE_TYPE = {
+    "upcoding": "upcoding", "session_inflation": "upcoding", "payment_outlier": "upcoding",
+    "pharma_kickback": "kickback", "ownership_integrity": "kickback", "contract_pharmacy": "kickback",
+    "pill_mill": "pill_mill", "drug_outlier": "pill_mill",
+    "worthless_services": "worthless_services", "cost_report_fraud": "worthless_services",
+    "hospice_ineligibility": "eligibility",
+    "lab_testing": "medical_necessity", "lab_unbundling": "medical_necessity", "overutilization": "medical_necessity",
+    "single_service_mill": "medical_necessity", "dme_ring": "medical_necessity", "saturation_fraud": "medical_necessity",
+    "impossible_day": "phantom_billing", "rendering_identity": "phantom_billing", "invalid_identity": "phantom_billing",
+    "evv_personal_care": "phantom_billing", "home_health_intensity": "phantom_billing", "nemt_fraud": "phantom_billing",
+    "behavioral_health": "phantom_billing", "facility_code_billing": "phantom_billing", "rapid_ramp": "phantom_billing",
+    "specialty_mismatch": "medical_necessity",
+}
+
+
+def scheme_case_type(scheme: str) -> str:
+    return SCHEME_CASE_TYPE.get(scheme, "")
+
+
+def load_typed_rulers(run_dir, cutoff: str | None = None) -> dict[str, pd.DataFrame]:
+    """{case type: ruler frame} from future_bans_after_<cut>__typed_<type><H>.csv in a run folder."""
+    import re as _re
+    from pathlib import Path as _P
+    out: dict[str, pd.DataFrame] = {}
+    for p in sorted(_P(run_dir).glob("future_bans_after_*__typed_*.csv")):
+        m = _re.search(r"__typed_([a-z_]+?)\d*\.csv$", p.name)
+        if not m:
+            continue
+        if cutoff and f"after_{cutoff}" not in p.name:
+            continue
+        out[m.group(1)] = pd.read_csv(p, dtype=str)
+    return out
+
+
 def fca_verdict(auc, n_pos) -> str:
     if auc is None or n_pos is None or n_pos < FCA_MIN_POS:
         return "thin"
@@ -140,7 +181,8 @@ def fca_verdict(auc, n_pos) -> str:
 def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
                         weights: dict | None = None,
                         forward: pd.DataFrame | None = None,
-                        state_forward: pd.DataFrame | None = None) -> pd.DataFrame:
+                        state_forward: pd.DataFrame | None = None,
+                        typed_forward: dict[str, pd.DataFrame] | None = None) -> pd.DataFrame:
     """Per-scheme calc integrity + separation. ``forward`` (a prospective_label /
     FCA-ruler CSV) adds ``fca_auc`` / ``n_fca_pos`` / ``fca_verdict``: the per-scheme
     AUC on the FORWARD FCA ruler, the label the business is graded on (2026-10-14,
@@ -151,6 +193,7 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
     n = len(matrix)
     y_fca, keep_fca = forward_label_vector(matrix, forward)
     y_st, keep_st = forward_label_vector(matrix, state_forward)
+    typed_vecs = {k: forward_label_vector(matrix, v) for k, v in (typed_forward or {}).items()}
     # optional empirical direction check: a scheme's subscore should point the
     # SAME way as fraud. If it fires on the clean (AUC well below 0.5 on enough
     # known positives), that is either a direction bug OR the label being blind
@@ -177,6 +220,8 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
         label_auc, n_pos, direction = None, None, ""
         fca_auc, n_fca_pos = None, None
         state_auc, n_state_pos = None, None
+        typed_auc, n_typed_pos = None, None
+        ctype = scheme_case_type(scheme)
         split: dict = {"fca_auc_ind": None, "n_fca_pos_ind": None, "fca_auc_org": None, "n_fca_pos_org": None}
         if sub in cols:
             s = pd.to_numeric(matrix[sub], errors="coerce")
@@ -220,6 +265,12 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
                 sauc, spos = _label_auc(y_st[keep_st], sv)
                 n_state_pos = int(spos)
                 state_auc = None if np.isnan(sauc) else round(sauc, 3)
+            if ctype and ctype in typed_vecs and typed_vecs[ctype][0] is not None and not constant:
+                y_t, keep_t = typed_vecs[ctype]
+                sv = s.to_numpy(float)[keep_t]
+                tauc, tpos = _label_auc(y_t[keep_t], sv)
+                n_typed_pos = int(tpos)
+                typed_auc = None if np.isnan(tauc) else round(tauc, 3)
         # status
         if sub not in cols or not present_inputs:
             status = "DORMANT"
@@ -251,9 +302,14 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
             "n_state_pos": n_state_pos,
             "state_verdict": (fca_verdict(state_auc, n_state_pos) if y_st is not None
                               and sub in cols and not constant else ""),
+            "case_type": ctype,
+            "typed_auc": typed_auc,
+            "n_typed_pos": n_typed_pos,
+            "typed_verdict": (fca_verdict(typed_auc, n_typed_pos) if typed_auc is not None
+                              and sub in cols and not constant else ""),
             "ruler": scheme_ruler(scheme),
             **_own_ruler(scheme, fca_auc, n_fca_pos, state_auc, n_state_pos, y_fca is not None, y_st is not None,
-                         sub in cols and not constant),
+                         sub in cols and not constant, typed_auc=typed_auc, n_typed=n_typed_pos),
             "leak_suspect": leak_suspect(label_auc, fca_auc, n_pos, n_fca_pos),
             **split,
         })
@@ -336,8 +392,8 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
                  "schemes; the DOJ ruler for the rest). ruler verdict is the prune rule's input; a state-ruled "
                  "scheme graded on the DOJ ruler alone says 'no state ruler given'._")
         L.append("")
-        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | FCA AUC ind (pos) | FCA AUC org (pos) | own ruler | ruler AUC (pos) | ruler verdict | missing inputs |")
-        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|--:|--:|---|--:|:-:|---|")
+        L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | FCA AUC | FCA pos | FCA verdict | FCA AUC ind (pos) | FCA AUC org (pos) | typed AUC (pos) | own ruler | ruler AUC (pos) | ruler verdict | missing inputs |")
+        L.append("|---|---|--:|--:|--:|--:|:-:|--:|--:|:-:|--:|--:|--:|---|--:|:-:|---|")
     else:
         L.append("| scheme | status | weight present | inputs | coverage | label AUC | dir | missing inputs |")
         L.append("|---|---|--:|--:|--:|--:|:-:|---|")
@@ -359,6 +415,9 @@ def to_markdown(df: pd.DataFrame, regressions: list[dict]) -> str:
                 p_ = getattr(r, f"n_fca_pos_{key}", None)
                 ok = a_ is not None and a_ == a_
                 line += (f"{a_} ({int(p_)})" if ok else "-") + " | "
+            ta, tp = getattr(r, "typed_auc", None), getattr(r, "n_typed_pos", None)
+            okt = ta is not None and ta == ta
+            line += (f"{ta} ({int(tp)}) [{getattr(r, 'case_type', '')}]" if okt else "-") + " | "
             ra, rp = getattr(r, "ruler_auc", None), getattr(r, "n_ruler_pos", None)
             ok = ra is not None and ra == ra
             line += (f"{getattr(r, 'ruler_used', '') or '-'} | "
@@ -393,9 +452,15 @@ def write_health(matrix: pd.DataFrame, manifest: dict, out_dir: Path,
             "regressions": regressions}
 
 
-def _own_ruler(scheme, fca_auc, n_fca, state_auc, n_state, have_fca, have_state, judged) -> dict:
-    """ruler_auc / ruler_verdict = the scheme's OWN ruler when that ruler was given;
-    a state-ruled scheme with no state file falls back to the FCA ruler and says so."""
+def _own_ruler(scheme, fca_auc, n_fca, state_auc, n_state, have_fca, have_state, judged,
+               typed_auc=None, n_typed=None) -> dict:
+    """ruler_auc / ruler_verdict = the scheme's OWN ruler when that ruler was given: the
+    scheme-TYPED ruler first (the cases of its own conduct type, when it carries enough
+    positives), else the state ruler for a state-ruled scheme, else the FCA ruler; a
+    fallback says so."""
+    if typed_auc is not None and n_typed is not None and n_typed >= FCA_MIN_POS:
+        return {"ruler_used": f"typed:{scheme_case_type(scheme)}", "ruler_auc": typed_auc, "n_ruler_pos": n_typed,
+                "ruler_verdict": fca_verdict(typed_auc, n_typed) if judged else ""}
     want = scheme_ruler(scheme)
     if want == "state" and have_state:
         return {"ruler_used": "state", "ruler_auc": state_auc, "n_ruler_pos": n_state,
@@ -446,6 +511,9 @@ def main() -> None:
     ap.add_argument("--state-label", default=None,
                     help="the STATE ruler CSV (prospective_label --sources state ...): the schemes in "
                          "SCHEME_RULER are judged on it (ruler_auc / ruler_verdict)")
+    ap.add_argument("--typed-dir", default=None,
+                    help="a run folder holding future_bans_after_<cut>__typed_<type><H>.csv (prospective_label "
+                         "--case-scheme): each scheme is graded on the cases of its own conduct type")
     ap.add_argument("--json-out", default=None,
                     help="also write the table as json (the runner's scheme_health.json refresh)")
     args = ap.parse_args()
@@ -462,7 +530,11 @@ def main() -> None:
     sl = pd.read_csv(args.state_label, dtype=str) if args.state_label and Path(args.state_label).exists() else None
     if args.state_label and sl is None:
         print(f"[scheme_health] no state ruler at {args.state_label}: state-ruled schemes fall back to the FCA ruler")
-    df = audit_scheme_health(m, manifest, forward=fl, state_forward=sl)
+    typed = load_typed_rulers(args.typed_dir) if args.typed_dir else None
+    if typed:
+        counts = {k: int(pd.to_numeric(v["is_prospective_positive"], errors="coerce").fillna(0).sum()) for k, v in typed.items()}
+        print("[scheme_health] typed rulers: " + ", ".join(f"{k} ({n})" for k, n in counts.items()))
+    df = audit_scheme_health(m, manifest, forward=fl, state_forward=sl, typed_forward=typed)
     baseline = None
     if args.baseline and Path(args.baseline).exists():
         baseline = pd.DataFrame(json.loads(Path(args.baseline).read_text())["schemes"])

@@ -56,8 +56,11 @@ else
 fi
 m 1/5 "scheme health on BOTH labels (exclusion label + the FCA ruler)"
 python -u -m src.model_a.scheme_health --matrix "$MATRIX" --manifest "$MANIFEST" --future-label "$FCA" \
-    $( [ -f "$STATE" ] && echo --state-label "$STATE" ) \
+    $( [ -f "$STATE" ] && echo --state-label "$STATE" ) --typed-dir "$RUN" \
     --baseline "$BASELINE" --out "$RUN/SCHEME_HEALTH.md" --json-out "$RUN/scheme_health.json" || mfail 1
+
+m 1b/5 "scheme alternatives (the same scheme calculated another way, graded on the fca / state / typed rulers)"
+python -u -m src.model_a.scheme_alternatives --run-dir "$RUN" --spending "$SPEND" --cutoff "$CUT" || mfail 1b
 
 m 2/5 "signal ranking (per-feature separation on covered rows)"
 python -u -m src.model_a.signal_ranking --matrix "$MATRIX" --manifest "$MANIFEST" --out "$RUN/signal_ranking.csv" || mfail 2
