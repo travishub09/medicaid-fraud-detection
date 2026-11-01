@@ -844,8 +844,20 @@ def lane_status(lane: str, data_root: Path) -> dict:
             "no_table": loaded.get("no_table", 0), "notes": loaded.get("notes", []), "files": loaded.get("files", [])}
 
 
+def report_lanes(data_root: Path, lanes) -> list[str]:
+    """The lanes a report covers: the ones asked for, then EVERY other lane with a folder on
+    disk. 2026-11-01: the records cycle (five lanes) wrote the report and erased the first
+    cycle's ten rows; a report is the whole board, a cycle is a subset of it."""
+    want = list(lanes)
+    base = Path(data_root) / "processed" / "manus_lanes"       # lane_dir() would CREATE the folder
+    for l in LANES:
+        if l not in want and (base / l / f"{l}_prompts.jsonl").exists():
+            want.append(l)
+    return want
+
+
 def write_report(data_root: Path, lanes, out: Path | None = None) -> Path:
-    rows = [lane_status(l, data_root) for l in lanes]
+    rows = [lane_status(l, data_root) for l in report_lanes(data_root, lanes)]
     L = ["# MANUS_LANES — every research lane, where it stands", "",
          f"_as of {time.strftime('%Y-%m-%d %H:%M')}. prompts = tasks written; dispatched = tasks with an id at the "
          "research service; completed = answers on file; loaded = rows that passed the lane's machine gate into "

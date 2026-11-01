@@ -107,3 +107,16 @@ def test_plan_policy_rows_carry_the_plan_as_program(tmp_path):
     assert pr.policy_param(pol, "NJ", "drug_testing", "max_definitive_per_year", program="Horizon NJ Health") == 12.0
     ps = pl.plan_prompts(["NJ"])
     assert len(ps) == len(pl.PLANS_BY_STATE["NJ"]) * 2
+
+
+def test_report_covers_every_lane_on_disk(tmp_path):
+    """2026-11-01: the records cycle's report (five lanes) erased the first cycle's ten rows.
+    A report lists the lanes asked for first, then every other lane with a folder on disk."""
+    root = tmp_path / "data"
+    for lane in ("cia", "mfcu"):
+        ml.lane_files(root, lane)["prompts"].write_text('{"org_id": "x"}\n', encoding="utf-8")
+    lanes = ml.report_lanes(root, ["policy", "fee_schedule"])
+    assert lanes[:2] == ["policy", "fee_schedule"]
+    assert "cia" in lanes and "mfcu" in lanes and "names" not in lanes
+    text = ml.write_report(root, ["policy"]).read_text(encoding="utf-8")
+    assert "| cia |" in text and "| mfcu |" in text and "| policy |" in text
