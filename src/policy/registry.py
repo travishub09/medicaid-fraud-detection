@@ -194,7 +194,7 @@ def policy_prompts(states: list[str] | None = None, topics: list[str] | None = N
     names = _state_names()
     out = []
     for st in (states or DEFAULT_STATES):
-        for tk in (topics or list(TOPICS)):
+        for tk in (topics or [k for k, t in TOPICS.items() if t.params]):   # a topic without parameters is filled by another lane
             t = TOPICS[tk]
             out.append({"org_id": _oid(f"{st}|{tk}"), "org_name": f"policy {st} {tk}", "state": st, "topic": tk,
                         "prompt": POLICY_PROMPT.format(state_name=names.get(st, st), title=t.title, question=t.question,
