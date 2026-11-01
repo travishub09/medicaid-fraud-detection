@@ -445,10 +445,48 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
     return cases, pd.DataFrame(bad)
 
 
+def names_refusal_reasons(refused: pd.DataFrame, residue: pd.DataFrame | None) -> pd.Series:
+    """WHICH gate refused each names-lane row (2026-11-01: 86 rows carried one combined
+    reason and the read could not say whether the NPIs were invalid, low-confidence, or
+    simply not among the candidates we listed): no Luhn-valid NPI / confidence below
+    medium / source_node_id not in the residue / NPI not among the listed candidates."""
+    from src.attempt_2.clean_data import is_valid_npi
+    from src.enforcement.research_evidence import _EXCL_NPI_ALIASES
+    from src.attempt_2.clean_data import _resolve_columns
+    if refused is None or not len(refused):
+        return pd.Series([], dtype=str)
+    resolved = _resolve_columns(list(refused.columns), _EXCL_NPI_ALIASES)
+    d = refused.rename(columns={v: k for k, v in resolved.items()})
+    rank = {"high": 3, "medium": 2, "low": 1}
+    cands = {}
+    if residue is not None and len(residue) and "source_node_id" in residue.columns:
+        cands = dict(zip(residue["source_node_id"].astype(str), residue.get("candidate_npis", pd.Series("", index=residue.index)).fillna("").astype(str)))
+    out = []
+    for r in d.to_dict("records"):
+        npi = re.sub(r"\D", "", str(r.get("npi") or ""))
+        conf = str(r.get("confidence") or "").strip().lower()
+        sid = str(r.get("source_node_id") or "").strip()
+        if not npi or not is_valid_npi(npi):
+            out.append("no Luhn-valid NPI")
+        elif rank.get(conf, 0) < 2:
+            out.append(f"confidence below medium ({conf or 'blank'})")
+        elif cands and sid not in cands:
+            out.append("source_node_id not in the residue we sent")
+        elif cands.get(sid) and npi not in cands[sid].split(";"):
+            out.append("NPI not among the listed candidates")
+        else:
+            out.append("gate: not loaded (duplicate of a kept row or an unlisted source id)")
+    return pd.Series(out, index=refused.index)
+
+
 def _append_any(path: Path, rows: pd.DataFrame, keys: list[str]) -> int:
     """Append + dedup on keys (the policy lanes' stores); returns the rows added."""
     path = Path(path)
-    if path.exists():
+    rows = rows.copy()
+    for k in keys:
+        rows[k] = rows[k].astype(str)
+    rows = rows.drop_duplicates(keys, keep="first")      # within the batch too (the first
+    if path.exists():                                     # roster store carried PA twice)
         old = pd.read_parquet(path)
         both = pd.concat([old, rows], ignore_index=True)
         for k in keys:
@@ -573,8 +611,7 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
                     npi_col = next((c for c in t.columns if c.lower() == "npi"), None)
                     kept = set(got["npi"].astype(str)) if len(got) and "npi" in got.columns else set()
                     refused = t[~t[npi_col].astype(str).str.replace(r"\D", "", regex=True).isin(kept)] if npi_col else t
-                    quarantine_rows.append(refused.assign(
-                        drop_reason="gate: Luhn-valid NPI, confidence >= medium, NPI among the listed candidates"))
+                    quarantine_rows.append(refused.assign(drop_reason=names_refusal_reasons(refused, residue)))
         if rows:
             new = pd.concat(rows, ignore_index=True)
             n = _append_parquet(inp["name_resolved"], new, ["npi", "excl_type", "excl_date"])

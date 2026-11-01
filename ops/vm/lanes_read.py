@@ -30,6 +30,24 @@ def main() -> None:
     else:
         print(f"[lanes_read] no report at {rep}")
     print()
+    # the service's own word on every task: status counts per lane + the error texts
+    # (2026-11-01: mfcu / employer / federal_reports errored 40 / 40 / 35 of 40 / 40 / 35
+    # and the table could not say why)
+    import json
+    from collections import Counter
+    for f in sorted(glob.glob(str(root / "processed" / "manus_lanes" / "*" / "*_results.json"))):
+        try:
+            res = json.loads(Path(f).read_text(encoding="utf-8"))
+        except Exception as e:  # noqa: BLE001
+            print(f"== {Path(f).name}: unreadable ({e})")
+            continue
+        st = Counter(str(v.get("status")) for v in res.values())
+        errs = Counter(str(v.get("error_detail") or v.get("output") or "")[:110].replace("\n", " ")
+                       for v in res.values() if v.get("status") not in ("completed", "running", None))
+        print(f"== {Path(f).name}: " + ", ".join(f"{k} {n}" for k, n in st.most_common()))
+        for text, n in errs.most_common(4):
+            print(f"   {n:4d}  {text or '(no error text)'}")
+    print()
     for f in sorted(glob.glob(str(root / "processed" / "manus_lanes" / "*" / "*_quarantine.csv"))):
         try:
             q = pd.read_csv(f, dtype=str, low_memory=False)
@@ -40,6 +58,11 @@ def main() -> None:
         print(f"== {Path(f).name}: {len(q)} rows")
         if col:
             print(q[col].fillna("").str.slice(0, 90).value_counts().head(8).to_string())
+            dom = q[q[col].fillna("").str.contains("domain", case=False)]
+            ucol = next((c for c in q.columns if c.lower() in ("url", "source_url", "evidence_url", "report_url")), None)
+            if len(dom) and ucol:
+                hosts = dom[ucol].fillna("").str.extract(r"^(?:https?://)?([^/]+)", expand=False).fillna("").str.lower()
+                print("   refused hosts: " + "; ".join(f"{h} {n}" for h, n in hosts.value_counts().head(10).items()))
         else:
             print(f"   (no reason column; columns: {', '.join(list(q.columns)[:8])})")
         print()

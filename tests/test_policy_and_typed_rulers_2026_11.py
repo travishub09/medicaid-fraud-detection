@@ -208,3 +208,21 @@ def test_scheme_alternatives_compute_and_grade(tmp_path):
     assert {"current", "pc_units_per_pm"} <= set(g[g["scheme"] == "evv_personal_care"]["formula"])
     md = sa.to_markdown(g, ["fca", "typed_phantom_billing"])
     assert "## evv_personal_care" in md and "pc_units_per_pm" in md and "The read" in md
+
+
+def test_policy_gate_reads_a_spelled_out_state_and_refuses_ambiguous_numbers():
+    """2026-11-01: the first cycle refused 1,482 rows that said CALIFORNIA instead of CA;
+    and "1:4_recommended" must not become the number 1."""
+    assert pr.norm_state("California") == "CA" and pr.norm_state("ca") == "CA" and pr.norm_state("N.Y.") == "NY"
+    t = pd.DataFrame([{"state": "CALIFORNIA", "topic": "drug_testing", "param": "max_definitive_per_year",
+                       "value": "12", "rule_text": "x" * 60, "citation": "c", "url": "https://www.dhcs.ca.gov/x",
+                       "effective_from": "2024-01-01", "confidence": "high"},
+                      {"state": "Texas", "topic": "drug_testing", "param": "max_definitive_per_year",
+                       "value": "12", "rule_text": "x" * 60, "citation": "c", "url": "https://www.dhcs.ca.gov/x",
+                       "effective_from": "2024-01-01", "confidence": "high"}])
+    ok, bad = pr.load_policy_rows(t, "CA", "drug_testing")
+    assert len(ok) == 1 and ok.iloc[0]["state"] == "CA" and ok.iloc[0]["value_num"] == 12.0
+    assert len(bad) == 1 and "TX is not the state asked" in bad.iloc[0]["drop_reason"]
+    assert pr._num("1:4_recommended") != pr._num("1:4_recommended")      # NaN
+    assert pr._num("5_onsite_10_offsite") != pr._num("5_onsite_10_offsite")
+    assert pr._num("12 per year") == 12.0 and pr._num("yes") == 1.0

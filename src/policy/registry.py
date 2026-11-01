@@ -218,14 +218,27 @@ def government_domain(url: str) -> bool:
     return bool(_GOV_HOST.search(host) or _GOV_HOST.search(str(url).lower()) or _PLAN_HOST.search(host))
 
 
+def norm_state(value: str) -> str:
+    """A state as the agent wrote it -> the two-letter code the gate compares. 2026-11-01:
+    the first policy cycle refused 1,482 rows because the agent wrote CALIFORNIA and the
+    gate compared it to CA."""
+    s = str(value or "").strip().upper().replace(".", "")
+    if len(s) == 2 or not s:
+        return s
+    inv = {name.upper(): code for code, name in _state_names().items()}
+    return inv.get(s, s)
+
+
 def _num(value: str):
     s = str(value or "").strip().lower()
     if s in ("yes", "y", "true", "allowed", "required"):
         return 1.0
     if s in ("no", "n", "false", "not allowed", "barred", "prohibited"):
         return 0.0
-    m = re.search(r"-?\d+(?:\.\d+)?", s.replace(",", ""))
-    return float(m.group(0)) if m else float("nan")
+    nums = re.findall(r"-?\d+(?:\.\d+)?", s.replace(",", ""))
+    # "1:4_recommended", "45_25_15", "5_onsite_10_offsite": several numbers = an ambiguous
+    # value; the screens never read the first one as THE parameter (the text stays)
+    return float(nums[0]) if len(nums) == 1 else float("nan")
 
 
 def _date(s: str) -> str:
@@ -243,7 +256,7 @@ def load_policy_rows(table: pd.DataFrame, state: str, topic: str, task_id: str =
     t = TOPICS.get(topic)
     allowed = set(t.params) | {"rule"} if t else {"rule"}
     retrieved_at = retrieved_at or pd.Timestamp.now('UTC').strftime("%Y-%m-%d")
-    rs, rt = _col(table, "state").str.upper(), _col(table, "topic")
+    rs, rt = _col(table, "state").map(norm_state), _col(table, "topic")
     param, value, text = _col(table, "param").str.lower().str.replace(" ", "_"), _col(table, "value"), _col(table, "rule_text")
     cit, url, conf = _col(table, "citation"), _col(table, "url"), _col(table, "confidence").str.lower()
     ef, et, note, prog = _col(table, "effective_from"), _col(table, "effective_to"), _col(table, "note"), _col(table, "program")

@@ -120,3 +120,22 @@ def test_report_covers_every_lane_on_disk(tmp_path):
     assert "cia" in lanes and "mfcu" in lanes and "names" not in lanes
     text = ml.write_report(root, ["policy"]).read_text(encoding="utf-8")
     assert "| cia |" in text and "| mfcu |" in text and "| policy |" in text
+
+
+def test_names_refusal_reasons_name_the_gate():
+    residue = pd.DataFrame([{"source_node_id": "exclusion:1", "candidate_npis": "1234567893;1245319599"}])
+    refused = pd.DataFrame([{"source_node_id": "exclusion:1", "npi": "1234567890", "confidence": "high"},     # bad Luhn
+                            {"source_node_id": "exclusion:1", "npi": "1234567893", "confidence": "low"},
+                            {"source_node_id": "exclusion:1", "npi": "1003000126", "confidence": "high"},     # not listed
+                            {"source_node_id": "exclusion:9", "npi": "1234567893", "confidence": "high"}])
+    r = ml.names_refusal_reasons(refused, residue).tolist()
+    assert r[0] == "no Luhn-valid NPI" and r[1].startswith("confidence below medium")
+    assert r[2] == "NPI not among the listed candidates" and r[3] == "source_node_id not in the residue we sent"
+
+
+def test_append_any_dedups_within_the_first_batch(tmp_path):
+    rows = pd.DataFrame([{"state": "PA", "facility_type": "assisted_living", "url": "u", "x": 1},
+                         {"state": "PA", "facility_type": "assisted_living", "url": "u", "x": 2}])
+    p = tmp_path / "r.parquet"
+    assert ml._append_any(p, rows, ["state", "facility_type", "url"]) == 1
+    assert len(pd.read_parquet(p)) == 1
