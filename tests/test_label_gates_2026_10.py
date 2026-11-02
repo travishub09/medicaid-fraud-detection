@@ -210,3 +210,13 @@ def test_categorical_outcome_cells_are_resolved_outcomes():
         assert _OUTCOME_OK.search(ok), ok
     for bad in ("charged", "indictment", "exclusion", "not guilty", "plea withdrawn", "conviction vacated", "dismissed", ""):
         assert not _OUTCOME_OK.search(bad), bad
+
+
+def test_redirected_or_not_found_pages_are_not_pages():
+    from src.enforcement import research_evidence as rev
+    assert rev.redirect_reason("https://ag.x.gov/news/acme-settles", "https://ag.x.gov/")
+    assert rev.redirect_reason("https://ag.x.gov/news/acme-settles", "https://ag.x.gov/search?q=acme")
+    assert not rev.redirect_reason("https://ag.x.gov/news/acme-settles", "https://ag.x.gov/news/acme-settles/")
+    assert not rev.redirect_reason("https://ag.x.gov/news/acme-settles", "https://www.ag.x.gov/news/acme-settles")
+    assert rev.title_reason("<html><head><title>Page Not Found | AG</title></head></html>")
+    assert not rev.title_reason("<html><head><title>AG announces settlement with Acme</title></head></html>")

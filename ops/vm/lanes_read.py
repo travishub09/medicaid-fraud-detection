@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pandas as pd
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # the repo root (run from anywhere)
+
 REASON_COLS = ("drop_reason", "reason", "qc_note", "gate_note", "status")
 
 
@@ -43,12 +45,17 @@ def page_probe(root: Path, n: int) -> None:
             break
         name = str(r.get("defendant_name") or "")
         try:
-            html = rev.browser_fetch_text(url)
+            import requests
+            resp = requests.get(url, headers=rev.BROWSER_HEADERS, timeout=30, allow_redirects=True)
+            html = resp.text
             text = rev._html_text(html)
-            why = rev.page_is_wall(text)
+            why = rev.page_is_wall(text) or rev.redirect_reason(url, resp.url) or rev.title_reason(html)
             tok = name.split()[0].lower() if name else ""
-            print(f"-- {url[:110]}\n   defendant {name[:60]!r} | html {len(html):,} | words {len(text.split()):,} | "
-                  f"wall: {why or 'no'} | first word in raw html: {tok in html.lower() if tok else 'n/a'}")
+            import re as _re
+            title = _re.search(r"(?is)<title[^>]*>(.*?)</title>", html)
+            print(f"-- {url[:110]}\n   defendant {name[:60]!r} | HTTP {resp.status_code} | final {resp.url[:100]}\n"
+                  f"   title {(' '.join(title.group(1).split()) if title else '')[:90]!r} | html {len(html):,} | words {len(text.split()):,} | "
+                  f"verdict: {why or 'readable page'} | first word in raw html: {tok in html.lower() if tok else 'n/a'}")
             print("   " + " ".join(text.split())[:300])
         except Exception as e:  # noqa: BLE001
             print(f"-- {url[:110]}\n   FETCH FAILED {type(e).__name__}: {str(e)[:160]}")

@@ -1,20 +1,59 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-11-01. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-11-02. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
-Nothing due. Good.
+_Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
+
+- **mue** — CMS MUE quarterly files (practitioner + facility)
+  - save to: preclean/mue/  |  https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits
+  - due: 2026-11-02
+  - step 1: Open the MUE page (url above); download BOTH quarterly zips: 'Practitioner Services MUE Table' + 'Facility Outpatient Hospital Services MUE Table'
+  - step 2: Extract each zip; take the DATA sheet (the AMA-copyright cover sheet is the known trap)
+  - step 3: Save as "...preclean\mue\mue_practitioner_<yyyyQq>.csv" and "...preclean\mue\mue_facility_<yyyyQq>.csv"
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/mue/*.csv or preclean/mue/*.xlsx
+- **pos** — Provider of Services file (quarterly)
+  - save to: preclean/pos/ (current editions to pos_current_hold/ while frozen builds run)  |  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities
+  - due: 2026-11-02
+  - step 1: Open the POS page (url above) → newest quarter → download the CSV set
+  - step 2: Keep the quarter in every filename (e.g. pos_other_<yyyyQq>.csv)
+  - step 3: IMPORTANT: while the 2023-12 frozen builds are the working runs, save CURRENT editions to preclean\pos_current_hold\ so they never leak into a frozen build
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/pos_current_hold/*.csv or preclean/pos/*.csv
+- **pbj** — PBJ Daily Nurse Staffing (quarterly)
+  - save to: preclean/facility/ (current to facility_current_hold/)  |  https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing
+  - due: 2026-11-02
+  - step 1: Open the PBJ page (url above) → newest quarter → download the Nurse Staffing CSV (the one WITH Hrs_RN columns — the 'non-nurse' file is the known trap)
+  - step 2: Save as "...preclean\facility_current_hold\pbj_daily_staffing_<yyyyQq>.csv" while frozen builds are the working runs (the frozen 2023Q4 edition stays in facility\)
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility_current_hold/pbj_daily_staffing_*.csv or preclean/facility/pbj_daily_staffing_*.csv
+- **care_compare** — Care Compare provider-data archives (hospice measures, NH citations/ownership/penalties)
+  - save to: preclean/facility/ (current to facility_current_hold/)  |  https://data.cms.gov/provider-data/archived-data
+  - due: 2026-11-02
+  - step 1: Open https://data.cms.gov/provider-data/archived-data → 'Hospice care' + 'Nursing homes' → newest month's zip
+  - step 2: From the hospice zip keep Hospice_Provider; from the NH zip keep HealthCitations, Ownership, Penalties, SurveyDates
+  - step 3: Rename each with the month (e.g. Hospice_Provider_<Mon><yyyy>.csv) and save to preclean\facility_current_hold\ (frozen Nov2023 editions stay in facility\)
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility_current_hold/*.csv or preclean/facility/Hospice_Provider_*.csv
+- **nadac** — NADAC drug pricing (drug_spread_anomaly)
+  - save to: preclean/nadac/  |  https://data.medicaid.gov/datasets
+  - due: 2026-11-02
+  - step 1: Open https://data.medicaid.gov/datasets and search 'NADAC (National Average Drug Acquisition Cost)'
+  - step 2: Download the current full CSV
+  - step 3: Save as "...preclean\nadac\nadac_<yyyymm>.csv"
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/nadac/*.csv
+- **work_plan** — OIG Work Plan curated table refresh (government_interest overlay)
+  - save to: src/model_a/government_interest.py (Claude updates the code table)  |  https://oig.hhs.gov/reports-and-publications/workplan/
+  - due: 2026-11-02
+  - step 1: Nothing to download — just tell Claude: 'work plan refresh is due'
+  - step 2: Claude re-reads the OIG Work Plan active items and updates the curated table in code
+- **hrsa_340b** — 340B OPAIS Covered Entity Daily Report (contract_pharmacy)
+  - save to: preclean/hrsa_340b/ (3-worksheet .xlsx)  |  https://340bopais.hrsa.gov/reports
+  - due: 2026-11-02
+  - step 1: Open https://340bopais.hrsa.gov/reports → 'Covered Entity Daily Report' → Excel export (must be the 3-worksheet .xlsx with Contract Pharmacies)
+  - step 2: Save as "...preclean\hrsa_340b\opais_covered_entity_<yyyymmdd>.xlsx"
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/hrsa_340b/*.xlsx or preclean/hrsa_340b/*.csv
 
 ## COMING UP (30 days)
 
-- mue — due 2026-11-02: CMS MUE quarterly files (practitioner + facility)
-- pos — due 2026-11-02: Provider of Services file (quarterly)
-- pbj — due 2026-11-02: PBJ Daily Nurse Staffing (quarterly)
-- care_compare — due 2026-11-02: Care Compare provider-data archives (hospice measures, NH citations/ownership/penalties)
-- nadac — due 2026-11-02: NADAC drug pricing (drug_spread_anomaly)
-- work_plan — due 2026-11-02: OIG Work Plan curated table refresh (government_interest overlay)
-- hrsa_340b — due 2026-11-02: 340B OPAIS Covered Entity Daily Report (contract_pharmacy)
 - nppes_deactivation — due 2026-11-07: CMS Deactivated NPI Report (invalid_identity scheme)
 - owner_snapshot — due 2026-11-07: make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
 - sam_exclusions — due 2026-11-09: SAM.gov exclusions extract (widens the PU label)
@@ -24,11 +63,12 @@ Nothing due. Good.
 
 ## STANDING TASK QUEUE
 
-- [ ] **lanes_dispatch_3** — LANES: THE RE-POLL WORKED (2026-11-01 20:4x UTC): mfcu 117 case rows, employer 13 employer exclusions, federal_reports 348, outcome_refresh 160 (62 charges cleared), commercial 58, state audits 1,765 usable (NY OMIG 1,550), policy 1,157 in store, plans 216, defendant_research 15 folded. TWO GATE DEFECTS FOUND IN THE READ, both fixed, both recoverable for free: (1) the outcome vocabulary read sentences only, so a categorical cell saying 'plea' or 'conviction' was 'no resolved outcome' (462 federal-report rows refused: plea 271, conviction 191); (2) the page check marked 117 of 117 reachable rows 'defendant not on the page', DOJ releases included, which is a challenge page served as HTTP 200 being read as a real page; a challenge / empty page is now UNREACHABLE (unknown), and a row marked under the old rule whose page cannot be read goes back to usable=1 with the note 'page unreadable on re-check: unverified'. Line 1 pulls the code, re-loads the four harvest lanes (free; the page re-check fetches about 150 pages, a few minutes) and prints the table + reasons; line 2 fetches six marked pages and shows what the VM really received (the proof of (2)). CREDITS: 54 tasks died on 'not enough credits' (commercial 30, outcome_refresh 19, defendant_research 4, cia 1) and about 150 on the service's 'Internal server error' (outcome_refresh 60, names 26, employer 25, policy 17, fee_schedule 16, cia 4, mfcu 4, federal 4, label_verification 1): the account is out of credits; nothing re-sends until you top up and say so. Close this task when lines 1 and 2 are pasted. (added 2026-11-01)
+- [ ] **lanes_dispatch_3** — LANES, THE PAGE-CHECK QUESTION (2026-11-02): the category fix landed (federal_reports 408 loaded; its quarantine is charges 603 / exclusions 39 / blanks 39 only), 32 rows went back to unverified, but 124 of 124 pages that passed the wall rule still read 'name absent', which is not a believable rate. The likely cause is state AG sites answering an old or invented slug with HTTP 200 and the home page (alabamaag / ag.idaho / oag.state.va.us cite moved releases): a redirect to the site home or a search page, or a 'not found' title, is now UNREACHABLE too. Line 1 = the probe (six marked pages: status, final URL, title, verdict, the first 300 characters; the proof); line 2 = pull + the free re-load of the four harvest lanes under the new rule (rows marked on a redirected page go back to unverified); line 3 = the resolver again (the recovered rows are not in the 20:09 run). CREDITS: the account is out (54 tasks 'not enough credits', about 150 'Internal server error'); nothing re-sends until you top up and say so. Close this task when the three lines are pasted. (added 2026-11-01)
 
 ```bat
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python -u -m src.model_a.manus_lanes --data-root /data/medicaid --lanes federal_reports,mfcu,commercial,cia,outcome_refresh --load 2>&1 | grep -v 'fetch failed' && python ops/vm/lanes_read.py /data/medicaid --no-heads"
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python ops/vm/lanes_read.py /data/medicaid --page-probe 6"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && python ops/vm/lanes_read.py /data/medicaid --page-probe 6"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -u -m src.model_a.manus_lanes --data-root /data/medicaid --lanes federal_reports,mfcu,commercial,cia --load 2>&1 | grep -v 'fetch failed' | tail -12 && python ops/vm/lanes_read.py /data/medicaid --no-heads | sed -n '/^== case rows/,$p'"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && git pull --ff-only && tmux new -d -s resolver 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && N=$(ls /data/medicaid/preclean/nppes/npidata_pfile_*.csv 2>/dev/null | sort | tail -1); V=$(find /data/medicaid/processed /data/medicaid/enforcement -name verification_results\*.csv -printf \"%p \" 2>/dev/null); python -u -m src.enforcement.defendant_resolver --case-db /data/medicaid/enforcement/doj_cases_v3.csv --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/processed/case_defendant_npis.parquet --research-states FL,GA,AL,MS,TN,NC,SC,LA,KY,CA,NY,TX,IL,PA,OH,MI,NJ ${N:+--nppes-file $N} ${V:+--verification $V} 2>&1 | tee /data/medicaid/enforcement/resolver_2026-11.log'; sleep 20; tmux ls; tail -3 /data/medicaid/enforcement/resolver_2026-11.log"
 python -m src.reminders --done-task lanes_dispatch_3
 ```
 

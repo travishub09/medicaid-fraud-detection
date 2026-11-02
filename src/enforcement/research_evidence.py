@@ -106,17 +106,58 @@ def _page_text_raw(url: str, fetch_page) -> str:
     return _html_text(fetch_page(url))
 
 
+BROWSER_HEADERS = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                  "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
+                   "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
+                   "Accept-Language": "en-US,en;q=0.9"}
+_TITLE_BAD = re.compile(r"not found|404|page unavailable|error|access denied|just a moment|attention required|"
+                        r"search results|site search", re.I)
+
+
+def redirect_reason(requested: str, final: str) -> str:
+    """'' when the server served the page asked for; else why the final URL is not it. A
+    release slug that lands on the site's home page or a search page is a moved / invented
+    citation, never a page the defendant is absent from (2026-11-01: state AG sites answer
+    an old slug with 200 + the home page)."""
+    try:
+        from urllib.parse import urlparse
+        a, b = urlparse(str(requested or "")), urlparse(str(final or requested or ""))
+    except Exception:
+        return ""
+    pa = a.path.rstrip("/")
+    pb = b.path.rstrip("/")
+    if not pa or pa == pb:
+        return ""
+    if pb in ("", "/", "/home", "/index", "/index.html", "/index.php", "/default.aspx", "/en", "/en-us"):
+        return f"redirected to the site home ({b.netloc}{b.path})"
+    if re.search(r"search|404|not-?found|error|login|signin", pb, re.I) and not re.search(r"search|404|not-?found|error|login|signin", pa, re.I):
+        return f"redirected to {b.path[:60]}"
+    return ""
+
+
+def title_reason(html: str) -> str:
+    m = re.search(r"(?is)<title[^>]*>(.*?)</title>", str(html or ""))
+    if not m:
+        return ""
+    t = " ".join(m.group(1).split())
+    return f"title says {t[:60]!r}" if _TITLE_BAD.search(t) else ""
+
+
 def browser_fetch_text(url: str, binary: bool = False):
     """The page fetch verify-sources uses: a browser user agent (state AG and OIG sites
     refuse unknown agents with 403; the 2026-10-21 run reached 0 of 37 pages) and, for
-    PDFs, the raw bytes."""
+    PDFs, the raw bytes. A request answered with a different page (the site home, a
+    search page, a 'not found' title) RAISES: that is a moved citation, not a page."""
     import requests
-    hdrs = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                           "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"),
-            "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9"}
-    resp = requests.get(url, headers=hdrs, timeout=30, allow_redirects=True)
+    resp = requests.get(url, headers=BROWSER_HEADERS, timeout=30, allow_redirects=True)
     resp.raise_for_status()
+    why = redirect_reason(url, resp.url)
+    if why:
+        raise RuntimeError(f"not the page cited: {why}")
+    if not binary:
+        why = title_reason(resp.text)
+        if why:
+            raise RuntimeError(f"not a readable page: {why}")
     return resp.content if binary else resp.text
 
 
