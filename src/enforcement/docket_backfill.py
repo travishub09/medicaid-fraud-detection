@@ -20,8 +20,18 @@ cases are weak-tier evidence: ``case_labels`` records them under source
 appears as a settlement or judgment in the press-release harvest. Leads for counsel
 review, never accusations.
 
+DOCKET OUTCOMES (architecture audit experiment 7, 2026-11-02): a docket whose ENTRIES
+carry a settlement, a consent judgment, a judgment entered, or a stipulation of
+dismissal pursuant to a settlement is no longer an allegation: ``docket_outcome_rows``
+turns such a docket into its OWN case row (case_type ``docket_outcome``,
+announced_date = the entry date, the summary in the outcome rule's words, the docket
+id and the entry number kept) so the forward ruler can admit it. A plain dismissal,
+a motion, a brief, or a judgment for the defendant is never an outcome.
+
   python -m src.enforcement.docket_backfill --since 2015-01-01 --out feeds/enforcement/fca_dockets.csv
   python -m src.enforcement.docket_backfill --since 2015-01-01 --out ... --merge-into enforcement/doj_cases_v3.csv
+  python -m src.enforcement.docket_backfill --outcomes-from feeds/enforcement/docket_entries.csv \\
+      --dockets feeds/enforcement/dockets.csv --out feeds/enforcement/docket_outcomes.csv [--merge-into ...]
 """
 from __future__ import annotations
 
@@ -108,6 +118,147 @@ def dockets_to_cases(dockets: pd.DataFrame) -> pd.DataFrame:
     return build_case_db(rows) if rows else build_case_db([])
 
 
+# ------------------------------------------------------------ docket outcomes
+
+DOCKET_OUTCOME_CASE_TYPE = "docket_outcome"
+OUTCOME_EXTRA_COLS = ["docket_id", "entry_number", "outcome_kind"]   # beside case_db.CASE_COLUMNS
+
+# the outcome vocabulary is the strict export's (fca_label_export._CIVIL_OUTCOME reads
+# "settle|settlement|judgment|consent judgment|agreed to pay" off the summary we write);
+# on a DOCKET ENTRY the words sit in a one-line description, so the entry has to be the
+# court's or the parties' ACT, never a request: a motion, brief, response or objection is
+# pending; a plain dismissal is the usual end of a declined qui tam; a judgment for the
+# defendant or of dismissal is a loss; summary judgment is unread (whose?); a vacated or
+# denied entry undoes one.
+_ENTRY_SETTLEMENT = re.compile(r"\bsettle(?:d|ment|s)?\b|agree[sd]?\s+to\s+pay|consent\s+(?:judgment|decree)", re.I)
+_ENTRY_JUDGMENT = re.compile(r"^\s*(?:(?:final|default|consent|amended|clerk'?s)\s+)*judgment\b|"
+                             r"\bjudgment\s+(?:is\s+)?(?:hereby\s+)?entered\b|\bentry\s+of\s+(?:final\s+|default\s+)?judgment\b|"
+                             r"\bjudgment\s+(?:in\s+favor\s+of|for|against)\s+|\bsatisfaction\s+of\s+judgment\b", re.I)
+_ENTRY_NOT_AN_OUTCOME = re.compile(r"^\s*(?:(?:joint|unopposed|emergency|amended|renewed|first|second|third|ex\s+parte)\s+)*"
+                                   r"(?:motion|brief|memorandum|response|reply|opposition|objection|proposed|"
+                                   r"notice\s+of\s+(?:appeal|motion))\b|"
+                                   r"\bjudgment\s+of\s+dismissal\b|\bin\s+favor\s+of\s+(?:the\s+)?defendants?\b|"
+                                   r"\bfor\s+(?:the\s+)?defendants?\b|\bsummary\s+judgment\b|\bdenying\b|\bdenied\b|\bvacat|"
+                                   r"\bstricken\b|\bwithdraw", re.I)
+_INTERVENE = re.compile(r"election\s+to\s+intervene|notice\s+of\s+intervention|government'?s?\s+complaint\s+in\s+intervention", re.I)
+_DECLINE = re.compile(r"election\s+(?:to\s+)?declin|declin\w*\s+to\s+intervene|notice\s+of\s+declination", re.I)
+
+
+def entry_outcome(description: str) -> str:
+    """'settlement' | 'judgment' | '' for one docket-entry description."""
+    d = str(description or "")
+    if not d.strip() or _ENTRY_NOT_AN_OUTCOME.search(d):
+        return ""
+    if _ENTRY_SETTLEMENT.search(d):
+        return "settlement"
+    if _ENTRY_JUDGMENT.search(d):
+        return "judgment"
+    return ""
+
+
+def _col(df: pd.DataFrame, *names: str) -> pd.Series:
+    for n in names:
+        if n in df.columns:
+            return df[n]
+    return pd.Series("", index=df.index, dtype=object)
+
+
+_TRAILING_ID = re.compile(r"(\d+)/?\s*$")
+
+
+def _docket_key(v) -> str:
+    """A docket id as the API gives it ('123', 123.0, or the resource URL
+    '.../dockets/123/') -> '123'."""
+    s = str(v if v is not None else "").strip()
+    if s.lower() in ("", "nan", "none"):
+        return ""
+    if s.startswith(("http://", "https://", "/")):
+        m = _TRAILING_ID.search(s)
+        return m.group(1) if m else s
+    return re.sub(r"\.0$", "", s)
+
+
+def docket_outcome_rows(dockets: pd.DataFrame | None, entries: pd.DataFrame) -> pd.DataFrame:
+    """Dockets whose entries carry an outcome -> case rows (case_type ``docket_outcome``).
+
+    ``entries``: one row per docket entry (docket_id | docket, entry_number, date_filed |
+    entry_date, description); ``dockets``: the listing (_fetch_dockets shape: docket_id,
+    case_name, court, nature_of_suit, date_filed, docket_url); when None, the entries must
+    carry case_name / court themselves. The FIRST outcome entry (by date) dates the case:
+    announced_date = that entry's date. One row per docket, keyed by the entry's own URL
+    (never the docket's: the allegation row keeps its key, and case_db.merge_case_files
+    appends the outcome beside it). The summary states the outcome in the outcome rule's
+    words so ``fca_label_export.outcome_tier`` / ``case_labels`` admit the row once they
+    read ``docket_outcome`` like ``civil_fca`` (integration note in the batch report).
+    ``intervened`` is read off the docket's entries (election to intervene / to decline);
+    ``amount_usd`` off the outcome entry when it states one. A docket with only a plain
+    dismissal yields nothing."""
+    from src.enforcement.case_db import _extract_amount
+    if entries is None or not len(entries):
+        return build_case_db([])
+    en = entries.copy()
+    en["_did"] = _col(en, "docket_id", "docket").map(_docket_key)
+    en["_n"] = pd.to_numeric(_col(en, "entry_number", "entry", "recap_sequence_number"), errors="coerce")
+    en["_dt"] = pd.to_datetime(_col(en, "date_filed", "entry_date", "date"), errors="coerce")
+    en["_desc"] = _col(en, "description", "entry_description", "text", "short_description").fillna("").astype(str)
+    en = en[en["_did"] != ""]
+    if not len(en):
+        return build_case_db([])
+    dk: dict[str, dict] = {}
+    if dockets is not None and len(dockets):
+        d = dockets.copy()
+        d["_did"] = _col(d, "docket_id", "id").map(_docket_key)
+        for r in d[d["_did"] != ""].to_dict("records"):
+            dk.setdefault(r["_did"], r)
+    en["_kind"] = en["_desc"].map(entry_outcome)
+    rows = []
+    for did, g in en.groupby("_did", sort=True):
+        hits = g[(g["_kind"] != "") & g["_dt"].notna()].sort_values(["_dt", "_n"])
+        if not len(hits):
+            continue
+        h = hits.iloc[0]
+        meta = dk.get(did) or {}
+        first = g.sort_values("_dt").iloc[0]
+        case_name = str(meta.get("case_name") or _col(g, "case_name").iloc[0] or "")
+        court = str(meta.get("court") or _col(g, "court").iloc[0] or "")
+        nos = str(meta.get("nature_of_suit") or _col(g, "nature_of_suit").iloc[0] or "")
+        docket_url = str(meta.get("docket_url") or meta.get("absolute_url") or _col(g, "docket_url").iloc[0] or "")
+        defendant = defendant_from_caption(case_name)
+        if not defendant:
+            continue
+        n = int(h["_n"]) if pd.notna(h["_n"]) else 0
+        entry_url = (docket_url.rstrip("/") + f"/entry-{n}/") if docket_url else f"courtlistener:docket:{did}/entry-{n}/"
+        texts = " ".join(g["_desc"].tolist())
+        intervened = 1 if _INTERVENE.search(texts) else (0 if _DECLINE.search(texts) else pd.NA)
+        qui_tam = 1 if ("376" in nos or re.search(r"\bex\s+rel\b", case_name, re.I)) else pd.NA
+        words = "settlement" if h["_kind"] == "settlement" else "judgment entered"
+        amt = _extract_amount(h["_desc"])
+        filed = str(meta.get("date_filed") or "")[:10] or (str(first["_dt"].date()) if pd.notna(first["_dt"]) else "")
+        rows.append({
+            "case_id": entry_url,
+            "announced_date": h["_dt"].strftime("%Y-%m-%d"),
+            "defendant_name": defendant,
+            "defendant_name_key": norm_org_name(defendant),
+            "sector": "", "scheme": "",
+            "amount_usd": amt if amt else pd.NA,
+            "qui_tam": qui_tam, "intervened": intervened,
+            "jurisdiction": court_to_district(court),
+            "source_url": entry_url,
+            "summary": (f"{case_name}; nature of suit {nos}; court {court}; docket {did} filed {filed}. "
+                        f"Resolved by {words} on the docket: entry {n} of {h['_dt'].date()}: {h['_desc'][:300]}"),
+            "case_type": DOCKET_OUTCOME_CASE_TYPE,
+            "docket_id": did, "entry_number": n, "outcome_kind": h["_kind"],
+        })
+    out = build_case_db(rows) if rows else build_case_db([])
+    if rows:
+        extra = pd.DataFrame(rows)[["case_id"] + OUTCOME_EXTRA_COLS]
+        out = out.merge(extra.drop_duplicates("case_id"), on="case_id", how="left")
+    else:
+        for c in OUTCOME_EXTRA_COLS:
+            out[c] = pd.Series(dtype=object)
+    return out
+
+
 def run_backfill(since: str, fetch_json=default_fetch_json, max_pages: int = 2000,
                  sleep_s: float = 0.5) -> pd.DataFrame:
     dockets = _fetch_dockets((NOS_FCA, NOS_QUI_TAM), since, FEED_NAME, fetch_json=fetch_json,
@@ -144,8 +295,33 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="fca_dockets.csv")
     ap.add_argument("--merge-into", default=None, help="an existing case CSV to append the docket rows to")
     ap.add_argument("--max-pages", type=int, default=2000)
+    ap.add_argument("--outcomes-from", default=None,
+                    help="a docket ENTRIES csv (docket_id, entry_number, date_filed, description): write the "
+                         "docket_outcome case rows (settlement / consent judgment / judgment entered / dismissal "
+                         "pursuant to settlement) to --out instead of fetching; no network, no token")
+    ap.add_argument("--dockets", default=None,
+                    help="with --outcomes-from: the docket listing csv (docket_id, case_name, court, nature_of_suit, "
+                         "date_filed, docket_url); without it the entries csv must carry case_name / court")
     a = ap.parse_args()
     import os
+    if a.outcomes_from:
+        from src.attempt_2.clean_data import read_csv_text
+        entries = read_csv_text(a.outcomes_from, dtype=str)
+        dockets = read_csv_text(a.dockets, dtype=str) if a.dockets else None
+        cases = docket_outcome_rows(dockets, entries)
+        out = Path(a.out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        cases.to_csv(out, index=False)
+        kinds = ", ".join(f"{k} {v:,}" for k, v in cases["outcome_kind"].value_counts().items()) if len(cases) else "none"
+        n_dockets = entries.get("docket_id", entries.get("docket", pd.Series(dtype=str))).nunique()
+        msg = (f"docket outcomes: {len(cases):,} dockets with an outcome entry of {n_dockets:,} dockets in "
+               f"{a.outcomes_from} ({kinds}) -> {out}")
+        if a.merge_into:
+            merged = merge_into_case_db(cases, Path(a.merge_into))
+            merged.to_csv(a.merge_into, index=False)
+            msg += f"\n  merged into {a.merge_into}: {len(merged):,} cases total"
+        print(msg)
+        return
     if not os.environ.get("COURTLISTENER_TOKEN"):
         raise SystemExit("CourtListener's API refuses anonymous requests (HTTP 401). Make a free account at "
                          "https://www.courtlistener.com/sign-in/, open your profile page, copy the API token, "

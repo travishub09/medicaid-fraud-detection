@@ -29,6 +29,20 @@ identifier, a date, a tier and a provenance string on every row).
      shape (case_id, defendant_name, npi, status, match_level) plus CIA case rows
      in the case-DB schema, so ``case_labels`` consumes them unchanged.
 
+  3. EMPLOYER REACH FOR THE STATE-SIDE LABELS (architecture audit experiment 7,
+     2026-11-02): the same rendering join over the state termination lists, the
+     enrollment ends for cause, the name-resolved exclusions (every
+     processed/exclusions_*.parquet the graph build merges) and the MFCU / AG case
+     rows resolved to an individual NPI, hard AND weak tiers kept with the tier
+     carried as ``source_tier`` -> processed/affiliated_state.parquet, a second file
+     for ``prospective_label --affiliated`` so the STATE ruler reaches the billing
+     organizations. The funnel (individuals in / with a rendering history / kept /
+     dropped by reason / set aside before the join) is one log line.
+
+    python -m src.model_a.label_expansion affiliated-state --processed processed/ --spending processed/spending_fact.parquet \\
+        --case-db enforcement/doj_cases_v3.csv --defendant-npis processed/case_defendant_npis.parquet \\
+        --out processed/affiliated_state.parquet
+
 Nothing here fuzzy-matches a name (the fuzzy tier was retired 2026-10-11).
 Diagnostics and label files only; nothing changes a model.  Leads for counsel
 review, never accusations: a positive is a public record, not a finding.
@@ -66,7 +80,8 @@ AFF_COLS = ["npi", "excluded_npi", "excl_date", "excl_type", "fca_tier", "fca_ba
 def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
                            window_months: int = 24, min_share: float = 0.05,
                            min_dollars: float = 25_000.0, max_orgs: int = 1,
-                           tier: str = "hard", con=None) -> pd.DataFrame:
+                           tier: str = "hard", con=None,
+                           max_individuals_per_biller: int | None = None) -> pd.DataFrame:
     """For every exclusion record in the kept tier with a valid NPI and a date,
     the billing NPIs whose claims carried that NPI as the RENDERING provider in
     the ``window_months`` before the exclusion date.  One row per (biller,
@@ -74,9 +89,10 @@ def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
     ``max_orgs`` billers by dollars, each with share >= ``min_share`` OR dollars
     >= ``min_dollars``); the rest stay in the table with a ``drop_reason``
     (quarantine, never delete).  A biller that is the individual's own NPI is
-    never a row (that is the ordinary positive, already labelled)."""
+    never a row (that is the ordinary positive, already labelled).
+    ``max_individuals_per_biller`` (off by default here: the v-series ruler) is the
+    chain guard ``affiliated_from_exclusions`` applies at 25."""
     from .fca_relevance import classify_series, tier_mask
-    con = con or _duck_connect()
     e = exclusion_nodes.copy()
     e["npi"] = e.get("npi").astype("string").str.strip()
     e = e[e["npi"].notna() & e["npi"].str.fullmatch(r"\d{10}").fillna(False)].copy()
@@ -91,6 +107,29 @@ def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
         return pd.DataFrame(columns=AFF_COLS)
     # earliest kept record per individual
     e = e.sort_values(["npi", "_dt"]).groupby("npi", as_index=False).first()
+    out, _ = _rendering_join(e, spending, window_months=window_months, min_share=min_share,
+                             min_dollars=min_dollars, max_orgs=max_orgs, con=con,
+                             max_individuals_per_biller=max_individuals_per_biller)
+    return out[AFF_COLS].reset_index(drop=True)
+
+
+def _rendering_join(e: pd.DataFrame, spending: str | Path, window_months: int = 24, min_share: float = 0.05,
+                    min_dollars: float = 25_000.0, max_orgs: int = 1, con=None,
+                    max_individuals_per_biller: int | None = None) -> tuple[pd.DataFrame, dict]:
+    """The rendering join shared by ``affiliated_convictions`` and
+    ``affiliated_from_exclusions``: ``e`` is ONE row per individual (npi, _dt,
+    excl_type, fca_tier, fca_basis, entity_name; any extra column such as
+    ``source`` / ``source_tier`` is carried onto every row of that individual).
+    Returns (rows in the AFF_COLS schema plus the carried columns, a funnel dict:
+    individuals_in / with_rendering_history / kept / kept_billers / dropped by reason)."""
+    con = con or _duck_connect()
+    carry = [c for c in ("source", "source_tier", "case_id") if c in e.columns]
+    funnel: dict = {"individuals_in": int(e["npi"].nunique()), "with_rendering_history": 0,
+                    "kept": 0, "kept_billers": 0, "dropped": {}}
+    empty = pd.DataFrame(columns=AFF_COLS + carry)
+    if not len(e):
+        return empty, funnel
+    e = e.copy()
     e["_start"] = (e["_dt"] - pd.DateOffset(months=int(window_months))).dt.strftime("%Y-%m")
     e["_end"] = e["_dt"].dt.strftime("%Y-%m")
     x = e[["npi", "_start", "_end"]].rename(columns={"npi": "xnpi"})
@@ -98,6 +137,7 @@ def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
     p = _sql_str(spending)
     cols = [c[0] for c in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{p}')").fetchall()]
     if "servicing_npi" not in cols:
+        con.unregister("x_excl")
         raise ValueError(f"{spending}: no servicing_npi column; the rendering grain is needed")
     rendered = con.execute(f"""
         WITH s AS (
@@ -113,7 +153,7 @@ def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
         GROUP BY 1, 2""").df()
     if not len(rendered):
         con.unregister("x_excl")
-        return pd.DataFrame(columns=AFF_COLS)
+        return empty, funnel
     con.register("cand", rendered[["npi", "excluded_npi"]])
     totals = con.execute(f"""
         WITH s AS (
@@ -138,6 +178,8 @@ def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
     out["fca_tier"] = out["excluded_npi"].map(meta["fca_tier"])
     out["fca_basis"] = out["excluded_npi"].map(meta["fca_basis"])
     out["entity_name"] = out["excluded_npi"].map(meta.get("entity_name", pd.Series(dtype=str))).fillna("")
+    for c in carry:
+        out[c] = out["excluded_npi"].map(meta[c])
     out = out.sort_values(["excluded_npi", "dollars_rendered"], ascending=[True, False])
     out["rank_for_individual"] = out.groupby("excluded_npi").cumcount() + 1
     strong = (out["share_of_biller"] >= float(min_share)) | (out["dollars_rendered"] >= float(min_dollars))
@@ -145,21 +187,252 @@ def affiliated_convictions(exclusion_nodes: pd.DataFrame, spending: str | Path,
     out["drop_reason"] = ""
     out.loc[~strong, "drop_reason"] = "below_share_and_dollar_floor"
     out.loc[strong & (out["rank_for_individual"] > int(max_orgs)), "drop_reason"] = "over_per_individual_budget"
+    if max_individuals_per_biller is not None and int(max_individuals_per_biller) > 0:
+        # THE CHAIN GUARD (the employer lane's 25-individuals rule): a biller that more
+        # than N kept individuals point at is a hospital, a staffing agency or a chain,
+        # institutional rather than individual evidence; its rows are listed, never labelled
+        n_ind = out[out["kept"]].groupby("npi")["excluded_npi"].nunique()
+        chain = set(n_ind[n_ind > int(max_individuals_per_biller)].index)
+        hit = out["kept"] & out["npi"].isin(chain)
+        out.loc[hit, "kept"] = False
+        out.loc[hit, "drop_reason"] = "chain_guard_biller"
     out["basis"] = "affiliated_conviction"
-    return out[AFF_COLS].reset_index(drop=True)
+    out = out[AFF_COLS + carry].reset_index(drop=True)
+    funnel["with_rendering_history"] = int(out["excluded_npi"].nunique())
+    kept = out[out["kept"].astype(bool)]
+    funnel["kept"] = int(len(kept))
+    funnel["kept_billers"] = int(kept["npi"].nunique())
+    funnel["dropped"] = {k: int(v) for k, v in out.loc[~out["kept"].astype(bool), "drop_reason"].value_counts().items()}
+    return out, funnel
+
+
+# ----------------------------------------- employer reach for the state-side labels
+
+AFF_STATE_COLS = AFF_COLS + ["source_tier", "source"]
+
+# the exclusion files the graph build merges (processed/exclusions_*.parquet) that carry
+# INDIVIDUALS the Medicaid side sanctioned: state termination lists, enrollment ends for
+# cause, the name-resolved LEIE rows, and the employer lane's own rows (read, then set
+# aside: an employer row is an organization, never a rendering individual)
+STATE_EXCLUSION_GLOB = "exclusions_*.parquet"
+NEVER_REACH_FILES = ("exclusions_duplicates",)   # quarantine (never loaded, never a label)
+STATE_CASE_JURISDICTION = r"MFCU|\bAG\b|Attorney General|\bstate\b"
+
+
+def discover_exclusion_files(processed_dir: str | Path, pattern: str = STATE_EXCLUSION_GLOB) -> list[Path]:
+    """Every processed/exclusions_*.parquet the graph build would merge, the quarantine
+    file and the field-outcome file left out (a field result is never a ruler)."""
+    files = sorted(Path(processed_dir).glob(pattern))
+    return [f for f in files if f.stem not in NEVER_REACH_FILES and not f.stem.startswith("exclusions_field")]
+
+
+def load_exclusion_sources(files: list[str | Path]) -> pd.DataFrame:
+    """Concatenate exclusion files in the shared schema, each row tagged with its file
+    stem in ``source`` (the funnel is reported per source)."""
+    frames = []
+    for f in files:
+        f = Path(f)
+        if not f.exists():
+            continue
+        d = pd.read_parquet(f)
+        if not len(d):
+            continue
+        d = d.copy()
+        d["source"] = f.stem
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame(columns=["npi", "entity_name", "excl_type", "excl_date", "source"])
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _jurisdiction_state(jurisdiction: str, fallback: str = "") -> str:
+    j = str(jurisdiction or "").strip()
+    m = re.match(r"^([A-Za-z]{2})\b", j)
+    if m and m.group(1).isupper():
+        return m.group(1)
+    return str(fallback or "").strip().upper()[:2] or "xx"
+
+
+def state_case_individuals(case_db: pd.DataFrame, defendant_npis: pd.DataFrame,
+                           jurisdiction_regex: str = STATE_CASE_JURISDICTION) -> pd.DataFrame:
+    """MFCU / state AG case rows that the defendant resolver settled on an INDIVIDUAL
+    NPI, in the exclusion-record shape the rendering join takes: npi, entity_name,
+    excl_type, excl_date (the announcement), source ('case_db'), case_id.
+
+    excl_type is ``<mfcu|ag>_<st>:<outcome kind>: <the outcome words>`` so
+    ``fca_relevance.fca_tier`` reads it through its research-row path: a settlement /
+    conviction / plea is hard, a charge or an unresolved row is weak (an allegation,
+    carried with its tier, never promoted). Rows the loaders quarantined (usable = 0) and
+    self-disclosures are never individuals here. Audit findings (jurisdiction '... audit')
+    are not enforcement outcomes and are left out by the default regex."""
+    from src.attempt_2.clean_data import is_valid_npi
+    from .fca_label_export import outcome_tier
+    cols = ["npi", "entity_name", "excl_type", "excl_date", "source", "case_id"]
+    if case_db is None or not len(case_db) or defendant_npis is None or not len(defendant_npis):
+        return pd.DataFrame(columns=cols)
+    c = case_db.copy()
+    jur = c.get("jurisdiction", pd.Series("", index=c.index)).fillna("").astype(str)
+    keep = jur.str.contains(jurisdiction_regex, case=False, regex=True) & ~jur.str.contains(r"\baudit\b", case=False)
+    if "usable" in c.columns:
+        keep &= pd.to_numeric(c["usable"], errors="coerce").fillna(1) == 1
+    if "self_disclosure" in c.columns:
+        keep &= pd.to_numeric(c["self_disclosure"], errors="coerce").fillna(0) != 1
+    c = c[keep]
+    if not len(c):
+        return pd.DataFrame(columns=cols)
+    c = c.drop_duplicates("case_id").set_index(c.drop_duplicates("case_id")["case_id"].astype(str))
+    d = defendant_npis.copy()
+    st = d.get("status", pd.Series("resolved", index=d.index)).fillna("").astype(str)
+    kind = d.get("kind", pd.Series("person", index=d.index)).fillna("").astype(str)
+    d = d[(st == "resolved") & (kind.isin(["person", ""]))]
+    d["npi"] = d.get("npi", pd.Series("", index=d.index)).astype(str).str.strip()
+    d = d[d["npi"].map(lambda s: is_valid_npi(str(s)))]
+    d["case_id"] = d.get("case_id", pd.Series("", index=d.index)).astype(str)
+    d = d[d["case_id"].isin(c.index)]
+    rows = []
+    for r in d.itertuples():
+        case = c.loc[r.case_id]
+        dt = pd.to_datetime(case.get("announced_date"), errors="coerce")
+        text = f"{case.get('title', '') or ''} {case.get('summary', '') or ''}"
+        ct = str(case.get("case_type") or "")
+        tier, words = outcome_tier(ct, text, case.get("amount_usd"))
+        if tier in ("fca_civil", "state_case", "oig_cmp"):
+            kind_w = "settlement"
+        elif tier == "hcf_criminal":
+            kind_w = "conviction"
+        else:
+            kind_w, words = "charged", (words or "no resolved outcome")
+        j = str(case.get("jurisdiction") or "")
+        prefix = "mfcu" if "mfcu" in j.lower() else "ag"
+        state = _jurisdiction_state(j, getattr(r, "state", ""))
+        name = str(getattr(r, "defendant", "") or getattr(r, "defendant_name", "") or case.get("defendant_name") or "")
+        rows.append({"npi": str(r.npi), "entity_name": name,
+                     "excl_type": f"{prefix}_{state.lower()}:{kind_w}: {str(words)[:60]}",
+                     "excl_date": dt.strftime("%Y-%m-%d") if pd.notna(dt) else "",
+                     "source": "case_db", "case_id": r.case_id})
+    return pd.DataFrame(rows, columns=cols)
+
+
+def affiliated_from_exclusions(exclusions: pd.DataFrame, spending: str | Path,
+                               window_months: int = 24, min_share: float = 0.05,
+                               min_dollars: float = 25_000.0, max_orgs: int = 1,
+                               tier: str = "hard+weak", max_individuals_per_biller: int | None = 25,
+                               provider_dim: pd.DataFrame | None = None, con=None
+                               ) -> tuple[pd.DataFrame, dict]:
+    """EMPLOYER REACH FOR THE MEDICAID-SIDE LABELS (architecture audit experiment 7,
+    2026-11-02): the state termination lists, the enrollment ends for cause, the
+    name-resolved exclusions and the MFCU / AG case rows sanction INDIVIDUALS (aides,
+    nurses, billers) who never billed under their own NPI, so the state ruler never
+    reached a billing organization. The same rendering join as
+    ``affiliated_convictions``, over every source at once, keeping hard AND weak tiers
+    and CARRYING the individual's tier as ``source_tier`` (the ruler's --fca-tier policy
+    decides what counts; nothing is promoted here). ``exclusions`` is the concatenation
+    ``load_exclusion_sources`` + ``state_case_individuals`` produce (a ``source`` column
+    names the file / the case DB).
+
+    Same rules as the hard-tier step: one biller per individual (``max_orgs``), the
+    share-or-dollar floor, dated by the individual's own event (the earliest record
+    across sources), the biller never the individual's own NPI, plus the employer lane's
+    chain guard (``max_individuals_per_biller``: a biller more than N individuals point at
+    is institutional evidence, listed and never labelled). An ``affiliated:`` row (the
+    employer lane's output) is an organization and is set aside, never an employer's
+    employer. Returns (rows in AFF_STATE_COLS, the funnel dict)."""
+    from .fca_relevance import classify_series, tier_mask
+    funnel: dict = {"rows_in": int(len(exclusions)) if exclusions is not None else 0, "set_aside": {},
+                    "individuals_in": 0, "by_tier": {}, "by_source": {}, "with_rendering_history": 0,
+                    "kept": 0, "kept_billers": 0, "dropped": {}}
+    empty = pd.DataFrame(columns=AFF_STATE_COLS)
+    if exclusions is None or not len(exclusions):
+        return empty, funnel
+    e = exclusions.copy()
+    if "source" not in e.columns:
+        e["source"] = "exclusions"
+    e["source"] = e["source"].fillna("").astype(str)
+    e["npi"] = e.get("npi", pd.Series("", index=e.index)).astype("string").fillna("").str.strip()
+    e["excl_type"] = e.get("excl_type", pd.Series("", index=e.index)).fillna("").astype(str)
+    e["entity_name"] = e.get("entity_name", pd.Series("", index=e.index)).fillna("").astype(str)
+    e["_dt"] = pd.to_datetime(e.get("excl_date"), errors="coerce")
+
+    def _aside(mask: pd.Series, reason: str) -> None:
+        n = int(mask.sum())
+        if n:
+            funnel["set_aside"][reason] = funnel["set_aside"].get(reason, 0) + n
+
+    m = e["npi"].str.fullmatch(r"\d{10}").fillna(False).astype(bool)
+    _aside(~m, "no_or_invalid_npi"); e = e[m]
+    m = e["_dt"].notna()
+    _aside(~m, "undated"); e = e[m]
+    m = ~e["excl_type"].str.lower().str.startswith("affiliated:")
+    _aside(~m, "employer_row_not_an_individual"); e = e[m]
+    if provider_dim is not None and len(provider_dim) and "entity_type" in provider_dim.columns:
+        et = provider_dim.set_index(provider_dim["npi"].astype(str))["entity_type"].astype(str) \
+            .str.replace(r"\.0$", "", regex=True)
+        m = e["npi"].map(et).fillna("1").ne("2")
+        _aside(~m, "not_an_individual"); e = e[m]
+    if not len(e):
+        return empty, funnel
+    tiers = classify_series(e["excl_type"])
+    e["fca_tier"] = tiers["fca_tier"].values
+    e["fca_basis"] = tiers["fca_basis"].values
+    m = tier_mask(e["fca_tier"], tier)
+    _aside(~m, "tier_not_kept"); e = e[m.values].copy()
+    if not len(e):
+        return empty, funnel
+    e["source_tier"] = e["fca_tier"]
+    if "case_id" not in e.columns:
+        e["case_id"] = ""
+    e["case_id"] = e["case_id"].fillna("").astype(str)
+    # the individual's EARLIEST record across every source dates the event
+    e = e.sort_values(["npi", "_dt"]).groupby("npi", as_index=False).first()
+    funnel["individuals_in"] = int(len(e))
+    funnel["by_tier"] = {k: int(v) for k, v in e["source_tier"].value_counts().items()}
+    funnel["by_source"] = {k: int(v) for k, v in e["source"].value_counts().items()}
+    out, f2 = _rendering_join(e[["npi", "_dt", "excl_type", "fca_tier", "fca_basis", "entity_name",
+                                 "source", "source_tier", "case_id"]],
+                              spending, window_months=window_months, min_share=min_share,
+                              min_dollars=min_dollars, max_orgs=max_orgs, con=con,
+                              max_individuals_per_biller=max_individuals_per_biller)
+    funnel.update({k: f2[k] for k in ("with_rendering_history", "kept", "kept_billers", "dropped")})
+    out = out.drop(columns=["case_id"], errors="ignore")
+    return out[AFF_STATE_COLS].reset_index(drop=True), funnel
+
+
+def affiliated_funnel_line(funnel: dict, label: str = "affiliated_state") -> str:
+    """ONE log line, the format the runner greps:
+    ``[label_expansion] <label> funnel: individuals_in=N (hard=a, weak=b; by source: f=n, ...)
+    | with_rendering_history=N | kept=N rows (billers=N) | dropped: reason=n, ...
+    | set aside before the join: reason=n, ...``"""
+    f = funnel or {}
+    tiers = ", ".join(f"{k}={v}" for k, v in (f.get("by_tier") or {}).items()) or "none"
+    srcs = ", ".join(f"{k}={v}" for k, v in (f.get("by_source") or {}).items()) or "none"
+    dropped = ", ".join(f"{k}={v}" for k, v in (f.get("dropped") or {}).items()) or "none"
+    aside = ", ".join(f"{k}={v}" for k, v in (f.get("set_aside") or {}).items()) or "none"
+    return (f"[label_expansion] {label} funnel: individuals_in={f.get('individuals_in', 0)} ({tiers}; by source: {srcs}) "
+            f"| with_rendering_history={f.get('with_rendering_history', 0)} | kept={f.get('kept', 0)} rows "
+            f"(billers={f.get('kept_billers', 0)}) | dropped: {dropped} | set aside before the join: {aside}")
 
 
 def merge_affiliated(forward_label: pd.DataFrame, aff: pd.DataFrame, cutoff: str,
-                     horizon_months: int | None = None) -> pd.DataFrame:
+                     horizon_months: int | None = None, tier: str | None = None) -> pd.DataFrame:
     """Add the kept affiliated rows to a forward label (``build_prospective_label``
     shape).  A biller already carrying a positive keeps its own earlier record;
     a biller known at the freeze (pre-cutoff exclusion of its own) is never
     re-labelled; a new biller row is a positive when the exclusion falls after
-    the cutoff (and within the horizon)."""
+    the cutoff (and within the horizon).  ``tier`` (a --fca-tier policy) keeps only
+    the rows whose individual's tier the ruler admits: the state-side file carries
+    hard AND weak rows (``source_tier``), so a hard ruler must pass its policy here
+    (None = every kept row, the pre-2026-11-02 behaviour)."""
     from .prospective_label import _cutoff_ts
+    from .fca_relevance import tier_mask
     if aff is None or not len(aff):
         return forward_label
     k = aff[aff["kept"].astype(bool)].copy()
+    if tier and len(k):
+        t = k["fca_tier"].fillna("").astype(str)
+        if "source_tier" in k.columns:        # several files concatenated: the old file has no source_tier
+            s = k["source_tier"].fillna("").astype(str)
+            t = s.where(s != "", t)
+        k = k[tier_mask(t, tier).values]
     if not len(k):
         return forward_label
     k["dt"] = pd.to_datetime(k["excl_date"], errors="coerce")
@@ -464,7 +737,28 @@ def main() -> None:
     a1.add_argument("--min-dollars", type=float, default=25_000.0)
     a1.add_argument("--max-orgs", type=int, default=1)
     a1.add_argument("--tier", default="hard", choices=["all", "hard", "hard+charged", "hard+weak"])
+    a1.add_argument("--max-per-biller", type=int, default=None,
+                    help="chain guard: a biller more than N individuals point at is listed, never labelled (default off here)")
     a1.add_argument("--out", required=True, help="processed/affiliated_convictions.parquet")
+    a5 = sub.add_parser("affiliated-state",
+                        help="EMPLOYER REACH for the Medicaid-side labels: state terminations, enrollment ends, "
+                             "name-resolved exclusions and MFCU / AG case individuals -> the billers whose claims "
+                             "carried them (hard AND weak, the tier carried as source_tier)")
+    a5.add_argument("--processed", required=True, help="processed/ (every exclusions_*.parquet is discovered by glob)")
+    a5.add_argument("--spending", required=True)
+    a5.add_argument("--case-db", default=None, help="enforcement/doj_cases_v3.csv (the MFCU / AG rows with a resolved individual)")
+    a5.add_argument("--defendant-npis", default=None, help="processed/case_defendant_npis.parquet (the resolver's rows)")
+    a5.add_argument("--case-jurisdiction", default=STATE_CASE_JURISDICTION,
+                    help="regex on the case row's jurisdiction for the case-DB individuals (audit rows are always out)")
+    a5.add_argument("--provider-dim", default=None, help="processed/provider_dim.parquet (sets organizations aside by entity_type)")
+    a5.add_argument("--window-months", type=int, default=24)
+    a5.add_argument("--min-share", type=float, default=0.05)
+    a5.add_argument("--min-dollars", type=float, default=25_000.0)
+    a5.add_argument("--max-orgs", type=int, default=1)
+    a5.add_argument("--max-per-biller", type=int, default=25, help="the chain guard (0 = off)")
+    a5.add_argument("--tier", default="hard+weak", choices=["all", "hard", "hard+charged", "hard+weak"],
+                    help="which individual tiers enter the join (the ruler's own --fca-tier decides what counts)")
+    a5.add_argument("--out", required=True, help="processed/affiliated_state.parquet (AFF_COLS + source_tier + source)")
     a2 = sub.add_parser("cia", help="CIA parties -> enrolled providers through exact name and ownership")
     a2.add_argument("--cia", required=True, help="preclean/cia/cia_list.csv")
     a2.add_argument("--graph-dir", required=True)
@@ -542,10 +836,51 @@ def main() -> None:
                   "(rebuild the graph to use them)")
         return
 
+    if a.cmd == "affiliated-state":
+        files = discover_exclusion_files(a.processed)
+        ex = load_exclusion_sources(files)
+        print(f"[label_expansion] affiliated-state: {len(files)} exclusion files under {a.processed}: "
+              + (", ".join(f.stem for f in files) or "none") + f" -> {len(ex):,} rows")
+        if a.case_db and a.defendant_npis and Path(a.case_db).exists() and Path(a.defendant_npis).exists():
+            from src.attempt_2.clean_data import read_csv_text
+            cdb = read_csv_text(a.case_db, dtype=str) if str(a.case_db).endswith(".csv") else pd.read_parquet(a.case_db)
+            sc = state_case_individuals(cdb, pd.read_parquet(a.defendant_npis), jurisdiction_regex=a.case_jurisdiction)
+            print(f"[label_expansion] affiliated-state: {len(sc):,} MFCU / AG case rows resolved to an individual NPI")
+            ex = pd.concat([ex, sc], ignore_index=True, sort=False) if len(sc) else ex
+        else:
+            print("[label_expansion] affiliated-state: no --case-db / --defendant-npis: the case-DB individuals are skipped")
+        dim = pd.read_parquet(a.provider_dim, columns=["npi", "entity_type"]) if a.provider_dim and Path(a.provider_dim).exists() else None
+        aff, fun = affiliated_from_exclusions(ex, a.spending, window_months=a.window_months, min_share=a.min_share,
+                                             min_dollars=a.min_dollars, max_orgs=a.max_orgs, tier=a.tier,
+                                             max_individuals_per_biller=(a.max_per_biller or None), provider_dim=dim)
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        aff.to_parquet(a.out, index=False)
+        print(affiliated_funnel_line(fun))
+        kept = aff[aff["kept"].astype(bool)] if len(aff) else aff
+        md = Path(a.out).with_suffix(".md")
+        L = ["# AFFILIATED STATE-SIDE INDIVIDUALS -> THEIR BILLERS", "",
+             "_The state termination lists, the enrollment ends for cause, the name-resolved exclusions and the "
+             "MFCU / AG cases sanction individuals who rarely bill under their own NPI; the biller whose claims "
+             "carried them as the rendering provider in the months before the event is the organization the "
+             "record points at. Hard and weak tiers are both listed and the tier is carried (`source_tier`); the "
+             "ruler's own policy decides what counts. Leads for counsel review, never accusations._", "",
+             "`" + affiliated_funnel_line(fun) + "`", "",
+             f"- individuals in: {fun['individuals_in']:,}; with a rendering history under another biller: "
+             f"{fun['with_rendering_history']:,}; kept biller rows: {len(kept):,} ({fun['kept_billers']:,} billers)", ""]
+        if len(kept):
+            L += ["| source | tier | kept rows | billers |", "|---|---|--:|--:|"]
+            for (s, t), g in kept.groupby(["source", "source_tier"]):
+                L.append(f"| {s} | {t} | {len(g):,} | {g['npi'].nunique():,} |")
+            L.append("")
+        md.write_text("\n".join(L) + "\n", encoding="utf-8")
+        print(f"[label_expansion] {len(kept):,} kept rows -> {a.out}; report -> {md}")
+        return
+
     if a.cmd == "affiliated":
         nodes = pd.read_parquet(a.exclusion_nodes)
         aff = affiliated_convictions(nodes, a.spending, window_months=a.window_months, min_share=a.min_share,
-                                     min_dollars=a.min_dollars, max_orgs=a.max_orgs, tier=a.tier)
+                                     min_dollars=a.min_dollars, max_orgs=a.max_orgs, tier=a.tier,
+                                     max_individuals_per_biller=a.max_per_biller)
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)
         aff.to_parquet(a.out, index=False)
         kept = aff[aff["kept"].astype(bool)] if len(aff) else aff
