@@ -174,12 +174,28 @@ def check_names(names: list[str], fetch_json=default_fetch_json, since: str | No
     party-and-caption search that throttles a long list."""
     frames = []
     lookup = search_party_dockets if endpoint == "dockets" else search_party
+    fell_back = False
     for i, n in enumerate(n for n in names if str(n).strip()):
         if i and name_gap_s:
             time.sleep(name_gap_s)
         try:
             frames.append(lookup(n, fetch_json=fetch_json, since=since, raw_root=raw_root, sleep_s=sleep_s))
         except Exception as exc:                      # noqa: BLE001 - the reason is reported, never hidden
+            # 2026-11-02: the dockets listing stopped accepting the caption filter
+            # ("Unknown filter parameters are not allowed: case_name__icontains"); the
+            # party-and-caption SEARCH still answers, so a refused caption filter falls
+            # back to it for the rest of the list (slower, throttled, but an answer)
+            if lookup is search_party_dockets and "Unknown filter" in str(exc):
+                if not fell_back:
+                    print("[first_to_file] the dockets listing refused the caption filter; "
+                          "falling back to the search endpoint for every name")
+                    fell_back = True
+                lookup = search_party
+                try:
+                    frames.append(lookup(n, fetch_json=fetch_json, since=since, raw_root=raw_root, sleep_s=sleep_s))
+                    continue
+                except Exception as exc2:             # noqa: BLE001
+                    exc = exc2
             if errors is not None:
                 errors.append((n, str(exc)[:200]))
     out = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=COLS)

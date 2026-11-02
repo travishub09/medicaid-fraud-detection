@@ -313,3 +313,22 @@ def test_registry_aliases_carry_the_state_ruler():
     src = Path(rr.__file__).read_text(encoding="utf-8")
     assert '"state_hits100": "acc_org_hits100_state"' in src and '"fca_reach": "acc_ruler_reach_fca"' in src
     assert aliases is None or "state_hits100" in aliases or True
+
+
+def test_check_names_falls_back_to_search_when_the_caption_filter_is_refused():
+    """2026-11-02: CourtListener's dockets listing answered 400 'Unknown filter parameters:
+    case_name__icontains' on every name; the search endpoint still works, so the check
+    falls back to it instead of reporting every name as NOT SEARCHED."""
+    calls = []
+
+    def fake_fetch(url, params=None, headers=None):
+        calls.append(url)
+        if "dockets" in url:
+            raise RuntimeError('HTTP 400 from x: {"detail":"Unknown filter parameters are not allowed.","unknown_params":["case_name__icontains"]}')
+        return {"results": [{"docket_id": 7, "caseName": "United States ex rel. Doe v. Pacific Medical Inc",
+                             "court_id": "cacd", "dateFiled": "2023-01-02", "suitNature": "376",
+                             "docketNumber": "2:23-cv-00001", "party": ["Pacific Medical Inc"]}], "next": None}
+    errs = []
+    out = check_names(["Pacific Medical Inc", "Grace Care LLC"], fetch_json=fake_fetch, name_gap_s=0, errors=errs)
+    assert not errs and len(out) == 2 and bool(out["fca_shaped"].all())
+    assert sum("dockets" in u for u in calls) == 1            # refused once, then search for both
