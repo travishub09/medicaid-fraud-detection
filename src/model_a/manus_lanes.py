@@ -115,6 +115,9 @@ def page_proof_items(case_db_path: Path, per_task: int = PAGE_PROOF_PER_TASK, ho
     db = pd.read_csv(case_db_path, dtype=str, low_memory=False).fillna("")
     jur = db.get("jurisdiction", pd.Series("", index=db.index)).astype(str)
     sel = jur.str.contains(RESEARCH_JURISDICTIONS, regex=True, na=False) & db.get("qc_note", pd.Series("", index=db.index)).eq(UNVERIFIED_NOTE)
+    # an audit finding ("repayment ordered") never passes the outcome rule and so never trains:
+    # the 1,646 OMIG audit PDFs are not worth a browser task each; the enforcement rows are
+    sel &= ~jur.str.contains(r"\baudit\b", case=False, regex=True, na=False)
     d = db.loc[sel].copy()
     if not len(d):
         return []
