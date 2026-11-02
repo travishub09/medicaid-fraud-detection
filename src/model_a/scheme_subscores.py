@@ -17,6 +17,29 @@ Design points (v1, label-free):
   * Graph features appear ONLY in the ownership_integrity scheme; the separate
     graph-risk *boost* in scoring.py uses ring-structure membership instead, so a
     single fact never double-counts (the de-correlation principle from v3).
+
+THE WEIGHT-TABLE CONTRACT (2026-11-02, architecture audit W1-W11; enforced by
+``lint_weight_table`` and tests/test_batch5_segments_2026_11.py):
+  * one input, one scheme: an input weighted in two schemes with the same sign is a
+    fact counted twice unless ``SHARED_INPUTS`` lists it with a reason;
+  * every weighted input has a producer (an adapter / analytics module that writes
+    the column; the test carries the producer map); an input with no producer is in
+    ``RESERVED`` with the reason and OUT of the weights (never fed from a default);
+  * every weight is positive (one-sided: only excess is suspicious, rule 8).
+Changes recorded under that contract (all v29 semantics, a new pre-registration):
+  W-c  ``nh_owner_concentration`` left ownership_integrity for RESERVED: a dense owner
+       web (nh_owner_count, kept) and a CONCENTRATED stake are opposite constructs
+       and both pointed up (the largest disclosed stake at 100 percent is a sole
+       owner, the plainest ownership there is).
+  W-d  ``op_payment_concentration`` left pharma_kickback for RESERVED until the adapter
+       gives it a dollar floor: the largest payment's share of the NPI's Open Payments
+       total reads 1.0 for a single $20 lunch (op_total_dollars is the floor to
+       apply; the Medicaid-side px_* features carry the scheme meanwhile).
+  W-e  ``sv_peak_lines_month`` sits in impossible_day ONLY (the busiest month's lines
+       on one clinician's number is the impossible-day fact); it left
+       rendering_identity, whose volume role sv_lines_per_active_month now carries
+       at 0.4 (was 0.3; the other three weights unchanged, the engine normalises by
+       the sum of present weights).
 """
 
 from __future__ import annotations
@@ -26,6 +49,30 @@ import pandas as pd
 
 STEEPNESS = 6.0
 THRESHOLD = 0.5
+
+# INPUTS WITH NO PRODUCER, OR NOT YET FIT TO FEED A SCHEME: out of the weights until the
+# named condition is met. A reserved input is a design note, never a default of 0.
+RESERVED: dict[str, str] = {
+    "local_volume_implausibility": "analytics.local_denominator_plausibility has no caller "
+                                   "(PLATFORM_AUDIT H8); rejoins specialty_mismatch with its producer",
+    "bene_per_day_p95": "needs per-day service counts the by-provider-and-service PUF does not "
+                        "carry; no producer anywhere in src/ (PLATFORM_AUDIT H8)",
+    "dme_ordering_md_concentration": "needs supplier x ordering-MD pairs (not in the "
+                                     "by-referring-provider PUF); no producer (PLATFORM_AUDIT H8)",
+    "nh_owner_concentration": "W-c (2026-11-02): the largest disclosed stake is the OPPOSITE "
+                              "construct of nh_owner_count and pointed the same way; a sole "
+                              "owner at 100 percent is not an integrity signal",
+    "op_payment_concentration": "W-d (2026-11-02): the largest payment's share of the Open "
+                                "Payments total reads 1.0 on a single $20 lunch; reserved until "
+                                "ingest_cms/openpayments.py applies a dollar floor "
+                                "(op_total_dollars) before the share is written",
+}
+
+# INPUTS ALLOWED IN MORE THAN ONE SCHEME, each with the reason (empty after W-e: a
+# scheme is a theory, an input is a fact, and a fact in two theories with one sign is
+# counted twice by every consumer that sums subscores). Add a row here only with a
+# reason a reader can check; the lint refuses an unlisted repeat.
+SHARED_INPUTS: dict[str, str] = {}
 
 # INSTITUTIONAL DAMPING (v6): three schemes systematically over-fire on large
 # institutional entities for reasons that are complexity, not fraud —
@@ -97,9 +144,9 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
         # snapshots accumulate (src/entity_graph/ownership_churn.py)
         "ownership_turnover": 0.3,
         # exact disclosed stakes from Care Compare NH ownership (facility.py):
-        # a dense owner web / concentrated control refine the graph counts
+        # a dense owner web refines the graph counts. nh_owner_concentration is
+        # RESERVED (W-c): the largest stake is the opposite construct and pointed up.
         "nh_owner_count": 0.15,
-        "nh_owner_concentration": 0.1,
     },
     # Part B: upcoding (both features produced by ingest_cms/partb.py)
     "upcoding": {"em_high_level_share": 0.7, "em_level_mean": 0.3},
@@ -124,8 +171,9 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # Medicare side (Open Payments x Part D) + the MEDICAID side (Open Payments x the
     # NDC file through the FDA labeler map, medicaid_ndc.medicaid_kickback, 2026-10-10):
     # the share of Medicaid drug dollars on paying manufacturers' drugs and the
-    # prescribing move after the first payment
-    "pharma_kickback": {"op_payment_utilization_corr": 0.7, "op_payment_concentration": 0.3,
+    # prescribing move after the first payment. op_payment_concentration is RESERVED
+    # (W-d) until the adapter floors it on dollars: a $20 lunch read 1.0.
+    "pharma_kickback": {"op_payment_utilization_corr": 0.7,
                         "px_paid_mfr_share": 0.5, "px_post_payment_lift": 0.5},
     # Medicaid-fact sector schemes (Run 2 I4/I5): transport + behavioral health,
     # computed straight from the spending fact (ingest_cms/sector_schemes.py)
@@ -230,10 +278,53 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # the identity-lending / phantom-rendering shape. Individual NPIs are the natural
     # subject; an organization NPI as servicing NPI is scored the same way (it is
     # then "one org rendering for many billers", the pass-through shape).
-    "rendering_identity": {"sv_max_orgs_same_month": 0.6, "sv_peak_lines_month": 0.5,
+    # sv_peak_lines_month is impossible_day's fact alone (W-e, 2026-11-02); the volume
+    # role here is sv_lines_per_active_month.
+    "rendering_identity": {"sv_max_orgs_same_month": 0.6,
                            "sv_n_billing_orgs": 0.3, "sv_paid_per_patient_month": 0.3,
-                           "sv_lines_per_active_month": 0.3},
+                           "sv_lines_per_active_month": 0.4},
 }
+
+
+def lint_weight_table(weights: dict[str, dict[str, float]] | None = None,
+                      shared: dict[str, str] | None = None,
+                      reserved: dict[str, str] | None = None,
+                      producers: dict[str, str] | None = None) -> list[str]:
+    """The weight-table contract as a list of violations (empty = clean):
+
+      * an input weighted in two or more schemes with the same sign and no
+        ``shared`` entry (the alias pairs raw / _norm inside ONE scheme are one input);
+      * an input in ``reserved`` that is still weighted;
+      * a weight that is not a positive number (one-sided evidence only);
+      * with ``producers`` (input -> producing module, the test's static map): a
+        weighted input the map does not know. A ``_norm`` input is produced by the
+        engine from its base column, so it inherits the base's producer.
+    """
+    weights = DEFAULT_SCHEME_WEIGHTS if weights is None else weights
+    shared = SHARED_INPUTS if shared is None else shared
+    reserved = RESERVED if reserved is None else reserved
+    out: list[str] = []
+    where: dict[str, list[tuple[str, float]]] = {}
+    for scheme, wmap in weights.items():
+        for col, w in wmap.items():
+            if not isinstance(w, (int, float)) or not np.isfinite(w) or w <= 0:
+                out.append(f"non-positive weight: {scheme}.{col} = {w!r}")
+            where.setdefault(col, []).append((scheme, float(w)))
+    for col, uses in where.items():
+        if len(uses) > 1 and col not in shared:
+            same_sign = len({np.sign(w) for _, w in uses}) == 1
+            if same_sign:
+                out.append(f"input in {len(uses)} schemes with one sign and no SHARED_INPUTS reason: "
+                           f"{col} <- {', '.join(s for s, _ in uses)}")
+        if col in reserved:
+            out.append(f"reserved input still weighted: {col} <- {', '.join(s for s, _ in uses)} "
+                       f"({reserved[col]})")
+    if producers is not None:
+        for col in where:
+            base = col[:-5] if col.endswith("_norm") else col
+            if col not in producers and base not in producers:
+                out.append(f"no producer for weighted input: {col}")
+    return out
 
 
 def _institutional_mask(feats: pd.DataFrame) -> pd.Series:

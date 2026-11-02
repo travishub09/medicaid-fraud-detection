@@ -891,10 +891,19 @@ def build(run_dir: str | Path, top: int = 10, dispatch: bool = False,
 
 LARGE_LIST_NAME = "provider_priority_list_large.csv"
 PMAX_LIST_NAME = "provider_priority_list_pmax.csv"
+# THE SOLO BOOK (2026-11-02, architecture audit S2 / experiment 5): the fourth companion
+# list = the solo individual NPIs (entity type 1, a one-member org: the 'individual'
+# segment the operator book excludes by rule) above the SAME case-size bar as the pursuit
+# book, ordered by the shipped order's NPI-grain equivalent (the member's score, then
+# dollars). Graded on its own with --list-name (the state ruler is its ruler: solo
+# operators are the MFCUs' defendants); the operator book is untouched.
+SOLO_LIST_NAME = "provider_priority_list_solo.csv"
 
 
 BASIS_HEAD = 50
-PURSUIT_ORDERS = ("dollar", "basis50", "pmax", "pmax_basis50")
+PURSUIT_ORDERS = ("dollar", "basis50", "pmax", "pmax_basis50", "mean", "top2", "exceedance")
+# the G2 rollup statistics (company_list.rollup, 2026-11-02): sweep rows, never a ship
+_STAT_ORDER_COLS = {"mean": "score_mean", "top2": "score_top2_mean", "exceedance": "score_max_exceedance"}
 
 
 def pursuit_order(book: pd.DataFrame, order: str = "dollar", head: int = BASIS_HEAD) -> pd.DataFrame:
@@ -915,9 +924,24 @@ def pursuit_order(book: pd.DataFrame, order: str = "dollar", head: int = BASIS_H
                   1 / 2 / 5 / 7: the first probability order to beat the dollar order at
                   every budget since the v7 sweep retired P(any). Graded as a THIRD book
                   (PMAX_LIST_NAME) from v18; shipped only if it holds on a second matrix.
+    mean / top2 / exceedance  (2026-11-02, audit G2): score_mean / score_top2_mean /
+                  score_max_exceedance desc (the rollup's size-stable statistics and the
+                  max over its order-statistic null), dollar-weighted then score_max
+                  tiebreak. Sweep rows; a book without the column RAISES (a sweep row the
+                  book cannot carry is not a row, never a silent dollar order).
     A book without score_p_max falls back to the dollar order for the pmax variants."""
     if order not in PURSUIT_ORDERS:
         raise ValueError(f"pursuit order {order!r}: choose from {PURSUIT_ORDERS}")
+    if order in _STAT_ORDER_COLS:
+        col = _STAT_ORDER_COLS[order]
+        if col not in book.columns:
+            raise ValueError(f"pursuit order {order!r} needs the rollup column {col!r} (absent from this book)")
+        keys = [col] + [c for c in ("score_dollar_weighted", "score_max") if c in book.columns]
+        work = book.copy()
+        work[col] = pd.to_numeric(work[col], errors="coerce").fillna(-1.0)
+        ranked = work.sort_values(keys, ascending=False, kind="mergesort")
+        ranked[col] = book.loc[ranked.index, col]
+        return ranked
     if order.startswith("pmax") and "score_p_max" in book.columns \
             and pd.to_numeric(book["score_p_max"], errors="coerce").notna().any():
         keys = ["score_p_max", "score_dollar_weighted"] + (["score_max"] if "score_max" in book.columns else [])
@@ -1067,6 +1091,7 @@ def build_priority_list(run_dir: str | Path,
                         "states", "cities",
                         "n_providers", "score_dollar_weighted", "score_max",
                         "score_p_any", "score_p_max",
+                        "score_mean", "score_top2_mean", "score_max_exceedance",
                         "score_pct", "top_schemes", "case_size_yr",
                         "case_size_basis", "case_size_capped", "total_billed",
                         "n_excluded_members", "screening_cautions")
@@ -1129,6 +1154,19 @@ def build_priority_list(run_dir: str | Path,
     print(f"[priority_list] pmax book: {len(pmax):,} operator orgs under the pmax_basis50 order "
           f"(a graded candidate, not the shipped sort) -> {d / PMAX_LIST_NAME}")
 
+    # THE SOLO BOOK (2026-11-02, audit S2): the solo individual NPIs above the same
+    # case-size bar, ordered by the member's own score (score_max IS the one member's
+    # out-of-fold score), dollars as the tiebreak. Its own rank column and NO
+    # priority_rank, so the diagnostics read the file's order as the book's order.
+    solo = out[out["entity_segment"] == "individual"].copy()
+    solo = solo.sort_values(["score_max", "total_billed"], ascending=False, kind="mergesort").reset_index(drop=True)
+    solo.insert(0, "solo_rank", solo.index + 1)
+    solo.insert(1, "npi", solo["member_npis"].astype(str).str.split(";").str[0] if len(solo) else pd.Series(dtype=str))
+    solo_cols = ["solo_rank", "npi"] + [c for c in cols if c != "priority_rank" and c in solo.columns]
+    solo[solo_cols].to_csv(d / SOLO_LIST_NAME, index=False)
+    print(f"[priority_list] solo book: {len(solo):,} solo individual NPIs above the case-size bar "
+          f"(score, then dollars; graded on its own with --list-name) -> {d / SOLO_LIST_NAME}")
+
     md = d / "PRIORITY_LIST.md"
     md.write_text("\n".join([
         f"# PROVIDER PRIORITY LIST — run {d.name}", "", DISCLAIMER, "",
@@ -1155,11 +1193,16 @@ def build_priority_list(run_dir: str | Path,
         f"({len(large):,} of them billed >= ${large_min_billed:,.0f} in the matrix window, "
         "the band where the v7 and v11 size tables found precision highest). Filters, never sorts. "
         f"`{PMAX_LIST_NAME}` = the pursuit pool under the pmax_basis50 order (the v17 sweep's "
-        "winning row), graded as a candidate, not the shipped sort.",
+        "winning row), graded as a candidate, not the shipped sort. "
+        f"`{SOLO_LIST_NAME}` = the {len(solo):,} solo individual NPIs (entity type 1, one-member "
+        "orgs) above the same case-size bar, by the member's score then dollars: the fourth "
+        "book, graded on its own (its ruler is the state lists).",
         "", "Columns: priority_rank; org_name; entity_segment "
         "(institutional / operator / individual); member_npis (full roster); "
         "states; cities; n_providers; "
         "score_dollar_weighted (the SORT — 0-1 signal); score_max; "
+        "score_mean / score_top2_mean / score_max_exceedance (the roster's mean, top-2 mean, "
+        "and the max over its order-statistic null at the roster size: sweep columns, never the sort); "
         "score_pct; top_schemes (named drivers); case_size_yr/basis/capped "
         "(scheme-aware annual single-damages screen); total_billed "
         "(context only); n_excluded_members; screening_cautions.", "",
@@ -1254,6 +1297,10 @@ def main() -> None:
                     help="training policy arm (2026-11-01): subscores only / other features only / all")
     ap.add_argument("--settlement-weight", type=float, default=None,
                     help="training policy arm (2026-11-01): civil-settlement positives' sample weight scale")
+    ap.add_argument("--segment", default=None, choices=["all", "operator"],
+                    help="training policy arm (2026-11-02, audit S8): 'operator' trains the scorer on "
+                         "operator-class rows only (company_list.operator_mask), scores every row; "
+                         "default = the manifest's (all)")
     ap.add_argument("--prior-inner-folds", type=int, default=None,
                     help="training rows' prior from an inner K-fold (default 5); 0 = leave-one-out (v21..v23, the leak)")
     ap.add_argument("--order", default="dollar", choices=list(PURSUIT_ORDERS),
@@ -1270,16 +1317,18 @@ def main() -> None:
     args.run_dir = resolve_run_dir(args.run_dir)
     if (args.seeds is not None or args.broadcast_rows is not None or args.class_priors is not None
             or args.drop_schemes is not None or args.prior_min_n is not None or args.prior_weighted is not None
-            or args.prior_inner_folds is not None or args.feature_set is not None or args.settlement_weight is not None):
+            or args.prior_inner_folds is not None or args.feature_set is not None or args.settlement_weight is not None
+            or args.segment is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=args.seeds, broadcast=args.broadcast_rows, class_priors=args.class_priors,
                             drop_schemes=args.drop_schemes, prior_min_n=args.prior_min_n,
                             prior_weighted=args.prior_weighted, prior_inner_folds=args.prior_inner_folds,
-                            settlement_weight=args.settlement_weight, feature_set=args.feature_set)
+                            settlement_weight=args.settlement_weight, feature_set=args.feature_set,
+                            segment=args.segment)
         print(f"[pursuit_dossier] training policy override: prior_min_n={args.prior_min_n}, "
               f"prior_weighted={args.prior_weighted}, prior_inner_folds={args.prior_inner_folds}, seeds={args.seeds}, "
               f"broadcast={args.broadcast_rows}, class_priors={args.class_priors}, "
-              f"drop_schemes={args.drop_schemes}")
+              f"drop_schemes={args.drop_schemes}, segment={args.segment}")
     if args.label_tier != "all":
         from .company_list import default_exclusion_nodes, set_label_policy
         ex = Path(args.exclusion_nodes) if args.exclusion_nodes else \
