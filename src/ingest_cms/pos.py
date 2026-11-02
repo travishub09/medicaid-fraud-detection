@@ -17,6 +17,13 @@ impossible-day signal.
                                worthless_services. Facilities with no usable
                                capacity are NaN — never force-scored.
 
+  pos_capacity_to_export_grain the frame the provider export joins: each NPI's
+                               OWN facility's beds (audit F1) with the CCN list
+                               and the per-CCN capacity table in ``attrs`` so
+                               the export's capacity step can compute the
+                               ratio PER CCN (audit F2 / C2); ``rollup="max"``
+                               = the pre-audit org-max frame.
+
 Roll up to org with the shared ``rollup_ccn_to_org`` via the PECOS CCN↔NPI
 crosswalk. Dormant until the POS file + a volume table are loaded.
 """
@@ -27,7 +34,10 @@ import numpy as np
 import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns
-from .facility import _canon_ccn, facility_peer_percentiles
+from .facility import (_canon_ccn, facility_peer_percentiles,
+                       ccn_features_to_export_grain, EXPORT_ROLLUPS)
+
+CCN_CAPACITY_ATTR = "ccn_capacity"       # attrs key: the per-CCN capacity table (records)
 
 POS_COLS = {
     "ccn": ["PRVDR_NUM", "prvdr_num", "CMS Certification Number (CCN)",
@@ -99,3 +109,72 @@ def capacity_billing_mismatch(capacity: pd.DataFrame, volume_by_ccn: pd.DataFram
         pct.rename(columns={"billed_per_bed": "capacity_mismatch"}),
         on="ccn", how="left")
     return out
+
+
+def pos_capacity_to_export_grain(capacity: pd.DataFrame, ccn_to_npi: pd.DataFrame,
+                                 npi_to_org: pd.DataFrame, rollup: str = "own_ccn",
+                                 bed_col: str = "pos_bed_count") -> pd.DataFrame:
+    """The POS frame the provider export joins.
+
+    ``rollup="own_ccn"`` (default): NPI grain — ``pos_bed_count`` is the beds
+    of the NPI's OWN facility (mean over several CCNs, never the max), the
+    org members without a facility carry the org mean (``facility_grain_basis``
+    says which). The per-CCN capacity rides as SIDE COLUMNS in the same order
+    per NPI — ``ccn_list`` / ``ccn_beds`` / ``ccn_state`` (';'-joined) — so the
+    export's capacity step can divide EACH facility's own volume by its own
+    beds (audit F2 / C2) instead of the whole org's volume by the largest
+    facility's beds; columns, not attrs, because the export's resume cache
+    round-trips every frame through parquet. The same table is also in
+    ``out.attrs["ccn_capacity"]`` for in-process readers. The side columns
+    never reach the matrix (the export holds them aside).
+    ``rollup="max"``: the pre-audit org-keyed max-beds frame (the arm)."""
+    if rollup not in EXPORT_ROLLUPS:
+        raise ValueError(f"rollup must be one of {EXPORT_ROLLUPS}, got {rollup!r}")
+    cap = capacity.copy()
+    cap["ccn"] = _canon_ccn(cap["ccn"])
+    cap = cap[cap["ccn"].notna()].drop_duplicates("ccn")
+    cap["bed_count"] = pd.to_numeric(cap["bed_count"], errors="coerce")
+    for c in ("state", "facility_type"):
+        cap[c] = (cap[c].fillna("").astype(str).str.replace(";", " ") if c in cap.columns
+                  else pd.Series("", index=cap.index))
+    feats = cap[["ccn", "bed_count"]].rename(columns={"bed_count": bed_col})
+    out = ccn_features_to_export_grain(feats, ccn_to_npi, npi_to_org, rollup=rollup,
+                                       keep_ccn=(rollup == "own_ccn"))
+    if rollup == "own_ccn":
+        xw = ccn_to_npi[["ccn", "npi"]].copy()
+        xw["ccn"] = _canon_ccn(xw["ccn"])
+        xw["npi"] = xw["npi"].astype(str)
+        side = (xw[xw["ccn"].notna()].drop_duplicates(["ccn", "npi"])
+                .merge(cap[["ccn", "bed_count", "state"]], on="ccn", how="inner")
+                .sort_values(["npi", "ccn"]))
+        side["_beds"] = side["bed_count"].map(lambda v: "" if pd.isna(v) else f"{float(v):g}")
+        g = side.groupby("npi")
+        lists = pd.DataFrame({"ccn_list": g["ccn"].agg(";".join),
+                              "ccn_beds": g["_beds"].agg(";".join),
+                              "ccn_state": g["state"].agg(";".join)})
+        out = out.drop(columns=["ccn_list"]).merge(lists, left_on="npi", right_index=True,
+                                                   how="left")
+        for c in ("ccn_list", "ccn_beds", "ccn_state"):
+            out[c] = out[c].fillna("")
+        out.attrs[CCN_CAPACITY_ATTR] = (cap[["ccn", "bed_count", "state", "facility_type"]]
+                                        .to_dict("list"))
+    return out
+
+
+def ccn_capacity_from_side_columns(side: pd.DataFrame) -> pd.DataFrame:
+    """The per-CCN capacity table (ccn, bed_count, state) back out of the
+    ';'-joined side columns ``pos_capacity_to_export_grain`` writes — one row
+    per CCN, the first occurrence kept."""
+    s = side[["ccn_list", "ccn_beds", "ccn_state"]].fillna("").astype(str)
+    rows = []
+    for ccns, beds, states in zip(s["ccn_list"], s["ccn_beds"], s["ccn_state"]):
+        if not ccns:
+            continue
+        cl, bl, sl = ccns.split(";"), beds.split(";"), states.split(";")
+        for i, c in enumerate(cl):
+            rows.append((c, bl[i] if i < len(bl) else "", sl[i] if i < len(sl) else ""))
+    if not rows:
+        return pd.DataFrame(columns=["ccn", "bed_count", "state"])
+    t = pd.DataFrame(rows, columns=["ccn", "bed_count", "state"]).drop_duplicates("ccn")
+    t["bed_count"] = pd.to_numeric(t["bed_count"], errors="coerce")
+    return t

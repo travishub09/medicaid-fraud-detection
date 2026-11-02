@@ -23,8 +23,14 @@ pipeline — facilities, not NPIs):
                                × state, falling back to size band, then all
                                facilities — via the shared peer engine's
                                custom-ladder support.
-  rollup_ccn_to_org            CCN → NPI (PECOS enrollment crosswalk, procured
-                               file) → canonical org, max per org.
+  ccn_to_npi_grain             CCN → NPI (PECOS enrollment crosswalk, procured
+                               file): each NPI's OWN facility (mean over
+                               several CCNs, weighted when a weight exists).
+  rollup_ccn_to_org            … → canonical org, MEAN per org (member-count
+                               neutral; ``rollup="max"`` = the pre-audit arm).
+  ccn_features_to_export_grain the frame the export joins: own-CCN values at
+                               NPI grain + the org mean for the other members
+                               (default), or the org-max frame (the arm).
 
 CCNs are strings; 6-digit numeric CCNs keep leading zeros (hard rule #1).
 """
@@ -39,7 +45,7 @@ import pandas as pd
 
 from src.attempt_2.clean_data import _resolve_columns
 from src.analytics.peers import assign_peer_groups, one_sided_percentiles
-from .peer_percentiles import rollup_to_org
+from .peer_percentiles import rollup_to_org, grouped_rollup, ROLLUPS
 
 PBJ_COLS = {
     "ccn": ["PROVNUM", "provnum", "CMS Certification Number (CCN)",
@@ -93,27 +99,54 @@ SEVERITY_WEIGHT = {**{c: 1.0 for c in "ABC"}, **{c: 2.0 for c in "DEF"},
 LIVE_DISCHARGE_PATTERN = "live discharge"
 
 # The hospice measure PANEL (scheme-discovery buildout): each entry is
-# (metric_name, label_regex, negate). Measures live as ROWS in the Care
-# Compare provider file, matched on code+name; ``negate`` flips
-# more-is-good measures (visits near death, nurse minutes) so the shared
-# one-sided ranking always reads "high = suspicious". A measure absent from
-# a given edition simply doesn't emit — skip-missing, never zero-filled.
+# (metric_name, measure_codes, label_regex, negate). Measures live as ROWS in
+# the Care Compare provider file; ``negate`` flips more-is-good measures
+# (visits near death, nurse minutes) so the shared one-sided ranking always
+# reads "high = suspicious". A measure absent from a given edition simply
+# doesn't emit — skip-missing, never zero-filled.
+#
+# Architecture audit C7 (2026-11-02): the panel used to regex-match measure
+# NAMES and average whichever rows matched, so a feature read a mixture (the
+# "skilled nursing" regex pulled three different HCI indicators). Each entry is
+# now LOCKED to its measure code(s) where the loader knows the code: the Care
+# Compare provider file's Hospice Care Index rows are coded H_012_NN(_OBSERVED
+# | _DENOMINATOR | _PERCENTILE) with NN = the HCI indicator number (the
+# convention the live-discharge selection already relies on: 03 early live
+# discharges, 04 late live discharges, 05 burdensome transitions type 1).
+# A locked code is read ONLY when its row's name agrees with the regex (a code
+# whose name says something else is never used); the regex is the fallback
+# for an edition that predates the code, logged and recorded in
+# ``out.attrs["_regex_matched"]``. A measure with no known code (NF-care
+# share, dementia mix: neither is a Care Compare provider-file measure) stays
+# on the regex with the same warning — no code is invented.
 HOSPICE_MEASURE_PANEL = [
     # captive-referral setup: hospice census living in partner facilities
-    # (the Rhode Island Continuum-Care pattern generalized)
-    ("hospice_nf_care_share", r"nursing[_ ]?facility|skilled[_ ]?nursing", False),
-    # the two highest-paid care levels — OIG's standing intensity target
-    ("hospice_gip_share", r"inpatient", False),
+    # (the Rhode Island Continuum-Care pattern generalized). NO CODE KNOWN: the
+    # provider file carries no NF-care share; the regex reads a mixture of the
+    # skilled-nursing HCI indicators (02 gaps / 08 minutes / 09 weekends) and
+    # is flagged _regex_matched on every run until a source carries the share.
+    ("hospice_nf_care_share", (), r"nursing[_ ]?facility|skilled[_ ]?nursing", False),
+    # the two highest-paid care levels — OIG's standing intensity target:
+    # HCI indicator 1, "Continuous Home Care (CHC) or General Inpatient (GIP) Provided"
+    ("hospice_gip_share", ("H_012_01",), r"inpatient", False),
     # % patients with visits in the last days of life: HIGH is good care, so
-    # the deficit (negated) is the worthless-services-at-death signal
-    ("hospice_visit_gap", r"last[_ ]?days[_ ]?of[_ ]?life|h_009", True),
-    # nurse minutes per routine-home-care day: low staffing vs billed level
-    ("hospice_nurse_minute_deficit", r"nurse[_ ]?minutes|h_010", True),
-    # long-stay recruitment shows up as spend per head
-    ("hospice_spend_per_bene", r"spending[_ ]?per|per[_ ]?beneficiary", False),
-    # the classic long-stay recruitment case mix
-    ("hospice_dementia_share", r"dementia", False),
+    # the deficit (negated) is the worthless-services-at-death signal:
+    # HCI indicator 10, "Visits Near Death" (older editions: the HIS visits measure)
+    ("hospice_visit_gap", ("H_012_10",),
+     r"visits?[_ ]?near[_ ]?death|last[_ ]?days[_ ]?of[_ ]?life|h_009", True),
+    # nurse minutes per routine-home-care day: low staffing vs billed level:
+    # HCI indicator 8, "Skilled Nursing Care Minutes per Routine Home Care Day"
+    ("hospice_nurse_minute_deficit", ("H_012_08",),
+     r"nurs\w*[_ ]?(?:care[_ ]?)?minutes[_ ]?per|nurse[_ ]?minutes|h_010", True),
+    # long-stay recruitment shows up as spend per head:
+    # HCI indicator 7, "Per-beneficiary Medicare Spending"
+    ("hospice_spend_per_bene", ("H_012_07",),
+     r"spending[_ ]?per|per[-_ ]?beneficiary", False),
+    # the classic long-stay recruitment case mix. NO CODE KNOWN (the dementia
+    # mix is a hospice PUF field, not a Care Compare measure): regex, flagged.
+    ("hospice_dementia_share", (), r"dementia", False),
 ]
+_OBSERVED_SUFFIX = "_OBSERVED"
 
 NH_OWNERSHIP_COLS = {
     "ccn": ["CMS Certification Number (CCN)", "cms_certification_number_ccn",
@@ -275,16 +308,45 @@ def pick_edition_candidates(paths, asof_cutoff: str | None = None) -> list:
     return [p for _, p in sorted(known, reverse=True)] + undated
 
 
+def _code_locked_rows(df: pd.DataFrame, codes: tuple[str, ...], pattern: str,
+                      log=None) -> tuple[pd.DataFrame, int]:
+    """Rows whose measure code is one of ``codes`` (bare, or with the
+    _OBSERVED suffix when the layout carries row types; a _DENOMINATOR /
+    _PERCENTILE row never qualifies). Returns (rows, n_name_conflicts): a
+    locked row whose non-blank name fails ``pattern`` is a conflict — the code
+    does not say what the panel thinks it says — and is dropped, never read."""
+    code_col = _col(df, "measure_code").fillna("").astype(str).str.strip().str.upper()
+    wanted = {c.upper() for c in codes}
+    hit = code_col.isin(wanted) | code_col.isin({c + _OBSERVED_SUFFIX for c in wanted})
+    if code_col.str.endswith(_OBSERVED_SUFFIX).any():
+        # the three-rows-per-measure layout: only the OBSERVED row carries the value
+        hit &= code_col.str.endswith(_OBSERVED_SUFFIX)
+    rows = df[hit]
+    names = _col(rows, "measure_name").fillna("").astype(str).str.strip()
+    conflict = (names != "") & ~names.str.lower().str.contains(pattern, regex=True)
+    n_conflict = int(conflict.sum())
+    if n_conflict and log is not None:
+        bad = sorted(set(code_col[rows.index[conflict]]))
+        log(f"    [facility/hospice] WARNING: {n_conflict:,} row(s) on locked code(s) "
+            f"{', '.join(bad)} carry a name that does not match /{pattern}/ — not read")
+    return rows[~conflict], n_conflict
+
+
 def compute_hospice_metrics(raw: pd.DataFrame,
                             pattern: str = LIVE_DISCHARGE_PATTERN,
-                            asof_cutoff: str | None = None
-                            ) -> tuple[pd.DataFrame, int]:
+                            asof_cutoff: str | None = None,
+                            codes: tuple[str, ...] = (),
+                            log=None) -> tuple[pd.DataFrame, int]:
     """Care Compare hospice provider measures (long) → per-CCN live-discharge.
 
     Keeps measures whose code or name contains ``pattern`` (case-insensitive);
     non-numeric scores ("Not Available") are dropped, counted as quarantined.
     With ``asof_cutoff``, only measures whose reporting period ENDED at/before
     the freeze survive (the current edition then serves any historical run).
+    With ``codes`` (audit C7) the rows are LOCKED to those measure codes (the
+    name regex only guards against a mis-numbered code); when the file carries
+    none of the codes the regex is the fallback, recorded in
+    ``out.attrs["match"]`` = ``code`` | ``regex`` and logged.
     """
     resolved = _resolve_columns(list(raw.columns), HOSPICE_COLS)
     missing = [c for c in ["ccn", "score"] if c not in resolved]
@@ -300,56 +362,84 @@ def compute_hospice_metrics(raw: pd.DataFrame,
                                        r"\d{4}-\d{2}-\d{2})\s*$")[0])
     df = _asof_filter(df, "end_date", resolved, asof_cutoff, "hospice measures")
 
-    label = (_col(df, "measure_code").fillna("").astype(str) + " "
-             + _col(df, "measure_name").fillna("").astype(str))
-    hit = df[df["ccn"].notna() & label.str.lower().str.contains(pattern)].copy()
-    # The Care Compare provider file carries THREE rows per measure
-    # (…_OBSERVED / …_DENOMINATOR / …_PERCENTILE) and the burdensome-transition
-    # measures also contain "% live discharges" in their NAMES. Averaging all
-    # matches silently mixes observed values with denominators, percentiles,
-    # and the wrong measures (found on the Nov2023 layout, 2026-08-02). When
-    # the code column carries the row-type suffix, keep OBSERVED rows of the
-    # live-discharge measures only (H_012_03 early / H_012_04 late).
-    codes = _col(hit, "measure_code").fillna("").astype(str).str.upper()
-    if codes.str.contains("_OBSERVED").any():
-        is_ld = codes.str.match(r"H_012_0[34]_OBSERVED")
-        if is_ld.any():
-            hit = hit[is_ld].copy()
-        else:                                    # other layouts: observed only
-            hit = hit[codes.str.contains("_OBSERVED")].copy()
+    df = df[df["ccn"].notna()]
+    match = "regex"
+    hit = pd.DataFrame()
+    if codes:
+        hit, _ = _code_locked_rows(df, tuple(codes), pattern, log=log)
+        if len(hit):
+            match = "code"
+            hit = hit.copy()
+        elif log is not None:
+            log(f"    [facility/hospice] none of the locked code(s) {', '.join(codes)} in this "
+                f"edition: falling back to the name regex /{pattern}/ (a mixture is possible)")
+    if match == "regex":
+        label = (_col(df, "measure_code").fillna("").astype(str) + " "
+                 + _col(df, "measure_name").fillna("").astype(str))
+        hit = df[label.str.lower().str.contains(pattern)].copy()
+        # The Care Compare provider file carries THREE rows per measure
+        # (…_OBSERVED / …_DENOMINATOR / …_PERCENTILE) and the burdensome-transition
+        # measures also contain "% live discharges" in their NAMES. Averaging all
+        # matches silently mixes observed values with denominators, percentiles,
+        # and the wrong measures (found on the Nov2023 layout, 2026-08-02). When
+        # the code column carries the row-type suffix, keep OBSERVED rows of the
+        # live-discharge measures only (H_012_03 early / H_012_04 late).
+        code_col = _col(hit, "measure_code").fillna("").astype(str).str.upper()
+        if code_col.str.contains("_OBSERVED").any():
+            is_ld = code_col.str.match(r"H_012_0[34]_OBSERVED")
+            if is_ld.any():
+                hit = hit[is_ld].copy()
+            else:                                    # other layouts: observed only
+                hit = hit[code_col.str.contains("_OBSERVED")].copy()
     hit["score"] = pd.to_numeric(hit["score"], errors="coerce")
     quarantined = int(hit["score"].isna().sum())
     hit = hit[hit["score"].notna()]
     out = (hit.groupby("ccn", as_index=False)["score"].mean()
            .rename(columns={"score": "hospice_live_discharge_rate"}))
+    out.attrs["match"] = match
     return out, quarantined
 
 
 def compute_hospice_panel(raw: pd.DataFrame,
-                          asof_cutoff: str | None = None) -> pd.DataFrame:
+                          asof_cutoff: str | None = None,
+                          log=None) -> pd.DataFrame:
     """The full hospice measure panel → one wide per-CCN frame.
 
-    Runs every HOSPICE_MEASURE_PANEL pattern through the same long-format
-    machinery as live discharge (OBSERVED-row selection included). Measures
-    the file doesn't carry are simply absent from the output columns."""
+    Runs every HOSPICE_MEASURE_PANEL entry through the same long-format
+    machinery as live discharge: code-locked where the panel knows the code
+    (OBSERVED-row selection included), the name regex otherwise. Measures
+    the file doesn't carry are simply absent from the output columns.
+    ``out.attrs["measure_match"]`` = {column: "code" | "regex"} and
+    ``out.attrs["_regex_matched"]`` lists the columns read by regex (a
+    mixture is possible on those; logged)."""
     parts = []
-    for name, pattern, negate in HOSPICE_MEASURE_PANEL:
+    match: dict[str, str] = {}
+    for name, codes, pattern, negate in HOSPICE_MEASURE_PANEL:
         try:
             m, _ = compute_hospice_metrics(raw, pattern=pattern,
-                                           asof_cutoff=asof_cutoff)
+                                           asof_cutoff=asof_cutoff,
+                                           codes=tuple(codes), log=log)
         except ValueError:
             raise                      # missing CCN/score columns is fatal
         if not len(m):
             continue
+        match[name] = m.attrs.get("match", "regex")
         m = m.rename(columns={"hospice_live_discharge_rate": name})
         if negate:
             m[name] = -m[name]
         parts.append(m)
+    regex_cols = sorted(c for c, how in match.items() if how == "regex")
+    if regex_cols and log is not None:
+        log(f"    [facility/hospice] WARNING: panel column(s) read by name regex, not a "
+            f"locked measure code (a mixture of measures is possible): {', '.join(regex_cols)}")
     if not parts:
-        return pd.DataFrame(columns=["ccn"])
-    out = parts[0]
-    for extra in parts[1:]:
-        out = out.merge(extra, on="ccn", how="outer")
+        out = pd.DataFrame(columns=["ccn"])
+    else:
+        out = parts[0]
+        for extra in parts[1:]:
+            out = out.merge(extra, on="ccn", how="outer")
+    out.attrs["measure_match"] = match
+    out.attrs["_regex_matched"] = regex_cols
     return out
 
 
@@ -518,20 +608,117 @@ def facility_peer_percentiles(metrics: pd.DataFrame, metric_cols: list[str],
     return out
 
 
-def rollup_ccn_to_org(ccn_features: pd.DataFrame, ccn_to_npi: pd.DataFrame,
-                      npi_to_org: pd.DataFrame) -> pd.DataFrame:
-    """CCN-grain 0–1 features → org grain via the PECOS CCN↔NPI crosswalk.
+# Architecture audit F1 (2026-11-02): the pre-ranked facility percentiles were rolled
+# up CCN -> NPI by MAX and NPI -> org by MAX, then broadcast to every member, so a chain's
+# value was the max of k uniforms (expectation k/(k+1): a fifty-home chain read 0.98 on
+# every facility scheme by construction). The export grain is now each NPI's OWN CCN's
+# percentile ("own_ccn", default); "max" keeps the old org-max frame as a gradable arm.
+EXPORT_ROLLUPS = ("own_ccn", "max")
+FACILITY_BASIS_COL = "facility_grain_basis"
+_NPI_WEIGHT = "__ccn_weight"
 
-    ``ccn_to_npi`` needs columns ccn, npi (PECOS enrollment; runbook §2).
-    Broadcast CCN features to the facility's NPIs, then the shared max-per-org
-    rollup — an org is as suspicious as its most suspicious facility.
-    """
+
+def ccn_to_npi_grain(ccn_features: pd.DataFrame, ccn_to_npi: pd.DataFrame,
+                     rollup: str = "mean", weight_col: str | None = None,
+                     keep_ccn: bool = False) -> pd.DataFrame:
+    """CCN-grain features → NPI grain through the PECOS CCN↔NPI crosswalk.
+
+    One NPI on several CCNs takes the weighted mean when ``weight_col`` (a
+    per-row weight on ``ccn_to_npi``, e.g. dollars) exists, else the plain
+    mean — never the max (``rollup="max"`` is the pre-audit arm). With
+    ``keep_ccn`` the frame carries ``ccn_list`` (the NPI's CCNs, ';'-joined)
+    and, when weighted, the summed weight in ``__ccn_weight`` for the next
+    rollup step. ``out.attrs["rollup"]`` records the statistic."""
     xw = ccn_to_npi.copy()
     xw["ccn"] = _canon_ccn(xw["ccn"])
     xw["npi"] = xw["npi"].astype(str)
+    xw = xw[xw["ccn"].notna()]
     f = ccn_features.copy()
     f["ccn"] = _canon_ccn(f["ccn"])
-    merged = xw.merge(f, on="ccn", how="inner").drop(columns=["ccn"])
-    metric_cols = [c for c in merged.columns if c != "npi"]
-    npi_grain = merged.groupby("npi", as_index=False)[metric_cols].max()
-    return rollup_to_org(npi_grain, npi_to_org)
+    keep = ["ccn", "npi"] + ([weight_col] if weight_col and weight_col in xw.columns else [])
+    merged = xw[keep].drop_duplicates(["ccn", "npi"]).merge(f, on="ccn", how="inner")
+    metric_cols = [c for c in merged.columns if c not in ("ccn", "npi", weight_col)]
+    out = grouped_rollup(merged, "npi", metric_cols, rollup=rollup, weight_col=weight_col)
+    stat = out.attrs.get("rollup", rollup)
+    if keep_ccn:
+        ccns = merged.groupby("npi")["ccn"].agg(lambda s: ";".join(sorted(set(s))))
+        out["ccn_list"] = out["npi"].map(ccns)
+        if weight_col and weight_col in merged.columns:
+            w = pd.to_numeric(merged[weight_col], errors="coerce").fillna(0.0)
+            out[_NPI_WEIGHT] = out["npi"].map(w.groupby(merged["npi"]).sum())
+    out.attrs["rollup"] = stat
+    return out
+
+
+def rollup_ccn_to_org(ccn_features: pd.DataFrame, ccn_to_npi: pd.DataFrame,
+                      npi_to_org: pd.DataFrame, rollup: str = "mean",
+                      weight_col: str | None = None) -> pd.DataFrame:
+    """CCN-grain 0–1 features → org grain via the PECOS CCN↔NPI crosswalk.
+
+    ``ccn_to_npi`` needs columns ccn, npi (PECOS enrollment; runbook §2).
+    Default: each NPI's own CCN (mean over several), then the member-count-
+    neutral MEAN per org. ``rollup="max"`` = the pre-audit max at both steps (an
+    org as suspicious as its most suspicious facility), the gradable arm.
+    ``out.attrs["rollup"]`` names the statistic used.
+    """
+    if rollup not in ROLLUPS:
+        raise ValueError(f"rollup must be one of {ROLLUPS}, got {rollup!r}")
+    weighted = bool(weight_col and weight_col in ccn_to_npi.columns)
+    npi_grain = ccn_to_npi_grain(ccn_features, ccn_to_npi, rollup=rollup,
+                                 weight_col=weight_col, keep_ccn=weighted)
+    if weighted:
+        npi_grain = npi_grain.drop(columns=["ccn_list"])
+        org = rollup_to_org(npi_grain, npi_to_org, rollup=rollup, weight_col=_NPI_WEIGHT)
+    else:
+        org = rollup_to_org(npi_grain, npi_to_org, rollup=rollup)
+    org.attrs["rollup"] = npi_grain.attrs.get("rollup", rollup) if rollup == "mean" else "max"
+    return org
+
+
+def ccn_features_to_export_grain(ccn_features: pd.DataFrame, ccn_to_npi: pd.DataFrame,
+                                 npi_to_org: pd.DataFrame, rollup: str = "own_ccn",
+                                 weight_col: str | None = None,
+                                 keep_ccn: bool = False) -> pd.DataFrame:
+    """What the provider export joins for a CCN-grain source.
+
+    ``rollup="own_ccn"`` (default, audit F1): an NPI-keyed frame (npi,
+    org_node_id, metrics, ``facility_grain_basis``) where every NPI on the
+    crosswalk carries ITS OWN facility's value (mean over several CCNs,
+    dollar-weighted when ``weight_col`` exists) — basis ``own_ccn`` — and the
+    other members of an organization that has at least one facility carry the
+    org MEAN of those own values — basis ``org_mean`` (member-count neutral; a
+    chain's central billing NPI reads the chain average, never its worst home).
+    Members of orgs with no facility are absent (NaN after the join).
+    ``rollup="max"``: the pre-audit org-keyed max frame, which the export
+    broadcasts to every member — the gradable arm.
+    ``out.attrs``: ``grain`` (npi | org), ``rollup``."""
+    if rollup not in EXPORT_ROLLUPS:
+        raise ValueError(f"rollup must be one of {EXPORT_ROLLUPS}, got {rollup!r}")
+    if rollup == "max":
+        out = rollup_ccn_to_org(ccn_features, ccn_to_npi, npi_to_org, rollup="max",
+                                weight_col=weight_col)
+        out.attrs.update({"grain": "org", "rollup": "max"})
+        return out
+    own = ccn_to_npi_grain(ccn_features, ccn_to_npi, rollup="mean",
+                           weight_col=weight_col, keep_ccn=True)
+    stat = own.attrs.get("rollup", "mean")
+    metric_cols = [c for c in own.columns if c not in ("npi", "ccn_list", _NPI_WEIGHT)]
+    xw = npi_to_org[["npi", "org_node_id"]].astype(str).drop_duplicates("npi")
+    own = own.merge(xw, on="npi", how="left")
+    # the org mean of the members' OWN values, for the members without a facility
+    with_org = own[own["org_node_id"].notna()]
+    org_mean = grouped_rollup(with_org, "org_node_id", metric_cols, rollup="mean",
+                              weight_col=_NPI_WEIGHT if _NPI_WEIGHT in with_org.columns else None)
+    others = xw[xw["org_node_id"].isin(org_mean["org_node_id"]) & ~xw["npi"].isin(own["npi"])]
+    fill = others.merge(org_mean, on="org_node_id", how="left")
+    fill[FACILITY_BASIS_COL] = "org_mean"
+    own[FACILITY_BASIS_COL] = "own_ccn"
+    cols = ["npi", "org_node_id"] + metric_cols + [FACILITY_BASIS_COL]
+    if keep_ccn:
+        own["ccn_list"] = own["ccn_list"].fillna("")
+        fill["ccn_list"] = ""
+        cols.append("ccn_list")
+    out = pd.concat([own[cols], fill[cols]], ignore_index=True)
+    assert out["npi"].is_unique, "ccn_features_to_export_grain fanned out an NPI"
+    out.attrs.update({"grain": "npi", "rollup": f"own_ccn:{stat}+org_mean"})
+    return out
