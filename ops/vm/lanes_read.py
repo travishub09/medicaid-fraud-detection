@@ -63,7 +63,8 @@ def page_probe(root: Path, n: int) -> None:
             print(f"-- {url[:110]}\n   FETCH FAILED {type(e).__name__}: {str(e)[:160]}")
 
 
-def fetch_fail_tally(root: Path, log_name: str = "verify_sources_2026-11.log", top: int = 5) -> None:
+def fetch_fail_tally(root: Path, log_name: str = "verify_sources_2026-11.log", top: int = 5,
+                     urls_out: str | None = None) -> None:
     """The unreachable pages of a verify-sources pass by host and error (2026-11-02: 1,646
     of 1,809 were one host; a block and a dead citation need different moves)."""
     import re as _re
@@ -73,12 +74,17 @@ def fetch_fail_tally(root: Path, log_name: str = "verify_sources_2026-11.log", t
         print(f"== no log at {log}")
         return
     by_host, samples = defaultdict(Counter), defaultdict(list)
+    retry = {}                                              # url -> True when a laptop fetch could help
     pat = _re.compile(r"fetch failed (https?://([^/\s]+)/\S*): (.*)$")
     for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
         m = pat.search(line)
         if not m:
             continue
         url, host, err = m.group(1), m.group(2).lower(), m.group(3)
+        # a 404 / a redirect to the site home is a dead citation anywhere; everything else
+        # (403, reset, challenge, empty page, truncated PDF) is worth one try from a browser
+        if url not in retry:
+            retry[url] = not _re.search(r"404 Client Error|not the page cited|400 Client Error", err)
         e = _re.sub(r"for url: \S+", "", err)
         e = _re.sub(r"\(Caused by.*$", "", e).strip()[:90]
         by_host[host][e] += 1
@@ -93,12 +99,17 @@ def fetch_fail_tally(root: Path, log_name: str = "verify_sources_2026-11.log", t
             print(f"   {k:5d}  {e}")
         for u in samples[h]:
             print(f"        {u}")
+    if urls_out:
+        keep = sorted(u for u, ok in retry.items() if ok)
+        Path(urls_out).write_text("\n".join(keep) + "\n", encoding="utf-8")
+        print(f"== {len(keep):,} URLs worth a laptop fetch -> {urls_out} ({len(retry) - len(keep):,} dead citations left out)")
 
 
 def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "/data/medicaid")
     if "--fetch-fail-tally" in sys.argv:
-        fetch_fail_tally(root)
+        k = sys.argv.index("--urls-out") if "--urls-out" in sys.argv else -1
+        fetch_fail_tally(root, urls_out=(sys.argv[k + 1] if k >= 0 and k + 1 < len(sys.argv) else None))
         return
     if "--page-probe" in sys.argv:
         k = sys.argv.index("--page-probe")

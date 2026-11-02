@@ -229,3 +229,42 @@ def test_redirected_or_not_found_pages_are_not_pages():
     assert not rev.redirect_reason("https://ag.x.gov/news/acme-settles", "https://www.ag.x.gov/news/acme-settles")
     assert rev.title_reason("<html><head><title>Page Not Found | AG</title></head></html>")
     assert not rev.title_reason("<html><head><title>AG announces settlement with Acme</title></head></html>")
+
+
+def test_page_cache_fetch_reads_what_the_laptop_downloaded(tmp_path):
+    """2026-11-02: the VM's address is blocked by OMIG / DOJ / the AG sites; the laptop
+    downloads the cited pages and the verify pass reads them from the cache."""
+    import csv
+    import importlib.util
+    from src.enforcement import research_evidence as rev
+    spec = importlib.util.spec_from_file_location("fetch_pages", "ops/laptop/fetch_pages.py")
+    fp = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fp)
+    url = "https://omig.ny.gov/sites/default/files/document/19-2441.pdf"
+    assert fp.page_cache_key(url) == rev.page_cache_key(url)                 # one key on both sides
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    html_url = "https://ag.state.x/news/acme"
+    (cache / f"{rev.page_cache_key(html_url)}.bin").write_bytes(b"<html><title>AG news</title><body>" + b"Acme Clinic Inc agreed to pay $1M to settle allegations. " * 3 + b"</body></html>")
+    (cache / f"{rev.page_cache_key(url)}.bin").write_bytes(b"%PDF-1.4 ...")
+    with open(cache / "index.csv", "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=fp.FIELDS)
+        w.writeheader()
+        w.writerow({"url": html_url, "key": rev.page_cache_key(html_url), "status": "200", "content_type": "text/html", "final_url": html_url, "bytes": 1, "error": ""})
+        w.writerow({"url": url, "key": rev.page_cache_key(url), "status": "200", "content_type": "application/pdf", "final_url": url, "bytes": 1, "error": ""})
+        w.writerow({"url": "https://ag.state.x/gone", "key": rev.page_cache_key("https://ag.state.x/gone"), "status": "403", "content_type": "", "final_url": "", "bytes": 0, "error": ""})
+    fetch = rev.cache_fetch(cache)
+    assert "Acme Clinic" in fetch(html_url)
+    assert fetch(url, binary=True).startswith(b"%PDF")
+    for bad in ("https://ag.state.x/gone", "https://ag.state.x/never-fetched"):
+        try:
+            fetch(bad)
+            raise AssertionError("should be unreachable")
+        except RuntimeError:
+            pass
+    db = pd.DataFrame([{"case_id": html_url + "#ACME", "defendant_name": "Acme Clinic Inc", "source_url": html_url,
+                        "jurisdiction": "state MFCU", "summary": "s"}])
+    p = tmp_path / "cases.csv"
+    db.to_csv(p, index=False)
+    assert rev.quarantine_absent_defendants(p, fetch, log=lambda *a: None) == 0
+    assert pd.read_csv(p, dtype=str).fillna("").iloc[0]["name_in_source"] == "1"

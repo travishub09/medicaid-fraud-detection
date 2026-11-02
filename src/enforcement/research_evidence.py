@@ -143,6 +143,52 @@ def title_reason(html: str) -> str:
     return f"title says {t[:60]!r}" if _TITLE_BAD.search(t) else ""
 
 
+def page_cache_key(url: str) -> str:
+    """The file name a cached page is stored under: sha1 of the URL exactly as the case row
+    cites it (ops/laptop/fetch_pages.py writes the same key)."""
+    import hashlib
+    return hashlib.sha1(str(url or "").strip().encode("utf-8")).hexdigest()
+
+
+def cache_fetch(cache_dir):
+    """A fetch_page(url, binary=False) that reads pages a laptop downloaded on a residential
+    connection (2026-11-02: OMIG, Texas OIG, DOJ, NH and Massachusetts answer the VM's address
+    with 403 or a challenge page; 1,780 of 1,809 unreachable pages were blocks). The cache
+    folder holds <sha1>.bin per URL and index.csv (url, key, status, content_type, final_url,
+    bytes). A URL not in the cache, or cached with a non-200 status, RAISES (unreachable);
+    a redirect to the site home or a not-found title is refused like a live fetch."""
+    import csv
+    d = Path(cache_dir)
+    idx = {}
+    ip = d / "index.csv"
+    if ip.exists():
+        with open(ip, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                idx[r.get("key") or page_cache_key(r.get("url", ""))] = r
+
+    def fetch(url: str, binary: bool = False):
+        k = page_cache_key(url)
+        r = idx.get(k)
+        f = d / f"{k}.bin"
+        if r is None or not f.exists():
+            raise RuntimeError("not in the page cache")
+        st = str(r.get("status") or "")
+        if st != "200":
+            raise RuntimeError(f"cached status {st or 'unknown'}")
+        why = redirect_reason(url, r.get("final_url") or url)
+        if why:
+            raise RuntimeError(f"not the page cited: {why}")
+        raw = f.read_bytes()
+        if binary:
+            return raw
+        text = raw.decode("utf-8", errors="replace")
+        why = title_reason(text)
+        if why:
+            raise RuntimeError(f"not a readable page: {why}")
+        return text
+    return fetch
+
+
 def browser_fetch_text(url: str, binary: bool = False):
     """The page fetch verify-sources uses: a browser user agent (state AG and OIG sites
     refuse unknown agents with 403; the 2026-10-21 run reached 0 of 37 pages) and, for
@@ -793,6 +839,9 @@ def main() -> None:
                     help="which rows to check (default: the state / commercial / audit research harvests)")
     vs.add_argument("--allow-unverified", action="store_true",
                     help="leave a row whose page cannot be read usable (default: unverified rows do not train)")
+    vs.add_argument("--page-cache", default=None,
+                    help="read the cited pages from a folder ops/laptop/fetch_pages.py filled (index.csv + <sha1>.bin) "
+                         "instead of fetching; a URL missing from the cache is unreachable")
     vs.add_argument("--limit", type=int, default=None, help="check at most N rows this pass")
     vs.add_argument("--no-recheck", action="store_true",
                     help="leave rows already marked defendant_not_on_page alone (default: re-read them; a mark "
@@ -800,7 +849,8 @@ def main() -> None:
 
     args = ap.parse_args()
     if args.cmd == "verify-sources":
-        n = quarantine_absent_defendants(args.case_db, browser_fetch_text, args.jurisdiction_regex, args.limit,
+        fetcher = cache_fetch(args.page_cache) if args.page_cache else browser_fetch_text
+        n = quarantine_absent_defendants(args.case_db, fetcher, args.jurisdiction_regex, args.limit,
                                          recheck=not args.no_recheck, require_verified=not args.allow_unverified)
         print(f"[research_evidence] verify-sources: {n:,} rows quarantined; rebuild the case labels (the next export) "
               "so they leave the label")
