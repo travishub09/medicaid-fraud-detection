@@ -56,11 +56,18 @@ def test_billing_after_deactivation_share():
     ])
     xw = pd.DataFrame({"npi": ["1003000415", "1003000407"],
                        "org_node_id": ["org:dead", "org:live"]})
-    out = billing_after_deactivation(spending, deact, xw).set_index("org_node_id")
-    # 300k of the dead org's 400k was billed after deactivation
-    assert out.loc["org:dead", "post_deactivation_paid"] == 300_000.0
-    assert out.loc["org:dead", "billing_after_deactivation"] == 0.75
-    assert out.loc["org:live", "billing_after_deactivation"] == 0.0
+    # audit C5 (2026-11-02): the default frame is NPI-grain — the deactivated NPI's
+    # OWN share; a never-deactivated NPI has no row (NULL downstream, never 0)
+    out = billing_after_deactivation(spending, deact, xw).set_index("npi")
+    # 300k of the dead NPI's 400k was billed after deactivation
+    assert out.loc["1003000415", "post_deactivation_paid"] == 300_000.0
+    assert out.loc["1003000415", "billing_after_deactivation"] == 0.75
+    assert "1003000407" not in out.index and "org_node_id" not in out.columns
+    # the org-grain frame: single-NPI orgs only, same fact
+    org = billing_after_deactivation(spending, deact, xw, grain="org").set_index("org_node_id")
+    assert org.loc["org:dead", "billing_after_deactivation"] == 0.75
+    assert org.loc["org:dead", "org_member_count"] == 1
+    assert "org:live" not in org.index
 
 
 # ------------------------------------------------------------- 340B ---

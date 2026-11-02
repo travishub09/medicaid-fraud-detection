@@ -170,7 +170,14 @@ def test_lab_metrics_size_and_mix(tmp_path):
     out = sector_metrics_from_parquet(_lab_fact(tmp_path)).set_index("npi")
     lab = out.loc["1003000126"]
     assert lab["lab_paid_share"] == pytest.approx(9500.0 / 10000.0)
-    assert lab["lab_lines_per_patient"] == pytest.approx(150.0 / 40.0)
+    # audit C4 (2026-11-02): four lab codes on the same 10 patients in one month; the
+    # old base counted 40 patient-months (a patient once per code), the per-month MAX
+    # reads 10, and the breadth the catalog meant is now its own column (4 codes per
+    # patient-month)
+    assert lab["lab_lines_per_patient"] == pytest.approx(150.0 / 10.0)
+    assert lab["lab_lines_per_patient_codemonth"] == pytest.approx(150.0 / 40.0)
+    assert lab["lab_distinct_codes_per_patient_month"] == pytest.approx(4.0 / 10.0)
+    assert lab["lab_patient_code_months"] == 40.0 and lab["lab_patient_months_max"] == 10.0
     assert lab["lab_definitive_drug_share"] == pytest.approx(5000.0 / 9500.0)
     assert lab["lab_genetic_share"] == pytest.approx(3000.0 / 9500.0)
     assert lab["lab_resp_panel_share"] == pytest.approx(0.0)        # observed zero: a real mix fact

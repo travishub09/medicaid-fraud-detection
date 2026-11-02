@@ -30,7 +30,13 @@ def test_nemt_and_bh_metrics(tmp_path):
     out = sector_metrics_from_parquet(_fact(tmp_path)).set_index("npi")
     r = out.loc["1003000126"]
     assert r["nemt_paid_share"] == pytest.approx(8000.0 / 10000.0)
-    assert r["nemt_lines_per_patient"] == pytest.approx(700.0 / 20.0)  # padding tell
+    # audit C4 (2026-11-02): A0425 and T2003 each carried 10 patients in the SAME month,
+    # so the old base counted 20 patient-months for what is at most 20 and at least 10
+    # distinct patients; the intensity now divides by the per-month MAX (10) and the
+    # old formula keeps the _codemonth suffix
+    assert r["nemt_lines_per_patient"] == pytest.approx(700.0 / 10.0)  # padding tell
+    assert r["nemt_lines_per_patient_codemonth"] == pytest.approx(700.0 / 20.0)
+    assert r["nemt_patient_code_months"] == 20.0 and r["nemt_patient_months_max"] == 10.0
     b = out.loc["1003000134"]
     assert b["bh_paid_share"] == pytest.approx(1.0)
     assert pd.isna(b.get("nemt_paid_share"))          # absent, never zero

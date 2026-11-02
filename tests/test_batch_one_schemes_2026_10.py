@@ -48,12 +48,23 @@ def test_batch_one_metrics(tmp_path):
     assert set(BATCH_ONE_METRICS) <= set(out.columns)
     pc = out.loc["1003000126"]
     assert pc["pc_paid_share"] == pytest.approx(16000.0 / 16500.0)
+    # one code: the per-month MAX base equals the code-month sum (2 + 2 = 4)
     assert pc["pc_lines_per_patient_month"] == pytest.approx(800.0 / 4.0)      # 200 units per patient-month
     assert pc["pc_paid_per_patient_month"] == pytest.approx(16000.0 / 4.0)
+    assert pc["pc_lines_per_patient_month_codemonth"] == pytest.approx(800.0 / 4.0)
+    assert pc["pc_patient_code_months"] == 4.0 and pc["pc_patient_months_max"] == 4.0
     assert pd.isna(pc["hh_paid_share"]) and pd.isna(pc["psy_60min_share"])      # absent, never zero
+    assert pd.isna(pc["hh_patient_months_max"])                                   # no family, no base
     hh = out.loc["1003000134"]
     assert hh["hh_paid_share"] == pytest.approx(4000.0 / 5000.0)
-    assert hh["hh_lines_per_patient_month"] == pytest.approx(50.0 / 5.0)
+    # audit C4 (2026-11-02): G0299 (3 patients) and G0156 (2) in ONE month: the old
+    # base read 5 patient-months, the per-month MAX reads 3 (a lower bound on the
+    # distinct patients); the intensity divides by 3, the old formula is _codemonth
+    assert hh["hh_lines_per_patient_month"] == pytest.approx(50.0 / 3.0)
+    assert hh["hh_paid_per_patient_month"] == pytest.approx(4000.0 / 3.0)
+    assert hh["hh_lines_per_patient_month_codemonth"] == pytest.approx(50.0 / 5.0)
+    assert hh["hh_paid_per_patient_month_codemonth"] == pytest.approx(4000.0 / 5.0)
+    assert hh["hh_patient_code_months"] == 5.0 and hh["hh_patient_months_max"] == 3.0
     lab = out.loc["1003000142"]
     assert lab["lab_component_share"] == pytest.approx(600.0 / 800.0)
     assert lab["lab_draw_per_test"] == pytest.approx(35.0 / (10 + 30 + 30))   # draws per test line (draws excluded)

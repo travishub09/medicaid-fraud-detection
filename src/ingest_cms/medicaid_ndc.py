@@ -288,40 +288,97 @@ def _opioid_view(con, opioid_flags: pd.DataFrame | None) -> bool:
     return True
 
 
-def pharmacy_spread_proxy(fact_parquet: Path, con=None, min_pairs: int = 20) -> pd.DataFrame:
-    """The drug-spread signal WITHOUT units (the 2026-10-09 file carries none, so the
-    NADAC paid-vs-acquisition test is impossible): per NDC, the national median paid
-    per claim line across (pharmacy, NDC) pairs with at least ``min_pairs`` pairs;
-    per pharmacy, the dollar-weighted excess of its paid per line over that median,
-    one-sided (only paying ABOVE peers for the same drug is suspicious).
+DAYS_SUPPLY_MIN_SHARE = 0.5     # price per DAY of supply once half the clean rows carry it
+SPREAD_COLS = ["npi", "rx_spread_proxy", "rx_spread_coverage", "rx_spread_top_share",
+               "rx_spread_ref", "rx_spread_fallback_share"]
 
-      rx_spread_proxy      sum(paid) / sum(lines x median_ppl_ndc) - 1, clipped at 0,
+
+def pharmacy_spread_proxy(fact_parquet: Path, con=None, min_pairs: int = 20,
+                          days_supply_min_share: float = DAYS_SUPPLY_MIN_SHARE) -> pd.DataFrame:
+    """The drug-spread signal WITHOUT units (the 2026-10-09 file carries none, so the
+    NADAC paid-vs-acquisition test is impossible): per NDC, the median paid per unit
+    across (pharmacy, NDC) pairs with at least ``min_pairs`` pairs; per pharmacy, the
+    dollar-weighted excess of its paid per unit over that median, one-sided (only
+    paying ABOVE peers for the same drug is suspicious).
+
+      rx_spread_proxy      sum(paid) / sum(units x median_ppu_ndc) - 1, clipped at 0,
                            over the pharmacy's reference-covered dollars
       rx_spread_coverage   share of the pharmacy's dollars on NDCs with a reference
-      rx_spread_top_share  share of covered dollars on NDCs where this pharmacy paid
-                           >= 2x the national median per line
-    Placeholder NDCs (all one digit) are out of the reference."""
+      rx_spread_top_share  share of covered dollars (positive-only, clipped) on NDCs
+                           where this pharmacy paid >= 2x the reference median per unit
+      rx_spread_ref        'state' / 'national' / 'mixed': which reference the
+                           pharmacy's covered pairs got (NULL with no coverage)
+      rx_spread_fallback_share  the share of the pharmacy's covered pairs that fell
+                           back to the national reference (0 = all in-state)
+    Placeholder NDCs (all one digit) are out of the reference.
+
+    THE REFERENCE (2026-11-02, architecture audit C6): the median used to be NATIONAL
+    per claim line, so a state's fee schedule and a pharmacy's fill size (a 90-day
+    fill is three 30-day lines of dollars on one line) were the variance the scheme
+    read. Now (1) the reference is the same NDC's median WITHIN the pharmacy's
+    ``provider_state`` (a state x NDC with >= ``min_pairs`` pairs), falling back to the
+    national median otherwise, with the fallback recorded per pharmacy and, over all
+    covered pairs, in ``df.attrs['rx_spread_fallback_share']``; (2) the unit is a DAY
+    OF SUPPLY when the fact carries ``days_supply`` on at least ``days_supply_min_share``
+    of its clean rows (``df.attrs['rx_spread_unit']`` = 'day'; pairs without days
+    supply then have no reference and count against coverage), else a claim line
+    ('line'). A fact with no state column reads 'national' on every row."""
     con = con or _duck_connect()
+    f_sql = (f"select * from read_parquet('{_pq(fact_parquet)}') "
+             f"where {CLEAN_ROW} and ndc <> repeat(substr(ndc, 1, 1), length(ndc)) "
+             f"and total_claim_lines > 0")
+    n_rows, n_days = con.execute(
+        f"select count(*), sum(case when days_supply is not null and days_supply > 0 then 1 else 0 end) "
+        f"from ({f_sql})").fetchone()
+    use_days = bool(n_rows) and (float(n_days or 0) / float(n_rows)) >= float(days_supply_min_share)
+    unit_sql = ("sum(case when days_supply is not null and days_supply > 0 then days_supply end)"
+                if use_days else "sum(total_claim_lines)")
     df = con.execute(f"""
-        with f as (select * from read_parquet('{_pq(fact_parquet)}')
-                   where {CLEAN_ROW} and ndc <> repeat(substr(ndc, 1, 1), length(ndc))
-                     and total_claim_lines > 0),
-        pair as (select billing_npi, ndc, sum(total_paid) as paid, sum(total_claim_lines) as lines
-                 from f group by 1, 2),
-        ref as (select ndc, median(paid / lines) as med_ppl, count(*) as n_pairs
-                from pair group by 1 having count(*) >= {int(min_pairs)}),
+        with f as ({f_sql}),
+        pair as (select billing_npi, ndc, nullif(upper(trim(provider_state)), '') as state,
+                        sum(total_paid) as paid, {unit_sql} as units
+                 from f group by 1, 2, 3),
+        pr as (select * from pair where units > 0),
+        ref_state as (select state, ndc, median(paid / units) as med_ppu
+                      from pr where state is not null group by 1, 2 having count(*) >= {int(min_pairs)}),
+        ref_nat as (select ndc, median(paid / units) as med_ppu
+                    from pr group by 1 having count(*) >= {int(min_pairs)}),
         tot as (select billing_npi, sum(paid) as all_paid from pair group by 1),
-        cov as (select p.billing_npi, sum(p.paid) as cov_paid,
-                       sum(p.lines * r.med_ppl) as expected_paid,
-                       sum(case when p.paid / p.lines >= 2 * r.med_ppl then greatest(p.paid, 0) else 0 end) as hot_paid
-                from pair p join ref r using (ndc) group by 1)
+        covp as (select p.billing_npi, p.paid, p.units,
+                        coalesce(s.med_ppu, n.med_ppu) as med_ppu,
+                        case when s.med_ppu is null then 1 else 0 end as fb
+                 from pr p
+                 left join ref_state s on s.state = p.state and s.ndc = p.ndc
+                 left join ref_nat n on n.ndc = p.ndc
+                 where coalesce(s.med_ppu, n.med_ppu) is not null),
+        cov as (select billing_npi, sum(paid) as cov_paid,
+                       sum(units * med_ppu) as expected_paid,
+                       sum(case when paid / units >= 2 * med_ppu then greatest(paid, 0) else 0 end) as hot_paid,
+                       sum(greatest(paid, 0)) as cov_pos,
+                       count(*) as n_pairs, sum(fb) as n_fb
+                from covp group by 1)
         select t.billing_npi as npi,
-               greatest(c.cov_paid / nullif(c.expected_paid, 0) - 1, 0) as rx_spread_proxy,
+               -- NULL when no pair has a reference (greatest() skips NULLs, so the old
+               -- expression read 0 = 'no excess observed' for an unmeasured pharmacy)
+               case when c.cov_paid is null then null
+                    else greatest(c.cov_paid / nullif(c.expected_paid, 0) - 1, 0) end as rx_spread_proxy,
                c.cov_paid / nullif(t.all_paid, 0) as rx_spread_coverage,
-               least(1.0, greatest(0.0, c.hot_paid / nullif(c.cov_paid, 0))) as rx_spread_top_share
+               least(1.0, greatest(0.0, c.hot_paid / nullif(c.cov_pos, 0))) as rx_spread_top_share,
+               case when c.n_pairs is null then null
+                    when c.n_fb = 0 then 'state'
+                    when c.n_fb = c.n_pairs then 'national'
+                    else 'mixed' end as rx_spread_ref,
+               c.n_fb * 1.0 / nullif(c.n_pairs, 0) as rx_spread_fallback_share,
+               c.n_pairs, c.n_fb
         from tot t left join cov c using (billing_npi)
         """).df()
     df["npi"] = df["npi"].astype(str)
+    n_pairs = float(df["n_pairs"].fillna(0).sum()) if len(df) else 0.0
+    n_fb = float(df["n_fb"].fillna(0).sum()) if len(df) else 0.0
+    df = df[SPREAD_COLS]
+    df.attrs["rx_spread_unit"] = "day" if use_days else "line"
+    df.attrs["rx_spread_fallback_share"] = (n_fb / n_pairs) if n_pairs else None
+    df.attrs["rx_spread_pairs"] = int(n_pairs)
     return df
 
 

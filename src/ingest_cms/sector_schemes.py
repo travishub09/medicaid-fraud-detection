@@ -43,6 +43,42 @@ always: only excess vs peers is suspicious.
                             lab_definitive_drug_share, lab_genetic_share,
                             lab_resp_panel_share (the last three are shares OF the
                             lab dollars: the mix, not the size)
+
+THE PATIENT-MONTH BASE (2026-11-02, architecture audit C4). The fact is provider x
+code x month with ``total_patients`` per row, so SUM(patients) over a family's rows
+counts a patient ONCE PER CODE per month: a patient who got two of the family's
+codes in one month was two "patient-months", and every lines-per-patient intensity
+under-read by the family's code breadth (lab_lines_per_patient most of all, since a
+panel IS several codes on one patient). Distinct patients per month cannot be
+recovered from aggregate rows, so the base is computed two ways and NAMED for what
+it is:
+
+  <fam>_patient_code_months   SUM(patients) over the family's code x month rows
+                              (the old base; a patient counted once per code)
+  <fam>_patient_months_max    SUM over months of MAX(patients over the family's
+                              codes in that month): a LOWER bound on distinct
+                              patient-months (the busiest code's patients are all
+                              distinct; the other codes' patients may overlap them)
+
+and every intensity now divides by ``_patient_months_max`` (an UPPER bound on the
+true lines or dollars per patient-month, the one-sided direction the schemes read),
+while the old formula is kept under a ``_codemonth`` suffix:
+
+  nemt_lines_per_patient / bh_lines_per_patient / lab_lines_per_patient
+  pc_lines_per_patient_month / pc_paid_per_patient_month
+  hh_lines_per_patient_month / hh_paid_per_patient_month   -> max-based base
+  <same>_codemonth                                           -> the old column
+
+  lab_distinct_codes_per_patient_month   the "panel breadth" the catalog meant by
+                              lab_lines_per_patient: SUM over months of the
+                              distinct lab codes billed that month, over the
+                              max-based patient-months (a lab that runs twelve
+                              codes on every patient every month reads 12)
+
+The corrected dollar intensities (``*_paid_per_patient_month``) use POSITIVE-only
+dollars (a refund month never reads as negative intensity); the ``_codemonth``
+columns keep the old net-dollar formula exactly. NULL where the family is absent;
+an observed 0 is real.
 """
 
 from __future__ import annotations
@@ -141,6 +177,17 @@ BATCH_ONE_METRICS = ("pc_paid_share", "pc_lines_per_patient_month", "pc_paid_per
                      "lab_component_share", "lab_draw_per_test",
                      "psy_60min_share", "em_prolonged_share", "psy_interactive_share")
 
+# the families that carry a patient-month base (audit C4): family prefix -> SQL predicate
+PATIENT_MONTH_FAMILIES = {"nemt": _NEMT_PRED, "bh": _BH_PRED, "lab": _LAB_PRED,
+                          "pc": _PC_PRED, "hh": _HH_PRED}
+# the intensities re-based on <fam>_patient_months_max; each keeps its old formula
+# under the _codemonth suffix
+REBASED_INTENSITIES = ("nemt_lines_per_patient", "bh_lines_per_patient", "lab_lines_per_patient",
+                       "pc_lines_per_patient_month", "pc_paid_per_patient_month",
+                       "hh_lines_per_patient_month", "hh_paid_per_patient_month")
+PATIENT_BASE_COLS = tuple(f"{f}_{s}" for f in PATIENT_MONTH_FAMILIES
+                         for s in ("patient_code_months", "patient_months_max"))
+
 
 def lab_code_set() -> frozenset[str]:
     """The explicit HCPCS set behind _LAB_PRED (for scheme_code_families' dollars-at-
@@ -172,8 +219,21 @@ def sector_metrics_from_parquet(spending_path: str | Path,
         FROM read_parquet('{p}')
         GROUP BY 1, 2, 3
     """
+    # audit C4: the per-month MAX over each family's codes (a lower bound on distinct
+    # patient-months) and the distinct lab codes per month, in the same pass over b
+    pm_cols = ", ".join(
+        f"MAX(CASE WHEN {pred} THEN patients END) AS {fam}_pm"
+        for fam, pred in PATIENT_MONTH_FAMILIES.items())
+    pmx_cols = ", ".join(f"SUM({fam}_pm) AS {fam}_patient_months_max"
+                         for fam in PATIENT_MONTH_FAMILIES)
     df = con.execute(f"""
-        WITH b AS ({base})
+        WITH b AS ({base}),
+        pm AS (
+            SELECT npi, month, {pm_cols},
+                   COUNT(DISTINCT CASE WHEN {_LAB_PRED} THEN hcpcs END) AS lab_codes
+            FROM b GROUP BY 1, 2),
+        pmx AS (SELECT npi, {pmx_cols}, SUM(lab_codes) AS lab_code_months FROM pm GROUP BY 1),
+        agg AS (
         SELECT npi,
                SUM(paid) AS total_paid,
                SUM(CASE WHEN {_NEMT_PRED} THEN paid ELSE 0 END)     AS nemt_paid,
@@ -189,9 +249,11 @@ def sector_metrics_from_parquet(spending_path: str | Path,
                SUM(CASE WHEN {_LAB_GENETIC} THEN paid ELSE 0 END)   AS lab_gen_paid,
                SUM(CASE WHEN {_LAB_RESP} THEN paid ELSE 0 END)      AS lab_resp_paid,
                SUM(CASE WHEN {_PC_PRED} THEN paid ELSE 0 END)       AS pc_paid,
+               SUM(CASE WHEN {_PC_PRED} THEN GREATEST(paid, 0) ELSE 0 END) AS pc_paid_pos,
                SUM(CASE WHEN {_PC_PRED} THEN lines ELSE 0 END)      AS pc_lines,
                SUM(CASE WHEN {_PC_PRED} THEN patients ELSE 0 END)   AS pc_patient_months,
                SUM(CASE WHEN {_HH_PRED} THEN paid ELSE 0 END)       AS hh_paid,
+               SUM(CASE WHEN {_HH_PRED} THEN GREATEST(paid, 0) ELSE 0 END) AS hh_paid_pos,
                SUM(CASE WHEN {_HH_PRED} THEN lines ELSE 0 END)      AS hh_lines,
                SUM(CASE WHEN {_HH_PRED} THEN patients ELSE 0 END)   AS hh_patient_months,
                SUM(CASE WHEN {_LAB_PANEL_PRED} THEN paid ELSE 0 END) AS lab_panel_paid,
@@ -204,25 +266,47 @@ def sector_metrics_from_parquet(spending_path: str | Path,
                SUM(CASE WHEN {_PSY_INT_BASE_PRED} THEN lines ELSE 0 END) AS psy_int_base_lines,
                SUM(CASE WHEN {_EM_PRED} THEN lines ELSE 0 END)      AS em_lines,
                SUM(CASE WHEN {_PROLONGED_PRED} THEN lines ELSE 0 END) AS prolonged_lines
-        FROM b GROUP BY npi
+        FROM b GROUP BY npi)
+        SELECT agg.*, pmx.* EXCLUDE (npi) FROM agg LEFT JOIN pmx USING (npi)
     """).df()
     out = pd.DataFrame({"npi": df["npi"].astype(str)})
+
+    # audit C4: the two patient-month bases per family, NULL where the family is
+    # absent (no patients on its codes); _max is the base every intensity divides by
+    def _bases(fam: str, code_month_col: str) -> tuple[pd.Series, pd.Series]:
+        cm = df[code_month_col]
+        mx = pd.to_numeric(df[f"{fam}_patient_months_max"], errors="coerce")
+        out[f"{fam}_patient_code_months"] = cm.where(cm > 0)
+        out[f"{fam}_patient_months_max"] = mx.where(mx > 0)
+        return cm, mx
+
+    nemt_cm, nemt_mx = _bases("nemt", "nemt_patients")
+    bh_cm, bh_mx = _bases("bh", "bh_patients")
+    lab_cm, lab_mx = _bases("lab", "lab_patients")
+    pc_cm, pc_mx = _bases("pc", "pc_patient_months")
+    hh_cm, hh_mx = _bases("hh", "hh_patient_months")
+
     out["nemt_paid_share"] = (df["nemt_paid"] / df["total_paid"]).where(
         (df["total_paid"] > 0) & (df["nemt_paid"] > 0))
-    out["nemt_lines_per_patient"] = (df["nemt_lines"] / df["nemt_patients"]).where(
-        df["nemt_patients"] > 0)
+    out["nemt_lines_per_patient"] = (df["nemt_lines"] / nemt_mx).where(nemt_mx > 0)
+    out["nemt_lines_per_patient_codemonth"] = (df["nemt_lines"] / nemt_cm).where(nemt_cm > 0)
     out["bh_paid_share"] = (df["bh_paid"] / df["total_paid"]).where(
         (df["total_paid"] > 0) & (df["bh_paid"] > 0))
-    out["bh_lines_per_patient"] = (df["bh_lines"] / df["bh_patients"]).where(
-        df["bh_patients"] > 0)
+    out["bh_lines_per_patient"] = (df["bh_lines"] / bh_mx).where(bh_mx > 0)
+    out["bh_lines_per_patient_codemonth"] = (df["bh_lines"] / bh_cm).where(bh_cm > 0)
     # laboratory testing (v21): the size of the lab book and its MIX. Shares of the
     # lab dollars are NULL (absent, never zero) for a provider with no lab dollars; a
     # provider with lab dollars and none of a sub-family reads 0 on that share (a
     # real observation: a lab that bills no definitive toxicology).
     has_lab = (df["total_paid"] > 0) & (df["lab_paid"] > 0)
     out["lab_paid_share"] = (df["lab_paid"] / df["total_paid"]).where(has_lab)
-    out["lab_lines_per_patient"] = (df["lab_lines"] / df["lab_patients"]).where(
-        has_lab & (df["lab_patients"] > 0))
+    out["lab_lines_per_patient"] = (df["lab_lines"] / lab_mx).where(has_lab & (lab_mx > 0))
+    out["lab_lines_per_patient_codemonth"] = (df["lab_lines"] / lab_cm).where(has_lab & (lab_cm > 0))
+    # panel breadth (audit C4): distinct lab codes billed per month, summed, over the
+    # max-based patient-months. The old lines-per-patient could not measure breadth
+    # because its base grew with every extra code.
+    lab_codes = pd.to_numeric(df["lab_code_months"], errors="coerce")
+    out["lab_distinct_codes_per_patient_month"] = (lab_codes / lab_mx).where(has_lab & (lab_mx > 0))
     # clipped: a refund month can carry a sub-family's net dollars below zero (v21 read
     # two shares at -0.0002); a share is a share of what was paid, never negative
     out["lab_definitive_drug_share"] = (df["lab_def_paid"] / df["lab_paid"]).where(has_lab).clip(0, 1)
@@ -233,18 +317,20 @@ def sector_metrics_from_parquet(spending_path: str | Path,
     # session inflation (60-minute share, prolonged add-ons per E/M, interactive
     # add-ons per session). NULL where the provider has no dollars / lines on the
     # family; an observed 0 on a mix share is a real observation.
+    # audit C4: the intensities divide by the max-based base (positive-only dollars
+    # for the dollar intensities); the _codemonth columns are the old formula exactly
     has_pc = (df["total_paid"] > 0) & (df["pc_paid"] > 0)
     out["pc_paid_share"] = (df["pc_paid"] / df["total_paid"]).where(has_pc)
-    out["pc_lines_per_patient_month"] = (df["pc_lines"] / df["pc_patient_months"]).where(
-        has_pc & (df["pc_patient_months"] > 0))
-    out["pc_paid_per_patient_month"] = (df["pc_paid"] / df["pc_patient_months"]).where(
-        has_pc & (df["pc_patient_months"] > 0))
+    out["pc_lines_per_patient_month"] = (df["pc_lines"] / pc_mx).where(has_pc & (pc_mx > 0))
+    out["pc_paid_per_patient_month"] = (df["pc_paid_pos"] / pc_mx).where(has_pc & (pc_mx > 0))
+    out["pc_lines_per_patient_month_codemonth"] = (df["pc_lines"] / pc_cm).where(has_pc & (pc_cm > 0))
+    out["pc_paid_per_patient_month_codemonth"] = (df["pc_paid"] / pc_cm).where(has_pc & (pc_cm > 0))
     has_hh = (df["total_paid"] > 0) & (df["hh_paid"] > 0)
     out["hh_paid_share"] = (df["hh_paid"] / df["total_paid"]).where(has_hh)
-    out["hh_lines_per_patient_month"] = (df["hh_lines"] / df["hh_patient_months"]).where(
-        has_hh & (df["hh_patient_months"] > 0))
-    out["hh_paid_per_patient_month"] = (df["hh_paid"] / df["hh_patient_months"]).where(
-        has_hh & (df["hh_patient_months"] > 0))
+    out["hh_lines_per_patient_month"] = (df["hh_lines"] / hh_mx).where(has_hh & (hh_mx > 0))
+    out["hh_paid_per_patient_month"] = (df["hh_paid_pos"] / hh_mx).where(has_hh & (hh_mx > 0))
+    out["hh_lines_per_patient_month_codemonth"] = (df["hh_lines"] / hh_cm).where(has_hh & (hh_cm > 0))
+    out["hh_paid_per_patient_month_codemonth"] = (df["hh_paid"] / hh_cm).where(has_hh & (hh_cm > 0))
     # v26 (2026-10-26): refund months made the family total smaller than the component
     # dollars (share 1.47); positive-only dollars, bounded
     panel_pos = df["lab_panel_paid"].clip(lower=0.0)
