@@ -101,8 +101,17 @@ def refresh_docket(docket_id: str, transport, sleep=time.sleep, max_wait_s: int 
     user, pw = os.environ.get("PACER_USERNAME", ""), os.environ.get("PACER_PASSWORD", "")
     if not user or not pw:
         return {"status": "failed", "note": "PACER_USERNAME / PACER_PASSWORD are not set (the VM's ~/.medicaid_env)"}
-    req = transport.post(CL + "recap-fetch/", {"request_type": 1, "docket": str(docket_id),
-                                              "pacer_username": user, "pacer_password": pw})
+    try:
+        req = transport.post(CL + "recap-fetch/", {"request_type": 1, "docket": str(docket_id),
+                                                  "pacer_username": user, "pacer_password": pw})
+    except RuntimeError as e:
+        # 2026-11-02: PACER's "Did not get NextGenCSO cookie" = the login itself was refused
+        # (wrong password, or a new account never signed in on pacer.uscourts.gov to accept
+        # its terms): a one-line status, never a traceback
+        msg = str(e)
+        hint = (" (PACER refused the login: sign in once at pacer.uscourts.gov with these credentials, "
+                "accept the terms, or reset the password)" if "PacerLogin" in msg or "NextGenCSO" in msg else "")
+        return {"status": "failed", "note": f"docket refresh refused: {msg[:240]}{hint}"}
     rid = req.get("id")
     log(f"[recap_fetch] docket sheet refresh requested (fetch id {rid}) for docket {docket_id}")
     waited, status = 0, req.get("status")
@@ -154,8 +163,14 @@ def fetch_pdf(docket_id: str, entry_number: int, out_dir: Path, transport=None, 
     user, pw = os.environ.get("PACER_USERNAME", ""), os.environ.get("PACER_PASSWORD", "")
     if not user or not pw:
         return {"status": "failed", "note": "PACER_USERNAME / PACER_PASSWORD are not set (the VM's ~/.medicaid_env)"}
-    req = transport.post(CL + "recap-fetch/", {"request_type": 2, "recap_document": doc_id,
-                                              "pacer_username": user, "pacer_password": pw})
+    try:
+        req = transport.post(CL + "recap-fetch/", {"request_type": 2, "recap_document": doc_id,
+                                                  "pacer_username": user, "pacer_password": pw})
+    except RuntimeError as e:
+        msg = str(e)
+        hint = (" (PACER refused the login: sign in once at pacer.uscourts.gov with these credentials, "
+                "accept the terms, or reset the password)" if "PacerLogin" in msg or "NextGenCSO" in msg else "")
+        return {"status": "failed", "note": f"purchase refused: {msg[:240]}{hint}"}
     rid = req.get("id")
     log(f"[recap_fetch] purchase requested (fetch id {rid}) for recap document {doc_id}")
     waited = 0

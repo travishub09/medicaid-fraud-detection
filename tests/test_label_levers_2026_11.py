@@ -276,6 +276,17 @@ def test_recap_fetch_refreshes_a_stale_docket_sheet_then_buys(tmp_path, monkeypa
     assert dry["status"] == "no_entry"                                 # a dry run never buys the sheet
 
 
+def test_recap_fetch_reports_a_pacer_login_refusal_as_a_status(tmp_path, monkeypatch):
+    monkeypatch.setenv("PACER_USERNAME", "u")
+    monkeypatch.setenv("PACER_PASSWORD", "p")
+
+    class _Refuses(_StaleCL):
+        def post(self, url, data):
+            raise RuntimeError('HTTP 400 from x: {"non_field_errors":["PacerLoginException: Did not get NextGenCSO cookie"]}')
+    got = rf.fetch_pdf("67387905", 1, tmp_path, transport=_Refuses(), refresh=True, sleep=lambda s: None, log=lambda *_: None)
+    assert got["status"] == "failed" and "pacer.uscourts.gov" in got["note"]
+
+
 def test_recap_fetch_archived_purchase_sealed_and_dry_run(tmp_path, monkeypatch):
     monkeypatch.setenv("COURTLISTENER_TOKEN", "t")
     monkeypatch.setenv("PACER_USERNAME", "u")
