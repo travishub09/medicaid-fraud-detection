@@ -514,10 +514,14 @@ def eval_check(expr: str, row: dict) -> dict:
         a, b = float(actual), float(value)  # numbers; string compare otherwise
     except (TypeError, ValueError):
         a, b = str(actual).strip().upper(), str(value).strip().upper()
+        # 2026-11-02 (audit D2): '=' is EXACT for every metric but the network verdict
+        # ('KEEP / ...' satisfies 'KEEP'); it used to be a prefix test, so 'train = hard'
+        # passed on 'hard+charged' and 'hard+weak'
+        prefix_ok = str(metric).lower().startswith("network")
         if op in ("=", "=="):
-            ok = a.startswith(b)           # 'KEEP / ...' satisfies 'KEEP'
+            ok = a.startswith(b) if prefix_ok else (a == b)
         elif op == "!=":
-            ok = not a.startswith(b)
+            ok = (not a.startswith(b)) if prefix_ok else (a != b)
         else:
             out.update(ok=False, why=f"{op} needs numbers, got {actual!r}")
             return out

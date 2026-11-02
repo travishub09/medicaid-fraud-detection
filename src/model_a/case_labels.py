@@ -29,6 +29,13 @@ from src.entity_graph.resolve_entities import norm_org_name
 from src.model_a.lookalikes import resolve_settled_orgs
 
 _YEAR = re.compile(r"\b(19\d{2}|20\d{2})\b")
+_Y = r"((?:19|20)\d{2})"
+_SPAN = re.compile(r"(?:between|from)\s+(?:\w+\s+)?" + _Y + r"\s+(?:and|to|through|until|thru)\s+(?:\w+\s+)?" + _Y
+                   + r"|" + _Y + r"\s*(?:-|–|—|to|through)\s*" + _Y, re.I)
+_SINCE = re.compile(r"\b(?:since|beginning in|starting in|as early as)\s+(?:\w+\s+)?" + _Y, re.I)
+_IN_YEAR = re.compile(r"\b(?:in|during)\s+(?:\w+\s+)?" + _Y + r"\b", re.I)
+_NOT_CONDUCT = re.compile(r"(?:found|establish|incorporat|open|form|creat|enroll|licens|born|graduat|certif|"
+                          r"register|acquir|purchas|hired|joined)\w*\s*$", re.I)
 DEFAULT_LOOKBACK = 4         # conduct typically precedes announcement; conservative
 
 
@@ -44,9 +51,32 @@ def extract_conduct_window(text: str, announced_date: str = "",
     if len(s) >= 4 and s[:4].isdigit():
         ann_year = int(s[:4])
     cap = ann_year or 2026
-    years = sorted({int(y) for y in _YEAR.findall(str(text or "")) if 1995 <= int(y) <= cap})
-    if years:
-        return years[0], years[-1]
+    # 2026-11-02 (audit A7): only a STATED period counts ("between 2017 and 2021", "from
+    # 2018 through 2020", "2019 to 2022", "since 2016", "in 2020"); any other four-digit
+    # number in a release (a founding year, a docket number, a prior case) used to become
+    # conduct_start and made the frozen conduct gate near-vacuous
+    t = str(text or "")
+    spans = []
+    for m in _SPAN.finditer(t):
+        g = [x for x in m.groups() if x]
+        if len(g) < 2:
+            continue
+        a, b = int(g[0]), int(g[1])
+        if 1995 <= a <= cap and 1995 <= b <= cap and a <= b:
+            spans.append((a, b))
+    if spans:
+        return min(a for a, _ in spans), max(b for _, b in spans)
+    m = _SINCE.search(t)
+    if m and 1995 <= int(m.group(1)) <= cap:
+        return int(m.group(1)), cap
+    for m in _IN_YEAR.finditer(t):
+        # "in 2018" is a conduct year unless the words before it make it a founding,
+        # enrolment or licensing date ("established in 2001", "licensed in 2010")
+        before = t[max(0, m.start() - 40):m.start()].lower()
+        if _NOT_CONDUCT.search(before):
+            continue
+        if 1995 <= int(m.group(1)) <= cap:
+            return int(m.group(1)), int(m.group(1))
     if ann_year:
         return ann_year - lookback, ann_year
     return None, None
@@ -164,7 +194,9 @@ def charged_only_cases(case_db: pd.DataFrame) -> pd.DataFrame:
 
 def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       npi_to_org: pd.DataFrame,
-                      fuzzy_threshold: float | None = 0.92,
+                      fuzzy_threshold: float | None = None,   # 2026-11-02 (audit A6): the resolver's fuzzy tier was retired
+                                                              # on verification (26 / 26 / 39 percent confirmed); this
+                                                              # difflib pass had survived at both call sites. Off.
                       medicaid_only: bool = False,
                       asof_cutoff: str | None = None,
                       affiliations: pd.DataFrame | None = None,

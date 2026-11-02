@@ -305,3 +305,27 @@ def test_proof_quote_gate_and_retry_of_service_failed_tasks(tmp_path):
     (root / "enforcement").mkdir(parents=True, exist_ok=True)
     prompts = ml.build_lane("mfcu", root, None, states=["FL"], years=[2024], log=lambda *a: None)
     assert prompts and all("evidence_quote" in p["prompt"] for p in prompts)
+
+
+def test_audit_batch4_small_fixes():
+    """2026-11-02 architecture audit, the small verified defects: exact string checks in the
+    registry; the case-label fuzzy pass off; a conduct window only from a STATED period; the
+    enrollment-end and exclusion-derived prescriber columns fenced; a non-covered entity's
+    contract-pharmacy count NULL; prolonged = office add-ons; 90785 against every base."""
+    from src.model_a import run_registry as rr
+    from src.model_a import case_labels as cl
+    from src.model_a import provider_features_export as pfe
+    from src.ingest_cms import sector_schemes as ss
+    assert rr.eval_check("train = hard", {"train_policy": "hard+charged"})["ok"] is False
+    assert rr.eval_check("train = hard", {"train_policy": "hard"})["ok"] is True
+    assert rr.eval_check("network = KEEP", {"network_verdict": "KEEP / no measurable signal"})["ok"] is True
+    import inspect
+    assert inspect.signature(cl.build_case_labels).parameters["fuzzy_threshold"].default is None
+    assert cl.extract_conduct_window("Founded in 1998, the clinic billed between 2017 and 2021 for visits.", "2023-05-01") == (2017, 2021)
+    assert cl.extract_conduct_window("from January 2018 through March 2020 the defendant submitted claims", "2022-01-01") == (2018, 2020)
+    assert cl.extract_conduct_window("Case No. 2019-cv-1234. The company, established in 2001, settled.", "2024-01-01") == (2024 - 3, 2024) or \
+        cl.extract_conduct_window("Case No. 2019-cv-1234. The company, established in 2001, settled.", "2024-01-01")[1] == 2024
+    assert "mcd_ended_for_cause" in pfe.LEAKAGE_HARD and "rx_excluded_prescriber_share" in pfe.LEAKAGE_ADJACENT
+    assert "mue_violation_share" in pfe.RAW_SUBSCORE_INPUTS
+    assert "99356" not in ss.PROLONGED_CODES and "99354" in ss.PROLONGED_CODES
+    assert {"90791", "90853", "90837"} <= set(ss.PSY_INTERACTIVE_BASE_CODES)

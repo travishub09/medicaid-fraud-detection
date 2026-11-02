@@ -1495,6 +1495,30 @@ first, then paste" above every move/done block.
   read after a cycle (table, statuses + error texts, refusal reasons, case rows,
   `--page-probe N`). The audit rows (OMIG 1,550) are findings, not enforcement outcomes:
   out of the state ruler (the runner's jurisdiction filter) and page-verified like the rest.
+  ARCHITECTURE AUDIT (2026-11-02, `docs/ARCHITECTURE_AUDIT_2026-11.md`, READ IT before touching the
+  label chain, the rollups, the peer engine or the diagnostics): four parallel code reads, every
+  finding by file and line. THE VERDICT: five compounding institutional biases (training mass
+  proportional to the settled org's size; the ruler broadcast on the current-day graph with
+  case-clustered hits counted as independent; three max-over-members rollups; size-growing
+  rollup statistics; within-taxonomy percentiles that erase the class base rate) beside owner-run
+  dilution (fan-out counts rows that never train; the 'all' label removes the class's likeliest
+  forward cases from the list AND the grade; calibration learned with weak-tier events as
+  negatives; zero-where-null inputs scored at the median). BATCH 4 FIXED the same day (v29
+  semantics): exact '=' in registry checks (startswith let 'train = hard' pass on hard+charged);
+  case_labels fuzzy pass OFF; conduct windows from STATED periods only (any four-digit year used
+  to be conduct_start); mcd_ended_for_cause / mcd_paid_after_end LEAKAGE_HARD and the
+  rx_*_prescriber_share columns adjacent; contract_pharmacy_concentration NULL for a non-covered
+  entity (it was a universe-wide constant 0.047); office-only prolonged codes + the full 90785
+  base; mue_violation_share / ineligible_referral_share / billing_taxonomy_mismatch raw-driven;
+  pre-ranked and raw inputs never re-ranked. BATCH 5 (this week, before v29): per-case label
+  mass as an arm, fan-out over training bases, one conduct rule both sides, the ruler on the
+  as-of graph, Jaccard on the BOOK (it was the national top-50 by dollar-weighted mean: v17 /
+  v21 / v24 / v26 held on it), cases-touched@k, tie-aware hits, calibrate_oof with the training
+  masks, the tier label in drop_excluded / 'known', per-CCN facility inputs + capacity (the org
+  sum over the largest facility's beds; pos.capacity_billing_mismatch had no caller), the
+  NPI x month patient base, billing_after_deactivation per NPI, a weight-table lint. RULES: a
+  check's '=' is exact; a max over members is never a rollup for a pre-ranked percentile;
+  v29 waits for batch 5 (a run on batch 4 alone measures the same geometry).
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

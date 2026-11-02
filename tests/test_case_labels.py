@@ -25,8 +25,13 @@ def test_extract_conduct_window():
     assert extract_conduct_window("conduct in 2018", "2022-01-01") == (2018, 2018)
     # no years in text → conservative lookback ending at the announcement year
     assert extract_conduct_window("no dates here", "2023-06-01") == (2019, 2023)
-    # years after the announcement are ignored (can't be conduct)
-    assert extract_conduct_window("2016 and 2099", "2020-01-01") == (2016, 2016)
+    # 2026-11-02 (audit A7): a bare year is not a conduct period (founding years, docket
+    # numbers and prior cases used to become conduct_start); without a STATED span the
+    # lookback applies, and a span that runs past the announcement is not a span
+    assert extract_conduct_window("2016 and 2099", "2020-01-01") == (2016, 2020)
+    assert extract_conduct_window("Founded in 2001. Case No. 2019-cv-1234.", "2024-01-01") == (2020, 2024)
+    assert extract_conduct_window("between 2017 and 2021 the clinic billed", "2023-05-01") == (2017, 2021)
+    assert extract_conduct_window("since 2016 the defendant submitted claims", "2022-03-01") == (2016, 2022)
 
 
 def _graph_and_case(tmp_path):

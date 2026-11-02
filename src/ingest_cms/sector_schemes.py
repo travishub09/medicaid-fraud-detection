@@ -108,8 +108,13 @@ LAB_DRAW_CODES = frozenset({"36415", "36416"})
 PSY_60_CODES = frozenset({"90837", "90838"})
 PSY_ALL_CODES = frozenset({"90832", "90833", "90834", "90836", "90837", "90838"})
 PSY_INTERACTIVE_CODES = frozenset({"90785"})
-PROLONGED_CODES = frozenset({"99354", "99355", "99356", "99357", "99358", "99359", "99415", "99416",
-                             "99417", "G2212"})
+# 2026-11-02 (audit C3): the prolonged numerator is OFFICE-setting add-ons only (99356/99357 are
+# inpatient, 99358/99359 non-face-to-face: they attached to visits the office E/M denominator
+# never held, 469x on the 2023-12 matrix, and the v26 cap hid it)
+PROLONGED_CODES = frozenset({"99354", "99355", "99415", "99416", "99417", "G2212"})
+# 90785 (interactive complexity) attaches to 90791/90792 (diagnostic evaluations) and 90853
+# (group therapy) as well as to 90832-90838: they are the base it is measured against
+PSY_INTERACTIVE_BASE_CODES = frozenset({"90791", "90792", "90853"}) | frozenset({"90832", "90833", "90834", "90836", "90837", "90838"})
 EM_CODES = frozenset({"99202", "99203", "99204", "99205", "99211", "99212", "99213", "99214", "99215"})
 LAB_UNBUNDLING_CODES = LAB_PANEL_CODES | LAB_COMPONENT_CODES | LAB_DRAW_CODES
 SESSION_INFLATION_CODES = PSY_60_CODES | PROLONGED_CODES | PSY_INTERACTIVE_CODES
@@ -127,6 +132,7 @@ _LAB_DRAW_PRED = _in(LAB_DRAW_CODES)
 _PSY_PRED = _in(PSY_ALL_CODES)
 _PSY60_PRED = _in(PSY_60_CODES)
 _PSY_INT_PRED = _in(PSY_INTERACTIVE_CODES)
+_PSY_INT_BASE_PRED = _in(PSY_INTERACTIVE_BASE_CODES)
 _PROLONGED_PRED = _in(PROLONGED_CODES)
 _EM_PRED = _in(EM_CODES)
 
@@ -195,6 +201,7 @@ def sector_metrics_from_parquet(spending_path: str | Path,
                SUM(CASE WHEN {_PSY_PRED} THEN lines ELSE 0 END)     AS psy_lines,
                SUM(CASE WHEN {_PSY60_PRED} THEN lines ELSE 0 END)   AS psy60_lines,
                SUM(CASE WHEN {_PSY_INT_PRED} THEN lines ELSE 0 END) AS psy_int_lines,
+               SUM(CASE WHEN {_PSY_INT_BASE_PRED} THEN lines ELSE 0 END) AS psy_int_base_lines,
                SUM(CASE WHEN {_EM_PRED} THEN lines ELSE 0 END)      AS em_lines,
                SUM(CASE WHEN {_PROLONGED_PRED} THEN lines ELSE 0 END) AS prolonged_lines
         FROM b GROUP BY npi
@@ -250,7 +257,10 @@ def sector_metrics_from_parquet(spending_path: str | Path,
     # v26 (2026-10-26): add-on lines can exceed the base lines they attach to (90785 or a
     # prolonged code billed without the base visit: up to 199x and 469x on the 2023-12
     # matrix); the share is capped at 1, the maximum = the most add-ons a base line can carry
-    out["psy_interactive_share"] = (df["psy_int_lines"] / df["psy_lines"]).where(has_psy).clip(upper=1.0)
+    # 2026-11-02 (audit C3): 90785 is measured against every base it attaches to (evaluations,
+    # group therapy and the psychotherapy family), office-setting prolonged codes only
+    has_base = df["psy_int_base_lines"] > 0
+    out["psy_interactive_share"] = (df["psy_int_lines"] / df["psy_int_base_lines"]).where(has_base).clip(upper=1.0)
     out["em_prolonged_share"] = (df["prolonged_lines"] / df["em_lines"]).where(df["em_lines"] > 0).clip(upper=1.0)
 
     # impossible-day approximation: needs the public code→minutes map

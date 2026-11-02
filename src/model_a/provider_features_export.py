@@ -89,7 +89,11 @@ RAW_SUBSCORE_INPUTS = {"billing_after_deactivation", "billing_after_death",
                        # ties. These are bounded 0..1 shares / an HHI already: they drive their
                        # subscore RAW (clipped), the same treatment as the deactivation flags.
                        "contract_pharmacy_concentration", "px_opioid_la_share", "rx_spread_top_share",
-                       "code_concentration_hhi"}
+                       "code_concentration_hhi",
+                       # 2026-11-02 (audit D5 / W8): zero-where-no-event shares and a 0/1 flag whose
+                       # mid-rank percentile hands every zero ~0.49 (the median of a 95-percent-zero
+                       # cell) and the subscore ~0.48 for 'nothing happened'
+                       "mue_violation_share", "ineligible_referral_share", "billing_taxonomy_mismatch"}
 
 ADAPTER_FEATURE_COLS = sorted({
     col for wmap in DEFAULT_SCHEME_WEIGHTS.values() for col in wmap
@@ -110,12 +114,20 @@ LEAKAGE_HARD = ["billed_after_exclusion", "excluded_after_billing",
                   for c in ("months_after", "paid_after", "first_after", "last_after")],
                 # §E label widening: once these definitional flags feed the label,
                 # they are label-derived and must never also be features
-                "billing_after_deactivation", "billing_after_death"]
+                "billing_after_deactivation", "billing_after_death",
+                # 2026-11-02 (audit A5): the enrollment file's non-benign segment ends feed
+                # the label (exclusions_medicaid_enrollment -> mcd_enroll nodes, hard when the
+                # status text is fraud); the same statuses set these two columns
+                "mcd_ended_for_cause", "mcd_paid_after_end"]
 
 # Exclusion-PROXIMITY features: predictive (rings get caught together) but
 # correlated with the label — use only under a strict out-of-time split. Includes
 # the NPI-grain owner-role signals (sharper than the smeared graph proximity).
 LEAKAGE_ADJACENT = ["within_2_hops_of_exclusion", "excluded_within_2_hops", "excluded_within_2_hops_norm", "shell_score",
+                    "mcd_open_segments", "mcd_last_end_months",   # enrollment-end timing (audit A5)
+                    # exclusion-derived prescriber shares (audit D3): the same proximity class as
+                    # within_2_hops_of_exclusion, built from the graph's exclusion events
+                    "rx_excluded_prescriber_share", "rx_deactivated_prescriber_share",
                     "related_party_density", "related_party_density_norm",
                     "subscore_ownership_integrity", "has_excluded_owner",
                     "facility_has_excluded_owner_high",
@@ -586,8 +598,13 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
 
     # --- peer-normalize the raw adapter metrics (one-sided taxonomy percentile) ---
     adapter_present = [c for c in ADAPTER_FEATURE_COLS if c in m.columns]
-    peerpct = _one_sided_peer_pct(m, adapter_present, min_peer=min_peer)
-    adapter_present = [c for c in adapter_present if c in peerpct.columns]
+    # 2026-11-02 (audit D6): a pre-ranked facility percentile or a raw-driven share is never
+    # re-ranked inside the taxonomy cell (the percentile of a percentile shipped as a
+    # trainable __peerpct column, and an org-broadcast value re-ranked once per member)
+    to_rank = [c for c in adapter_present if c not in RAW_SUBSCORE_INPUTS and not _is_pre_ranked(c)]
+    peerpct = _one_sided_peer_pct(m, to_rank, min_peer=min_peer)
+    adapter_present = [c for c in adapter_present
+                       if c in peerpct.columns or c in RAW_SUBSCORE_INPUTS or _is_pre_ranked(c)]
     peerpct = peerpct.rename(columns={c: f"{c}__peerpct" for c in peerpct.columns})
 
     # --- subscore inputs: concepts + graph pass through; adapters use peer pct ---

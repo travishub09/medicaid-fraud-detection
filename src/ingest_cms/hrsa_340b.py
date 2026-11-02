@@ -187,7 +187,11 @@ def attach_340b(features: pd.DataFrame, org_nodes: pd.DataFrame,
     n0 = len(out)
     keys = out["org_node_id"].astype(str).map(_key)
     out["is_340b_covered_entity"] = (keys != "").astype(int)
-    counts = keys.map(pharm).fillna(0.0)
+    # 2026-11-02 (audit C1): an org that is not a covered entity has NO contract-pharmacy
+    # count (NULL), not zero; the zero fill made subscore_contract_pharmacy a universe-wide
+    # constant. A covered entity with no contract pharmacies on file is a real 0.
+    counts = keys.map(pharm)
+    counts = counts.where(keys != "", other=float("nan")).where(keys == "", other=counts.fillna(0.0))
     out["contract_pharmacy_concentration"] = (counts / float(saturation)).clip(upper=1.0)
     assert len(out) == n0, "340B attach fan-out"
     return out
