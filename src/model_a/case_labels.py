@@ -128,6 +128,66 @@ def _fuzzy_settled(org_nodes: pd.DataFrame, case_db: pd.DataFrame,
     return pd.DataFrame(rows, columns=cols)
 
 
+# THE BASES THAT TRAIN (audit A2, 2026-11-02): the export flips the hard PU label for
+# a named NPI, a resolved defendant and the settled org's billing NPIs; an
+# affiliated_individual row ("worked at a settling org") is METADATA only and never
+# trains. The per-case fan-out counts the training bases only, so a small practice
+# with many reassigning clinicians is no longer diluted by rows that never train.
+TRAINING_BASES = frozenset({"named_npi", "resolved_defendant", "org_billing"})
+DIRECT_BASES = frozenset({"named_npi", "resolved_defendant"})
+# rows that carry a BUDGET weight (the broadcast tiers); the affiliated tier takes
+# the same weight as its case's org_billing rows for consistency, though it never
+# trains, so its weight is irrelevant to the loss
+BROADCAST_BASES = frozenset({"org_billing", "affiliated_individual"})
+
+# THE PER-CASE BUDGET IS A POLICY (audit A1, 2026-11-02): under today's rule a settled
+# organization's training mass grows with its size up to 100 NPIs, so the solo
+# conviction is a rounding error in the loss. The policy is recorded on the frame
+# (attrs + the ``case_budget_policy`` column) and chosen by a pre-registration; the
+# default keeps today's rule so nothing changes until a run commits to another.
+#   npi100    label_weight = min(1, max_case_npis / fan-out), max_case_npis 100 (today)
+#   per_case  label_weight = 1 / fan-out on broadcast rows: one case = one unit of
+#             evidence however many NPIs it reaches; direct tiers stay 1.0
+#   cap5      label_weight = min(1, 5 / fan-out): a case is worth at most five NPIs
+CASE_BUDGET_POLICIES = ("npi100", "per_case", "cap5")
+DEFAULT_CASE_BUDGET = "npi100"
+
+
+def budget_weight(policy: str, case_fanout, max_case_npis: int | None = 100) -> pd.Series:
+    """The broadcast-row label_weight for a case that reaches ``case_fanout``
+    training NPIs under ``policy`` (CASE_BUDGET_POLICIES). ``max_case_npis`` is the
+    npi100 budget (None / 0 = every weight 1.0, the legacy off switch); the other
+    policies ignore it. Raises on an unknown policy (never a silent default)."""
+    policy = str(policy or DEFAULT_CASE_BUDGET).strip().lower()
+    if policy not in CASE_BUDGET_POLICIES:
+        raise ValueError(f"unknown case_budget policy {policy!r}; one of {CASE_BUDGET_POLICIES}")
+    fan = pd.to_numeric(pd.Series(case_fanout), errors="coerce").fillna(0).clip(lower=1).astype(float)
+    if policy == "npi100":
+        if not max_case_npis or max_case_npis <= 0:
+            return pd.Series(1.0, index=fan.index)
+        return pd.Series(np.minimum(1.0, float(max_case_npis) / fan), index=fan.index)
+    if policy == "per_case":
+        return 1.0 / fan
+    return pd.Series(np.minimum(1.0, 5.0 / fan), index=fan.index)        # cap5
+
+
+def conduct_ok(conduct_start, cut_year: int, missing: str = "drop") -> pd.Series:
+    """ONE conduct rule for both sides of the freeze (audit A3, 2026-11-02): a case is
+    a leakage-safe positive only when its conduct STARTED on/before the cutoff year.
+    Returns a boolean Series aligned to ``conduct_start``. ``missing`` says what a
+    row with NO conduct window is: 'drop' (default, the training export's rule: an
+    unplaceable case is never a positive) or 'keep' (the old ruler's fill-with-the-
+    cutoff reading, a gradable choice, never a default)."""
+    missing = str(missing or "drop").strip().lower()
+    if missing not in ("drop", "keep"):
+        raise ValueError(f"conduct_ok: missing must be 'drop' or 'keep', got {missing!r}")
+    cs = pd.to_numeric(pd.Series(conduct_start), errors="coerce")
+    ok = cs <= int(cut_year)
+    if missing == "keep":
+        ok = ok | cs.isna()
+    return ok.fillna(False).astype(bool)
+
+
 CHARGED_TIER = "charged"
 CHARGED_SOURCE = "charged_case"
 # COMMERCIAL-PLAN FRAUD (operator 2026-10-14; docs/EXCLUSION_SOURCES_AUDIT §commercial):
@@ -202,25 +262,32 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       affiliations: pd.DataFrame | None = None,
                       max_org_members: int = 150,
                       defendant_npis: pd.DataFrame | None = None,
-                      max_case_npis: int | None = 100) -> pd.DataFrame:
+                      max_case_npis: int | None = 100,
+                      case_budget: str = DEFAULT_CASE_BUDGET) -> pd.DataFrame:
     """Per-NPI DOJ-case labels: npi, fraud_label, fraud_scheme, conduct_start,
     conduct_end, case_ids, amount_usd, label_source, label_basis, label_weight,
-    case_fanout. One row per NPI (a provider in multiple cases takes the union of
-    schemes, the widest window, summed dollars, the LARGEST weight).
+    case_fanout, case_budget_policy. One row per NPI (a provider in multiple cases
+    takes the union of schemes, the widest window, summed dollars, the LARGEST
+    weight). The frame's ``attrs['case_budget_policy']`` names the policy too.
 
     PER-CASE BUDGET (``max_case_npis``, 2026-10-10, label audit finding: the top 5
     DOJ cases supplied 64% of the 4,044 DOJ positives in v7). The per-org guard
     above caps each settled ORG, but one case names many orgs (a chain settling
     under twenty enrolled names) and fans out across all of them. Every broadcast
-    row (org_billing / affiliated_individual) now carries
-    ``label_weight = min(1, max_case_npis / case_fanout)`` where ``case_fanout`` is
-    the number of distinct NPIs the case reaches through the broadcast tiers, so
-    a case contributes at most ``max_case_npis`` positives' worth of training
-    mass however many NPIs it touches. Direct tiers (named_npi /
-    resolved_defendant) always weigh 1.0. Rows are never dropped (the metadata
-    stays for stratified evaluation); the scorer reads the column as a
-    sample weight (company_list.oof_scores). None / 0 disables (every weight 1.0).
-    A matrix built with weights trains a different model: new pre-registration.
+    row (org_billing / affiliated_individual) carries a budget weight computed
+    from ``case_fanout`` = the number of distinct NPIs the case reaches through
+    the bases that TRAIN (named_npi / resolved_defendant / org_billing; audit A2:
+    affiliated_individual rows never flip the label, so they no longer count).
+    Direct tiers always weigh 1.0. Rows are never dropped (the metadata stays for
+    stratified evaluation); the scorer reads the column as a sample weight
+    (company_list.oof_scores). A matrix built with weights trains a different
+    model: new pre-registration.
+
+    ``case_budget`` is the POLICY (audit A1; CASE_BUDGET_POLICIES):
+      npi100    min(1, max_case_npis / case_fanout), the default = today's rule
+                (None / 0 ``max_case_npis`` disables: every weight 1.0)
+      per_case  1 / case_fanout on broadcast rows: one case, one unit of evidence
+      cap5      min(1, 5 / case_fanout)
 
     FOUR broadcast tiers, strongest first, recorded in ``label_basis``:
       named_npi              the case file names this NPI directly
@@ -256,9 +323,18 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
     cols = ["npi", "fraud_label", "fraud_scheme", "case_sector", "conduct_start",
             "conduct_end", "case_ids", "amount_usd", "label_source",
             "label_basis", "fca_strict_tier", "intervened", "qui_tam",
-            "label_weight", "case_fanout"]
+            "label_weight", "case_fanout", "case_budget_policy"]
+    case_budget = str(case_budget or DEFAULT_CASE_BUDGET).strip().lower()
+    if case_budget not in CASE_BUDGET_POLICIES:
+        raise ValueError(f"unknown case_budget policy {case_budget!r}; one of {CASE_BUDGET_POLICIES}")
+
+    def _empty() -> pd.DataFrame:
+        e = pd.DataFrame(columns=cols)
+        e.attrs["case_budget_policy"] = case_budget
+        return e
+
     if case_db is None or not len(case_db) or org_nodes is None or not len(org_nodes):
-        return pd.DataFrame(columns=cols)
+        return _empty()
     # v3+ case files carry QC provenance: superseded duplicates and
     # cannot-verify rows are marked usable=0 and must never become labels
     # (a duplicate would double-weight its case; an unverified row is not
@@ -272,7 +348,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                   f"non-usable rows (superseded dups / cannot-verify) "
                   f"per QC provenance")
         if not len(case_db):
-            return pd.DataFrame(columns=cols)
+            return _empty()
     # a row keyed to a press-release INDEX page (usao-xx/pr, /news) cites no announcement:
     # it is never evidence (2026-10-20 verification: 'Live Care Inc.' on usao-mdfl/pr)
     from src.enforcement.label_gates import is_index_url
@@ -283,7 +359,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         print(f"    [case_labels] dropped {int(idx.sum()):,} rows whose source is a listing page, not a release")
         case_db = case_db.loc[~idx]
         if not len(case_db):
-            return pd.DataFrame(columns=cols)
+            return _empty()
     if medicaid_only:
         text = (case_db.get("summary", pd.Series("", index=case_db.index)).fillna("")
                 .astype(str) + " "
@@ -291,7 +367,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                 .astype(str))
         case_db = case_db[text.str.contains("medicaid", case=False)]
         if not len(case_db):
-            return pd.DataFrame(columns=cols)
+            return _empty()
     # exact-name org resolution in TWO passes (2026-10-13): the OUTCOME rule below is
     # the gate, not a stated recovery (a conviction release rarely prints a dollar
     # amount; a charged row never does), so resolve_settled_orgs runs without its
@@ -500,14 +576,22 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
         print(f"    [case_labels] {n_guarded_org:,} settled-org billing broadcasts suppressed "
               f"(> {max_org_members} billing NPIs — a chain, not individual evidence)")
     if not rows:
-        return pd.DataFrame(columns=cols)
+        return _empty()
     df = pd.DataFrame(rows)
 
     if asof_cutoff:
         cut_year = int(str(asof_cutoff)[:4])
-        n_before = len(df)
-        df = df[df["conduct_start"].notna()
-                & (pd.to_numeric(df["conduct_start"], errors="coerce") <= cut_year)]
+        # ONE conduct rule, shared with the forward ruler (conduct_ok, audit A3): the
+        # conduct must have STARTED on/before the cutoff year; a case with no conduct
+        # window cannot be placed and is dropped (never filled with the cutoff)
+        n_missing = int(pd.to_numeric(df["conduct_start"], errors="coerce").isna().sum())
+        ok = conduct_ok(df["conduct_start"], cut_year, missing="drop")
+        n_late = int((~ok).sum()) - n_missing
+        if n_missing or n_late:
+            print(f"    [case_labels] conduct rule at {cut_year}: {n_late:,} rows whose conduct began "
+                  f"after the cutoff year and {n_missing:,} rows with no conduct window dropped "
+                  f"(missing_conduct=drop)")
+        df = df[ok.to_numpy()]
         # information availability: a case settled AFTER the freeze was unknown at
         # the freeze, however early its conduct began. Keep only cases announced on
         # or before the cutoff month; undated announcements are dropped too (strict).
@@ -524,7 +608,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
                       f"announced after {str(asof_cutoff)[:7]} or undated (conduct window alone "
                       f"would have leaked a post-cutoff settlement into the label)")
         if not len(df):
-            return pd.DataFrame(columns=cols)
+            return _empty()
 
     def _tag_union(vals) -> str:
         tags = set()
@@ -532,16 +616,19 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             tags.update(t.strip() for t in str(v or "").split(";") if t.strip())
         return ";".join(sorted(tags))
 
-    # the per-case budget: how many distinct NPIs each case reaches through the
-    # broadcast tiers, and the weight that caps its training mass at the budget
-    bc = df["label_basis"].isin(BROADCAST_BASES)
-    fan = (df.loc[bc].drop_duplicates(["case_ids", "npi"]).groupby("case_ids")["npi"].size()
-           if bc.any() else pd.Series(dtype=int))
+    # the per-case budget: how many distinct NPIs each case reaches through the bases
+    # that TRAIN (audit A2: affiliated_individual rows never flip the label, so they
+    # never count), and the policy weight on the broadcast rows (audit A1)
+    tr = df["label_basis"].isin(TRAINING_BASES)
+    fan = (df.loc[tr].drop_duplicates(["case_ids", "npi"]).groupby("case_ids")["npi"].size()
+           if tr.any() else pd.Series(dtype=int))
     df["case_fanout"] = df["case_ids"].map(fan).fillna(0).astype(int)
     df["label_weight"] = 1.0
-    if max_case_npis and max_case_npis > 0 and bc.any():
-        df.loc[bc, "label_weight"] = np.minimum(
-            1.0, float(max_case_npis) / df.loc[bc, "case_fanout"].clip(lower=1).astype(float))
+    bc = df["label_basis"].isin(BROADCAST_BASES)
+    if bc.any():
+        df.loc[bc, "label_weight"] = budget_weight(case_budget, df.loc[bc, "case_fanout"],
+                                                   max_case_npis=max_case_npis).to_numpy()
+    df["case_budget_policy"] = case_budget
     # a resolver row's own budget (a CIA party spread over its enrolled NPIs) caps
     # the direct-tier weight: 100 NPIs of one settlement are one settlement's mass
     if "provided_weight" in df.columns:
@@ -584,6 +671,7 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             # least-diluted broadcast it sits in
             "label_weight": float(g["label_weight"].max()),
             "case_fanout": int(g["case_fanout"].max()),
+            "case_budget_policy": case_budget,
         })
     if stats["no_outcome"] or stats["weak_strength"] or stats["charged"] or stats["commercial"]:
         print(f"    [case_labels] outcome rule: {stats['self_disclosure']:,} self-disclosure rows set aside; "
@@ -594,17 +682,18 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
               f"{stats['commercial']:,} commercial-plan conviction rows carry source "
               f"{COMMERCIAL_SOURCE} (trains under hard+commercial, never grades)")
     out = pd.DataFrame(out_rows, columns=cols)
+    out.attrs["case_budget_policy"] = case_budget
+    budget_off = case_budget == "npi100" and not (max_case_npis and max_case_npis > 0)
     conc = case_concentration(out, top=5)
     if len(conc) and conc["n_cases"].iat[0] > 5:
         print(f"    [case_labels] broadcast concentration: the top 5 of {int(conc['n_cases'].iat[0]):,} "
               f"cases supply {conc['share'].sum():.0%} of {len(out):,} case-labelled NPIs"
-              + (f"; {conc['weighted_share'].sum():.0%} of the training mass after the per-case "
-                 f"budget of {max_case_npis} (label_weight)" if max_case_npis else
-                 "; per-case budget OFF (every label_weight 1.0)"))
+              + ("; per-case budget OFF (every label_weight 1.0)" if budget_off else
+                 f"; {conc['weighted_share'].sum():.0%} of the training mass under case_budget "
+                 f"policy {case_budget}"
+                 + (f" (max_case_npis {max_case_npis})" if case_budget == "npi100" else "")
+                 + " (label_weight)"))
     return out
-
-
-BROADCAST_BASES = frozenset({"org_billing", "affiliated_individual"})
 
 
 def case_concentration(labels: pd.DataFrame, top: int = 5) -> pd.DataFrame:
@@ -643,6 +732,11 @@ def main() -> None:
     ap.add_argument("--case-db", required=True, help="case DB csv/parquet")
     ap.add_argument("--graph-dir", required=True, help="entity-graph output dir")
     ap.add_argument("--out", required=True, help="output case_labels parquet")
+    ap.add_argument("--case-budget", default=DEFAULT_CASE_BUDGET, choices=list(CASE_BUDGET_POLICIES),
+                    help="the per-case training budget POLICY (audit A1): npi100 = min(1, 100 / fan-out), "
+                         "today's rule; per_case = 1 / fan-out (one case, one unit of evidence); "
+                         "cap5 = min(1, 5 / fan-out). Recorded in case_budget_policy. A new policy is a "
+                         "new pre-registration.")
     args = ap.parse_args()
     g = Path(args.graph_dir)
     case_db = (pd.read_csv(args.case_db, dtype=str) if args.case_db.endswith(".csv")
@@ -652,11 +746,12 @@ def main() -> None:
     aff_p = g / "edges" / "reassigns_to_edges.parquet"
     affiliations = pd.read_parquet(aff_p) if aff_p.exists() else None
     labels = build_case_labels(case_db, org_nodes, npi_to_org,
-                               affiliations=affiliations)
+                               affiliations=affiliations, case_budget=args.case_budget)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     labels.to_parquet(args.out, index=False)
     print(f"Wrote {args.out} — {len(labels):,} NPIs labeled from DOJ cases "
-          f"({labels['fraud_scheme'].nunique() if len(labels) else 0} scheme types)")
+          f"({labels['fraud_scheme'].nunique() if len(labels) else 0} scheme types; "
+          f"case_budget policy {args.case_budget})")
 
 
 if __name__ == "__main__":

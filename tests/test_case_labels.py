@@ -190,12 +190,16 @@ def test_per_case_budget_weights_broadcast_rows_never_drops_them():
     assert by.loc["1234567893", "label_basis"] == "named_npi"
     assert by.loc["1234567893", "label_weight"] == 1.0
     bc = by[by["label_basis"] == "org_billing"]
-    assert (bc["case_fanout"] == 20).all()
-    assert (bc["label_weight"] == 0.5).all()                     # 10 / 20
-    # the case's training mass is capped at the budget (plus the direct row)
+    # 2026-11-02 (audit A2): the fan-out counts the bases that TRAIN, the named NPI
+    # among them (20 org_billing + 1 named = 21), never affiliated rows
+    assert (bc["case_fanout"] == 21).all()
+    assert (abs(bc["label_weight"] - 10.0 / 21.0) < 1e-9).all()  # 10 / 21
+    assert (out["case_budget_policy"] == "npi100").all() and out.attrs["case_budget_policy"] == "npi100"
+    # the case's training mass sits at about the budget (the direct row at 1.0 plus
+    # twenty broadcast rows at 10 / 21)
     conc = case_concentration(out, top=5)
     assert conc["case_id"].iat[0] == "c3" and int(conc["n_npis"].iat[0]) == 21
-    assert abs(float(conc["weighted_mass"].iat[0]) - 11.0) < 1e-9
+    assert abs(float(conc["weighted_mass"].iat[0]) - (1.0 + 20 * 10.0 / 21.0)) < 1e-9
     # budget off -> every weight 1.0, nothing else changes
     off = build_case_labels(case_db, org_nodes, npi_to_org, fuzzy_threshold=None,
                             max_case_npis=None)
