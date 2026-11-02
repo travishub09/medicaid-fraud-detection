@@ -492,3 +492,32 @@ def test_pmax_orders_and_the_operator_book_bar(tmp_path):
     r = restrict_to_pursuit_book(orgs, tmp_path, log=lambda *_: None)
     assert list(r["org_id"]) == ["org:7", "org:3"]
     assert len(restrict_to_pursuit_book(orgs, tmp_path / "nowhere", log=lambda *_: None)) == 3
+
+
+def test_dispatch_note_carries_the_services_words_and_honours_retry_after(tmp_path):
+    """2026-11-02: every create drew 429 after a top-up and the note said only '429 Client
+    Error'. The transport now raises with the body + Retry-After, the dispatcher keeps 500
+    characters of it and sleeps the Retry-After (capped) before retrying."""
+    import json
+    import requests
+    from src.model_a.pursuit_dossier import dispatch_research
+    from src.feeds.manus_research import _raise_with_body
+
+    class _Resp:
+        status_code, reason, url = 429, "Too Many Requests", "https://api.example/task.create"
+        text = '{"code": 429, "message": "daily task quota reached, resets 00:00 UTC"}'
+        headers = {"Retry-After": "7"}
+
+    class _T:
+        def create(self, prompt):
+            _raise_with_body(_Resp())
+
+    slept = []
+    pj = tmp_path / "p.jsonl"
+    pj.write_text(json.dumps({"org_id": "o0", "org_name": "n0", "prompt": "x"}) + "\n")
+    out = dispatch_research(pj, tmp_path / "reg.json", transport=_T(), backoff_s=(1,), sleep=slept.append)
+    assert out["dispatched"] == 0 and out.get("rate_limited")
+    assert "daily task quota" in out["note"] and "Retry-After 7" in out["note"]
+    assert slept == [7.0]                                            # the header beat the 1 s backoff
+    ok = type("R", (), {"status_code": 200})()
+    assert _raise_with_body(ok) is None

@@ -239,6 +239,15 @@ def _task_id_from(created) -> str:
     return ""
 
 
+def _retry_after_s(exc: Exception) -> float:
+    """The Retry-After header (seconds) on a refused response, 0 when absent."""
+    resp = getattr(exc, "response", None)
+    try:
+        return float((getattr(resp, "headers", None) or {}).get("Retry-After") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _is_transient(exc: Exception) -> bool:
     """429 (rate limit) or a 5xx (the research service's own error, seen live as
     'HTTP 500 for /v2/task.create'): retry with backoff, then stop cleanly with the
@@ -308,18 +317,20 @@ def _dispatch_locked(prompts_path: Path, registry_path: Path, transport, max_new
             skipped += 1
             continue
         created = None
+        retry_after = 0.0
         for attempt, wait in enumerate((0,) + tuple(backoff_s)):
-            if wait:
-                sleep(wait)
+            if wait or retry_after:
+                sleep(max(float(wait), min(retry_after, 300.0)))   # the service's Retry-After wins, capped
             try:
                 created = transport.create(item["prompt"])
                 break
             except Exception as e:                    # noqa: BLE001
                 if _is_transient(e) and attempt < len(backoff_s):
+                    retry_after = _retry_after_s(e)
                     continue
                 if _is_transient(e):
                     rate_limited = True
-                    last_error = str(e)[:200]
+                    last_error = str(e)[:500]       # the service's own words (body + Retry-After) survive
                     break
                 registry_path.write_text(json.dumps(reg, indent=2), encoding="utf-8")
                 raise

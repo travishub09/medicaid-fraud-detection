@@ -85,6 +85,22 @@ _PHI_MARKERS = re.compile(
     r")", re.IGNORECASE)
 
 
+def _raise_with_body(r) -> None:
+    """raise_for_status with the RESPONSE BODY and the Retry-After header in the message.
+    2026-11-02: after a credit top-up every task.create still drew 429 and the dispatcher's
+    note said only "429 Client Error: Too Many Requests": the service's own words (a
+    concurrency cap, a daily task quota, a workspace without the credits) were thrown away."""
+    import requests
+    if r.status_code < 400:
+        return
+    body = (r.text or "")[:400].replace("\n", " ")
+    ra = r.headers.get("Retry-After") if hasattr(r, "headers") else None
+    msg = f"{r.status_code} {getattr(r, 'reason', '')} for url: {r.url}: {body}"
+    if ra:
+        msg += f" (Retry-After {ra})"
+    raise requests.HTTPError(msg, response=r)
+
+
 class ManusTransport:
     """Live Manus v2 transport. ``create`` dispatches, ``get`` polls."""
 
@@ -112,7 +128,7 @@ class ManusTransport:
                 **opts}
         r = requests.post(f"{self.base}/task.create", json=body,
                           headers=self._headers(), timeout=self.timeout)
-        r.raise_for_status()
+        _raise_with_body(r)
         return r.json()
 
     def get(self, task_id: str) -> dict:
