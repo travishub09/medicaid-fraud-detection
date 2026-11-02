@@ -245,3 +245,31 @@ def test_owner_exclusion_check_is_a_no_op_without_inputs(tmp_path, capsys):
                          "enrolled_after_owner_exclusion_status": "graph files missing"})
     assert "This check did not run: no npi_to_org" in md and "This check did not run: graph files missing" in md
     assert "legitimately hired replacement clinician" in md and "name collision on the owner match" in md
+
+
+def test_national_share_screen_lists_a_proprietary_code_and_never_ranks_it(tmp_path):
+    """2026-11-02, the first real run: the top of the table was Cochlear / Novocure / Zoll at 100
+    percent of codes only they bill. A share is a market fact only on a code many suppliers bill:
+    a maker alone on its own code is proprietary_code (listed), never a candidate."""
+    import pandas as pd
+    fact, dim, _ = _dme_fact(tmp_path)
+    f = pd.read_parquet(fact)
+    maker = "1992999985"
+    rows = pd.DataFrame([{**f.iloc[0].to_dict(), "billing_npi": maker, "servicing_npi": maker, "hcpcs_code": "E0766",
+                          "total_paid": 1_900_000.0, "total_claim_lines": 300.0}])
+    for c in f.columns:
+        if c not in rows.columns:
+            rows[c] = f.iloc[0][c]
+    pd.concat([f, rows[f.columns]], ignore_index=True).to_parquet(fact, index=False)
+    d = pd.read_parquet(dim)
+    d = pd.concat([d, pd.DataFrame([{**d.iloc[0].to_dict(), "npi": maker, "org_legal_name": "ONE MAKER INC",
+                                     "addr_state": "NH"}])], ignore_index=True)
+    d.to_parquet(dim, index=False)
+    df = ts.run_screen(fact, ts.SCREENS["dme_national_share"], provider_dim=dim)
+    st = dict(zip(df["npi"], df["status"]))
+    assert st[maker] == "proprietary_code" and st[BIG] == "candidate"
+    row = df[df["npi"] == maker].iloc[0]
+    assert row["any_code"] == "E0766" and float(row["any_code_share"]) == 1.0 and int(row["any_code_nat_suppliers"]) == 1
+    assert pd.isna(row["national_code_share"])
+    md = ts.to_markdown({"dme_national_share": df})
+    assert "proprietary_code" in md and "ONE MAKER INC" in md

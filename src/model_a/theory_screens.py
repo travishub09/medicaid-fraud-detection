@@ -84,6 +84,14 @@ class Screen:
     national_share_rule: bool = False
     min_national_share: float = 0.05
     min_code_dollars: float = 250_000.0
+    # 2026-11-02 (the first run): the top of the table was Cochlear, Novocure, Zoll, Tactile and
+    # Bioventus at 100 percent of codes only THEY bill (a maker's proprietary product under its own
+    # supplier number), beside codes that two or three suppliers in the nation bill to Medicaid at
+    # all. A share is a market fact only on a code MANY suppliers bill: the share is taken over
+    # codes with at least min_national_suppliers billing NPIs and min_national_dollars nationally;
+    # a supplier whose only dominant code is thinner is listed as proprietary_code, never ranked
+    min_national_suppliers: int = 0
+    min_national_dollars: float = 0.0
 
 
 SCREENS: dict[str, Screen] = {
@@ -330,6 +338,9 @@ SCREENS: dict[str, Screen] = {
         national_share_rule=True,
         min_national_share=0.05,
         min_code_dollars=250_000.0,
+        min_national_suppliers=25,
+        min_national_dollars=2_000_000.0,
+        report_statuses=("proprietary_code",),
         innocent=("a legitimate national mail-order specialist (diabetic supplies, ostomy, CPAP resupply) whose "
                   "share is the business model, with a storefront, a licence in every state it ships to, and orders "
                   "from the patient's own physician",
@@ -444,20 +455,38 @@ def _national_share_table(con, p: str, key: str, code: str, lines: str, numpred:
         WITH sh AS (
             SELECT b.npi, b.hcpcs, b.paid, b.lines, n.nat_paid, n.nat_lines, n.nat_suppliers,
                    CASE WHEN n.nat_lines > 0 THEN b.lines / n.nat_lines END AS line_share,
-                   CASE WHEN n.nat_paid > 0 THEN b.paid / n.nat_paid END AS dollar_share
+                   CASE WHEN n.nat_paid > 0 THEN b.paid / n.nat_paid END AS dollar_share,
+                   (n.nat_suppliers >= {int(screen.min_national_suppliers)}
+                    AND n.nat_paid >= {float(screen.min_national_dollars)}) AS is_market
             FROM bycode b JOIN natcode n USING (hcpcs)
             WHERE b.paid >= {float(screen.min_code_dollars)}
         ),
         ranked AS (
             SELECT *, COALESCE(line_share, dollar_share) AS share,
                    ROW_NUMBER() OVER (PARTITION BY npi ORDER BY COALESCE(line_share, dollar_share) DESC, paid DESC) AS rn
+            FROM sh WHERE is_market
+        ),
+        anyranked AS (
+            SELECT npi, hcpcs, COALESCE(line_share, dollar_share) AS share, nat_suppliers, nat_paid,
+                   ROW_NUMBER() OVER (PARTITION BY npi ORDER BY COALESCE(line_share, dollar_share) DESC, paid DESC) AS rn
             FROM sh
+        ),
+        market AS (
+            SELECT npi, share AS national_code_share, hcpcs AS top_share_code,
+                   line_share AS top_share_lines, dollar_share AS top_share_dollars,
+                   paid AS top_code_paid, lines AS top_code_lines,
+                   nat_paid AS top_code_nat_paid, nat_lines AS top_code_nat_lines, nat_suppliers AS top_code_nat_suppliers
+            FROM ranked WHERE rn = 1
+        ),
+        best_any AS (
+            SELECT npi, share AS any_code_share, hcpcs AS any_code, nat_suppliers AS any_code_nat_suppliers,
+                   nat_paid AS any_code_nat_paid
+            FROM anyranked WHERE rn = 1
         )
-        SELECT npi, share AS national_code_share, hcpcs AS top_share_code,
-               line_share AS top_share_lines, dollar_share AS top_share_dollars,
-               paid AS top_code_paid, lines AS top_code_lines,
-               nat_paid AS top_code_nat_paid, nat_lines AS top_code_nat_lines, nat_suppliers AS top_code_nat_suppliers
-        FROM ranked WHERE rn = 1""").df()
+        SELECT a.npi, m.national_code_share, m.top_share_code, m.top_share_lines, m.top_share_dollars,
+               m.top_code_paid, m.top_code_lines, m.top_code_nat_paid, m.top_code_nat_lines, m.top_code_nat_suppliers,
+               a.any_code_share, a.any_code, a.any_code_nat_suppliers, a.any_code_nat_paid
+        FROM best_any a LEFT JOIN market m USING (npi)""").df()
 
 
 def _codes_table(con, name: str, codes) -> None:
@@ -535,7 +564,10 @@ def _weekdays_in_month_sql(month_expr: str) -> str:
 
 NATIONAL_SHARE_COLS = ("national_code_share", "top_share_code", "top_share_lines", "top_share_dollars",
                        "top_code_paid", "top_code_lines", "top_code_nat_paid", "top_code_nat_lines",
-                       "top_code_nat_suppliers")
+                       "top_code_nat_suppliers",
+                       # the best share over EVERY code (no market filter): a proprietary / thin code is
+                       # reported here and never ranked
+                       "any_code_share", "any_code", "any_code_nat_suppliers", "any_code_nat_paid")
 REFERRER_SHARE_COLS = ("out_of_state_order_share", "n_referrers", "n_referrer_states", "referred_weight")
 
 
@@ -786,8 +818,16 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("address_clean"); reason.append("the practice address is neither a mailbox nor a SUITE shared by "
                                                            f"{screen.min_addr_orgs}+ organizations (a building without a unit "
                                                            "on the line is an office park, not a cluster)")
+        elif screen.national_share_rule and pd.isna(getattr(r, "national_code_share", pd.NA)) \
+                and not pd.isna(getattr(r, "any_code_share", pd.NA)) \
+                and float(r.any_code_share) >= screen.min_national_share:
+            status.append("proprietary_code"); reason.append(
+                f"{float(r.any_code_share):.0%} of {getattr(r, 'any_code', '')} but only {int(r.any_code_nat_suppliers)} "
+                f"suppliers / ${float(r.any_code_nat_paid):,.0f} bill it nationally (under {screen.min_national_suppliers} / "
+                f"${screen.min_national_dollars:,.0f}): a maker's own product or a thin code, not a market share")
         elif screen.national_share_rule and pd.isna(getattr(r, "national_code_share", pd.NA)):
-            status.append("fails_national_share"); reason.append(f"no single code carries ${screen.min_code_dollars:,.0f} of the supplier's dollars")
+            status.append("fails_national_share"); reason.append(f"no code billed by {screen.min_national_suppliers}+ suppliers nationally "
+                                                                 f"carries ${screen.min_code_dollars:,.0f} of the supplier's dollars")
         elif screen.national_share_rule and float(r.national_code_share) < screen.min_national_share:
             status.append("fails_national_share"); reason.append(f"largest share of a national code {float(r.national_code_share):.1%} "
                                                                  f"(rule {screen.min_national_share:.0%})")
@@ -886,8 +926,9 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50, policy_df: pd.D
               + (f"; the practice address is a mailbox / PO box, or a SUITE (a unit on the line) shared by {s.min_addr_orgs}+ "
                  "distinct organizations (a mailbox ranks first, then dollars)" if s.address_rule else "")
               + (f"; the supplier's share of the NATION's lines on one code >= {s.min_national_share:.0%} (the max over its "
-                 f"codes carrying >= ${s.min_code_dollars:,.0f} of its own dollars; the national base counts every billing "
-                 "NPI on the code); the out-of-state order share = the share of the supplier's referred dollars (or lines) "
+                 f"codes carrying >= ${s.min_code_dollars:,.0f} of its own dollars, on codes that >= {s.min_national_suppliers} "
+                 f"suppliers and >= ${s.min_national_dollars:,.0f} nationally bill, so a maker's proprietary code is listed as "
+                 "proprietary_code and never ranked; the national base counts every billing NPI on the code); the out-of-state order share = the share of the supplier's referred dollars (or lines) "
                  "whose ordering physician's NPPES state differs from the supplier's, reported, not ruled"
                  if s.national_share_rule else "")
               + ("; occupancy = peak lines a calendar day over licensed capacity where a capacity is known (over 1.0 "
