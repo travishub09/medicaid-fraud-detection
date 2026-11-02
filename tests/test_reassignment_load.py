@@ -52,3 +52,22 @@ def test_absent_reassignment_stays_none(tmp_path):
     _write_min_inputs(proc)
     tables = _load(proc)
     assert tables["reassignment"] is None
+
+
+def test_exclusion_sources_with_mixed_date_types_concatenate_and_write(tmp_path):
+    """v28 (2026-11-02): a lane-written exclusions file carried excl_date as an integer
+    beside the LEIE's strings; the concat made an object column pyarrow refused to write."""
+    import pandas as pd
+    from src.entity_graph.__main__ import harmonize_exclusion_frames
+    a = pd.DataFrame({"npi": ["1003000100"], "excl_type": ["1128a1"], "excl_date": ["2021-03-01"],
+                      "name_key": ["A"], "entity_name": ["A"]})
+    b = pd.DataFrame({"npi": [1003000415], "excl_type": ["field:over_capacity"], "excl_date": [20240601],
+                      "name_key": ["B"], "entity_name": ["B"]})
+    c = pd.DataFrame({"npi": ["1003000407"], "excl_type": ["state_term:FL:x"],
+                      "excl_date": pd.to_datetime(["2022-05-01"]), "name_key": ["C"], "entity_name": [None]})
+    ex = pd.concat(harmonize_exclusion_frames([a, b, c]), ignore_index=True)
+    assert ex["excl_date"].tolist() == ["2021-03-01", "20240601", "2022-05-01"]
+    assert ex["npi"].tolist() == ["1003000100", "1003000415", "1003000407"]
+    assert pd.isna(ex.loc[2, "entity_name"])
+    ex.to_parquet(tmp_path / "ok.parquet", index=False)           # the write that failed on v28
+    assert len(pd.read_parquet(tmp_path / "ok.parquet")) == 3

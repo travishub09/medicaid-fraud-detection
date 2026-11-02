@@ -72,6 +72,35 @@ def dedup_exclusion_sources(ex: pd.DataFrame, log=log) -> pd.DataFrame:
     return ex.loc[~dup].reset_index(drop=True)
 
 
+_EXCL_TEXT_COLS = ("npi", "excl_type", "excl_date", "reinstate_date", "listed_date", "dob", "zip",
+                   "upin", "state", "city", "entity_name", "name_key", "source", "general", "specialty")
+
+
+def harmonize_exclusion_frames(frames: list[pd.DataFrame]) -> list[pd.DataFrame]:
+    """One dtype per column across every exclusions_*.parquet before they are concatenated
+    (2026-11-02: v28's current-day graph rebuild died writing the exclusion nodes, "object
+    of type str cannot be converted to int, column excl_date": one lane-written file carried
+    the date as an integer beside the LEIE's strings, and the concat produced an object
+    column pyarrow refuses). Dates become YYYY-MM-DD strings, every identifier / text column a
+    string, missing stays missing; the files on disk are untouched."""
+    out = []
+    for f in frames:
+        if f is None or not len(f):
+            continue
+        f = f.copy()
+        for c in _EXCL_TEXT_COLS:
+            if c not in f.columns:
+                continue
+            col = f[c]
+            if pd.api.types.is_datetime64_any_dtype(col):
+                f[c] = col.dt.strftime("%Y-%m-%d").astype("string")
+            else:
+                s = col.astype("string")
+                f[c] = s.mask(s.str.strip().isin(["", "nan", "None", "NaT", "<NA>"]), pd.NA)
+        out.append(f)
+    return out
+
+
 def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
     tables: dict[str, pd.DataFrame] = {}
     for name in REQUIRED + OPTIONAL:
@@ -95,7 +124,8 @@ def _load(input_dir: Path) -> dict[str, pd.DataFrame]:
                 continue
             frames.append(pd.read_parquet(p))
             log(f"    + merged exclusion source {p.name}")
-        tables["exclusions"] = dedup_exclusion_sources(pd.concat(frames, ignore_index=True), log=log)
+        tables["exclusions"] = dedup_exclusion_sources(
+            pd.concat(harmonize_exclusion_frames(frames), ignore_index=True), log=log)
     # Reassignment (the CMS Revalidation Clinic Group Practice Reassignment file →
     # provider→group affiliation edges). Accept the raw CSV straight from
     # preclean/reassignment/ when no prebuilt parquet exists — the edge builder

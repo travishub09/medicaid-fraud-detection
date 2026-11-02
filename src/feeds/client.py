@@ -52,6 +52,12 @@ def default_fetch_json(url: str, params: dict | None = None,
             resp = requests.get(url, params=params, headers=hdrs, timeout=timeout)
             if resp.status_code in (429, 500, 502, 503, 504):
                 last_err = RuntimeError(f"HTTP {resp.status_code} from {url}")
+            elif resp.status_code >= 400:
+                # 2026-11-02: a 400 from the docket search said only "Bad Request" five
+                # times; the service's own words (an invalid token, a removed filter) are
+                # the diagnosis, so they ride in the error
+                body = (resp.text or "")[:300].replace("\n", " ")
+                raise RuntimeError(f"HTTP {resp.status_code} from {url}: {body}")
             else:
                 resp.raise_for_status()
                 return resp.json()
