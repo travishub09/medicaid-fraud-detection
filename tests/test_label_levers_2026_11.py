@@ -243,6 +243,39 @@ class _FakeCL:
         return 13
 
 
+class _StaleCL(_FakeCL):
+    """CourtListener's copy of the docket was scraped while sealed: no entries until the
+    docket sheet is bought (request_type 1), then entry 1 appears (2026-11-02, Sims)."""
+    def __init__(self):
+        super().__init__()
+        self.refreshed = False
+
+    def get(self, url, params=None):
+        if url.endswith("docket-entries/") and not self.refreshed:
+            return {"results": []}
+        return super().get(url, params)
+
+    def post(self, url, data):
+        if data.get("request_type") == 1:
+            assert data["docket"] == "67387905" and data["pacer_username"] == "u"
+            self.refreshed = True
+        return super().post(url, data)
+
+
+def test_recap_fetch_refreshes_a_stale_docket_sheet_then_buys(tmp_path, monkeypatch):
+    monkeypatch.setenv("COURTLISTENER_TOKEN", "t")
+    monkeypatch.setenv("PACER_USERNAME", "u")
+    monkeypatch.setenv("PACER_PASSWORD", "p")
+    svc = _StaleCL()
+    plain = rf.fetch_pdf("67387905", 1, tmp_path / "a", transport=svc, log=lambda *_: None)
+    assert plain["status"] == "no_entry" and not svc.posts
+    got = rf.fetch_pdf("67387905", 1, tmp_path / "b", transport=svc, refresh=True, sleep=lambda s: None, log=lambda *_: None)
+    assert got["status"] == "purchased" and Path(got["dest"]).exists()
+    assert [d["request_type"] for d in svc.posts] == [1, 2]          # the sheet first, then the document
+    dry = rf.fetch_pdf("67387905", 1, tmp_path / "c", transport=_StaleCL(), refresh=True, dry_run=True, log=lambda *_: None)
+    assert dry["status"] == "no_entry"                                 # a dry run never buys the sheet
+
+
 def test_recap_fetch_archived_purchase_sealed_and_dry_run(tmp_path, monkeypatch):
     monkeypatch.setenv("COURTLISTENER_TOKEN", "t")
     monkeypatch.setenv("PACER_USERNAME", "u")

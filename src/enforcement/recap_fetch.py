@@ -92,15 +92,49 @@ def _doc_url(doc: dict) -> str:
     return str(doc.get("resource_uri") or doc.get("absolute_url") or (CL + f"recap-documents/{doc.get('id')}/"))
 
 
+def refresh_docket(docket_id: str, transport, sleep=time.sleep, max_wait_s: int = MAX_WAIT_S, log=print) -> dict:
+    """Buy the DOCKET SHEET from PACER through the RECAP Fetch API (request_type 1) so the
+    CourtListener docket carries the entries filed since it was last scraped. 2026-11-02:
+    the Sims docket (67387905) was scraped while the qui tam was SEALED, so CourtListener
+    listed no entry 1 after the unsealing and the complaint could not be bought until the
+    sheet was refreshed. Costs ten cents a page of the sheet; nothing when it fails."""
+    user, pw = os.environ.get("PACER_USERNAME", ""), os.environ.get("PACER_PASSWORD", "")
+    if not user or not pw:
+        return {"status": "failed", "note": "PACER_USERNAME / PACER_PASSWORD are not set (the VM's ~/.medicaid_env)"}
+    req = transport.post(CL + "recap-fetch/", {"request_type": 1, "docket": str(docket_id),
+                                              "pacer_username": user, "pacer_password": pw})
+    rid = req.get("id")
+    log(f"[recap_fetch] docket sheet refresh requested (fetch id {rid}) for docket {docket_id}")
+    waited, status = 0, req.get("status")
+    while status not in (FETCH_SUCCESS, FETCH_FAILED) and waited < max_wait_s:
+        sleep(5)
+        waited += 5
+        req = transport.get(CL + f"recap-fetch/{rid}/")
+        status = req.get("status")
+    if status != FETCH_SUCCESS:
+        return {"status": "failed", "note": f"docket refresh {rid} ended with status {status}: "
+                                             f"{req.get('message') or req.get('error_message') or ''}"[:300]}
+    return {"status": "refreshed", "fetch_id": rid}
+
+
 def fetch_pdf(docket_id: str, entry_number: int, out_dir: Path, transport=None, dry_run: bool = False,
-              sleep=time.sleep, max_wait_s: int = MAX_WAIT_S, log=print) -> dict:
+              sleep=time.sleep, max_wait_s: int = MAX_WAIT_S, log=print, refresh: bool = False) -> dict:
     """Buy (or take from the archive) the entry's PDF into ``out_dir``. Returns a dict
-    with status: archived | purchased | dry_run | no_entry | no_document | sealed | failed."""
+    with status: archived | purchased | dry_run | no_entry | no_document | sealed | failed.
+    ``refresh``: when the entry is missing from CourtListener's copy of the docket, buy the
+    docket sheet first (refresh_docket) and look again."""
     transport = transport or RequestsTransport()
     found = find_document(docket_id, entry_number, transport)
+    if found["status"] == "no_entry" and refresh and not dry_run:
+        log(f"[recap_fetch] no_entry: {found['note']} -> refreshing the docket sheet from PACER")
+        r = refresh_docket(docket_id, transport, sleep=sleep, max_wait_s=max_wait_s, log=log)
+        if r["status"] != "refreshed":
+            return r
+        found = find_document(docket_id, entry_number, transport)
     if found["status"] != "ok":
         log(f"[recap_fetch] {found['status']}: {found['note']}")
         return found
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
     doc = found["document"]
     doc_id = doc.get("id")
     dest = Path(out_dir) / f"docket{docket_id}_entry{entry_number}.pdf"
@@ -150,8 +184,11 @@ def main() -> None:
     ap.add_argument("--out", required=True, help="folder for the PDF (work product: under <data_root>/enforcement/)")
     ap.add_argument("--dry-run", action="store_true", help="say whether it is archived (free) or what a purchase would cost")
     ap.add_argument("--max-wait", type=int, default=MAX_WAIT_S)
+    ap.add_argument("--refresh-docket", action="store_true",
+                    help="when CourtListener lists no such entry, buy the docket sheet from PACER first "
+                         "(a docket scraped while sealed carries no entries) and look again")
     a = ap.parse_args()
-    res = fetch_pdf(a.docket, a.entry, Path(a.out), dry_run=a.dry_run, max_wait_s=a.max_wait)
+    res = fetch_pdf(a.docket, a.entry, Path(a.out), dry_run=a.dry_run, max_wait_s=a.max_wait, refresh=a.refresh_docket)
     print(f"[recap_fetch] {res}")
     if res.get("status") in ("failed",):
         raise SystemExit(2)
