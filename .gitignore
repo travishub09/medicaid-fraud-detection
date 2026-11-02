@@ -33,3 +33,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Claude Code session files: builder worktrees and local settings, never repo content
+.claude/
