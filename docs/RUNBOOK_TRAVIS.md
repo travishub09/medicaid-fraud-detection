@@ -316,7 +316,20 @@ in three steps:
   respiratory-panel shares OF the lab dollars (the mix, not the size) — each ranked
   one-sided against peers and blended (`ingest_cms/sector_schemes.py`). A provider
   with no lab dollars is unscored (NULL), never zero; a lab that bills no toxicology
-  reads 0 on that share, a real observation. Feeding files: Spending.
+  reads 0 on that share, a real observation. **The CLIA gap** (v30, 2026-11-02,
+  `ingest_cms/clia.py`, two more inputs at 0.25 each, raw-driven): `clia_volume_ratio` =
+  lab-family lines billed in the busiest calendar year over the ANNUAL TEST VOLUME the
+  lab reported on its own CLIA certificate (NULL without a linked certificate or a
+  reported volume; a ratio at or above 1 means Medicaid lines alone exceed the whole
+  certificate), and `clia_waiver_high_complexity` = 1 when a Certificate-of-Waiver lab
+  (waived tests only) bills definitive drug testing (G0480 to G0483), molecular / genetic
+  (81105 to 81479, PLA) or PCR (87471 to 87801) codes. *Why:* a lab whose certificate
+  reports about 600 tests a year billed 105,977 genetic tests, and two labs certified for
+  10 to 15k COVID tests a year billed 90k and 157k: the certificate and the claims are two
+  of the provider's own filings, and a contradiction between them is the cheapest
+  corroboration a lab theory has. Link: the NPPES other identifier typed CLIA, else exact
+  name + address. Feeding files: Spending, the POS CLIA laboratory file (`preclean/clia/`),
+  NPPES (the other identifiers), provider_dim.
 - **`evv_personal_care`** (v22, 2026-10-22) — *detects* personal-care and attendant hours
   billed that were not worked (T1019 / T1020 / S5125 / S5126 / T2025 / H2014), the
   largest Medicaid-specific fraud sector. *How:* the family's share of the provider's

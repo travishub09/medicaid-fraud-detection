@@ -93,7 +93,12 @@ RAW_SUBSCORE_INPUTS = {"billing_after_deactivation", "billing_after_death",
                        # 2026-11-02 (audit D5 / W8): zero-where-no-event shares and a 0/1 flag whose
                        # mid-rank percentile hands every zero ~0.49 (the median of a 95-percent-zero
                        # cell) and the subscore ~0.48 for 'nothing happened'
-                       "mue_violation_share", "ineligible_referral_share", "billing_taxonomy_mismatch"}
+                       "mue_violation_share", "ineligible_referral_share", "billing_taxonomy_mismatch",
+                       # 2026-11-02 (the CLIA gap, ingest_cms/clia.py): billed lab lines a year over the
+                       # certificate's reported annual volume (>= 1 = Medicaid lines alone exceed the
+                       # whole certificate: the maximum evidence, clipped by the engine) and the 0/1
+                       # waiver-only-lab-billing-high-complexity flag; both NULL for every non-lab
+                       "clia_volume_ratio", "clia_waiver_high_complexity"}
 
 ADAPTER_FEATURE_COLS = sorted({
     col for wmap in DEFAULT_SCHEME_WEIGHTS.values() for col in wmap
@@ -238,7 +243,10 @@ def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
                   "facility_excluded_owner_n_probable", "clean_basis",
                   "exclusion_label_sources", "weak_label_votes",
                   "rx_spread_ref", "drug_markup_ref", "facility_grain_basis",
-                  "capacity_mismatch_basis"}
+                  "capacity_mismatch_basis",
+                  # the CLIA certificate class held (compliance / accreditation / ppm /
+                  # waiver: a string the dossier reads; the 0/1 clia_waiver_only trains)
+                  "clia_certificate_type"}
                 or c.startswith("rule_") or c.endswith("_reason")):
             return "operational"
         return "unclassified"
@@ -3296,6 +3304,60 @@ def main() -> None:
                         audit("    [policy] skipped: the library yielded no policy column")
         except Exception as e:
             audit(f"    [policy] skipped: {e}")
+
+        # 2026-11-02: THE CLIA GAP (ingest_cms/clia.py) — the lab's billed lab lines a year
+        # against the annual test volume its own CLIA certificate reports, and a waiver-only
+        # lab billing high-complexity codes. Certificates: preclean/clia/ (the POS CLIA file);
+        # the link: NPPES other identifiers typed 'clia' (processed/nppes_other_ids.parquet,
+        # ccn_npi_crosswalk --other-ids-out) then exact name + address on provider_dim; the
+        # billed lines: the as-of fact in DuckDB. Under a freeze only certificates effective
+        # on/before the cutoff count.
+        try:
+            from src.ingest_cms import clia as _clia
+            clia_dir = preclean / "clia"
+            clia_p = (_first_existing(clia_dir, "*.csv", "*.zip", "*.parquet")
+                      if clia_dir.is_dir() else None)
+            pdim_clia = _first_existing(processed, "provider_dim.parquet")
+            spend_clia = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            if _have("clia"):
+                pass
+            elif not clia_p:
+                audit("    [clia] skipped: no preclean/clia/*.csv (the CMS Provider of Services "
+                      "CLIA laboratory file; docs/DATA_ACQUISITION_GUIDE.md B14)")
+            elif not pdim_clia:
+                audit("    [clia] skipped: needs processed/provider_dim.parquet for the CLIA -> NPI link")
+            elif not spend_clia:
+                audit("    [clia] skipped: needs processed/spending_fact.parquet for the billed lab lines")
+            else:
+                craw = _clia.asof_certificates(_clia.load_clia(clia_dir, log=audit), args.asof_cutoff)
+                oid_p = _first_existing(processed, "nppes_other_ids.parquet")
+                oid = pd.read_parquet(oid_p) if oid_p else None
+                if oid is None:
+                    audit("    [clia] no processed/nppes_other_ids.parquet (ccn_npi_crosswalk "
+                          "--other-ids-out): the link is name + address only")
+                clink = _clia.clia_to_npi(craw, pd.read_parquet(pdim_clia), other_ids=oid, log=audit)
+                if not len(clink):
+                    audit("    [clia] skipped: no certificate linked to an NPI (no NPPES CLIA "
+                          "identifier and no exact name + address match)")
+                else:
+                    cb = _clia.billed_lab_lines_from_parquet(spend_clia, asof_cutoff=args.asof_cutoff,
+                                                             npis=sorted(set(clink["npi"])))
+                    cf = _clia.clia_features(clink, cb)
+                    if len(cf):
+                        adapter_frames["clia"] = cf
+                        n_ratio = int(cf["clia_volume_ratio"].notna().sum())
+                        n_whc = int(pd.to_numeric(cf["clia_waiver_high_complexity"], errors="coerce")
+                                    .fillna(0).sum())
+                        audit(f"    [clia] {len(cf):,} NPIs with a CLIA certificate from "
+                              f"{', '.join(craw.attrs.get('files', []))}: {n_ratio:,} with a volume ratio "
+                              f"(volume columns {craw.attrs.get('volume_columns') or 'NONE RESOLVED'}), "
+                              f"{n_whc:,} waiver-only labs billing high-complexity codes"
+                              + (f"; certificates effective on/before {args.asof_cutoff}"
+                                 if args.asof_cutoff else ""))
+                    else:
+                        audit("    [clia] skipped: the link produced no feature row")
+        except Exception as e:
+            audit(f"    [clia] skipped: {e}")
 
         # J-code drug markup: the drug-spread essence (priced far above same-drug
         # peers) straight from the spending fact — no NDC slice, no NADAC needed.

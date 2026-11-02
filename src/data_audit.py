@@ -78,7 +78,7 @@ _KIND = {
     "medicaid_enrollment": "event", "fda_ndc": "reference", "saturation": "snapshot",
     "hrsa_340b": "event", "nppes_deactivation": "event", "order_referring": "snapshot",
     "pbj": "event", "hospice": "snapshot", "deficiencies": "event", "hcris": "snapshot",
-    "pos": "snapshot", "nucc": "reference", "revocations": "event",
+    "pos": "snapshot", "clia": "snapshot", "nucc": "reference", "revocations": "event",
     "state_terminations": "event", "docgraph": "snapshot", "state_licensing": "event",
     "nucc_xwalk": "reference", "usps_cmra": "reference", "opensanctions": "reference",
     "preclusion": "event", "dmf": "event", "owners": "snapshot", "cms_priority": "reference",
@@ -107,6 +107,7 @@ _CONTRACT = {
     "deficiencies": ("src.ingest_cms.facility", "DEFICIENCY_COLS", ["survey_date"]),
     "hcris": ("src.ingest_cms.hcris", "HCRIS_COLS", []),
     "pos": ("src.ingest_cms.pos", "POS_COLS", []),
+    "clia": ("src.ingest_cms.clia", "CLIA_COLS", ["cert_effective_date"]),
     "nucc": ("src.ingest_cms.nucc_taxonomy", "NUCC_COLS", []),
     "nucc_xwalk": ("src.ingest_cms.nucc_taxonomy", "CROSSWALK_COLS", []),
     "revocations": ("src.enforcement.medicare_revocations", "REVOCATION_COLS", ["revocation_date"]),
@@ -136,6 +137,7 @@ _REQUIRED = {
     "hrsa_340b": ["name", "begin_date"], "nppes_deactivation": ["npi"],
     "order_referring": ["npi"], "pbj": ["ccn", "census", "hrs_rn"], "hospice": ["ccn", "score"],
     "deficiencies": ["ccn", "survey_date"], "hcris": ["ccn"], "pos": ["ccn"],
+    "clia": ["clia_number"],
     "nucc": ["taxonomy_code", "grouping", "classification", "specialization"],
     "docgraph": ["from_npi", "to_npi"], "dmf": ["last", "dod"], "cia": ["party"],
     "owners": ["facility_enrollment_id", "owner_pac_id"],
@@ -153,6 +155,9 @@ _CRITICAL = {
     "pbj": ["hrs_lpn", "hrs_cna", "workdate"], "hospice": ["measure_code", "end_date"],
     "deficiencies": ["severity"], "nh_ownership": ["owner_name", "stake"], "nh_penalties": ["fine"],
     "hcris": ["total_costs", "total_charges", "admin_costs"], "pos": ["bed_count"],
+    # the CLIA volume: without it clia_volume_ratio is NULL (the loader says so), the
+    # certificate type still scores clia_waiver_high_complexity
+    "clia": ["cert_type", "facility_name", "addr_line1"],
     "revocations": ["npi", "revocation_date", "reason"], "docgraph": ["patient_count"],
     "preclusion": ["npi", "preclusion_date"],
 }

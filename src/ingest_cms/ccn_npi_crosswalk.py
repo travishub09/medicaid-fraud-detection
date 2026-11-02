@@ -74,8 +74,15 @@ OTHER_ID_TYPES = {"01": "other", "02": "upin", "04": "medicare_unspecified", "05
 
 def _nppes_opi_triplets(cols: list[str]) -> list[tuple[str, str, str | None]]:
     """(value column, type column, state column or None) per Other Provider Identifier slot."""
+    return [(v, t, s) for v, t, s, _ in _nppes_opi_quads(cols)]
+
+
+def _nppes_opi_quads(cols: list[str]) -> list[tuple[str, str, str | None, str | None]]:
+    """(value, type, state or None, issuer or None) column per Other Provider Identifier slot.
+    The issuer is the free-text column ('Other Provider Identifier Issuer_N') that names who
+    issued a type-01 OTHER identifier: 'CLIA' there is the laboratory's certificate number."""
     import re
-    vals, types, states = {}, {}, {}
+    vals, types, states, issuers = {}, {}, {}, {}
     for c in cols:
         low = str(c).lower()
         if "other" not in low or "provider" not in low or "identifier" not in low:
@@ -86,33 +93,45 @@ def _nppes_opi_triplets(cols: list[str]) -> list[tuple[str, str, str | None]]:
             types[idx] = c
         elif "state" in low:
             states[idx] = c
-        elif "issuer" not in low:
+        elif "issuer" in low:
+            issuers[idx] = c
+        else:
             vals[idx] = c
-    return [(vals[i], types[i], states.get(i)) for i in vals if i in types]
+    return [(vals[i], types[i], states.get(i), issuers.get(i)) for i in vals if i in types]
 
 
-def other_ids_from_nppes(raw: pd.DataFrame, types: tuple[str, ...] = ("02", "05")) -> pd.DataFrame:
+def other_ids_from_nppes(raw: pd.DataFrame, types: tuple[str, ...] = ("02", "05", "01")) -> pd.DataFrame:
     """Long table (npi, id_type, identifier, issuer_state) of the NPPES Other Provider
     Identifiers of the requested types. Type 02 is the Medicare UPIN (the LEIE carries
     UPIN on its pre-NPI rows: a HARD join for name-only exclusions); type 05 is the
     state Medicaid provider id with its issuing state (state exclusion lists that
-    print a Medicaid id but no NPI join here). Exclusion-source audit 2026-10-13."""
+    print a Medicaid id but no NPI join here). Exclusion-source audit 2026-10-13.
+    Type 01 (OTHER) rows are kept ONLY when their issuer text mentions CLIA and are
+    written as id_type ``clia`` (the CLIA certificate number; ingest_cms/clia.py links
+    the POS CLIA file through them, 2026-11-02); every other type-01 row is dropped."""
     npi_col = next((c for c in raw.columns if str(c).strip().lower() in ("npi", "npi_number")), None)
-    trip = _nppes_opi_triplets(list(raw.columns))
-    if npi_col is None or not trip:
+    quads = _nppes_opi_quads(list(raw.columns))
+    if npi_col is None or not quads:
         return pd.DataFrame(columns=["npi", "id_type", "identifier", "issuer_state"])
     npi = canonicalize_series(raw[npi_col])
     want = {str(t).zfill(2) for t in types}
     rows = []
-    for val_c, type_c, state_c in trip:
+    for val_c, type_c, state_c, issuer_c in quads:
         tcode = raw[type_c].fillna("").astype(str).str.strip().str.zfill(2)
         mask = tcode.isin(want)
+        if "01" in want:
+            issuer = (raw[issuer_c].fillna("").astype(str).str.upper() if issuer_c
+                      else pd.Series("", index=raw.index))
+            is_clia = (tcode == "01") & issuer.str.contains("CLIA", regex=False)
+            mask = mask & ((tcode != "01") | is_clia)
         if not mask.any():
             continue
         ident = raw[val_c][mask].fillna("").astype(str).str.strip().str.upper()
         st = (raw[state_c][mask].fillna("").astype(str).str.strip().str.upper() if state_c
               else pd.Series("", index=ident.index))
-        rows.append(pd.DataFrame({"npi": npi[mask], "id_type": tcode[mask].map(OTHER_ID_TYPES).fillna(tcode[mask]),
+        id_type = tcode[mask].map(OTHER_ID_TYPES).fillna(tcode[mask])
+        id_type = id_type.where(tcode[mask] != "01", "clia")
+        rows.append(pd.DataFrame({"npi": npi[mask], "id_type": id_type,
                                   "identifier": ident, "issuer_state": st}))
     if not rows:
         return pd.DataFrame(columns=["npi", "id_type", "identifier", "issuer_state"])
@@ -301,8 +320,10 @@ def main() -> None:
                          "CCN↔NPI is built by the POS↔NPPES (Medicaid# + name/ZIP) join")
     ap.add_argument("--out", required=True, help="output ccn_to_npi parquet")
     ap.add_argument("--other-ids-out", default=None,
-                    help="also write the NPPES Other Provider Identifiers of type 02 (UPIN) and 05 (state "
-                         "Medicaid id) as a long parquet (npi, id_type, identifier, issuer_state)")
+                    help="also write the NPPES Other Provider Identifiers of type 02 (UPIN), 05 (state "
+                         "Medicaid id) and the type-01 rows whose issuer says CLIA (id_type 'clia': the "
+                         "laboratory certificate, ingest_cms/clia.py) as a long parquet "
+                         "(npi, id_type, identifier, issuer_state)")
     args = ap.parse_args()
     from src.attempt_2.clean_data import read_csv_text
     p = Path(args.inp)

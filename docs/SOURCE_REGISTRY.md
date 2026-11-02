@@ -28,6 +28,7 @@ _Data column: not checked (run with --data-root)._
 | `deficiencies` | UNLOCK | `ingest_cms.facility` | `preclean/facility/deficiencies.csv` | worthless_services (citations) | public | — |
 | `hcris` | UNLOCK | `ingest_cms.hcris` | `preclean/hcris/hcris.csv` | cost_report_fraud (needs ccn_to_npi) | public | — |
 | `pos` | UNLOCK | `ingest_cms.pos` | `preclean/pos/pos.csv` | worthless_services (capacity; needs ccn_to_npi) | public | — |
+| `clia` | UNLOCK | `ingest_cms.clia` | `preclean/clia/pos_clia.csv` | lab_testing (clia_volume_ratio = billed lab lines a year over the certificate's reported annual volume; clia_waiver_high_complexity = a waiver-only lab on high-complexity codes); dormant until preclean/clia/ holds the POS CLIA file (link: NPPES 'clia' other ids from ccn_npi_crosswalk --other-ids-out, then exact name + address) | public | — |
 | `nucc` | UNLOCK | `ingest_cms.nucc_taxonomy` | `preclean/nucc/nucc_taxonomy.csv` | coherent peer grouping — improves EVERY scheme | public | — |
 | `revocations` | UNLOCK | `enforcement.medicare_revocations` | `preclean/revocations/revoked_providers.csv` | widens the PU label | public | — |
 | `state_terminations` | UNLOCK | `enforcement.state_terminations` | `preclean/state_terminations/GA_terminations.xlsx` | Medicaid-side FCA labels that lead the LEIE; tiered by stated reason | public | — |
@@ -40,6 +41,7 @@ _Data column: not checked (run with --data-root)._
 | `dmf` | OPTIONAL | `enforcement.death_master` | `preclean/dmf/dmf.csv` | billing_after_death (needs name/DOB) | gated | — |
 | `owners` | OPTIONAL | `entity_graph (ownership)` | `preclean/owners/owners.csv` | richer ownership edges | public | — |
 | `cms_priority` | OPTIONAL | `enforcement.cms_priority_lists` | `preclean/cms_priority/moratoria.csv` | revalidation-wave overlay flags for government-interest + Model C | public | — |
+| `home_health_compare` | OPTIONAL | `ingest_cms.home_health_compare` | `preclean/home_health/HH_Provider_<MonYYYY>.csv` | home_health_intensity (hhq_* star / timely / hospitalization / ER / DTC / PPR; CCN -> org) | public | — |
 | `hcpcs_time` | OPTIONAL | `ingest_cms.sector_schemes` | `preclean/hcpcs_time/hcpcs_minutes.csv` | impossible_day approximation (implied hours/day in the busiest month) | public | — |
 | `zip_county` | OPTIONAL | `ingest_cms.saturation (attach_market_saturation)` | `preclean/hud/zip_county.csv` | county-grain market saturation (upgrades the state fallback) | public | — |
 

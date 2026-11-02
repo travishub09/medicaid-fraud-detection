@@ -340,6 +340,8 @@ PRODUCERS: dict[str, str] = {
     "lab_definitive_drug_share": "src/ingest_cms/sector_schemes.py",
     "lab_genetic_share": "src/ingest_cms/sector_schemes.py",
     "lab_resp_panel_share": "src/ingest_cms/sector_schemes.py",
+    "clia_volume_ratio": "src/ingest_cms/clia.py",
+    "clia_waiver_high_complexity": "src/ingest_cms/clia.py",
     "pc_paid_share": "src/ingest_cms/sector_schemes.py",
     "pc_lines_per_patient_month": "src/ingest_cms/sector_schemes.py",
     "pc_paid_per_patient_month": "src/ingest_cms/sector_schemes.py",
