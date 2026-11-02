@@ -268,3 +268,40 @@ def test_page_cache_fetch_reads_what_the_laptop_downloaded(tmp_path):
     db.to_csv(p, index=False)
     assert rev.quarantine_absent_defendants(p, fetch, log=lambda *a: None) == 0
     assert pd.read_csv(p, dtype=str).fillna("").iloc[0]["name_in_source"] == "1"
+
+
+def test_proof_quote_gate_and_retry_of_service_failed_tasks(tmp_path):
+    """2026-11-02: the harvest prompts ask for the sentence that names the defendant; a row
+    whose quote names someone else is refused before any fetch; the service-failed tasks are
+    forgotten so the next dispatch re-sends them."""
+    import json
+    from src.enforcement import research_evidence as rev
+    from src.model_a import manus_lanes as ml
+    from src.enforcement import case_harvest_prompts as chp
+    assert rev.quote_names_defendant("John Smith", "Dr. John Smith pleaded guilty to health care fraud") is True
+    assert rev.quote_names_defendant("John Smith", "Acme Clinic agreed to pay $1 million") is False
+    assert rev.quote_names_defendant("Acme Home Health LLC", "Acme Home Health agreed to pay") is True
+    assert rev.quote_names_defendant("Acme Home Health LLC", "Beta Hospice agreed to pay") is False
+    assert rev.quote_names_defendant("Acme Home Health LLC", "") is None
+    assert "evidence_quote" in chp.CSV_SCHEMA and "evidence_quote" in chp._RULES
+    t = pd.DataFrame([{"defendant": "Acme Home Health LLC", "date": "2024-01-01", "outcome": "settlement",
+                       "summary": "settled", "url": "https://ag.fl/x", "evidence_quote": "Beta Hospice agreed to pay"},
+                      {"defendant": "Beta Hospice Inc", "date": "2024-01-01", "outcome": "settlement",
+                       "summary": "settled", "url": "https://ag.fl/x", "evidence_quote": "Beta Hospice agreed to pay"}])
+    out = rev.load_mfcu_cases(t, "FL")
+    assert list(out["defendant_name"]) == ["Beta Hospice Inc"]
+    cases, bad = rev.load_commercial_cases(t, "FL")
+    assert list(cases["defendant_name"]) == ["Beta Hospice Inc"] and "quote" in bad.iloc[0]["drop_reason"]
+    # retry: the registry forgets service failures only
+    root = tmp_path / "data"
+    f = ml.lane_files(root, "mfcu")
+    f["registry"].write_text(json.dumps({"a": {"task_id": "t1"}, "b": {"task_id": "t2"}, "c": {"task_id": "t3"}}), encoding="utf-8")
+    f["results"].write_text(json.dumps({"a": {"status": "error", "error_detail": "Internal server error has occurred."},
+                                        "b": {"status": "completed", "output": "done"},
+                                        "c": {"status": "error", "error_detail": "You don't have enough credits."}}), encoding="utf-8")
+    assert ml.retry_errored("mfcu", root, log=lambda *a: None) == 2
+    assert set(json.loads(f["registry"].read_text())) == {"b"}
+    # the proof rule rides on every case-harvest prompt the builder writes
+    (root / "enforcement").mkdir(parents=True, exist_ok=True)
+    prompts = ml.build_lane("mfcu", root, None, states=["FL"], years=[2024], log=lambda *a: None)
+    assert prompts and all("evidence_quote" in p["prompt"] for p in prompts)

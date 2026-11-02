@@ -75,6 +75,14 @@ import pandas as pd
 
 from src.enforcement.label_gates import is_index_url
 
+# 2026-11-02 THE PROOF SENTENCE: every case-harvest answer carries, per row, the verbatim
+# sentence on the cited page that names the defendant; the loaders refuse a row whose quote
+# names someone else, and the page check (verify-sources) remains the authority
+PROOF_LANES = ("cia", "commercial", "mfcu", "federal_reports", "outcome_refresh")
+PROOF_RULE = (" EVERY row must also carry evidence_quote (the exact sentence from source_url that names "
+              "this defendant, copied verbatim; blank when the page does not name them) and page_title. A row "
+              "whose quote is not on the page is worse than no row. Prefer pages served plainly (justice.gov, "
+              "oig.hhs.gov, a state attorney general's own release) over PDFs behind a portal.")
 LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
          "label_verification", "label_review", "mfcu", "employer", "federal_reports", "policy",
          "roster_finder", "fee_schedule", "state_audits", "plan_policy")
@@ -369,6 +377,10 @@ def build_lane(lane: str, data_root: Path, run_dir: Path | None = None, states=N
             log(el.summary_line(cand, prompts))
     else:
         raise ValueError(f"unknown lane {lane!r} (one of {LANES})")
+    if lane in PROOF_LANES:
+        for pr_ in prompts:
+            if PROOF_RULE not in str(pr_.get("prompt", "")):
+                pr_["prompt"] = str(pr_.get("prompt", "")) + PROOF_RULE
     _write_jsonl(prompts, files["prompts"])
     log(f"[manus_lanes:{lane}] {len(prompts)} prompt(s) -> {files['prompts']}")
     return prompts
@@ -386,6 +398,32 @@ def dispatch_lane(lane: str, data_root: Path, max_new: int | None = None, transp
     info = dispatch_research(files["prompts"], files["registry"], transport=transport, max_new=max_new)
     log(f"[manus_lanes:{lane}] dispatch: {info}")
     return info
+
+
+SERVICE_FAILURE = re.compile(r"Internal server error|enough credits|429 Client Error|poll failed", re.I)
+
+
+def retry_errored(lane: str, data_root: Path, log=print) -> int:
+    """Forget the tasks the SERVICE failed (its own 'Internal server error', an empty credit
+    balance, or our unread 429s) so the next dispatch sends them again (2026-11-02: about 150
+    tasks across the lanes died that way; the registry never re-sends a task it has an id
+    for). A task the agent answered, or that is still running, is never touched."""
+    files = lane_files(data_root, lane)
+    if not files["registry"].exists():
+        return 0
+    reg = json.loads(files["registry"].read_text(encoding="utf-8"))
+    res = json.loads(files["results"].read_text(encoding="utf-8")) if files["results"].exists() else {}
+    drop = [oid for oid, v in res.items()
+            if v.get("status") in ("error", "failed", "poll_failed")
+            and SERVICE_FAILURE.search(str(v.get("error_detail") or v.get("output") or ""))]
+    for oid in drop:
+        reg.pop(oid, None)
+        res.pop(oid, None)
+    if drop:
+        files["registry"].write_text(json.dumps(reg, indent=2), encoding="utf-8")
+        files["results"].write_text(json.dumps(res, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
+    log(f"[manus_lanes:{lane}] retry: {len(drop)} service-failed task(s) forgotten; the next dispatch re-sends them")
+    return len(drop)
 
 
 def poll_lane(lane: str, data_root: Path, transport=None, log=print) -> dict:
@@ -416,7 +454,8 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
                "amount_usd": ["amount_usd", "amount"], "outcome": ["outcome", "disposition"],
                "source_url": ["source_url", "url", "source"], "qui_tam": ["qui_tam"],
                "conduct_summary": ["conduct_summary", "summary", "conduct"],
-               "docket": ["docket_or_case_number", "docket"]}
+               "docket": ["docket_or_case_number", "docket"],
+               "evidence_quote": ["evidence_quote", "quote", "evidence"]}
     resolved = _resolve_columns(list(df.columns), aliases)
     d = df.rename(columns={v: k for k, v in resolved.items()}).copy()
     rows, bad = [], []
@@ -435,6 +474,10 @@ def _harvest_cases_from_table(df: pd.DataFrame, default_type: str = "") -> tuple
             # a press-release INDEX is not evidence of a case (2026-10-20: 'Live Care Inc.'
             # keyed to usao-mdfl/pr); the row waits for a release URL in the quarantine
             bad.append({**r, "drop_reason": f"index page, not a release ({url})"})
+            continue
+        from src.enforcement.research_evidence import quote_names_defendant
+        if quote_names_defendant(name, r.get("evidence_quote")) is False:
+            bad.append({**r, "drop_reason": "the evidence quote does not name this defendant"})
             continue
         st = str(r.get("state") or "").strip().upper()
         npi = re.sub(r"\D", "", str(r.get("npi") or ""))
@@ -958,11 +1001,14 @@ def write_report(data_root: Path, lanes, out: Path | None = None) -> Path:
 
 def run_cycle(data_root: Path, lanes, run_dir: Path | None, build: bool, dispatch: bool, poll: bool, load: bool,
               max_new: int | None, total_budget: int | None, wait_minutes: float, poll_every: float,
-              transport=None, fetch=None, sleep=time.sleep, log=print, states=None, years=None) -> dict:
+              transport=None, fetch=None, sleep=time.sleep, log=print, states=None, years=None,
+              retry_errors: bool = False) -> dict:
     spent = 0
     for lane in lanes:
         if build:
             build_lane(lane, data_root, run_dir, states=states, years=years, log=log)
+        if retry_errors:
+            retry_errored(lane, data_root, log=log)
         if dispatch:
             cap = max_new
             if total_budget is not None:
@@ -1013,6 +1059,9 @@ def main() -> None:
     ap.add_argument("--lanes", default=",".join(LANES))
     ap.add_argument("--build", action="store_true")
     ap.add_argument("--dispatch", action="store_true")
+    ap.add_argument("--retry-errors", action="store_true",
+                    help="before dispatching, forget the tasks the service failed (Internal server error / "
+                         "out of credits / unread 429) so they are sent again")
     ap.add_argument("--max-new", type=int, default=None, help="tasks per lane per call")
     ap.add_argument("--total-budget", type=int, default=None, help="tasks across all lanes this call")
     ap.add_argument("--poll", action="store_true")
@@ -1034,7 +1083,7 @@ def main() -> None:
     if a.years:
         y0, y1 = (int(x) for x in a.years.split("-"))
         years = list(range(y0, y1 + 1))
-    if not any((a.build, a.dispatch, a.poll, a.load)):
+    if not any((a.build, a.dispatch, a.poll, a.load, a.retry_errors)):
         a.report = True
     if a.report and not any((a.build, a.dispatch, a.poll, a.load)):
         print(write_report(Path(a.data_root), lanes))
@@ -1042,7 +1091,8 @@ def main() -> None:
             print(json.dumps(lane_status(l, Path(a.data_root)), default=str))
         return
     run_cycle(Path(a.data_root), lanes, Path(a.run_dir) if a.run_dir else None, a.build, a.dispatch, a.poll, a.load,
-              a.max_new, a.total_budget, a.wait_minutes, a.poll_every, states=states, years=years)
+              a.max_new, a.total_budget, a.wait_minutes, a.poll_every, states=states, years=years,
+              retry_errors=a.retry_errors)
 
 
 if __name__ == "__main__":

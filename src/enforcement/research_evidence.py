@@ -345,6 +345,25 @@ _STATE_EXCL_ALIASES = {
                        "expiration date"],
 }
 
+def quote_names_defendant(defendant: str, quote: str):
+    """None when the row carries no quote; True when the agent's evidence_quote names the
+    defendant (a person's last name, or an organisation's first distinctive word); False
+    when the quote is about someone else (2026-11-02: the agents attached invented defendants
+    to real pages; a quote they cannot produce is the cheapest gate, before any fetch)."""
+    q = re.sub(r"\s+", " ", str(quote or "")).strip().lower()
+    if not q:
+        return None
+    words = [w for w in re.split(r"[^a-z0-9]+", norm_org_name(str(defendant or "")).lower()) if len(w) > 2]
+    if not words:
+        return None
+    is_person = not re.search(r"\b(inc|llc|corp|pllc|p\.?c|p\.?a|center|clinic|hospital|pharmacy|services|group|"
+                              r"associates|health|care|home|lab|labs|laboratory|medical|rehab|agency)\b",
+                              str(defendant or ""), re.I)
+    if is_person:
+        return any(len(w) > 2 and w in q for w in words[-2:])          # the last name (or the one before it)
+    return any(w in q for w in words if w not in {"the", "and", "for", "of"})
+
+
 _MFCU_ALIASES = {
     "defendant_name": ["defendant", "defendant name", "provider", "provider name",
                        "entity", "entity name", "name", "subject"],
@@ -354,6 +373,7 @@ _MFCU_ALIASES = {
                    "amount_usd", "dollars"],
     "summary": ["summary", "description", "text", "details", "body", "conduct"],
     "source_url": ["url", "source", "source_url", "link", "press release"],
+    "evidence_quote": ["evidence_quote", "quote", "evidence", "sentence"],
 }
 
 
@@ -435,6 +455,8 @@ def load_mfcu_cases(table: pd.DataFrame, state: str) -> pd.DataFrame:
         url = str(r.get("source_url") or "").strip()
         if is_index_url(url):
             continue                                   # a listing page cites no case (label_gates)
+        if quote_names_defendant(defendant, r.get("evidence_quote")) is False:
+            continue                                   # the agent's own quote is about someone else
         date = str(r.get("announced_date") or "").strip()
         # one case row per defendant even when several share a release URL (url#<name key>,
         # the DOJ feed's convention; a sweep year's release often names co-defendants)
@@ -525,6 +547,9 @@ def load_commercial_cases(table: pd.DataFrame, state: str) -> tuple[pd.DataFrame
         url = str(r.get("source_url") or "").strip()
         if is_index_url(url):
             bad.append({**r, "drop_reason": f"index page, not a release ({url})"})
+            continue
+        if quote_names_defendant(defendant, r.get("evidence_quote")) is False:
+            bad.append({**r, "drop_reason": "the evidence quote does not name this defendant"})
             continue
         date = str(r.get("outcome_date") or r.get("announced_date") or "").strip()
         # one case row per defendant even when several share a release URL (url#<name key>,

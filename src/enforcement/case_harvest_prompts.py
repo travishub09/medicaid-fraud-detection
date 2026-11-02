@@ -37,8 +37,14 @@ CSV_SCHEMA = ("announced_date (YYYY-MM-DD), defendant_name, defendant_type (indi
               "state, npi (10 digits or blank), provider_type_or_specialty, scheme (billing for services not "
               "rendered / upcoding / kickbacks / medically unnecessary / identity or credential misuse / other), "
               "amount_usd (blank if none), outcome (conviction / plea / civil settlement / exclusion / charged), "
-              "source_url, docket_or_case_number, conduct_start_year, conduct_end_year")
-_RULES = ("Use only public sources. Do not contact anyone. One row per defendant. Blank beats a guess. Look "
+              "source_url, docket_or_case_number, conduct_start_year, conduct_end_year, "
+              "evidence_quote (the verbatim sentence on source_url that names this defendant, copied exactly; "
+              "blank when the page does not name them), page_title")
+_RULES = ("Use only public sources. Do not contact anyone. One row per defendant. Blank beats a guess. "
+          "EVERY row must carry evidence_quote: the exact sentence from source_url that names the defendant; "
+          "a row whose quote is not on that page is worse than no row, and a defendant you cannot quote from "
+          "the page is not a row. Prefer sources that serve their pages plainly (justice.gov, oig.hhs.gov, a "
+          "state attorney general's own release) over PDFs behind a portal. Look "
           "up each provider's NPI in the NPPES NPI Registry (npiregistry.cms.hhs.gov) by name and city; leave "
           "it blank when more than one record fits. Return the CSV as an attachment plus a final row count "
           "and the list of pages you walked.")

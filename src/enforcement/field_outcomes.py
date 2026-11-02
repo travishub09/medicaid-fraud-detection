@@ -130,9 +130,33 @@ def main() -> None:
     ap.add_argument("--graph-dir", default=None, help="graph root with npi_to_org.parquet (default <data_root>/graph)")
     ap.add_argument("--in", dest="inp", default=None, help="default <data_root>/enforcement/field_outcomes.csv")
     ap.add_argument("--out", default=None, help="default <data_root>/processed/exclusions_field.parquet")
+    ap.add_argument("--add", action="store_true",
+                    help="append ONE outcome row to the csv from the flags below and stop (2026-11-02: the "
+                         "operator pastes commands, never edits a csv by hand)")
+    ap.add_argument("--org-id", default="", help="org:<id> (or leave blank and give --npi)")
+    ap.add_argument("--npi", default="", help="a billing NPI (resolved to its org at load time)")
+    ap.add_argument("--date", default="", help="YYYY-MM-DD of the visit / count")
+    ap.add_argument("--outcome", default="", choices=list(OUTCOMES) + [""])
+    ap.add_argument("--basis", default="", help="the fact in one sentence (the count, the ratio, the rule)")
+    ap.add_argument("--note", default="", help="the card / site in a few words")
+    ap.add_argument("--source", default="pi", help="who: pi_sage / pi_siu / counsel / desk")
     a = ap.parse_args()
     root = Path(a.data_root)
     src = Path(a.inp) if a.inp else root / "enforcement" / "field_outcomes.csv"
+    if a.add:
+        if not (a.org_id or a.npi) or not a.date or not a.outcome:
+            ap.error("--add needs --org-id or --npi, --date and --outcome")
+        import csv
+        src.parent.mkdir(parents=True, exist_ok=True)
+        new_file = not src.exists() or src.stat().st_size == 0
+        with open(src, "a", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            if new_file:
+                w.writerow(["org_id", "npi", "date", "outcome", "basis", "note", "source"])
+            w.writerow([a.org_id, re.sub(r"\D", "", a.npi), a.date, a.outcome, a.basis, a.note, a.source])
+        n = sum(1 for _ in open(src, encoding="utf-8")) - 1
+        print(f"[field_outcomes] added {a.outcome} for {a.org_id or a.npi} ({a.date}); {n} row(s) in {src}")
+        return
     dst = Path(a.out) if a.out else root / "processed" / "exclusions_field.parquet"
     g = Path(a.graph_dir) if a.graph_dir else root / "graph"
     outcomes = load_field_outcomes(src)
