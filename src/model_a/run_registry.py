@@ -132,6 +132,9 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             row["prior_weighted"] = bool(tp.get("prior_weighted")) if tp.get("prior_weighted") is not None else False
             # v24: the inner-fold encoder; absent (v21..v23 manifests) = leave-one-out = 0
             row["prior_inner_folds"] = int(tp.get("prior_inner_folds")) if tp.get("prior_inner_folds") is not None else 0
+            # 2026-11-02 (batch 5b-A): the per-case training budget; absent on older manifests = npi100
+            row["case_budget"] = str(tp.get("case_budget") or "npi100")
+            row["segment"] = str(tp.get("segment") or "all")
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
             # referral edges entered the graph, which is CORE, so the
@@ -204,6 +207,10 @@ def parse_run_dir(run_dir: str | Path) -> dict:
                     row["prior_min_n"] = int(etp["prior_min_n"])
                 if etp.get("prior_weighted") is not None:
                     row["prior_weighted"] = bool(etp["prior_weighted"])
+                if etp.get("case_budget"):
+                    row["case_budget"] = str(etp["case_budget"])
+                if etp.get("segment"):
+                    row["segment"] = str(etp["segment"])
                 if etp.get("prior_inner_folds") is not None:
                     row["prior_inner_folds"] = int(etp["prior_inner_folds"])
         except Exception:
@@ -438,6 +445,7 @@ CHECK_ALIASES = {
     "seeds": "n_seeds", "broadcast": "broadcast_rows", "groups": "group_policy",
     "priors": "class_priors", "prune": "drop_schemes",
     "prior_floor": "prior_min_n", "prior_weighted": "prior_weighted", "prior_inner": "prior_inner_folds",
+    "case_budget": "case_budget", "segment": "segment",                 # batch 5b (2026-11-02)
     # v23: the refit arms' operator book under the shipped order
     "refit_pursuit_hits16": "acc_pursuit_hits16", "refit_pursuit_hits50": "acc_pursuit_hits50",
     "refit_pursuit_hits100": "acc_pursuit_hits100", "refit_pursuit_hits250": "acc_pursuit_hits250",

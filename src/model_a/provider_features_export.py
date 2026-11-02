@@ -382,6 +382,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           prior_inner_folds: int = 5,
                           settlement_weight: float = 1.0, feature_set: str = "all",
                           drop_schemes: str | list | None = None,
+                          case_budget: str = "npi100",
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
 
@@ -448,7 +449,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         meta = [c for c in ["npi", "fraud_scheme", "conduct_start", "conduct_end",
                             "case_ids", "label_basis", "case_sector", "amount_usd",
                             "fca_strict_tier", "intervened", "qui_tam",
-                            "label_weight", "case_fanout"] if c in cl.columns]
+                            "label_weight", "case_fanout", "case_budget_policy"] if c in cl.columns]
         m = join_m1(m, cl[meta], source="case_labels")
         assert len(m) == n0, "case-label join fanned out"
         # the per-case budget weight (case_labels): 1.0 for every row the case
@@ -986,6 +987,10 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             # (1.0 = settlements weigh like convictions; 'all' = every trainable column)
             "settlement_weight": float(settlement_weight),
             "feature_set": str(feature_set),
+            # 2026-11-02 (audit A1, batch 5b-A): the per-CASE training budget (npi100 = today's
+            # min(1, 100 / fan-out); per_case = one case is one unit; cap5): an arm until a
+            # pre-registration ships it
+            "case_budget": str(case_budget),
         },
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
@@ -2728,6 +2733,9 @@ def main() -> None:
                     help="training policy (2026-11-01): sample-weight scale on civil-settlement positives (1 = ship)")
     ap.add_argument("--feature-set", default="all", choices=["all", "subscores", "other"],
                     help="training policy (2026-11-01): the trainable column set (all = ship)")
+    ap.add_argument("--case-budget", default="npi100", choices=["npi100", "per_case", "cap5"],
+                    help="label policy (2026-11-02, audit A1): a settled org's training mass; npi100 = min(1, 100 / "
+                         "fan-out) (ship), per_case = one case is one unit (1 / fan-out), cap5 = min(1, 5 / fan-out)")
     ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
@@ -3190,7 +3198,8 @@ def main() -> None:
             case_lbls = build_case_labels(cdb, org_nodes, npi_to_org,
                                           asof_cutoff=args.asof_cutoff,
                                           affiliations=affiliations,
-                                          defendant_npis=defendant_npis)
+                                          defendant_npis=defendant_npis,
+                                          case_budget=args.case_budget)
             n_aff = int((case_lbls["label_basis"] == "affiliated_individual"
                          ).sum()) if len(case_lbls) else 0
             from .case_labels import case_concentration
@@ -3335,7 +3344,8 @@ def main() -> None:
         class_priors=args.class_priors, drop_schemes=args.drop_schemes,
         prior_min_n=args.prior_min_n, prior_weighted=(args.prior_weighted == "1"),
         prior_inner_folds=args.prior_inner_folds,
-        settlement_weight=args.settlement_weight, feature_set=args.feature_set)
+        settlement_weight=args.settlement_weight, feature_set=args.feature_set,
+        case_budget=args.case_budget)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.
