@@ -1,0 +1,25 @@
+# Code owners: a listed owner is requested for review on every pull request that touches
+# the path. The operator owns anything that changes what a run MEANS (the label chain,
+# the runners, the export, the registry, the diagnostics): a change there is a new
+# pre-registration, never a silent swap. Logins are placeholders until the team's GitHub
+# accounts are on the repository; replace @operator / @analyst with the real logins.
+*                                   @operator
+src/model_a/case_labels.py          @operator
+src/model_a/prospective_label.py    @operator
+src/model_a/fca_relevance.py        @operator
+src/model_a/provider_features_export.py @operator
+src/model_a/company_list.py         @operator
+src/model_a/run_registry.py         @operator
+src/model_a/accuracy_diagnostics.py @operator
+src/model_a/pursuit_dossier.py      @operator
+ops/                                @operator
+docs/reminders.json                 @operator
+docs/OPERATOR_REMINDERS.md          @operator
+# open to the technical analyst with the operator's review
+src/ingest_cms/                     @operator @analyst
+src/analytics/                      @operator @analyst
+src/model_a/theory_screens.py       @operator @analyst
+src/model_a/scheme_subscores.py     @operator @analyst
+src/policy/                         @operator @analyst
+tests/                              @operator @analyst
+docs/                               @operator @analyst

@@ -2725,6 +2725,18 @@ first, then paste" above every move/done block.
 - See `docs/platform/ROADMAP.md` for the full phase plan and
   `docs/platform/09-data-procurement.md` for exactly what data to acquire and why.
 
+## Team (2026-11-02, `docs/TEAM_WORKFLOW.md` is the full text)
+
+- Several people, one codebase: every change goes through a `<person>/<topic>` branch and a
+  pull request into the integration branch with a green suite; nobody pushes to `main` or the
+  integration branch directly; `.github/CODEOWNERS` names who reviews what (the label chain,
+  runners, export, registry and diagnostics are the operator's: a change there is a new
+  pre-registration). One session per branch, never two people on one branch.
+- The VM is single-user (the operator's session); a run request is an issue; never `git pull`
+  on the VM during a run. The reader's session is read-only (docs + run packets); questions
+  that need live data go to the operator's session. `docs/reminders.json` is edited only by
+  the operator's sessions.
+
 ## Git
 
 - Work on feature branches; `main` is protected history. The pre-platform original
