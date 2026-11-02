@@ -19,7 +19,9 @@ from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))   # the repo root (run from anywhere)
+_here = Path(__file__).resolve()
+if len(_here.parents) > 2:                                     # the repo root (run from anywhere;
+    sys.path.insert(0, str(_here.parents[2]))                  # a copy under /tmp has no grandparent)
 
 REASON_COLS = ("drop_reason", "reason", "qc_note", "gate_note", "status")
 
