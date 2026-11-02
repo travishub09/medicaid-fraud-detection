@@ -61,8 +61,43 @@ def page_probe(root: Path, n: int) -> None:
             print(f"-- {url[:110]}\n   FETCH FAILED {type(e).__name__}: {str(e)[:160]}")
 
 
+def fetch_fail_tally(root: Path, log_name: str = "verify_sources_2026-11.log", top: int = 5) -> None:
+    """The unreachable pages of a verify-sources pass by host and error (2026-11-02: 1,646
+    of 1,809 were one host; a block and a dead citation need different moves)."""
+    import re as _re
+    from collections import Counter, defaultdict
+    log = root / "enforcement" / log_name
+    if not log.exists():
+        print(f"== no log at {log}")
+        return
+    by_host, samples = defaultdict(Counter), defaultdict(list)
+    pat = _re.compile(r"fetch failed (https?://([^/\s]+)/\S*): (.*)$")
+    for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = pat.search(line)
+        if not m:
+            continue
+        url, host, err = m.group(1), m.group(2).lower(), m.group(3)
+        e = _re.sub(r"for url: \S+", "", err)
+        e = _re.sub(r"\(Caused by.*$", "", e).strip()[:90]
+        by_host[host][e] += 1
+        if len(samples[host]) < 3:
+            samples[host].append(url[:120])
+    hosts = sorted(by_host, key=lambda h: -sum(by_host[h].values()))
+    print(f"== unreachable pages by host ({len(hosts)} hosts)")
+    for h in hosts[:25]:
+        n = sum(by_host[h].values())
+        print(f"-- {h}: {n}")
+        for e, k in by_host[h].most_common(top):
+            print(f"   {k:5d}  {e}")
+        for u in samples[h]:
+            print(f"        {u}")
+
+
 def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else "/data/medicaid")
+    if "--fetch-fail-tally" in sys.argv:
+        fetch_fail_tally(root)
+        return
     if "--page-probe" in sys.argv:
         k = sys.argv.index("--page-probe")
         page_probe(root, int(sys.argv[k + 1]) if k + 1 < len(sys.argv) and sys.argv[k + 1].isdigit() else 6)
