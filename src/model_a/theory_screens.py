@@ -78,6 +78,12 @@ class Screen:
     exclude_taxonomy_prefixes: tuple[str, ...] = ()  # NUCC prefixes set aside as 'other_type' (a broker is not a fleet)
     address_rule: bool = False                 # candidate only when the practice address is a mailbox / PO box or shared by many organizations
     min_addr_orgs: int = 5                     # distinct organizations at the exact address that make it 'shared'
+    # the national-share rule (2026-11-02): one supplier filling a large share of the NATION's lines on a
+    # code (seven suppliers in one state filled 99.6 percent of the nation's hip braces); the share is the
+    # max over the supplier's codes carrying at least min_code_dollars of its own dollars
+    national_share_rule: bool = False
+    min_national_share: float = 0.05
+    min_code_dollars: float = 250_000.0
 
 
 SCREENS: dict[str, Screen] = {
@@ -303,7 +309,155 @@ SCREENS: dict[str, Screen] = {
         precedent="The DME storefront and shell-company cases (Operation Brace Yourself 2019, the Miami and Houston "
                   "DME cases); CMS supplier-standard revocations for a non-operational site.",
     ),
+    "dme_national_share": Screen(
+        key="dme_national_share",
+        title="One supplier filling a national code",
+        theory=("A durable medical equipment supplier fills a large share of the NATION's Medicaid lines on one "
+                "code (the public example: seven suppliers in one state filled 99.6 percent of the nation's hip "
+                "braces), and, where the ordering physicians are known, its orders come from doctors across many "
+                "states. A supplier dominating one code nationally, ordered by physicians it could never have met, "
+                "is the shape of a marketed-product or kickback ring (telemarketing, a paid telehealth signature, a "
+                "brace shipped unasked), not a local store. The claim is the medical necessity and the order of each "
+                "item; the out-of-state order share is computed only when a supplier x ordering-physician table is "
+                "given, and the national totals are printed so the reader sees the base."),
+        numerator=(),
+        numerator_like=("E%", "K0%", "L%", "A4%", "A5%", "A6%", "A7%", "A9%", "B4%"),
+        denominator=(),
+        flag_codes=("L0650", "L1833", "L0631", "L3916", "E0748", "A4253"),
+        min_paid_num=1_000_000.0,
+        min_intensity=0.0,
+        taxonomy_prefixes=("332B",),
+        national_share_rule=True,
+        min_national_share=0.05,
+        min_code_dollars=250_000.0,
+        innocent=("a legitimate national mail-order specialist (diabetic supplies, ostomy, CPAP resupply) whose "
+                  "share is the business model, with a storefront, a licence in every state it ships to, and orders "
+                  "from the patient's own physician",
+                  "a manufacturer's own supplier number (the maker bills its own product nationally)",
+                  "a code so rare that one supplier is most of it (read the national totals: a 60 percent share of "
+                  "$300k is a niche, not a ring)",
+                  "a state-contracted sole supplier (incontinence, enteral) whose share is the contract",
+                  "the ordering physician's NPPES state is stale or the group's billing state (an out-of-state "
+                  "order from a locum or a telehealth group is lawful when the visit was real)"),
+        roles=("customer-service and intake staff (who called the patient, who found the doctor)",
+               "the marketing vendor and the telehealth company that supplied the signatures",
+               "the ordering physicians' office staff at the top referring practices (did they see the patient)",
+               "the billing staff (which codes, which beneficiaries, which states)",
+               "the delivery and warehouse staff (was the item shipped, was it returned)"),
+        precedent="Operation Brace Yourself (2019, $1.2B in orthotic braces ordered through telemedicine kickbacks); "
+                  "Operation Rubber Stamp (2020); the 2021-2024 DME telemarketing and genetic-testing takedowns; "
+                  "the OIG DME supplier-concentration audits.",
+    ),
 }
+
+
+# the supplier x ordering-physician table for the national-share screen (the public Medicare DMEPOS
+# by-referring file carries no supplier NPI, so this is a long table from a claims extract or a
+# supplier-side file: one row per supplier x referrer with dollars or lines)
+REFERRER_COLS = {
+    "supplier_npi": ["supplier_npi", "billing_npi", "suplr_npi", "SUPLR_NPI", "npi", "NPI"],
+    "referrer_npi": ["referrer_npi", "referring_npi", "rfrg_npi", "Rfrg_NPI", "RFRG_NPI", "ordering_npi",
+                     "REFERRING_NPI", "ordering_referring_npi"],
+    "dollars": ["dollars", "total_paid", "paid", "allowed", "total_allowed", "allowed_dollars",
+                "Avg_Suplr_Mdcr_Alowd_Amt", "amount"],
+    "lines": ["lines", "services", "total_claim_lines", "Tot_Suplr_Srvcs", "TOT_SUPLR_SRVCS",
+              "number_of_supplier_services", "claims"],
+}
+
+
+def _read_any_sql(path: Path) -> str:
+    """A DuckDB source expression for a parquet or csv (csv read all-VARCHAR so an NPI keeps
+    its leading zero; Latin-1 tolerant like every raw-CSV entry point)."""
+    p = _sql_str(path)
+    if str(path).lower().endswith((".parquet", ".pq")):
+        return f"read_parquet('{p}')"
+    return f"read_csv_auto('{p}', all_varchar=true, encoding='latin-1')"
+
+
+def _referrer_table(con, referrers: Path, provider_dim: Path | None) -> pd.DataFrame | None:
+    """Per supplier NPI on the numerator: the share of its referred weight (dollars when the
+    table carries them, else lines) whose ORDERING physician's state differs from the
+    supplier's, the number of referrers and of referrer states. Both states come from
+    provider_dim. Returns None (the ratio is not computed) when the table or provider_dim
+    is missing or the columns cannot be resolved."""
+    if referrers is None or not Path(referrers).exists() or provider_dim is None or not Path(provider_dim).exists():
+        return None
+    from src.attempt_2.clean_data import _resolve_columns
+    src = _read_any_sql(Path(referrers))
+    cols = [c[0] for c in con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()]
+    resolved = _resolve_columns(cols, REFERRER_COLS)
+    if "supplier_npi" not in resolved or "referrer_npi" not in resolved:
+        print(f"[theory_screens] referrer table {Path(referrers).name}: no supplier / referrer NPI columns "
+              f"(saw {cols[:8]}); the out-of-state order share is not computed")
+        return None
+    if "dollars" in resolved:
+        w = f'CAST("{resolved["dollars"]}" AS DOUBLE)'
+    elif "lines" in resolved:
+        w = f'CAST("{resolved["lines"]}" AS DOUBLE)'
+    else:
+        w = "1.0"
+    pc = _cols(con, Path(provider_dim))
+    if "addr_state" not in pc:
+        print("[theory_screens] provider_dim carries no addr_state; the out-of-state order share is not computed")
+        return None
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE pd_state AS
+        SELECT CAST(npi AS VARCHAR) AS npi, UPPER(TRIM(COALESCE(CAST(addr_state AS VARCHAR), ''))) AS st
+        FROM read_parquet('{_sql_str(provider_dim)}')""")
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE ref_long AS
+        SELECT TRIM(CAST("{resolved['supplier_npi']}" AS VARCHAR)) AS supplier_npi,
+               TRIM(CAST("{resolved['referrer_npi']}" AS VARCHAR)) AS referrer_npi,
+               COALESCE({w}, 0) AS w
+        FROM {src}
+        WHERE TRIM(CAST("{resolved['supplier_npi']}" AS VARCHAR)) IN (SELECT npi FROM num)""")
+    return con.execute("""
+        SELECT r.supplier_npi AS npi,
+               CASE WHEN SUM(r.w) > 0 THEN SUM(CASE WHEN p.st <> '' AND s.st <> '' AND p.st <> s.st THEN r.w ELSE 0 END) / SUM(r.w) END
+                   AS out_of_state_order_share,
+               COUNT(DISTINCT r.referrer_npi) AS n_referrers,
+               COUNT(DISTINCT CASE WHEN p.st <> '' THEN p.st END) AS n_referrer_states,
+               SUM(r.w) AS referred_weight
+        FROM ref_long r
+        LEFT JOIN pd_state p ON p.npi = r.referrer_npi
+        LEFT JOIN pd_state s ON s.npi = r.supplier_npi
+        GROUP BY 1""").df()
+
+
+def _national_share_table(con, p: str, key: str, code: str, lines: str, numpred: str, screen: Screen) -> pd.DataFrame:
+    """Per NPI on the numerator: the code where the supplier's share of the NATION's lines (dollars when
+    the file carries no lines) is largest among its codes carrying >= min_code_dollars, with the
+    supplier's and the nation's lines and dollars on it and the number of suppliers billing it.
+    The national base is every billing NPI on the code, not only the screen's provider type."""
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE bycode AS
+        SELECT CAST({key} AS VARCHAR) npi, {code} AS hcpcs,
+               SUM(CAST(total_paid AS DOUBLE)) paid, SUM({lines}) lines
+        FROM read_parquet('{p}')
+        WHERE {key} IS NOT NULL AND {numpred}
+        GROUP BY 1, 2""")
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE natcode AS
+        SELECT hcpcs, SUM(paid) nat_paid, SUM(lines) nat_lines, COUNT(DISTINCT npi) nat_suppliers
+        FROM bycode GROUP BY 1""")
+    return con.execute(f"""
+        WITH sh AS (
+            SELECT b.npi, b.hcpcs, b.paid, b.lines, n.nat_paid, n.nat_lines, n.nat_suppliers,
+                   CASE WHEN n.nat_lines > 0 THEN b.lines / n.nat_lines END AS line_share,
+                   CASE WHEN n.nat_paid > 0 THEN b.paid / n.nat_paid END AS dollar_share
+            FROM bycode b JOIN natcode n USING (hcpcs)
+            WHERE b.paid >= {float(screen.min_code_dollars)}
+        ),
+        ranked AS (
+            SELECT *, COALESCE(line_share, dollar_share) AS share,
+                   ROW_NUMBER() OVER (PARTITION BY npi ORDER BY COALESCE(line_share, dollar_share) DESC, paid DESC) AS rn
+            FROM sh
+        )
+        SELECT npi, share AS national_code_share, hcpcs AS top_share_code,
+               line_share AS top_share_lines, dollar_share AS top_share_dollars,
+               paid AS top_code_paid, lines AS top_code_lines,
+               nat_paid AS top_code_nat_paid, nat_lines AS top_code_nat_lines, nat_suppliers AS top_code_nat_suppliers
+        FROM ranked WHERE rn = 1""").df()
 
 
 def _codes_table(con, name: str, codes) -> None:
@@ -379,16 +533,25 @@ def _weekdays_in_month_sql(month_expr: str) -> str:
             f"WHERE dayofweek(CAST(r.d AS DATE)) BETWEEN 1 AND 5)")
 
 
+NATIONAL_SHARE_COLS = ("national_code_share", "top_share_code", "top_share_lines", "top_share_dollars",
+                       "top_code_paid", "top_code_lines", "top_code_nat_paid", "top_code_nat_lines",
+                       "top_code_nat_suppliers")
+REFERRER_SHARE_COLS = ("out_of_state_order_share", "n_referrers", "n_referrer_states", "referred_weight")
+
+
 def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | None = None,
                verdicts: pd.DataFrame | None = None, top: int = 50, capacity: Path | None = None,
-               policy_df: pd.DataFrame | None = None) -> pd.DataFrame:
+               policy_df: pd.DataFrame | None = None, referrers: Path | None = None) -> pd.DataFrame:
     """Every NPI on the screen's numerator (the billing NPI, or the servicing NPI when the
     screen's grain is 'servicing') with the ratios, the dollars by year, the status
     (candidate / national / hospital / government / verdict:<v> / below_floor / fails_<rule>)
     and the rank among candidates. Per-day screens add the peak month's lines per calendar
     day (a per-diem's average daily census; an aide's units a day) and, with a capacity
     table (licensed_capacity_by_npi.parquet: npi, licensed_capacity), the occupancy ratio.
-    DuckDB end to end; the fact never enters pandas."""
+    National-share screens add the supplier's largest share of the nation's lines on one
+    code and, with a supplier x referrer table (``referrers``), the out-of-state order share
+    (NULL, and the report says so, without the table). DuckDB end to end; the fact never
+    enters pandas."""
     con = con or _duck_connect()
     p = _sql_str(spending)
     cols = _cols(con, Path(spending))
@@ -532,6 +695,22 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
             df["addr_is_mailbox"] = df["addr_is_mailbox"].fillna(False).astype(bool)
             df["addr_has_unit"] = df["addr_has_unit"].fillna(False).astype(bool)
             df["addr_line1"] = df["addr_line1"].fillna("")
+    for c in NATIONAL_SHARE_COLS + REFERRER_SHARE_COLS:
+        df[c] = pd.NA
+    df["referrers_known"] = False
+    if screen.national_share_rule and len(df):
+        ns = _national_share_table(con, p, key, code, lines, numpred, screen)
+        if len(ns):
+            df = df.drop(columns=list(NATIONAL_SHARE_COLS)).merge(ns, on="npi", how="left")
+        rt = _referrer_table(con, Path(referrers) if referrers else None, Path(provider_dim) if provider_dim else None)
+        if rt is not None:
+            df = df.drop(columns=list(REFERRER_SHARE_COLS)).merge(rt, on="npi", how="left")
+            df["referrers_known"] = True
+            print(f"[theory_screens] {screen.key}: out-of-state order share computed for "
+                  f"{int(df['out_of_state_order_share'].notna().sum())} suppliers from {Path(referrers).name}")
+        else:
+            print(f"[theory_screens] {screen.key}: no supplier x referrer table; the out-of-state order share "
+                  "is not computed (--dme-referrers <parquet|csv> with supplier_npi, referrer_npi, dollars|lines)")
     out = classify(df, screen, verdicts, top=top)
     return out.drop(columns=["capacity_known"])
 
@@ -607,6 +786,11 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
             status.append("address_clean"); reason.append("the practice address is neither a mailbox nor a SUITE shared by "
                                                            f"{screen.min_addr_orgs}+ organizations (a building without a unit "
                                                            "on the line is an office park, not a cluster)")
+        elif screen.national_share_rule and pd.isna(getattr(r, "national_code_share", pd.NA)):
+            status.append("fails_national_share"); reason.append(f"no single code carries ${screen.min_code_dollars:,.0f} of the supplier's dollars")
+        elif screen.national_share_rule and float(r.national_code_share) < screen.min_national_share:
+            status.append("fails_national_share"); reason.append(f"largest share of a national code {float(r.national_code_share):.1%} "
+                                                                 f"(rule {screen.min_national_share:.0%})")
         elif screen.capacity_rule and screen.min_occupancy is not None and bool(getattr(r, "capacity_known", False)) \
                 and pd.isna(getattr(r, "licensed_capacity", pd.NA)):
             status.append("needs_capacity"); reason.append("no licensed capacity on file for this number (the roster for its state is not loaded)")
@@ -653,6 +837,11 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
         order = df[cand].assign(_oc=df.loc[cand, "occupancy_ratio"].astype(float).fillna(-1.0)) \
                         .sort_values(["_oc", "paid_num"], ascending=[False, False]).index
         df.loc[order, "rank"] = range(1, len(order) + 1)
+    elif screen.national_share_rule and cand.any():
+        # the largest national share first (the per-se shape), then numerator dollars
+        order = df[cand].assign(_ns=pd.to_numeric(df.loc[cand, "national_code_share"], errors="coerce").fillna(-1.0)) \
+                        .sort_values(["_ns", "paid_num"], ascending=[False, False]).index
+        df.loc[order, "rank"] = range(1, len(order) + 1)
     else:
         df.loc[cand, "rank"] = range(1, int(cand.sum()) + 1)
     return df
@@ -696,6 +885,11 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50, policy_df: pd.D
               + (f"; peak lines per calendar day >= {s.min_per_day}" if s.min_per_day is not None else "")
               + (f"; the practice address is a mailbox / PO box, or a SUITE (a unit on the line) shared by {s.min_addr_orgs}+ "
                  "distinct organizations (a mailbox ranks first, then dollars)" if s.address_rule else "")
+              + (f"; the supplier's share of the NATION's lines on one code >= {s.min_national_share:.0%} (the max over its "
+                 f"codes carrying >= ${s.min_code_dollars:,.0f} of its own dollars; the national base counts every billing "
+                 "NPI on the code); the out-of-state order share = the share of the supplier's referred dollars (or lines) "
+                 "whose ordering physician's NPPES state differs from the supplier's, reported, not ruled"
+                 if s.national_share_rule else "")
               + ("; occupancy = peak lines a calendar day over licensed capacity where a capacity is known (over 1.0 "
                  "ranks first); open-day occ. = the same over weekdays (a five-day program); two-shift occ. = half of "
                  "that, the reading when the licence approves two sessions a day: a row above 1.0 on two shifts is over "
@@ -714,12 +908,43 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50, policy_df: pd.D
                      f"p90 {q.iloc[1]:.1f}, p99 {q.iloc[2]:.1f} (read this before the table: it says what a "
                      f"line is in this file).")
             L.append("")
+        if s.national_share_rule:
+            known = bool(df["referrers_known"].astype(bool).any()) if "referrers_known" in df.columns else False
+            L.append("Out-of-state order share: " + ("computed from the supplier x referrer table (both states from NPPES)."
+                                                     if known else
+                                                     "NOT computed (no supplier x ordering-physician table was given: "
+                                                     "`--dme-referrers`); the column is blank, not zero."))
+            L.append("")
         cand = df[df["status"].eq("candidate")].sort_values("rank").head(top)
         order_note = ("over-capacity first, then numerator dollars" if s.capacity_rule
-                      else "mailbox first, then numerator dollars" if s.address_rule else "by numerator dollars")
+                      else "mailbox first, then numerator dollars" if s.address_rule
+                      else "largest national share first, then numerator dollars" if s.national_share_rule
+                      else "by numerator dollars")
         L.append(f"### Candidates (top {min(top, len(cand))} of {int(df['status'].eq('candidate').sum())}, {order_note})")
         L.append("")
-        if s.address_rule:
+        if s.national_share_rule:
+            L.append("| rank | npi | name | st | numerator $ | top code | share of national lines | share of national $ | "
+                     "supplier $ on code | national $ on code | national suppliers on code | out-of-state order share | "
+                     "referrers | referrer states | first | last | peak year | last year $ |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+
+            def _pct(v):
+                return "" if pd.isna(v) else f"{float(v) * 100:.1f}%"
+
+            def _usd(v):
+                return "" if pd.isna(v) else f"${float(v):,.0f}"
+
+            def _int(v):
+                return "" if pd.isna(v) else f"{int(v)}"
+
+            for r in cand.itertuples():
+                L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | "
+                         f"{'' if pd.isna(r.top_share_code) else r.top_share_code} | {_pct(r.top_share_lines)} | "
+                         f"{_pct(r.top_share_dollars)} | {_usd(r.top_code_paid)} | {_usd(r.top_code_nat_paid)} | "
+                         f"{_int(r.top_code_nat_suppliers)} | {_pct(r.out_of_state_order_share)} | {_int(r.n_referrers)} | "
+                         f"{_int(r.n_referrer_states)} | {r.first_month} | {r.last_month} | "
+                         f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
+        elif s.address_rule:
             L.append("| rank | npi | name | st | address | basis | orgs at address | NPIs at address | numerator $ | share of all | first | last | peak year | last year $ |")
             L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
             for r in cand.itertuples():
@@ -822,6 +1047,10 @@ def main() -> None:
     ap.add_argument("--screen", default=None, help="screen key(s), comma-separated (default: every screen); one report per run")
     ap.add_argument("--policy", default=str(root / "processed" / "policy" / "state_policy.parquet"),
                     help="the state policy library (src/policy/registry; the policy lane writes it); '' = none")
+    ap.add_argument("--dme-referrers", default=None,
+                    help="supplier x ordering-physician table (parquet or csv: supplier_npi, referrer_npi, dollars|lines; "
+                         "the DMEPOS referring file's Rfrg_NPI / Tot_Suplr_Srvcs names are accepted) for the national-share "
+                         "screen's out-of-state order share; without it the ratio is not computed")
     ap.add_argument("--top", type=int, default=50)
     ap.add_argument("--out", required=True, help="output folder")
     a = ap.parse_args()
@@ -842,7 +1071,7 @@ def main() -> None:
     for k in keys:
         df = run_screen(Path(a.spending), SCREENS[k], con=con, provider_dim=Path(a.provider_dim),
                         verdicts=verdicts, top=a.top, capacity=Path(a.capacity) if a.capacity else None,
-                        policy_df=policy_df)
+                        policy_df=policy_df, referrers=Path(a.dme_referrers) if a.dme_referrers else None)
         df.to_csv(out / f"screen_{k}.csv", index=False)
         # the top candidates' names, one per line, for `first_to_file --names-file` (the free court-record
         # check that runs on every candidate before a research prompt)

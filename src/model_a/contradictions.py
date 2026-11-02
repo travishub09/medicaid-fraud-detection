@@ -21,13 +21,29 @@ computed from the paid-claims fact itself, current-day (no freeze):
                              that organizations bill nationally (the Rhode
                              Island T2046 shape), listed by state so rings
                              read as rings.
+  successor_after_exclusion  (2026-11-02) another NPI in the SAME organization
+                             (the graph's npi_to_org) whose billing starts
+                             within three months of a member's exclusion /
+                             deactivation (or was under a tenth of the excluded
+                             NPI's trailing six-month average) and then carries
+                             at least half of it: the excluded party's book
+                             moved to a new number.
+  enrolled_after_owner_exclusion (2026-11-02) an organization whose PECOS owner
+                             (the graph's owned_by edges) was on the exclusion
+                             list BEFORE the owner's association date with the
+                             org (or before the org's first billed month when
+                             the date is missing): 42 CFR 1001.1901(b) bars
+                             payment to an entity an excluded person owns or
+                             controls. The owner <-> exclusion match is the
+                             graph's own excluded_in edge (exact on the owner
+                             NPI, probable on the normalized name).
 
 Every row is a lead for counsel review, never an accusation: data-entry
 errors, retroactive reinstatements, and successor billing exist. The report
 says so and lists the innocent explanations to rule out first.
 
   python -m src.model_a.contradictions --spending processed/spending_fact.parquet \
-      --exclusion-nodes graph/nodes/exclusion_nodes.parquet \
+      --exclusion-nodes graph/nodes/exclusion_nodes.parquet [--graph-dir graph] \
       [--deactivation preclean/nppes_deactivation/<file>] [--matrix <run>/provider_features_for_model.parquet] \
       [--minutes preclean/hcpcs_time/hcpcs_minutes_2023.csv] --out <dir>
 """
@@ -73,7 +89,23 @@ INNOCENT = {
     "group_billing_under_personal_npi": "a group practice or agency that bills its whole staff under "
                                         "one clinician's Type-1 NPI (a state may permit it; most "
                                         "require the rendering provider on the claim)",
+    "successor_after_exclusion": "a legitimately hired replacement clinician (the practice filled the "
+                                 "vacancy); a partner who already worked there and took over the panel; "
+                                 "a group that re-enrolled under a new number for an administrative reason "
+                                 "(a merger, a tax-id change); the organization grouping is a name merge "
+                                 "and the two numbers are unrelated practices",
+    "enrolled_after_owner_exclusion": "a name collision on the owner match (a probable match is a "
+                                      "normalized-name match, never an identifier: read the match basis "
+                                      "first); a reinstated exclusion (the reinstatement date is printed "
+                                      "when the record carries one); a pre-exclusion association recorded "
+                                      "late in PECOS (the association date is the enrollment record's, not "
+                                      "the deal's); a managing employee rather than an owner",
 }
+
+SUCCESSOR_WINDOW_MONTHS = 3        # successor's first billed month within this many months of the event
+SUCCESSOR_MIN_RATIO = 0.5          # successor's post-event 6-month average over the excluded NPI's trailing 6-month average
+SUCCESSOR_SMALL_SHARE = 0.1        # ... or the successor billed under this share of it before the event
+SUCCESSOR_MAX_ORG_MEMBERS = 250    # a system with thousands of numbers always has a 'successor': not the shape
 
 
 def _sql(p) -> str:
@@ -332,20 +364,283 @@ def _names(m: pd.DataFrame) -> pd.Series:
     return pd.Series("", index=m.index)
 
 
+def _source(con, obj, name: str) -> str | None:
+    """A DuckDB source expression for a parquet path or a registered DataFrame (None when absent)."""
+    if obj is None:
+        return None
+    if isinstance(obj, pd.DataFrame):
+        if not len(obj):
+            return None
+        con.register(name, obj)
+        return name
+    p = Path(obj)
+    if not p.exists():
+        return None
+    return f"read_parquet('{_sql(p)}')"
+
+
+SUCCESSOR_COLS = ["excluded_npi", "successor_npi", "org_node_id", "event", "event_date", "successor_first_month",
+                  "excluded_pre6_avg", "successor_pre6_avg", "successor_post6_avg", "successor_post6_paid",
+                  "ratio", "successor_total_paid", "excluded_top_codes", "successor_top_codes",
+                  "shared_top_codes", "shared_codes"]
+
+
+def successor_after_exclusion(spending_path: str | Path, events: pd.DataFrame, npi_to_org,
+                              con=None, window_months: int = SUCCESSOR_WINDOW_MONTHS,
+                              min_ratio: float = SUCCESSOR_MIN_RATIO, small_share: float = SUCCESSOR_SMALL_SHARE,
+                              max_org_members: int = SUCCESSOR_MAX_ORG_MEMBERS) -> pd.DataFrame:
+    """For every event NPI (exclusion / deactivation / enrollment end from ``_events``) that the
+    graph places in an organization with other members: another member whose first billed
+    month is within ``window_months`` of the event month (or whose monthly dollars before the
+    event were under ``small_share`` of the excluded NPI's trailing six-month average) and whose
+    average monthly dollars in the six months AFTER the event are at least ``min_ratio`` of
+    that trailing average. ``npi_to_org`` is the graph's npi_to_org.parquet (path) or the
+    frame (npi, org_node_id). One pass over the fact restricted to the members of those
+    organizations, in DuckDB. Ranked by the successor's post-event dollars. Empty (with a log
+    line) when the inputs are absent."""
+    if events is None or not len(events):
+        print("[contradictions] successor_after_exclusion: skipped (no exclusion / deactivation events)")
+        return pd.DataFrame(columns=SUCCESSOR_COLS)
+    own = con is None
+    if own:
+        from src.attempt_2.duck import connect
+        con = connect()
+    n2o = _source(con, npi_to_org, "n2o_df")
+    if n2o is None:
+        print("[contradictions] successor_after_exclusion: skipped (no npi_to_org: pass --graph-dir with the graph's npi_to_org.parquet)")
+        if own:
+            con.close()
+        return pd.DataFrame(columns=SUCCESSOR_COLS)
+    ev = events[["npi", "event", "event_date"]].copy()
+    ev["npi"] = ev["npi"].astype(str)
+    ev["event_month"] = pd.to_datetime(ev["event_date"], errors="coerce").dt.strftime("%Y-%m")
+    ev = ev.dropna(subset=["event_month"]).sort_values("event_date").drop_duplicates(["npi", "event"])
+    con.register("succ_ev", ev[["npi", "event", "event_month"]])
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE succ_ev_org AS
+        SELECT e.npi, e.event, e.event_month, CAST(x.org_node_id AS VARCHAR) AS org_node_id
+        FROM succ_ev e JOIN {n2o} x ON CAST(x.npi AS VARCHAR) = e.npi""")
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE succ_members AS
+        SELECT CAST(x.npi AS VARCHAR) AS npi, CAST(x.org_node_id AS VARCHAR) AS org_node_id
+        FROM {n2o} x
+        WHERE CAST(x.org_node_id AS VARCHAR) IN (SELECT DISTINCT org_node_id FROM succ_ev_org)
+        QUALIFY COUNT(*) OVER (PARTITION BY CAST(x.org_node_id AS VARCHAR)) BETWEEN 2 AND {int(max_org_members)}""")
+    n_orgs = con.execute("SELECT COUNT(DISTINCT org_node_id), COUNT(*) FROM succ_members").fetchone()
+    print(f"[contradictions] successor_after_exclusion: {len(ev):,} events, {n_orgs[0]:,} organizations with "
+          f"2..{max_org_members} members ({n_orgs[1]:,} member NPIs) scanned")
+    if not n_orgs[0]:
+        con.unregister("succ_ev")
+        if own:
+            con.close()
+        return pd.DataFrame(columns=SUCCESSOR_COLS)
+    p = _sql(spending_path)
+    # ONE pass over the fact: monthly dollars by NPI x code for the members of those organizations
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE succ_fm AS
+        SELECT CAST(billing_npi AS VARCHAR) npi, substr(CAST(service_month AS VARCHAR), 1, 7) ym,
+               UPPER(TRIM(CAST(hcpcs_code AS VARCHAR))) code, SUM(CAST(total_paid AS DOUBLE)) paid
+        FROM read_parquet('{p}')
+        WHERE CAST(billing_npi AS VARCHAR) IN (SELECT npi FROM succ_members)
+        GROUP BY 1, 2, 3""")
+    res = con.execute(f"""
+        WITH mm AS (SELECT npi, ym, CAST(ym || '-01' AS DATE) d, SUM(paid) paid FROM succ_fm GROUP BY 1, 2, 3),
+        firsts AS (SELECT npi, MIN(ym) first_month, SUM(paid) total_paid FROM mm WHERE paid > 0 GROUP BY 1),
+        ex AS (
+            SELECT e.npi, e.event, e.event_month, e.org_node_id, CAST(e.event_month || '-01' AS DATE) ev_d,
+                   COALESCE(SUM(CASE WHEN m.d >= CAST(e.event_month || '-01' AS DATE) - INTERVAL 6 MONTH
+                                      AND m.d < CAST(e.event_month || '-01' AS DATE) THEN m.paid END), 0) / 6.0 AS ex_pre6
+            FROM succ_ev_org e LEFT JOIN mm m ON m.npi = e.npi
+            GROUP BY 1, 2, 3, 4, 5
+        ),
+        cand AS (
+            SELECT ex.npi AS excluded_npi, ex.event, ex.event_month, ex.org_node_id, ex.ev_d, ex.ex_pre6,
+                   s.npi AS successor_npi,
+                   COALESCE(SUM(CASE WHEN m.d >= ex.ev_d - INTERVAL 6 MONTH AND m.d < ex.ev_d THEN m.paid END), 0) / 6.0 AS su_pre6,
+                   COALESCE(SUM(CASE WHEN m.d >= ex.ev_d AND m.d < ex.ev_d + INTERVAL 6 MONTH THEN m.paid END), 0) AS su_post6_paid
+            FROM ex
+            JOIN succ_members s ON s.org_node_id = ex.org_node_id AND s.npi <> ex.npi
+            LEFT JOIN mm m ON m.npi = s.npi
+            WHERE ex.ex_pre6 > 0
+            GROUP BY 1, 2, 3, 4, 5, 6, 7
+        )
+        SELECT c.excluded_npi, c.successor_npi, c.org_node_id, c.event, c.event_month, f.first_month AS successor_first_month,
+               c.ex_pre6 AS excluded_pre6_avg, c.su_pre6 AS successor_pre6_avg,
+               c.su_post6_paid / 6.0 AS successor_post6_avg, c.su_post6_paid AS successor_post6_paid,
+               (c.su_post6_paid / 6.0) / c.ex_pre6 AS ratio, f.total_paid AS successor_total_paid
+        FROM cand c JOIN firsts f ON f.npi = c.successor_npi
+        WHERE c.su_post6_paid / 6.0 >= {float(min_ratio)} * c.ex_pre6
+          AND (abs(date_diff('month', CAST(f.first_month || '-01' AS DATE), c.ev_d)) <= {int(window_months)}
+               OR c.su_pre6 < {float(small_share)} * c.ex_pre6)
+        ORDER BY c.su_post6_paid DESC""").df()
+    codes = con.execute("""
+        WITH bc AS (SELECT npi, code, SUM(paid) paid FROM succ_fm GROUP BY 1, 2),
+        r AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY npi ORDER BY paid DESC, code) rn FROM bc WHERE paid > 0)
+        SELECT npi, STRING_AGG(code, ',' ORDER BY paid DESC, code) codes FROM r WHERE rn <= 5 GROUP BY 1""").df()
+    con.unregister("succ_ev")
+    if own:
+        con.close()
+    if not len(res):
+        return pd.DataFrame(columns=SUCCESSOR_COLS)
+    top = dict(zip(codes["npi"].astype(str), codes["codes"].astype(str)))
+    res["event_date"] = pd.to_datetime(res["event_month"] + "-01")
+    res["excluded_top_codes"] = res["excluded_npi"].map(top).fillna("")
+    res["successor_top_codes"] = res["successor_npi"].map(top).fillna("")
+    shared = [sorted(set(a.split(",")) & set(b.split(",")) - {""})
+              for a, b in zip(res["excluded_top_codes"], res["successor_top_codes"])]
+    res["shared_top_codes"] = [len(s) for s in shared]
+    res["shared_codes"] = [",".join(s) for s in shared]
+    return res[SUCCESSOR_COLS].reset_index(drop=True)
+
+
+OWNER_EXCL_COLS = ["org_node_id", "org_name", "top_npi", "owner_node_id", "owner_role", "owner_type", "match_basis",
+                   "excl_date", "excl_type", "reinstate_date", "association_date", "org_first_month",
+                   "paid_since_association", "org_total_paid", "basis_date"]
+
+
+def enrolled_after_owner_exclusion(spending_path: str | Path, owned_by_edges: pd.DataFrame | None,
+                                   excluded_in_edges: pd.DataFrame | None, exclusion_nodes: pd.DataFrame | None,
+                                   owner_nodes: pd.DataFrame | None, npi_to_org, org_nodes: pd.DataFrame | None = None,
+                                   con=None) -> pd.DataFrame:
+    """Organizations whose PECOS owner was on the exclusion list BEFORE the owner's association
+    with the org. The owner <-> exclusion match is the graph's own ``excluded_in`` edge from an
+    ``owner:`` node (match_tier exact = the owner NPI is on the list; probable = the normalized
+    name key matches: build_edges.build_excluded_in_edges, never a second normalizer). The
+    comparison date is the owned_by edge's ``association_date``, else the org's first billed
+    month. Dollars since the association (all dollars when the date is missing) rank the rows.
+    Empty (with a log line) when the owner edges, the match edges or npi_to_org are absent."""
+    empty = pd.DataFrame(columns=OWNER_EXCL_COLS)
+    if owned_by_edges is None or not len(owned_by_edges):
+        print("[contradictions] enrolled_after_owner_exclusion: skipped (no owned_by edges: graph/edges/owned_by_edges.parquet)")
+        return empty
+    if excluded_in_edges is None or not len(excluded_in_edges):
+        print("[contradictions] enrolled_after_owner_exclusion: skipped (no excluded_in edges: graph/edges/excluded_in_edges.parquet)")
+        return empty
+    ex = excluded_in_edges.copy()
+    ex["src_id"] = ex["src_id"].astype(str)
+    ex = ex[ex["src_id"].str.startswith("owner:")]
+    if not len(ex):
+        print("[contradictions] enrolled_after_owner_exclusion: skipped (no owner matched an exclusion record in the graph)")
+        return empty
+    ex = ex.rename(columns={"src_id": "owner_node_id", "dst_id": "exclusion_node_id"})
+    ex["exclusion_node_id"] = ex["exclusion_node_id"].astype(str)
+    if "match_tier" not in ex.columns:
+        ex["match_tier"] = ""
+    if exclusion_nodes is not None and len(exclusion_nodes) and "node_id" in exclusion_nodes.columns:
+        en = exclusion_nodes[[c for c in ("node_id", "excl_type", "excl_date", "reinstate_date") if c in exclusion_nodes.columns]].copy()
+        en["node_id"] = en["node_id"].astype(str)
+        ex = ex.merge(en.rename(columns={"excl_date": "node_excl_date"}), left_on="exclusion_node_id", right_on="node_id", how="left")
+        if "excl_date" in ex.columns:
+            ex["excl_date"] = pd.to_datetime(ex["excl_date"], errors="coerce").fillna(pd.to_datetime(ex["node_excl_date"], errors="coerce"))
+        else:
+            ex["excl_date"] = pd.to_datetime(ex["node_excl_date"], errors="coerce")
+    else:
+        ex["excl_date"] = pd.to_datetime(ex.get("excl_date"), errors="coerce")
+    for c in ("excl_type", "reinstate_date"):
+        if c not in ex.columns:
+            ex[c] = ""
+    ex = ex.dropna(subset=["excl_date"])
+    # one exclusion per owner: the EARLIEST (the question is whether the owner was excluded before joining)
+    ex = ex.sort_values("excl_date").drop_duplicates("owner_node_id")
+    ob = owned_by_edges.copy()
+    ob["src_id"] = ob["src_id"].astype(str)
+    ob["dst_id"] = ob["dst_id"].astype(str)
+    ob["association_date"] = pd.to_datetime(ob.get("association_date"), errors="coerce")
+    pairs = ob.merge(ex, left_on="dst_id", right_on="owner_node_id", how="inner")
+    if not len(pairs):
+        print("[contradictions] enrolled_after_owner_exclusion: no matched owner sits on an owned_by edge")
+        return empty
+    pairs = pairs.rename(columns={"src_id": "org_node_id"})
+    own = con is None
+    if own:
+        from src.attempt_2.duck import connect
+        con = connect()
+    n2o = _source(con, npi_to_org, "n2o_df2")
+    if n2o is None:
+        print("[contradictions] enrolled_after_owner_exclusion: skipped (no npi_to_org: pass --graph-dir)")
+        if own:
+            con.close()
+        return empty
+    pairs = pairs.reset_index(drop=True)
+    pairs["pair_id"] = range(len(pairs))
+    pairs["since_month"] = pairs["association_date"].dt.strftime("%Y-%m").fillna("0000-00")
+    con.register("oe_pairs", pairs[["pair_id", "org_node_id", "since_month"]])
+    p = _sql(spending_path)
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE oe_members AS
+        SELECT CAST(x.npi AS VARCHAR) AS npi, CAST(x.org_node_id AS VARCHAR) AS org_node_id
+        FROM {n2o} x WHERE CAST(x.org_node_id AS VARCHAR) IN (SELECT DISTINCT org_node_id FROM oe_pairs)""")
+    con.execute(f"""
+        CREATE OR REPLACE TEMP TABLE oe_om AS
+        SELECT m.org_node_id, CAST(f.billing_npi AS VARCHAR) npi, substr(CAST(f.service_month AS VARCHAR), 1, 7) ym,
+               SUM(CAST(f.total_paid AS DOUBLE)) paid
+        FROM read_parquet('{p}') f JOIN oe_members m ON m.npi = CAST(f.billing_npi AS VARCHAR)
+        GROUP BY 1, 2, 3""")
+    orgs = con.execute("""
+        WITH t AS (SELECT org_node_id, MIN(CASE WHEN paid > 0 THEN ym END) first_month, SUM(paid) total_paid FROM oe_om GROUP BY 1),
+        np_ AS (SELECT org_node_id, npi, SUM(paid) paid FROM oe_om GROUP BY 1, 2),
+        n AS (SELECT * FROM np_ QUALIFY ROW_NUMBER() OVER (PARTITION BY org_node_id ORDER BY paid DESC, npi) = 1)
+        SELECT t.org_node_id, t.first_month, t.total_paid, n.npi AS top_npi FROM t JOIN n USING (org_node_id)""").df()
+    since = con.execute("""
+        SELECT p.pair_id, COALESCE(SUM(o.paid), 0) paid_since
+        FROM oe_pairs p LEFT JOIN oe_om o ON o.org_node_id = p.org_node_id AND o.ym >= p.since_month
+        GROUP BY 1""").df()
+    con.unregister("oe_pairs")
+    if own:
+        con.close()
+    pairs = pairs.merge(orgs, on="org_node_id", how="left").merge(since, on="pair_id", how="left")
+    pairs = pairs[pairs["first_month"].notna()]            # an org with no paid month has no dollars at issue
+    if not len(pairs):
+        return empty
+    first_d = pd.to_datetime(pairs["first_month"] + "-01", errors="coerce")
+    basis = pairs["association_date"].fillna(first_d)
+    pairs["basis_date"] = np.where(pairs["association_date"].notna(), "association_date", "org_first_billed_month")
+    keep = pairs["excl_date"] < basis
+    pairs = pairs[keep].copy()
+    if not len(pairs):
+        print("[contradictions] enrolled_after_owner_exclusion: no owner was excluded before its association")
+        return empty
+    pairs["paid_since_association"] = pairs["paid_since"].fillna(0.0)
+    pairs["org_total_paid"] = pairs["total_paid"].fillna(0.0)
+    pairs["org_first_month"] = pairs["first_month"]
+    pairs["match_basis"] = pairs["match_tier"].astype(str).map(
+        {"exact": "exact: the owner NPI is on the exclusion list",
+         "probable": "probable: the normalized owner name matches an excluded name (no identifier)"}).fillna("graph match")
+    pairs["owner_role"] = pairs.get("owner_role", pd.Series("", index=pairs.index)).fillna("").astype(str)
+    pairs["owner_type"] = ""
+    if owner_nodes is not None and len(owner_nodes) and "node_id" in owner_nodes.columns:
+        ot = dict(zip(owner_nodes["node_id"].astype(str), owner_nodes.get("owner_type", pd.Series("", index=owner_nodes.index)).fillna("").astype(str)))
+        pairs["owner_type"] = pairs["owner_node_id"].map(ot).fillna("")
+    pairs["org_name"] = ""
+    if org_nodes is not None and len(org_nodes) and "org_node_id" in org_nodes.columns:
+        nm = dict(zip(org_nodes["org_node_id"].astype(str), org_nodes.get("org_name", pd.Series("", index=org_nodes.index)).fillna("").astype(str)))
+        pairs["org_name"] = pairs["org_node_id"].map(nm).fillna("")
+    pairs["reinstate_date"] = pd.to_datetime(pairs["reinstate_date"], errors="coerce")
+    out = pairs.sort_values("paid_since_association", ascending=False)[OWNER_EXCL_COLS].reset_index(drop=True)
+    print(f"[contradictions] enrolled_after_owner_exclusion: {len(out):,} org x owner rows (owner excluded before the association)")
+    return out
+
+
 TIER = {"billing_after_exclusion": "A", "billing_after_deactivation": "A", "billing_after_death": "A",
         "billing_after_enrollment_end": "A", "impossible_day": "A", "facility_code_on_individual": "B", "long_day": "B",
-        "group_billing_under_personal_npi": "B"}
+        "group_billing_under_personal_npi": "B", "successor_after_exclusion": "A", "enrolled_after_owner_exclusion": "A"}
+SECTIONED = ("successor_after_exclusion", "enrolled_after_owner_exclusion")   # own section in the report, out of the main table
 
 
 def assemble(post: pd.DataFrame, hours: pd.DataFrame, facility: pd.DataFrame,
              matrix: pd.DataFrame | None, min_post_paid: float = MIN_POST_PAID,
-             provider_dim: pd.DataFrame | None = None) -> pd.DataFrame:
+             provider_dim: pd.DataFrame | None = None,
+             successors: pd.DataFrame | None = None, owner_excl: pd.DataFrame | None = None) -> pd.DataFrame:
     """One table: tier, npi, name, state, entity_type, contradiction, event_date,
     post_event_paid, total_paid, last_month, detail — ranked by dollars at issue.
     Tier A = per-se facts; Tier B = facility codes on individual NPIs, which is
     a state-convention question until the ring scan / state roster says otherwise.
     Names fall back to provider_dim for NPIs the run matrix does not carry (a
-    deactivated NPI is not in the matrix); still-unnamed rows say so."""
+    deactivated NPI is not in the matrix); still-unnamed rows say so.
+    ``successors`` (successor_after_exclusion rows: npi = the successor, dollars at
+    issue = its six post-event months) and ``owner_excl`` (enrolled_after_owner_
+    exclusion rows: npi = the org's largest biller, name = the org, dollars at
+    issue = since the association) join the table under their own event types."""
     ident = {}
     for src in (provider_dim, matrix):
         if src is not None and len(src):
@@ -399,6 +694,40 @@ def assemble(post: pd.DataFrame, hours: pd.DataFrame, facility: pd.DataFrame,
                          "contradiction": "billing_after_death", "event_date": "",
                          "post_event_paid": pp, "total_paid": float(paid[r.Index]), "last_month": "",
                          "months_after": 0, "detail": f"{sh[r.Index]:.0%} of dollars after recorded death"})
+    if successors is not None and len(successors):
+        for r in successors.itertuples():
+            if float(r.successor_post6_paid) < min_post_paid:
+                continue
+            n, s, e = ident.get(str(r.successor_npi), ("", "", ""))
+            rows.append({"npi": str(r.successor_npi), "name": n or "(not in current registry)", "state": s, "entity_type": e,
+                         "contradiction": "successor_after_exclusion",
+                         "event_date": pd.Timestamp(r.event_date).strftime("%Y-%m-%d"),
+                         "post_event_paid": float(r.successor_post6_paid), "total_paid": float(r.successor_total_paid),
+                         "last_month": "", "months_after": 6,
+                         "detail": (f"successor of {r.excluded_npi} ({r.event}) in {r.org_node_id}; successor first billed "
+                                    f"{r.successor_first_month}; excluded NPI's trailing 6-mo avg ${float(r.excluded_pre6_avg):,.0f}/mo, "
+                                    f"successor pre-event ${float(r.successor_pre6_avg):,.0f}/mo, post-event "
+                                    f"${float(r.successor_post6_avg):,.0f}/mo (ratio {float(r.ratio):.2f}); "
+                                    f"shared top codes {int(r.shared_top_codes)} of 5 ({r.shared_codes or 'none'}); "
+                                    f"excluded top codes {r.excluded_top_codes}; successor top codes {r.successor_top_codes}")})
+    if owner_excl is not None and len(owner_excl):
+        for r in owner_excl.itertuples():
+            if float(r.paid_since_association) < min_post_paid:
+                continue
+            n, s, e = ident.get(str(r.top_npi), ("", "", ""))
+            assoc = ("" if pd.isna(r.association_date) else pd.Timestamp(r.association_date).strftime("%Y-%m-%d"))
+            reins = ("" if pd.isna(r.reinstate_date) else f"; reinstated {pd.Timestamp(r.reinstate_date).strftime('%Y-%m-%d')}")
+            rows.append({"npi": str(r.top_npi), "name": str(r.org_name or "") or n or "(org name not in graph)", "state": s,
+                         "entity_type": e or "2", "contradiction": "enrolled_after_owner_exclusion",
+                         "event_date": pd.Timestamp(r.excl_date).strftime("%Y-%m-%d"),
+                         "post_event_paid": float(r.paid_since_association), "total_paid": float(r.org_total_paid),
+                         "last_month": "", "months_after": 0,
+                         "detail": (f"org {r.org_node_id}; owner {r.owner_node_id} (role {r.owner_role or '?'}, type {r.owner_type or '?'}); "
+                                    f"excluded {pd.Timestamp(r.excl_date).strftime('%Y-%m-%d')} ({r.excl_type or '?'}){reins}; "
+                                    f"match {r.match_basis}; association "
+                                    + (f"{assoc}" if assoc else f"date missing: org first billed {r.org_first_month}")
+                                    + f"; org first billed {r.org_first_month}; dollars since the association "
+                                    f"${float(r.paid_since_association):,.0f} (npi = the org's largest biller)")})
     out = pd.DataFrame(rows, columns=["npi", "name", "state", "entity_type", "contradiction",
                                       "event_date", "post_event_paid", "total_paid", "last_month",
                                       "months_after", "detail"])
@@ -440,6 +769,49 @@ def attach_deep_facts(t: pd.DataFrame, spending_path: str | Path, minutes_csv=No
     return t
 
 
+_SECTION_TEXT = {
+    "successor_after_exclusion": (
+        "Successor billing after an exclusion / deactivation",
+        "Another NPI in the SAME organization (the graph's npi_to_org) whose billing starts within three "
+        "months of a member's exclusion, deactivation or enrollment end (or was under a tenth of the "
+        "excluded NPI's trailing six-month average) and then carries at least half of that average in "
+        "the six months after: the excluded party's book moved to a new number. The shared top codes say "
+        "whether it is the same work. Ranked by the successor's post-event dollars."),
+    "enrolled_after_owner_exclusion": (
+        "Organizations whose PECOS owner was excluded before joining",
+        "An owner on the graph's owned_by edges whose exclusion date is EARLIER than the owner's association "
+        "date with the organization (or earlier than the org's first billed month when the date is missing). "
+        "42 CFR 1001.1901(b) bars payment to an entity an excluded person owns or controls. The owner is the "
+        "graph's owner node id (an NPI or a normalized name key, never a display name here); the match is "
+        "the graph's own excluded_in edge and its basis is printed on every row. Ranked by the organization's "
+        "dollars since the association."),
+}
+
+
+def _sectioned_markdown(t: pd.DataFrame, inputs: dict) -> list[str]:
+    """One section per SECTIONED event type: the innocent explanations FIRST, then the top rows;
+    a skipped check (inputs['<type>_status']) says so instead of printing an empty table."""
+    L: list[str] = []
+    for k in SECTIONED:
+        title, what = _SECTION_TEXT[k]
+        sub = t[t["contradiction"].eq(k)]
+        L += ["", f"## {title} (`{k}`: {len(sub):,} rows, ${sub['post_event_paid'].sum()/1e6:,.1f}M at issue)", "",
+              f"_{what}_", "",
+              f"**Innocent explanations to rule out first.** {INNOCENT[k]}.", ""]
+        status = inputs.get(f"{k}_status", "")
+        if status and status != "computed":
+            L += [f"_This check did not run: {status}._"]
+            continue
+        if not len(sub):
+            L += ["_No rows met the thresholds._"]
+            continue
+        L += ["| # | NPI | name | st | event | $ at issue | $ total | detail |", "|--:|---|---|---|---|--:|--:|---|"]
+        for i, r in enumerate(sub.head(50).itertuples(), 1):
+            L.append(f"| {i} | {r.npi} | {str(r.name)[:40]} | {r.state} | {r.event_date} | ${r.post_event_paid/1e6:,.2f}M | "
+                     f"${r.total_paid/1e6:,.1f}M | {str(r.detail)[:260]} |")
+    return L
+
+
 def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
     L = ["# TIER A CONTRADICTIONS — per-se facts, ranked by dollars at issue", "",
          "_Every row is a lead for counsel review, never an accusation. These are the facts "
@@ -448,18 +820,18 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
          "death; individual NPIs whose timed "
          "codes exceed a working day; individual NPIs billing organization-only codes. Each "
          "has innocent explanations listed at the end; rule those out first._", "",
-         f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v and k != 'n_setaside')}._", ""]
+         f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v and k != 'n_setaside' and not k.endswith('_status'))}._", ""]
     if inputs.get("n_setaside"):
         L += [f"_{int(inputs['n_setaside']):,} exclusion record(s) were set aside as NOT a billing bar for the "
               "provider (a state's fine / cap / probation, another state's action against a provider billing "
               "from elsewhere, OpenSanctions mirrors): contradictions_setaside.csv lists each with the reason._", ""]
     if not len(t):
-        return "\n".join(L + ["_No rows met the thresholds._"]) + "\n"
+        return "\n".join(L + ["_No rows met the thresholds._"] + _sectioned_markdown(t, inputs)) + "\n"
     by = t.groupby(["tier", "contradiction"])["post_event_paid"].agg(["size", "sum"])
     L += ["| tier | contradiction | providers | dollars at issue |", "|---|---|--:|--:|"]
     for (tier, k), r in by.sort_values("sum", ascending=False).iterrows():
         L.append(f"| {tier} | {k} | {int(r['size']):,} | ${r['sum']/1e6:,.1f}M |")
-    a = t[t["tier"] == "A"]
+    a = t[(t["tier"] == "A") & ~t["contradiction"].isin(SECTIONED)]
     L += ["", f"## Tier A: per-se contradictions (top 150 of {len(a):,}, ranked by dollars after the event)", "",
           "_Windows end at reinstatement or NPI reactivation where the record carries one; dollars after "
           "that are not counted._", "",
@@ -474,6 +846,7 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
         L.append(f"| {i} | {r.npi} | {str(r.name)[:40]} | {r.state} | {r.entity_type} | {r.contradiction} | "
                  f"{r.event_date} | ${r.post_event_paid/1e6:,.2f}M | ${r.total_paid/1e6:,.1f}M | "
                  f"{r.last_month} | {r.months_after} | {billed[:160]} | {str(r.detail)[:120]} |")
+    L += _sectioned_markdown(t, inputs)
     b = t[t["tier"] == "B"]
     if len(b):
         L += ["", f"## Tier B: facility-only codes on individual NPIs ({len(b):,} NPIs, "
@@ -517,11 +890,22 @@ def main() -> None:
     ap.add_argument("--deep-top", type=int, default=60,
                     help="attach paid-claims facts (top code, span, rendering NPIs, paid by year) "
                          "to this many top Tier A rows; 0 disables")
+    ap.add_argument("--graph-dir", default=None,
+                    help="the entity graph folder (npi_to_org.parquet, edges/owned_by_edges.parquet, "
+                         "edges/excluded_in_edges.parquet, nodes/owner_nodes.parquet, nodes/org_nodes.parquet) for the "
+                         "successor and owner-exclusion checks; default <data-root>/graph; each check is a no-op "
+                         "with a log line when its file is absent")
+    ap.add_argument("--skip-successor", action="store_true", help="skip the successor_after_exclusion check")
+    ap.add_argument("--skip-owner-excl", action="store_true", help="skip the enrolled_after_owner_exclusion check")
     ap.add_argument("--out", required=True, help="output folder")
     a = ap.parse_args()
     root = Path(os.environ.get("MEDICAID_DATA_ROOT", str(Path.home() / "Desktop/data")))
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    graph_dir = Path(a.graph_dir) if a.graph_dir else root / "graph"
+    if not a.exclusion_nodes and (graph_dir / "nodes" / "exclusion_nodes.parquet").exists():
+        a.exclusion_nodes = str(graph_dir / "nodes" / "exclusion_nodes.parquet")
+        print(f"[contradictions] exclusion nodes from the graph: {a.exclusion_nodes}")
 
     excl = pd.read_parquet(a.exclusion_nodes) if a.exclusion_nodes else None
     deact = None
@@ -581,13 +965,46 @@ def main() -> None:
             hours = impossible_days(a.spending, cand["npi"].astype(str).tolist(), minutes)
     facility = facility_codes_on_individuals(matrix) if matrix is not None else pd.DataFrame(columns=["npi"])
 
-    t = assemble(post, hours, facility, matrix, min_post_paid=a.min_post_paid, provider_dim=pdim)
+    # the two organization-grain checks (2026-11-02): both read the graph folder and are no-ops
+    # with a log line when their inputs are absent
+    n2o_p = graph_dir / "npi_to_org.parquet"
+    successors, succ_status = pd.DataFrame(columns=SUCCESSOR_COLS), "skipped by --skip-successor"
+    if not a.skip_successor:
+        if n2o_p.exists():
+            successors = successor_after_exclusion(a.spending, events, n2o_p)
+            succ_status = "computed"
+        else:
+            succ_status = f"no npi_to_org ({n2o_p})"
+            print(f"[contradictions] successor_after_exclusion: skipped ({succ_status})")
+    owner_excl, own_status = pd.DataFrame(columns=OWNER_EXCL_COLS), "skipped by --skip-owner-excl"
+    if not a.skip_owner_excl:
+        ob_p, ei_p = graph_dir / "edges" / "owned_by_edges.parquet", graph_dir / "edges" / "excluded_in_edges.parquet"
+        if ob_p.exists() and ei_p.exists() and n2o_p.exists():
+            on_p, og_p = graph_dir / "nodes" / "owner_nodes.parquet", graph_dir / "nodes" / "org_nodes.parquet"
+            owner_excl = enrolled_after_owner_exclusion(
+                a.spending, pd.read_parquet(ob_p), pd.read_parquet(ei_p), excl,
+                pd.read_parquet(on_p, columns=["node_id", "owner_type"]) if on_p.exists() else None, n2o_p,
+                pd.read_parquet(og_p, columns=["org_node_id", "org_name"]) if og_p.exists() else None)
+            own_status = "computed"
+        else:
+            missing = [str(p.name) for p in (ob_p, ei_p, n2o_p) if not p.exists()]
+            own_status = f"graph files missing under {graph_dir}: {', '.join(missing)}"
+            print(f"[contradictions] enrolled_after_owner_exclusion: skipped ({own_status})")
+
+    t = assemble(post, hours, facility, matrix, min_post_paid=a.min_post_paid, provider_dim=pdim,
+                 successors=successors, owner_excl=owner_excl)
     if a.deep_top > 0 and len(t):
         print(f"[contradictions] attaching paid-claims facts to the top {a.deep_top} Tier A rows ...")
         t = attach_deep_facts(t, a.spending, minutes_csv=minutes, top_n=a.deep_top)
     t.to_csv(out / "contradictions.csv", index=False)
+    if len(successors):
+        successors.to_csv(out / "contradictions_successors.csv", index=False)
+    if len(owner_excl):
+        owner_excl.to_csv(out / "contradictions_owner_exclusions.csv", index=False)
     inputs = {"n_setaside": int(len(setaside)), "spending": Path(a.spending).name, "exclusions": Path(a.exclusion_nodes).name if a.exclusion_nodes else "",
-              "deactivation": Path(dp).name if dp else "", "matrix": Path(a.matrix).name if a.matrix else ""}
+              "deactivation": Path(dp).name if dp else "", "matrix": Path(a.matrix).name if a.matrix else "",
+              "graph": str(graph_dir) if n2o_p.exists() else "",
+              "successor_after_exclusion_status": succ_status, "enrolled_after_owner_exclusion_status": own_status}
     (out / "CONTRADICTIONS.md").write_text(to_markdown(t, inputs), encoding="utf-8")
     (out / "contradictions_summary.json").write_text(json.dumps({
         "rows": int(len(t)),
