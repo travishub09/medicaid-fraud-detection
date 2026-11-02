@@ -232,18 +232,67 @@ def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
     return out
 
 
-def _capacity_mismatch(m: pd.DataFrame) -> pd.Series | None:
-    """Org service volume per certified bed (POS): the worthless-services
-    capacity signal. Needs pos_bed_count (org-broadcast) + service_volume;
-    returns None when either is absent so the scheme stays skip-missing."""
-    if "pos_bed_count" not in m.columns or "service_volume" not in m.columns \
-            or "org_node_id" not in m.columns:
+# Architecture audit F1 / F2 (2026-11-02): the facility / CCN-grain sources join at NPI
+# grain (each NPI's OWN CCN's value; facility.ccn_features_to_export_grain) and the
+# capacity ratio is computed PER CCN. MEDICAID_FACILITY_ROLLUP=max restores the pre-audit
+# org-max frames (broadcast to every member) + the org-sum-over-largest-facility capacity
+# ratio as ONE gradable arm (its name is logged and lands in the frames' attrs).
+FACILITY_ROLLUP_ENV = "MEDICAID_FACILITY_ROLLUP"
+CAPACITY_BASIS_COL = "capacity_mismatch_basis"
+
+
+CCN_SIDE_COLS = ("ccn_list", "ccn_beds", "ccn_state")   # pos side columns, never matrix columns
+
+
+def _capacity_mismatch(m: pd.DataFrame, ccn_side: pd.DataFrame | None = None,
+                       min_peer: int = 30) -> pd.DataFrame | None:
+    """Service volume per certified bed (POS): the worthless-services capacity
+    signal. Returns an index-aligned frame (``capacity_mismatch`` = the ratio the
+    peer step ranks, ``capacity_mismatch_basis`` = per_ccn | org_max | '' when
+    unscored, and under per_ccn ``capacity_mismatch_facility_pct`` = the
+    one-sided percentile within FACILITY peers from pos.capacity_billing_mismatch),
+    or None when the inputs are absent so the scheme stays skip-missing.
+
+    per_ccn (audit F2 / C2, default): for EACH CCN the volume of THAT CCN's NPIs
+    (through ``ccn_side``, the POS frame's npi -> ccn_list / ccn_beds / ccn_state
+    side columns; an NPI on several CCNs counts toward each) over THAT CCN's beds,
+    assigned back to the CCN's NPIs (mean over an NPI's CCNs). org_max (the arm):
+    the whole org's volume over the org-broadcast (largest facility's) beds — the
+    pre-audit ratio that scored system size."""
+    if "service_volume" not in m.columns:
         return None
     vol = pd.to_numeric(m["service_volume"], errors="coerce").fillna(0.0)
+    out = pd.DataFrame(index=m.index)
+    if ccn_side is not None and len(ccn_side) and "npi" in m.columns \
+            and all(c in ccn_side.columns for c in CCN_SIDE_COLS):
+        from src.ingest_cms import pos
+        cap = pos.ccn_capacity_from_side_columns(ccn_side)
+        npi = m["npi"].astype(str)
+        lst = npi.map(ccn_side.set_index("npi")["ccn_list"].astype(str)).fillna("").astype(str)
+        ex = pd.DataFrame({"npi": npi, "ccn": lst.str.split(";"), "vol": vol}).explode("ccn")
+        ex = ex[ex["ccn"].fillna("").astype(str).str.len() > 0]
+        if len(ex) and len(cap):
+            vol_by_ccn = (ex.groupby("ccn", as_index=False)["vol"].sum()
+                          .rename(columns={"vol": "billed_volume"}))
+            per_ccn = pos.capacity_billing_mismatch(cap, vol_by_ccn, min_peer=min_peer)
+            per_ccn["ccn"] = per_ccn["ccn"].astype(str)
+            j = ex[["npi", "ccn"]].merge(per_ccn, on="ccn", how="left")
+            by_npi = j.groupby("npi")[["billed_per_bed", "capacity_mismatch"]].mean()
+            ratio = npi.map(by_npi["billed_per_bed"])
+            out["capacity_mismatch"] = ratio
+            out["capacity_mismatch_facility_pct"] = npi.map(by_npi["capacity_mismatch"])
+            out[CAPACITY_BASIS_COL] = np.where(ratio.notna(), "per_ccn", "")
+            out.attrs["basis"] = "per_ccn"
+            return out
+    if "pos_bed_count" not in m.columns or "org_node_id" not in m.columns:
+        return None
     beds = pd.to_numeric(m["pos_bed_count"], errors="coerce")
     org_vol = vol.groupby(m["org_node_id"].astype(str)).transform("sum")
-    ratio = org_vol / beds.where(beds > 0)
-    return ratio.where(beds.notna() & (beds > 0))
+    ratio = (org_vol / beds.where(beds > 0)).where(beds.notna() & (beds > 0))
+    out["capacity_mismatch"] = ratio
+    out[CAPACITY_BASIS_COL] = np.where(ratio.notna(), "org_max", "")
+    out.attrs["basis"] = "org_max"
+    return out
 
 
 def _gate_ownership_subscore(m: pd.DataFrame) -> pd.Series | None:
@@ -563,8 +612,32 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             print(f"    [medicaid_enrollment] practice_state filled from mcd_primary_state for "
                   f"{n_state_filled:,} NPIs that had no state")
 
+    ccn_side = None           # the POS frame's npi -> ccn_list / ccn_beds / ccn_state side columns
     for name, fr in (org_grain_frames or {}).items():
         if fr is None or not len(fr) or "org_node_id" not in fr.columns:
+            continue
+        if "npi" in fr.columns:
+            # 2026-11-02 (audit F1): an NPI-grain facility frame — each NPI carries its
+            # OWN CCN's value and the members without a facility the org MEAN
+            # (facility_grain_basis says which) — is JOINED by npi, never broadcast
+            f = fr.copy()
+            f["npi"] = f["npi"].astype(str)
+            if all(c in f.columns for c in CCN_SIDE_COLS):
+                side = f[["npi", *CCN_SIDE_COLS]][f["ccn_list"].fillna("").astype(str) != ""]
+                ccn_side = side if ccn_side is None else pd.concat(
+                    [ccn_side, side]).drop_duplicates("npi", keep="first")
+            val_cols = [c for c in f.columns
+                        if c not in ("npi", "org_node_id", *CCN_SIDE_COLS) and c not in m.columns]
+            if not val_cols:
+                continue
+            m = join_m1(m, f[["npi"] + val_cols], source=f"npi_grain:{name}")
+            assert len(m) == n0, f"NPI-grain source '{name}' join fanned out"
+            sources_used[name] = val_cols
+            basis = f["facility_grain_basis"] if "facility_grain_basis" in f.columns else None
+            print(f"    [{name}] joined at NPI grain (rollup {fr.attrs.get('rollup', '?')}): "
+                  f"{len(f):,} NPIs"
+                  + (f", {int((basis == 'own_ccn').sum()):,} on their own CCN, "
+                     f"{int((basis == 'org_mean').sum()):,} on the org mean" if basis is not None else ""))
             continue
         val_cols = [c for c in fr.columns if c != "org_node_id" and c not in m.columns]
         if not val_cols:
@@ -588,10 +661,19 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     # worthless_services' missing input, built from data already in hand: org
     # service volume per certified bed (POS). One-sided — only excess volume
     # against capacity is suspicious; NaN where beds are unknown/zero.
-    cap = _capacity_mismatch(m)
+    # 2026-11-02 (audit F2 / C2): PER CCN — that facility's NPIs' volume over that
+    # facility's beds, assigned back to its NPIs (capacity_mismatch_basis per_ccn);
+    # the org-sum-over-largest-facility ratio survives only as the org_max arm.
+    cap = _capacity_mismatch(m, ccn_side=ccn_side, min_peer=min_peer)
     if cap is not None:
-        m["capacity_mismatch"] = cap
-        sources_used["capacity"] = ["capacity_mismatch"]
+        for c in cap.columns:
+            m[c] = cap[c].to_numpy()
+        sources_used["capacity"] = list(cap.columns)
+        n_scored = int((cap[CAPACITY_BASIS_COL] != "").sum())
+        print(f"    [capacity] capacity_mismatch basis {cap.attrs.get('basis')}: "
+              f"{n_scored:,} NPIs scored"
+              + (" (facility-peer percentile in capacity_mismatch_facility_pct)"
+                 if "capacity_mismatch_facility_pct" in cap.columns else ""))
     else:
         print("    [capacity] skipped: capacity_mismatch needs pos_bed_count (POS via the CCN "
               "crosswalk) and service_volume on the matrix")
@@ -2446,11 +2528,27 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
     return frames
 
 
+def _facility_rollup(facility_rollup: str | None, log) -> str:
+    """The CCN-grain export rollup: ``own_ccn`` (default; audit F1 / F2) or ``max``
+    (the pre-audit arm), from the argument else MEDICAID_FACILITY_ROLLUP."""
+    from src.ingest_cms.facility import EXPORT_ROLLUPS
+    r = (facility_rollup or os.environ.get(FACILITY_ROLLUP_ENV, "own_ccn")).strip().lower()
+    if r not in EXPORT_ROLLUPS:
+        raise ValueError(f"{FACILITY_ROLLUP_ENV} must be one of {EXPORT_ROLLUPS}, got {r!r}")
+    log(f"    [facility/hcris/pos] rollup = {r} "
+        + ("(each NPI its OWN CCN's value, org MEAN for the other members; capacity per CCN)"
+           if r == "own_ccn" else
+           "(ARM: org max of the facilities, broadcast to every member; capacity = org sum / largest beds)"))
+    return r
+
+
 def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
-                   asof_cutoff=None) -> None:
-    """Facility / HCRIS / POS adapters: CCN-grain features rolled to org via the
-    PECOS CCN↔NPI crosswalk, then (by the caller) broadcast to NPI."""
+                   asof_cutoff=None, facility_rollup: str | None = None) -> None:
+    """Facility / HCRIS / POS adapters: CCN-grain features joined at NPI grain
+    (each NPI's OWN CCN; facility.ccn_features_to_export_grain) — or, under the
+    ``max`` arm, rolled to the org max and broadcast by the caller."""
     from src.ingest_cms import facility as fac, hcris as hc, pos
+    rollup = _facility_rollup(facility_rollup, log)
     # facility: INDEPENDENT try per metric — one bad file (e.g. an oddly encoded
     # PBJ) must not take hospice + deficiencies down with it.
     ccn_feats = []
@@ -2508,11 +2606,13 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
             # the full measure panel (NF-care share, GIP, visit gap, nurse
             # minutes, spend/bene, dementia mix) — skip-missing per measure
             panel = fac.compute_hospice_panel(_read_any(hos_p),
-                                              asof_cutoff=asof_cutoff)
+                                              asof_cutoff=asof_cutoff, log=log)
             pcols = [c for c in panel.columns if c != "ccn"]
             if pcols:
                 ccn_feats.append(fac.facility_peer_percentiles(panel, pcols))
-                log(f"    [facility/hospice] panel measures: {', '.join(pcols)}")
+                how = panel.attrs.get("measure_match", {})
+                log(f"    [facility/hospice] panel measures: "
+                    + ", ".join(f"{c} ({how.get(c, '?')})" for c in pcols))
     except Exception as e:
         log(f"    [facility/hospice] skipped: {e}")
     try:
@@ -2556,8 +2656,10 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
             merged = ccn_feats[0]
             for extra in ccn_feats[1:]:
                 merged = merged.merge(extra, on="ccn", how="outer")
-            org = fac.rollup_ccn_to_org(merged, ccn_to_npi, npi_to_org)
-            _emit("facility", org, [c for c in org.columns if c != "org_node_id"])
+            org = fac.ccn_features_to_export_grain(merged, ccn_to_npi, npi_to_org,
+                                                   rollup=rollup)
+            _emit("facility", org, [c for c in org.columns
+                                    if c not in ("org_node_id", "npi")])
     except Exception as e:
         log(f"    [facility] skipped: {e}")
     # Home Health Care Compare (v22, 2026-10-22): the sector quality panel beside the
@@ -2575,8 +2677,9 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
             log(f"    [home_health_compare] {hh_p.name}: {len(m):,} agencies, measures "
                 f"{', '.join(cols)}; {q:,} non-numeric scores quarantined")
             pct = fac.facility_peer_percentiles(m, cols)
-            org = fac.rollup_ccn_to_org(pct, ccn_to_npi, npi_to_org)
-            _emit("home_health_compare", org, [c for c in org.columns if c != "org_node_id"])
+            org = fac.ccn_features_to_export_grain(pct, ccn_to_npi, npi_to_org, rollup=rollup)
+            _emit("home_health_compare", org, [c for c in org.columns
+                                               if c not in ("org_node_id", "npi")])
         else:
             log("    [home_health_compare] skipped: needs preclean/home_health/HH_Provider_<MonYYYY>.csv "
                 "(data.cms.gov provider data, Home Health Care - Agencies) dated on/before the cutoff")
@@ -2596,7 +2699,7 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
             log(f"    [hcris] {len(hcris_files)} files -> {len(m):,} CCN rows "
                 f"({h_dropped} dropped)")
             anom = hc.hcris_anomaly(m)[["ccn", "hcris_cost_anomaly"]]
-            org = fac.rollup_ccn_to_org(anom, ccn_to_npi, npi_to_org)
+            org = fac.ccn_features_to_export_grain(anom, ccn_to_npi, npi_to_org, rollup=rollup)
             _emit("hcris", org, ["hcris_cost_anomaly"])
     except Exception as e:
         log(f"    [hcris] skipped: {e}")
@@ -2629,9 +2732,9 @@ def _run_ccn_grain(pc: Path, npi_to_org, ccn_to_npi, _emit, log,
                 bed_count=("bed_count", "max"),
                 facility_type=("facility_type", "first"),
                 state=("state", "first"))
-            cap = cap.rename(columns={"bed_count": "pos_bed_count"})
-            org = fac.rollup_ccn_to_org(cap[["ccn", "pos_bed_count"]],
-                                        ccn_to_npi, npi_to_org)
+            # own_ccn: each NPI's OWN facility's beds + the per-CCN capacity table in the
+            # frame's attrs (the export's capacity step divides per CCN); max: the org-max arm
+            org = pos.pos_capacity_to_export_grain(cap, ccn_to_npi, npi_to_org, rollup=rollup)
             _emit("pos", org, ["pos_bed_count"])
     except Exception as e:
         log(f"    [pos] skipped: {e}")

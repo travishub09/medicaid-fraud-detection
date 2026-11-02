@@ -151,15 +151,19 @@ def test_facility_peer_percentiles_size_band_ladder():
     assert pct.set_index("ccn").loc["670000", "pbj_understaffing"] >= 0.9
 
 
-def test_rollup_ccn_to_org_max():
+def test_rollup_ccn_to_org_mean_default_max_as_the_arm():
     feats = pd.DataFrame({"ccn": ["675001", "675002"],
                           "pbj_understaffing": [0.95, 0.20]})
     xw = pd.DataFrame({"ccn": ["675001", "675002"],
                        "npi": ["1003000415", "1003000407"]})
     npi_to_org = pd.DataFrame({"npi": ["1003000415", "1003000407"],
                                "org_node_id": ["org:a", "org:a"]})
+    # audit F1 (2026-11-02): member-count-neutral MEAN per org by default
     out = rollup_ccn_to_org(feats, xw, npi_to_org).set_index("org_node_id")
-    assert out.loc["org:a", "pbj_understaffing"] == 0.95       # max per org
+    assert out.loc["org:a", "pbj_understaffing"] == pytest.approx(0.575)
+    # the pre-audit max survives as the gradable arm
+    arm = rollup_ccn_to_org(feats, xw, npi_to_org, rollup="max").set_index("org_node_id")
+    assert arm.loc["org:a", "pbj_understaffing"] == 0.95
 
 
 # ------------------------------------------------------- registry wiring ---
