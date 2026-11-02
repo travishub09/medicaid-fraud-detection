@@ -115,8 +115,12 @@ def test_employer_lane_gates_and_outputs(tmp_path):
 def test_mfcu_lane_loads_case_rows_with_npi_and_outcome_gate(tmp_path):
     root = _root(tmp_path)
     svc = FakeService()
+    # 2026-11-02: a research row trains only when its cited page NAMES the defendant, so the
+    # fake page must carry the name (an empty page = unverified = usable 0)
+    page = ("<html><body>" + " ".join(["The Florida Attorney General's Medicaid Fraud Control Unit announced a "
+            "settlement with Sunrise Home Care LLC over personal care claims."] * 3) + "</body></html>")
     ml.run_cycle(root, ["mfcu"], None, build=True, dispatch=True, poll=True, load=True, max_new=1,
-                 total_budget=1, wait_minutes=0, poll_every=1, transport=svc, fetch=lambda u: "",
+                 total_budget=1, wait_minutes=0, poll_every=1, transport=svc, fetch=lambda u, binary=False: page,
                  sleep=lambda s: None, log=lambda *_: None, states=["FL"], years=[2022])
     cdb = pd.read_csv(root / "enforcement" / "doj_cases_v3.csv", dtype=str).fillna("")
     sun = cdb[cdb["defendant_name"] == "Sunrise Home Care LLC"]

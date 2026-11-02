@@ -198,8 +198,17 @@ def test_challenge_pages_are_unreachable_never_absent(tmp_path):
     assert list(checked["name_in_source"]) == [""]                      # unknown, not 0
     p = tmp_path / "cases.csv"
     db.to_csv(p, index=False)
+    assert rev.quarantine_absent_defendants(p, lambda u: wall[u], log=lambda *a: None) == 0   # not ABSENT ...
+    row = pd.read_csv(p, dtype=str).fillna("").iloc[0]
+    assert row["usable"] == "0" and "unverified" in row["qc_note"]                           # ... but unverified = no training
+    # a DOJ feed row is never selected by the research-jurisdiction regex
+    doj = pd.DataFrame([{"case_id": "https://www.justice.gov/x#ACME", "defendant_name": "Acme Clinic Inc",
+                         "source_url": "https://www.justice.gov/x", "jurisdiction": "United States Attorney, E.D. Pa.",
+                         "summary": "s"}])
+    doj.to_csv(p, index=False)
     assert rev.quarantine_absent_defendants(p, lambda u: wall[u], log=lambda *a: None) == 0
-    assert pd.read_csv(p, dtype=str).fillna("").iloc[0]["usable"] in ("1", "")
+    back = pd.read_csv(p, dtype=str).fillna("")
+    assert "usable" not in back.columns or back.iloc[0]["usable"] in ("1", "")      # untouched
 
 
 def test_categorical_outcome_cells_are_resolved_outcomes():

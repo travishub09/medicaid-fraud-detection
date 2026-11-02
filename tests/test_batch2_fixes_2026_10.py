@@ -435,9 +435,9 @@ def test_verify_sources_restores_rows_marked_absent_by_a_refusal_page(tmp_path):
     assert out.loc["https://ag.state.x/a", "usable"] == "1" and "re-verified" in out.loc["https://ag.state.x/a", "qc_note"]
     assert out.loc["https://ag.state.x/b", "usable"] == "0" and out.loc["https://ag.state.x/b", "qc_note"] == ABSENT_NOTE
     assert out.loc["https://ag.state.x/c", "usable"] == "1" and out.loc["https://ag.state.x/c", "name_in_source"] == "1"
-    # 2026-11-01: unreachable on re-check = unknown; the earlier mark is withdrawn and the row
-    # carries the unverified note (the 10-20 marks were made on challenge pages)
-    assert out.loc["https://ag.state.x/d", "usable"] == "1" and "unverified" in out.loc["https://ag.state.x/d", "qc_note"]
+    # 2026-11-02 THE RULE: a research-harvested row trains only when its cited page names the
+    # defendant; unreachable = unverified = usable 0 with the note (never deleted)
+    assert out.loc["https://ag.state.x/d", "usable"] == "0" and "unverified" in out.loc["https://ag.state.x/d", "qc_note"]
     assert n == 1
     # --no-recheck leaves the marked rows alone
     db.to_csv(p, index=False)

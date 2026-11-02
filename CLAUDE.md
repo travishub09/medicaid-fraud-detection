@@ -1474,6 +1474,27 @@ first, then paste" above every move/done block.
   through the module directly in a second tmux session (task lanes_dispatch_records) so it never
   collides with a running cycle's step 0. RULE: a roster, a rate or an audit finding is evidence
   for a human read; a state_audit case row trains only under the hard tier's outcome gate.
+  THE PAGE RULE (2026-11-02, from the first full lane read): a research-harvested case row
+  (MFCU / AG / state / commercial / audit jurisdictions) TRAINS ONLY WHEN ITS CITED PAGE NAMES
+  THE DEFENDANT. The probe of six 'absent' rows read real 1,000-word AG releases whose
+  defendants were other companies ("Molina Healthcare" on a QOL Medical settlement,
+  "Amedisys" on an unnamed provider, "Mariner Health Care" / "Reenat Sinay" / "Lucy Zuniga"
+  nowhere in the HTML) or a placeholder ("First Defendant"): the agents attach invented
+  defendants to real URLs, and 123 of 123 readable pages lacked the name. So
+  `research_evidence.quarantine_absent_defendants(require_verified=True)` (the lanes' load
+  path and `verify-sources`): present = usable 1; absent = usable 0 (defendant_not_on_page);
+  unreadable (403 / reset / challenge page / redirect to the site home / not-found title /
+  encrypted PDF) = usable 0 with the note 'unverified: cited page unreadable (does not
+  train)'; `--allow-unverified` is the review-only override. The DOJ / OIG feed rows are
+  never selected. The same read fixed: the poll drew HTTP 429 and recorded it as the TASK's
+  status (234 tasks read as errored; `poll_research` paces, backs off, records
+  `poll_failed` as open); the agents' categorical outcome cell ('plea', 'conviction') was
+  'no resolved outcome' (462 federal-report rows; `_CATEGORY_OK`); markdown links in the
+  URL cell read as no host (`registry.clean_url`); CALIFORNIA vs CA (`norm_state`); the
+  report overwritten per cycle (`report_lanes`). `ops/vm/lanes_read.py` is the one-line
+  read after a cycle (table, statuses + error texts, refusal reasons, case rows,
+  `--page-probe N`). The audit rows (OMIG 1,550) are findings, not enforcement outcomes:
+  out of the state ruler (the runner's jurisdiction filter) and page-verified like the rest.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

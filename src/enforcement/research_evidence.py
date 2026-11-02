@@ -207,11 +207,15 @@ def verify_names_on_pages(cases: pd.DataFrame, fetch_page, kind_col: str | None 
 
 
 ABSENT_NOTE = "defendant_not_on_page"
-UNVERIFIED_NOTE = "page unreadable on re-check: unverified"
+UNVERIFIED_NOTE = "unverified: cited page unreadable (does not train)"
 
 
-def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: str = r"MFCU|AG\b|state|commercial",
-                                 limit: int | None = None, log=print, recheck: bool = True) -> int:
+RESEARCH_JURISDICTIONS = r"(?i)MFCU|\bAG\b|\bstate\b|commercial|audit"   # the research-harvested rows
+
+
+def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: str = RESEARCH_JURISDICTIONS,
+                                 limit: int | None = None, log=print, recheck: bool = True,
+                                 require_verified: bool = True) -> int:
     """CLI body of ``verify-sources``: for the case rows whose jurisdiction matches (the
     research-harvested state and commercial cases by default), read the cited page and
     mark a row whose defendant is absent ``usable=0`` with qc_note
@@ -220,8 +224,16 @@ def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: s
     ``recheck`` (2026-10-21): rows ALREADY marked absent are read again. The first run
     (2026-10-20) got refusal pages back from the state sites and counted the defendant
     as absent from them: 225 rows quarantined on a 403 body. A re-read that finds the
-    name restores the row (usable=1, qc_note ``re-verified: on page``); an unreachable
-    page leaves the mark in place; a real read with the name absent keeps it."""
+    name restores the row (usable=1, qc_note ``re-verified: on page``).
+
+    ``require_verified`` (2026-11-02, THE RULE): a research-harvested case row trains
+    only when its cited page NAMES the defendant. The probe of six 'absent' rows read
+    real, 1,000-word AG releases whose defendants were other companies ("Molina
+    Healthcare" on a QOL Medical settlement, "Amedisys" on an unnamed provider) or a
+    placeholder ("First Defendant"): the research agents attach invented defendants
+    to real URLs, so an unreadable page is not a pass. Present = usable 1; absent =
+    usable 0 (defendant_not_on_page); unreadable / unknown = usable 0 (unverified:
+    the next readable fetch decides). The DOJ / OIG feed rows are never selected."""
     p = Path(case_db_path)
     db = read_csv_text(str(p), dtype=str)
     for c, v in (("usable", "1"), ("qc_note", ""), ("name_in_source", "")):
@@ -256,16 +268,19 @@ def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: s
         db.loc[restored, "qc_note"] = "re-verified: on page"
         log(f"    [verify_sources] {len(restored):,} rows RESTORED (the defendant is on the page; the earlier mark "
             "came from a refusal page)")
-    # 2026-11-01: a row marked absent whose page cannot be read today goes back to the
-    # UNVERIFIED state (usable=1, the note says so): the mark was made by a read that
-    # counted challenge pages as real pages, and an unreadable page is unknown, never
-    # evidence of absence. The next readable fetch re-applies a real absence.
-    unknown = [i for i in checked.index[~read] if marked.get(i, False)]
-    if unknown:
-        db.loc[unknown, "usable"] = "1"
+    unknown = list(checked.index[~read])
+    if require_verified and unknown:
+        # the page could not be read (or the row has no readable URL): the defendant is
+        # UNVERIFIED and does not train; the note says why, the row is never deleted
+        db.loc[unknown, "usable"] = "0"
         db.loc[unknown, "qc_note"] = UNVERIFIED_NOTE
-        log(f"    [verify_sources] {len(unknown):,} rows back to UNVERIFIED (page unreadable on re-check; "
-            "the earlier mark is withdrawn, the row carries the note)")
+        log(f"    [verify_sources] {len(unknown):,} rows UNVERIFIED (page unreadable or no page): usable=0 until a "
+            "readable fetch names the defendant")
+    elif unknown and marked.any():
+        back = [i for i in unknown if marked.get(i, False)]
+        if back:
+            db.loc[back, "usable"] = "1"
+            db.loc[back, "qc_note"] = UNVERIFIED_NOTE
     db.to_csv(p, index=False)
     log(f"    [verify_sources] {len(absent):,} rows marked usable=0 ({ABSENT_NOTE}) in {p}")
     return int(len(absent))
@@ -774,8 +789,10 @@ def main() -> None:
     vs = sub.add_parser("verify-sources", help="read each research-harvested case row's cited page; a row whose "
                                                "defendant is not named on it is marked usable=0 (defendant_not_on_page)")
     vs.add_argument("--case-db", required=True)
-    vs.add_argument("--jurisdiction-regex", default=r"MFCU|AG\b|state|commercial",
-                    help="which rows to check (default: the state / commercial research harvests)")
+    vs.add_argument("--jurisdiction-regex", default=RESEARCH_JURISDICTIONS,
+                    help="which rows to check (default: the state / commercial / audit research harvests)")
+    vs.add_argument("--allow-unverified", action="store_true",
+                    help="leave a row whose page cannot be read usable (default: unverified rows do not train)")
     vs.add_argument("--limit", type=int, default=None, help="check at most N rows this pass")
     vs.add_argument("--no-recheck", action="store_true",
                     help="leave rows already marked defendant_not_on_page alone (default: re-read them; a mark "
@@ -784,7 +801,7 @@ def main() -> None:
     args = ap.parse_args()
     if args.cmd == "verify-sources":
         n = quarantine_absent_defendants(args.case_db, browser_fetch_text, args.jurisdiction_regex, args.limit,
-                                         recheck=not args.no_recheck)
+                                         recheck=not args.no_recheck, require_verified=not args.allow_unverified)
         print(f"[research_evidence] verify-sources: {n:,} rows quarantined; rebuild the case labels (the next export) "
               "so they leave the label")
         return
