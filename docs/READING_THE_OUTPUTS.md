@@ -82,6 +82,55 @@ for two things: every assertion line says **✅/PASS**, and the row/dollar count
 look like the data you expected. If anything says FAIL, stop and read
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
+## 6. The contradictions report (`CONTRADICTIONS.md` + `contradictions.csv`)
+
+`python -m src.model_a.contradictions` writes the Tier A facts: things that cannot be a
+peer comparison because each is a false claim by definition or an impossibility on its
+face (paid service months after the provider's own exclusion, enrollment end or NPI
+deactivation; dollars after a recorded death; an individual NPI's timed codes adding up to
+more than a day). Every row is ranked by dollars at issue, and every type has its innocent
+explanations printed at the end of the page — read those before the row. Two
+organization-grain types (2026-11-02) read the entity graph (`--graph-dir`) and have their
+own sections; each is a no-op, with a line saying why, when its graph file is absent:
+
+- **`successor_after_exclusion`** — another billing number in the SAME organization (the
+  graph's `npi_to_org`) whose billing starts within three months of a member's exclusion,
+  deactivation or enrollment end (or that billed under a tenth of the excluded number's
+  trailing six-month average before it) and then carries at least half of that average in
+  the six months after. The `detail` column names the excluded number, the organization,
+  the successor's first month, the two six-month averages and the ratio, and how many of
+  each number's top-five codes are shared (the same work moving to a new number is the
+  shape; different codes is a different practice). The `npi` on the row is the SUCCESSOR;
+  `contradictions_successors.csv` carries the full pair table. What kills it: a hire that
+  filled a real vacancy (the new clinician's licence and start date), a partner who was
+  already there (the colleague test: a number that billed all along is not listed), a
+  group that re-enrolled under a new number for an administrative reason (a merger or a
+  tax-id change on the enrollment record), or an organization grouping that is a
+  name merge of two unrelated practices (check `npi_to_org`'s merge basis first).
+- **`enrolled_after_owner_exclusion`** — an organization whose PECOS owner (the graph's
+  `owned_by` edges) was on the exclusion list BEFORE the owner's association date with
+  the organization, or before the organization's first billed month when the association
+  date is missing (`basis_date` says which). The owner is printed as the graph's owner node
+  id (an NPI or a normalized name key — never a display name), with the role, the type, the
+  exclusion date and statute, the association date, the organization's first billed month
+  and its dollars since the association (the ranking); the `npi` on the row is the
+  organization's largest biller and the `name` is the organization. The match is the
+  graph's own `excluded_in` edge and its basis is on every row: **`exact`** means the
+  owner's NPI is on the exclusion list; **`probable`** means only the normalized name
+  matched — a common name is a collision until an identifier says otherwise, so read the
+  basis before anything else. What kills it: that name collision; a reinstatement before
+  the association (printed when the record carries one); an association recorded late in
+  PECOS (the date is the enrollment record's, not the deal's — the state licence file or
+  the secretary of state's filing gives the real date); a managing employee rather than an
+  owner (the role column). `contradictions_owner_exclusions.csv` carries the full table.
+
+The theory screens (`THEORY_SCREENS.md`, `python -m src.model_a.theory_screens`) are the
+companion page: each screen chooses a prosecuted conduct first and lists every provider
+in its shape with the innocent explanations above the table. The `dme_national_share`
+screen (2026-11-02) lists equipment suppliers filling five percent or more of the nation's
+lines on one code; its out-of-state order share is blank, and the page says so, unless a
+supplier × ordering-physician table was given with `--dme-referrers`.
+
 ## The triage path (what to actually do, in order)
 
 1. Open `triage_priority.csv`, take the top unworked row.
