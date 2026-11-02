@@ -182,7 +182,10 @@ def filter_sources(exclusion_nodes: pd.DataFrame, sources: str | None) -> pd.Dat
 
 def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame,
                              npi_to_org: pd.DataFrame, defendant_npis: pd.DataFrame | None = None,
-                             horizon_months: int | None = None, qui_tam_only: bool = False) -> pd.DataFrame:
+                             horizon_months: int | None = None, qui_tam_only: bool = False,
+                             affiliations: pd.DataFrame | None = None,
+                             keep_affiliated: bool = False,
+                             missing_conduct: str = "drop") -> pd.DataFrame:
     """The FORWARD FCA RULER (2026-10-08): providers named in a DOJ / OIG case that
     was ANNOUNCED strictly after the cutoff (and, when a horizon is given, within
     ``horizon_months`` of it), whose conduct window began on or before the cutoff
@@ -196,14 +199,40 @@ def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.D
     was_excluded_pre_cutoff (announced on/before the cutoff), undated_exclusion,
     fca_tier ('fca'), fca_basis, label_policy ('fca_case'). Cases announced on/before
     the cutoff are listed with was_excluded_pre_cutoff = 1 so the evaluator drops
-    them from the universe (already known at the freeze)."""
-    from .case_labels import build_case_labels
+    them from the universe (already known at the freeze).
+
+    ONE RULE ON BOTH SIDES (audit A3, 2026-11-02): the ruler used to keep
+    affiliated_individual rows (a clinician whose reassignment edge points at a
+    settled org) and fill a missing conduct start with the cutoff year, while the
+    training export never flips the label for that basis and drops a missing
+    conduct window. Now both sides read ``case_labels.conduct_ok`` and the ruler
+    drops the affiliated tier unless ``keep_affiliated`` (a gradable arm, never a
+    default); ``missing_conduct`` is 'drop' (default) or 'keep' (the old fill), a
+    logged choice with the count of rows it dropped. ``affiliations`` (the graph's
+    reassigns_to edges) is passed through to build_case_labels so the affiliated
+    tier exists to keep or drop; None (the default) never produces it."""
+    from .case_labels import build_case_labels, conduct_ok
     cols = ["npi", "first_excl_date", "excl_type", "entity_name", "is_prospective_positive",
             "was_excluded_pre_cutoff", "undated_exclusion", "fca_tier", "fca_basis", "label_policy"]
-    lab = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
+    missing_conduct = str(missing_conduct or "drop").strip().lower()
+    if missing_conduct not in ("drop", "keep"):
+        raise ValueError(f"missing_conduct must be 'drop' or 'keep', got {missing_conduct!r}")
+    lab = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis,
+                            affiliations=affiliations)
     if lab is None or not len(lab):
         return pd.DataFrame(columns=cols)
     lab = lab[(lab["label_source"] == "doj_case") & (lab.get("fca_strict_tier", "").astype(str) != "")]
+    if len(lab) and "label_basis" in lab.columns:
+        # label_basis is the NPI's STRONGEST basis, so a row reading affiliated_individual
+        # reaches its case through that tier alone: the export never flips the label
+        # for it, and the ruler must not count it either
+        aff = lab["label_basis"].astype(str) == "affiliated_individual"
+        n_aff = int(aff.sum())
+        if n_aff and not keep_affiliated:
+            lab = lab[~aff]
+        print(f"[forward_case_label] {n_aff:,} affiliated_individual rows "
+              + ("KEPT (keep_affiliated=True: an arm, not the ruler's rule)" if keep_affiliated
+                 else "dropped (the training export never flips the label for that basis)"))
     if qui_tam_only and len(lab):
         # THE QUI TAM RULER (label plan L0.2): only cases the release calls qui tam /
         # whistleblower, i.e. relator-originated: the business outcome itself
@@ -224,8 +253,16 @@ def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.D
     cut_year = int(str(cutoff)[:4])
     horizon_end = (cutoff_ts + pd.DateOffset(months=int(horizon_months))) if horizon_months else None
     dated = lab["_ann"].notna()
-    conduct_ok = pd.to_numeric(lab["conduct_start"], errors="coerce").fillna(cut_year) <= cut_year
-    after = dated & (lab["_ann"] > cutoff_ts) & conduct_ok
+    # the shared conduct rule (case_labels.conduct_ok): conduct began on/before the
+    # cutoff year; a missing window is dropped by default, the count printed
+    n_missing = int(pd.to_numeric(lab["conduct_start"], errors="coerce").isna().sum())
+    c_ok = conduct_ok(lab["conduct_start"], cut_year, missing=missing_conduct)
+    n_late = int((~c_ok).sum()) - (n_missing if missing_conduct == "drop" else 0)
+    print(f"[forward_case_label] conduct rule at {cut_year} (missing_conduct={missing_conduct}): "
+          f"{n_late:,} rows whose conduct began after the cutoff year never count; "
+          f"{n_missing:,} rows with no conduct window "
+          + ("dropped" if missing_conduct == "drop" else "KEPT as if the conduct began at the cutoff (an arm)"))
+    after = dated & (lab["_ann"] > cutoff_ts) & c_ok.to_numpy()
     if horizon_end is not None:
         after &= lab["_ann"] <= horizon_end
     before = dated & (lab["_ann"] <= cutoff_ts)
@@ -323,6 +360,13 @@ def main() -> None:
     ap.add_argument("--case-jurisdiction", default=None,
                     help="restrict the case-DB half of the ruler to rows whose jurisdiction matches this regex "
                          "(the state ruler: 'MFCU|Attorney General|commercial-plan')")
+    ap.add_argument("--keep-affiliated", action="store_true",
+                    help="the case ruler KEEPS affiliated_individual rows (clinicians reassigning to a settled "
+                         "org; needs the graph's reassigns_to edges under --graph-dir). An arm: the training "
+                         "export never flips the label for that basis, so the default drops them (audit A3)")
+    ap.add_argument("--missing-conduct", default="drop", choices=["drop", "keep"],
+                    help="a case row with NO conduct window: 'drop' (default, the training export's rule) or "
+                         "'keep' (the old ruler's fill-with-the-cutoff reading; an arm). The count is printed.")
     ap.add_argument("--tier-report", default=None,
                     help="write the per-tier/basis positive counts as Markdown "
                          "(default: <out>.TIERS.md)")
@@ -362,9 +406,15 @@ def main() -> None:
                               .str.contains(args.case_jurisdiction, case=False, regex=True)].reset_index(drop=True)
             print(f"[prospective_label] --case-jurisdiction {args.case_jurisdiction!r}: {len(case_db):,} of {n0:,} case rows kept")
         dn = pd.read_parquet(args.defendant_npis) if args.defendant_npis else None
+        aff_p = g / "edges" / "reassigns_to_edges.parquet"
+        affiliations = pd.read_parquet(aff_p) if (args.keep_affiliated and aff_p.exists()) else None
+        if args.keep_affiliated and affiliations is None:
+            print(f"[prospective_label] --keep-affiliated: no {aff_p} under the graph; no affiliated tier to keep")
         case_label = build_forward_case_label(case_db, args.cutoff, pd.read_parquet(g / "nodes" / "org_nodes.parquet"),
                                               pd.read_parquet(g / "npi_to_org.parquet"), defendant_npis=dn,
-                                              horizon_months=args.horizon_months, qui_tam_only=args.qui_tam_only)
+                                              horizon_months=args.horizon_months, qui_tam_only=args.qui_tam_only,
+                                              affiliations=affiliations, keep_affiliated=args.keep_affiliated,
+                                              missing_conduct=args.missing_conduct)
         print(f"[prospective_label] FCA-case ruler: {int(case_label['is_prospective_positive'].sum()):,} "
               f"forward positives, {int(case_label['was_excluded_pre_cutoff'].sum()):,} known at the freeze")
         label = case_label if args.fca_case_only else merge_forward_labels(label, case_label)
