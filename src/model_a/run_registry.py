@@ -135,6 +135,9 @@ def parse_run_dir(run_dir: str | Path) -> dict:
             # 2026-11-02 (batch 5b-A): the per-case training budget; absent on older manifests = npi100
             row["case_budget"] = str(tp.get("case_budget") or "npi100")
             row["segment"] = str(tp.get("segment") or "all")
+            # 2026-11-02 (batch 5b-C): how the CCN-grain sources reached NPI grain; absent on
+            # older manifests = the pre-audit org-max broadcast
+            row["facility_rollup"] = str(mj.get("facility_rollup") or "max")
             # WHAT 'core' meant for this run: two runs' core-vs-full deltas
             # are only comparable when this matches (v6 lesson — DocGraph
             # referral edges entered the graph, which is CORE, so the
@@ -446,6 +449,15 @@ CHECK_ALIASES = {
     "priors": "class_priors", "prune": "drop_schemes",
     "prior_floor": "prior_min_n", "prior_weighted": "prior_weighted", "prior_inner": "prior_inner_folds",
     "case_budget": "case_budget", "segment": "segment",                 # batch 5b (2026-11-02)
+    "facility_rollup": "facility_rollup", "ruler_graph": "acc_ruler_graph",   # batch 5b-C / 5b-B
+    # batch 5b-F: the held-out FIELD ruler (field_ruler.py; future_bans_after_<cut>__field<H>.csv)
+    "field_hits50": "acc_org_hits50_field", "field_hits100": "acc_org_hits100_field",
+    "field_hits250": "acc_org_hits250_field", "field_base50": "acc_base50_field",
+    "field_reach": "acc_ruler_reach_field",
+    # batch 5b-B: the case as the unit (cluster hits / baseline / p at each budget)
+    "cluster_hits50": "acc_cluster_hits50", "cluster_hits100": "acc_cluster_hits100",
+    "cluster_hits250": "acc_cluster_hits250", "cluster_p50": "acc_cluster_p50",
+    "cluster_p100": "acc_cluster_p100", "cluster_p250": "acc_cluster_p250",
     # v23: the refit arms' operator book under the shipped order
     "refit_pursuit_hits16": "acc_pursuit_hits16", "refit_pursuit_hits50": "acc_pursuit_hits50",
     "refit_pursuit_hits100": "acc_pursuit_hits100", "refit_pursuit_hits250": "acc_pursuit_hits250",

@@ -221,7 +221,12 @@ def build_forward_case_label(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.D
                             affiliations=affiliations)
     if lab is None or not len(lab):
         return pd.DataFrame(columns=cols)
-    lab = lab[(lab["label_source"] == "doj_case") & (lab.get("fca_strict_tier", "").astype(str) != "")]
+    # 2026-11-02 (batch 5b-G): a docket whose entries record a settlement or judgment
+    # (docket_backfill.docket_outcome_rows, case_type docket_outcome) is a resolved
+    # outcome and joins the ruler beside the DOJ / OIG releases; an allegation-only
+    # docket row (docket_case) never does
+    lab = lab[lab["label_source"].isin(["doj_case", "docket_outcome"])
+              & (lab.get("fca_strict_tier", "").astype(str) != "")]
     if len(lab) and "label_basis" in lab.columns:
         # label_basis is the NPI's STRONGEST basis, so a row reading affiliated_individual
         # reaches its case through that tier alone: the export never flips the label
@@ -426,7 +431,10 @@ def main() -> None:
         if files:
             aff = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
             before = int(label["is_prospective_positive"].sum())
-            label = merge_affiliated(label, aff, args.cutoff, horizon_months=args.horizon_months)
+            # batch 5b-G: the state-side employer rows carry the individual's tier
+            # (source_tier); the ruler's own policy decides which of them it admits
+            label = merge_affiliated(label, aff, args.cutoff, horizon_months=args.horizon_months,
+                                     tier=args.fca_tier)
             print(f"[prospective_label] affiliated convictions: +{int(label['is_prospective_positive'].sum()) - before:,} "
                   f"biller positives from {', '.join(files)}")
     pos = int(label["is_prospective_positive"].sum())

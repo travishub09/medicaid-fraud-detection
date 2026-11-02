@@ -1519,6 +1519,55 @@ first, then paste" above every move/done block.
   NPI x month patient base, billing_after_deactivation per NPI, a weight-table lint. RULES: a
   check's '=' is exact; a max over members is never a rollup for a pre-ranked percentile;
   v29 waits for batch 5 (a run on batch 4 alone measures the same geometry).
+  BATCH 5b SHIPPED (2026-11-02, seven builders in parallel worktrees, merged in one day; v29
+  semantics = ONE new pre-registration; tests/test_batch5_*_2026_11.py): (A) `case_labels.
+  build_case_labels(case_budget=)` npi100 (ship) / per_case / cap5 as `label_weight` policy,
+  fan-out counted over TRAINING bases only, `conduct_ok` one rule on both sides,
+  `prospective_label --keep-affiliated / --missing-conduct`; (B) the case ruler resolved on the
+  AS-OF graph (`accuracy_diagnostics --asof-graph-dir`, every runner diagnostics line; registry
+  `ruler_graph = asof`), the CASE as the unit (`acc_cluster_hits/base/p{k}`: a release counted
+  once, a Monte Carlo baseline over clusters), tie-aware hits at every budget boundary; (C)
+  per-CCN facility inputs (`facility.ccn_features_to_export_grain`: each NPI its OWN CCN's value,
+  the org MEAN for members without one, `facility_grain_basis`; `grouped_rollup` mean never
+  max), capacity PER CCN (`_capacity_mismatch` via pos.capacity_billing_mismatch,
+  `capacity_mismatch_basis`), the hospice Care Compare panel CODE-LOCKED (H_012_01/07/08/10);
+  `MEDICAID_FACILITY_ROLLUP=max` restores the pre-audit arm, the manifest / registry carry
+  `facility_rollup`; (D) honest patient-month bases (`<fam>_patient_months_max` = the per-month
+  MAX over a family's codes; the corrected intensities beside the old `_codemonth` twins, which
+  are RAW_AGGREGATE_SUFFIXES and never train), `lab_distinct_codes_per_patient_month`,
+  billing_after_deactivation PER NPI (`nppes_deactivation.billing_after_deactivation(grain=
+  "npi")`, joined by npi; the widening block reads the NPI's own share when the frame arrived
+  per NPI and keeps the single-NPI guard for a broadcast frame), drug spread / markup WITHIN
+  STATE with the national fallback recorded (`rx_spread_ref` / `drug_markup_ref` operational);
+  (E) training policy `segment` (all = ship; operator = train on operator-class rows, every row
+  scored; `company_list.operator_mask` is the ONE definition; `ab_segment_operator/` arm,
+  SEGMENT_AB=0 skips), the SOLO book (`provider_priority_list_solo.csv`, individuals' own
+  numbers, graded `__solo` and read on the state ruler), rollup `score_mean` / `score_top2_mean`
+  / `score_max_exceedance` in the order sweep, `scheme_subscores.RESERVED` + `lint_weight_table`
+  (nh_owner_concentration / op_payment_concentration reserved until floored); (F) POLICY-AWARE
+  features (`src/policy/features.py`: `pol_<topic>_rule_present` + `pol_<topic>_<param>_excess`
+  = the as-of intensity over the STATE'S OWN parameter from the policy library; export source
+  `policy`, partition group `policy`, NULL = no rule, 0 = within it) and the HELD-OUT FIELD RULER
+  (`model_a/field_ruler.py` -> future_bans_after_<cut>__field<H>.csv from
+  enforcement/field_outcomes.csv: a visit dated after the list on an NPI the matrix never
+  trained on; runner step 3; registry field_hits* / field_reach); (G) employer reach for the
+  STATE-side positives (`label_expansion affiliated-state`: hard + weak individuals from every
+  exclusions_*.parquet and the MFCU / AG case rows -> the biller that carried them as rendering
+  NPI, `source_tier` kept; runner step 2c writes processed/affiliated_state_<cut>.parquet; the
+  state ruler reads it and `merge_affiliated(tier=)` keeps the weak rows out of a hard ruler)
+  and DOCKET OUTCOMES (`docket_backfill --outcomes-from`: a settlement / judgment ENTRY ->
+  case_type docket_outcome -> source docket_outcome, ranked doj_case > docket_outcome >
+  charged_case, admitted by the strict export, the forward ruler and the hard label). RULES: a
+  builder that needs a file it does not own reports the line and the coordinator applies it;
+  the merged suite runs ONCE with OMP_NUM_THREADS=1 (LightGBM's default threads hang on a
+  loaded box); v29 = the first run on batch 5b, pre-registered under the v28 checks +
+  `ruler_graph = asof` + `facility_rollup = own_ccn` + `segment = all` + `case_budget = npi100`,
+  the solo book and the field ruler READ, not barred.
+  GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
+  GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
+  pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is
+  re-pointed to the new URL once it is named (task repo_remotes_equityable); until then the
+  session's push target is the old account.
   LAPTOP MERGE (2026-10-13): the pasted `git push` line after merge_bundle.bat lost
   its first letters every time ("'t' is not recognized"): a git child of the batch
   file reads the queued keystrokes of the next pasted line. `ops/laptop/merge_push

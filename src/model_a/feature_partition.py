@@ -52,6 +52,9 @@ EXTRA_SOURCE_GROUPS = {
     "medicaid_ndc": {"medicaid_ndc"},
     "medicaid_enrollment": {"medicaid_enrollment"},
     "capacity": {"capacity", "licensed_capacity"},
+    # 2026-11-02 (batch 5b-F): the state policy library (processed/policy/state_policy.parquet)
+    # over the as-of fact: pol_<topic>_rule_present / pol_<topic>_<param>_excess
+    "policy": {"policy"},
 }
 
 _SRC_TO_GROUP = {s: g for g, ss in EXTRA_SOURCE_GROUPS.items() for s in ss}

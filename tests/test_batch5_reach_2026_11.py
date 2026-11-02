@@ -325,17 +325,19 @@ def _tmp_csv(df):
     return p
 
 
-def test_docket_outcome_rows_are_not_read_as_outcomes_by_case_labels_until_the_integration_line():
-    """Today case_labels / fca_label_export read every 'docket*' case_type as an allegation:
-    the row is built so that ONE line in each (treat docket_outcome like civil_fca) admits
-    it; pin the current reading so the integration is a visible change."""
+def test_docket_outcome_rows_are_read_as_outcomes_and_allegation_dockets_are_not():
+    """The integration (2026-11-02): fca_label_export.outcome_tier reads docket_outcome on
+    the civil path, case_labels files it as its own source (ranked under doj_case, above
+    charged_case) and prospective_label admits it to the ruler; a docket_fca /
+    docket_qui_tam row stays an allegation."""
     from src.enforcement.docket_backfill import docket_outcome_rows
     from src.model_a.fca_label_export import outcome_tier, _CIVIL_OUTCOME
     out = docket_outcome_rows(_dockets(), _entries())
     r = out.iloc[0]
-    assert outcome_tier("civil_fca", r["summary"], r["amount_usd"])[0] == "fca_civil"   # the words are there
-    assert outcome_tier(r["case_type"], r["summary"], r["amount_usd"])[0] == ""          # the type is not admitted yet
     assert _CIVIL_OUTCOME.search(r["summary"])
+    assert outcome_tier(r["case_type"], r["summary"], r["amount_usd"])[0] == "fca_civil"
+    assert outcome_tier("docket_qui_tam", r["summary"], r["amount_usd"])[0] == ""
+    assert outcome_tier("docket_outcome", "complaint filed; motion to dismiss pending", None)[0] == ""
 
 
 def test_docket_outcomes_cli(tmp_path):

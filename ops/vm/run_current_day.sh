@@ -31,6 +31,10 @@ PRIOR_WEIGHTED="${PRIOR_WEIGHTED:-1}"
 PRIOR_INNER="${PRIOR_INNER:-5}"
 PRIOR_FLAGS="--prior-min-n $PRIOR_MIN_N --prior-weighted $PRIOR_WEIGHTED --prior-inner-folds $PRIOR_INNER"
 DROP_SCHEMES="${DROP_SCHEMES:-}"
+# batch 5b (2026-11-02): the per-case budget, the training segment and the CCN-grain rollup
+CASE_BUDGET="${CASE_BUDGET:-npi100}"
+SEGMENT="${SEGMENT:-all}"
+export MEDICAID_FACILITY_ROLLUP="${MEDICAID_FACILITY_ROLLUP:-own_ccn}"
 GRAPH="$DATA/graph"
 # 2026-11-01: embeddings are an arm (see run_frozen_night.sh); EMBEDDINGS=1 restores the full walks
 EMBEDDINGS="${EMBEDDINGS:-0}"
@@ -100,6 +104,7 @@ step 2/6 "the per-NPI matrix on the CURRENT fact (no --asof-cutoff; DOJ case lab
 python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH" --with-analytics \
     --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
     --group-policy case_cluster --class-priors "$CLASS_PRIORS" --drop-schemes "$DROP_SCHEMES" $PRIOR_FLAGS \
+    --case-budget "$CASE_BUDGET" --segment "$SEGMENT" \
     --leads "$DATA/detection/fraud_leads_v3.parquet" --preclean "$DATA/preclean" \
     --processed "$DATA/processed" --out "$RUN" ${CURRENT_SKIP:+--skip-sources "$CURRENT_SKIP"} || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }

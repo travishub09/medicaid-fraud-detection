@@ -184,7 +184,22 @@ RAW_AGGREGATE_COLS = {"total_services", "total_benes", "total_allowed", "total_c
                       # July-2026 enrollment bookkeeping strings
                       "sv_paid_total", "sv_rows", "sv_lines", "sv_patient_months",
                       "sv_first_month", "sv_last_month", "mcd_last_end_date",
-                      "mcd_primary_state"}
+                      "mcd_primary_state",
+                      # 2026-11-02 (audit C4 / C6, batch 5b-D): the honest patient-month bases
+                      # the intensities divide by, and the share of a pharmacy's / biller's
+                      # reference that fell to the national fallback (provenance, not signal)
+                      "sv_patient_months_max", "rx_spread_fallback_share",
+                      "drug_markup_fallback_share"}
+# 2026-11-02 (batch 5b-D): the per-family denominators (<fam>_patient_code_months,
+# <fam>_patient_months_max) and the OLD code-month formulas kept beside the corrected
+# intensities (<metric>_codemonth) are provenance columns, never features: the
+# corrected metric is the feature and its old twin would enter the scorer as a duplicate.
+RAW_AGGREGATE_SUFFIXES = ("_patient_code_months", "_patient_months_max", "_codemonth")
+
+
+def is_raw_aggregate(col: str) -> bool:
+    """True for a column the matrix keeps for provenance but never trains on."""
+    return col in RAW_AGGREGATE_COLS or col.endswith(RAW_AGGREGATE_SUFFIXES)
 
 
 def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
@@ -213,14 +228,17 @@ def _classify_all_columns(all_cols: list[str], **typed: list[str]) -> dict:
             return "evidence_count"          # (usually passed in; belt+braces)
         if c in _diag:
             return "diagnostic"
-        if c in _agg:
+        if c in _agg or c.endswith(RAW_AGGREGATE_SUFFIXES):
             return "raw_aggregate"
         # operational: rollup/priority/peer bookkeeping + any residual owner cols
+        # (+ the batch 5b-C / 5b-D basis strings: which CCN / which reference a value came from)
         if (c in {"priority_rank", "priority_tier", "rule_reasons", "peer_basis",
                   "peer_group_key", "nucc_grouping", "nucc_classification",
                   "layer3_probable_owner", "excluded_owner_role",
                   "facility_excluded_owner_n_probable", "clean_basis",
-                  "exclusion_label_sources", "weak_label_votes"}
+                  "exclusion_label_sources", "weak_label_votes",
+                  "rx_spread_ref", "drug_markup_ref", "facility_grain_basis",
+                  "capacity_mismatch_basis"}
                 or c.startswith("rule_") or c.endswith("_reason")):
             return "operational"
         return "unclassified"
@@ -432,6 +450,8 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                           settlement_weight: float = 1.0, feature_set: str = "all",
                           drop_schemes: str | list | None = None,
                           case_budget: str = "npi100",
+                          segment: str = "all",
+                          facility_rollup: str | None = None,
                           ) -> tuple[pd.DataFrame, dict]:
     """Assemble the wide per-NPI training matrix and its manifest.
 
@@ -555,9 +575,19 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                                       | hit.astype(int))
         if "exclusion_label_sources" not in m.columns:
             m["exclusion_label_sources"] = ""
+        # batch 5b-G: a court-record outcome (docket_outcome) flips the hard label like a
+        # release and keeps its own provenance tag beside doj_case
+        docket_outcome_npis = set(cl.loc[src_col == "docket_outcome", "npi"]) & hard_npis
         m.loc[hit, "exclusion_label_sources"] = (
             m.loc[hit, "exclusion_label_sources"].fillna("").astype(str)
              .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["doj_case"])))))
+        if docket_outcome_npis:
+            dohit = m["npi"].isin(docket_outcome_npis)
+            m.loc[dohit, "exclusion_label_sources"] = (
+                m.loc[dohit, "exclusion_label_sources"].fillna("").astype(str)
+                 .str.split(";").apply(lambda xs: ";".join(sorted(set([x for x in xs if x] + ["docket_outcome"])))))
+            print(f"    [doj_case] {len(docket_outcome_npis):,} NPIs carry a court-record OUTCOME "
+                  f"(docket_outcome: settlement / judgment entered on the docket): hard label flipped")
         sources_used["doj_case"] = ["fraud_scheme", "conduct_start", "conduct_end"] \
             + [c for c in ("label_weight", "case_fanout") if c in m.columns]
 
@@ -614,13 +644,15 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
                   f"{n_state_filled:,} NPIs that had no state")
 
     ccn_side = None           # the POS frame's npi -> ccn_list / ccn_beds / ccn_state side columns
+    npi_grain_joined: set[str] = set()   # the sources that arrived per NPI (never broadcast)
     for name, fr in (org_grain_frames or {}).items():
-        if fr is None or not len(fr) or "org_node_id" not in fr.columns:
+        if fr is None or not len(fr) or ("org_node_id" not in fr.columns and "npi" not in fr.columns):
             continue
         if "npi" in fr.columns:
             # 2026-11-02 (audit F1): an NPI-grain facility frame — each NPI carries its
             # OWN CCN's value and the members without a facility the org MEAN
-            # (facility_grain_basis says which) — is JOINED by npi, never broadcast
+            # (facility_grain_basis says which) — is JOINED by npi, never broadcast.
+            # (audit C5: the per-NPI deactivation frame takes the same path)
             f = fr.copy()
             f["npi"] = f["npi"].astype(str)
             if all(c in f.columns for c in CCN_SIDE_COLS):
@@ -634,8 +666,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             m = join_m1(m, f[["npi"] + val_cols], source=f"npi_grain:{name}")
             assert len(m) == n0, f"NPI-grain source '{name}' join fanned out"
             sources_used[name] = val_cols
+            npi_grain_joined.add(name)
             basis = f["facility_grain_basis"] if "facility_grain_basis" in f.columns else None
-            print(f"    [{name}] joined at NPI grain (rollup {fr.attrs.get('rollup', '?')}): "
+            print(f"    [{name}] joined at NPI grain (rollup {fr.attrs.get('rollup', 'per NPI')}): "
                   f"{len(f):,} NPIs"
                   + (f", {int((basis == 'own_ccn').sum()):,} on their own CCN, "
                      f"{int((basis == 'org_mean').sum()):,} on the org mean" if basis is not None else ""))
@@ -734,12 +767,19 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         # where broadcast and own-event coincide.
         members = pd.to_numeric(out.get("org_member_count"), errors="coerce").fillna(1) \
             if "org_member_count" in out.columns else pd.Series(1, index=out.index)
-        for flag, tag, own in (("billing_after_deactivation", "deactivation", "deact_paid_after"),
-                               ("billing_after_death", "death", "death_paid_after")):
+        # 2026-11-02 (audit C5): billing_after_deactivation is the NPI's OWN share when the
+        # adapter frame arrived per NPI (nppes_deactivation grain="npi", joined by npi: the
+        # export's path), so it needs no single-NPI guard; a frame that was BROADCAST from
+        # org grain (the pre-audit shape, still accepted) keeps the guard, and so does
+        # billing_after_death until the death adapter follows.
+        for flag, tag, own, src_name in (("billing_after_deactivation", "deactivation", "deact_paid_after", "nppes_deactivation"),
+                                         ("billing_after_death", "death", "death_paid_after", "death_master")):
             if flag not in out.columns and own not in out.columns:
                 continue
             if own in out.columns:
                 pos = pd.to_numeric(out[own], errors="coerce").fillna(0) > 0
+            elif src_name in npi_grain_joined:
+                pos = pd.to_numeric(out[flag], errors="coerce").fillna(0) > 0
             else:
                 pos = (pd.to_numeric(out[flag], errors="coerce").fillna(0) > 0) & (members <= 1)
             if not pos.any():
@@ -837,6 +877,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
     adapter_numeric = sorted({
         c for cols in sources_used.values() for c in cols
         if c in out.columns and c not in _not_feature and c not in LEAKAGE_HARD
+        and not c.endswith(RAW_AGGREGATE_SUFFIXES)
         and (pd.api.types.is_numeric_dtype(out[c]) or pd.api.types.is_bool_dtype(out[c]))})
     raw_feature_cols = sorted(
         [c for c in (V3_CONCEPTS + GRAPH_FEATURES + ANALYTICS_FEATURES
@@ -946,6 +987,7 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "v3": "point_in_time", "provider_stats": "point_in_time",
         "servicing": "point_in_time", "medicaid_ndc": "point_in_time",
         "medicaid_enrollment": "point_in_time",
+        "policy": "point_in_time",      # batch 5b-F: the as-of fact over the state's rule as of the cutoff
     }  # every unlisted source (entity_graph, address, facility, pos, hcris,
     #    saturation, ownership, graph_embeddings, order_referring_referrer, …)
     #    is current_state — the safe default direction.
@@ -1073,7 +1115,16 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
             # min(1, 100 / fan-out); per_case = one case is one unit; cap5): an arm until a
             # pre-registration ships it
             "case_budget": str(case_budget),
+            # 2026-11-02 (audit experiment 5, batch 5b-E): the SEGMENT the scorer trains on
+            # (all = today's global scorer; operator = the operator-class rows only, every
+            # row still scored out-of-fold): an arm (ab_segment_operator/) until a
+            # pre-registration ships it
+            "segment": str(segment),
         },
+        # 2026-11-02 (audit F1 / F2, batch 5b-C): how the CCN-grain sources reached NPI grain
+        # (own_ccn = each NPI its own CCN's value + capacity per CCN; max = the pre-audit
+        # org-max broadcast, an arm). Recorded so the registry row carries it.
+        "facility_rollup": str(facility_rollup or os.environ.get(FACILITY_ROLLUP_ENV, "own_ccn")),
     }
     # THE GATE (2026-10-08): every trainable column must trace to a source, or the
     # harnesses would drop it silently. In-time runs lost the five v3 billing-pattern
@@ -2301,15 +2352,22 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             # frame is dropped here so the flag and SOURCES_REPORT tell the truth
             log(f"    [{name}] skipped: --skip-sources")
             return
-        if fr is not None and len(fr) and "org_node_id" in fr.columns:
+        # an org-keyed frame is broadcast to every member; an NPI-keyed frame (batch 5b-C
+        # facility grain, 5b-D deactivation) is JOINED by npi in build_provider_matrix
+        if fr is not None and len(fr) and ("org_node_id" in fr.columns or "npi" in fr.columns):
             frames[name] = fr
-            log(f"    [{name}] {len(fr):,} orgs, cols: {', '.join(feature_cols)}")
+            grain = "NPIs" if ("npi" in fr.columns and "org_node_id" not in fr.columns) else "orgs"
+            log(f"    [{name}] {len(fr):,} {grain}, cols: {', '.join(feature_cols)}")
         else:
             log(f"    [{name}] skipped: adapter returned "
-                f"{'no rows' if fr is None or not len(fr) else 'no org_node_id'} "
+                f"{'no rows' if fr is None or not len(fr) else 'no org_node_id / npi key'} "
                 f"— source present but produced nothing usable")
 
-    # --- post-deactivation billing (spending + deactivated NPIs + npi_to_org) ---
+    # --- post-deactivation billing (spending + deactivated NPIs) ---------------------
+    # 2026-11-02 (audit C5, batch 5b-D): PER NPI. The org-grain share used to light every
+    # member of a deactivated NPI's organization (and the widening block then needed a
+    # single-NPI guard); the frame is now one row per deactivated NPI with billing and is
+    # joined by npi, so a sibling is never flagged for another number's deactivation.
     try:
         from src.ingest_cms import nppes_deactivation as nd
         dp = _deactivation_file(pc / "nppes_deactivation", log, asof_cutoff=asof_cutoff)
@@ -2317,9 +2375,9 @@ def _run_org_grain_adapters(preclean: Path, processed: Path, npi_to_org: pd.Data
             deact, _ = nd.deactivated_npis(nd.load_deactivation(dp))
             spend = _spending_for_npis(spending_p, deact["npi"].tolist())
             log(f"    [nppes_deactivation] reading {dp.name} "
-                f"({len(deact):,} deactivated NPIs)")
+                f"({len(deact):,} deactivated NPIs; share per NPI, never per org)")
             _emit("nppes_deactivation",
-                  nd.billing_after_deactivation(spend, deact, npi_to_org),
+                  nd.billing_after_deactivation(spend, deact, grain="npi"),
                   ["billing_after_deactivation"])
         else:
             log("    [nppes_deactivation] skipped: needs deactivation file + processed/spending_fact.parquet")
@@ -2839,6 +2897,9 @@ def main() -> None:
     ap.add_argument("--case-budget", default="npi100", choices=["npi100", "per_case", "cap5"],
                     help="label policy (2026-11-02, audit A1): a settled org's training mass; npi100 = min(1, 100 / "
                          "fan-out) (ship), per_case = one case is one unit (1 / fan-out), cap5 = min(1, 5 / fan-out)")
+    ap.add_argument("--segment", default="all", choices=["all", "operator"],
+                    help="training policy (2026-11-02, audit experiment 5): the rows the scorer trains on "
+                         "(all = ship; operator = the operator-class organizations only, every row scored)")
     ap.add_argument("--group-policy", default="case_cluster", choices=["org", "case_cluster"],
                     help="fold group key: 'case_cluster' (default) merges organizations that "
                          "share a DOJ case so a chain never straddles train and test; 'org' is "
@@ -3194,6 +3255,48 @@ def main() -> None:
         except Exception as e:
             audit(f"    [sector_schemes] skipped: {e}")
 
+        # 2026-11-02 (batch 5b-F): POLICY-AWARE features — the observed intensity on the
+        # as-of fact over the STATE'S OWN parameter from the policy library
+        # (processed/policy/state_policy.parquet, the Manus policy lane): pol_<topic>_rule_present
+        # + pol_<topic>_<param>_excess per NPI (NULL = no rule or no observation, 0 = within
+        # the rule). A rule effective after the freeze stays out of a frozen run.
+        try:
+            from src.policy import registry as _preg
+            from src.policy.features import observed_from_parquet, policy_features
+            spend_pol = asof_spend_p or _first_existing(processed, "spending_fact.parquet")
+            pdim_pol = _first_existing(processed, "provider_dim.parquet")
+            pol_path = _preg.policy_path(root)
+            if _have("policy"):
+                pass
+            elif not pol_path.exists():
+                audit(f"    [policy] skipped: no policy library at {pol_path} "
+                      f"(manus_lanes policy lane -> src.policy.registry)")
+            elif not (spend_pol and pdim_pol):
+                audit("    [policy] skipped: needs processed/spending_fact.parquet + provider_dim.parquet")
+            else:
+                obs = observed_from_parquet(spend_pol, asof_cutoff=args.asof_cutoff)
+                st = pd.read_parquet(pdim_pol)
+                st_col = next((c for c in ("addr_state", "practice_state", "state") if c in st.columns), None)
+                if st_col is None:
+                    audit("    [policy] skipped: provider_dim carries no state column")
+                else:
+                    st = st[["npi", st_col]].rename(columns={st_col: "practice_state"})
+                    st["npi"] = st["npi"].astype(str)
+                    obs["npi"] = obs["npi"].astype(str)
+                    obs = join_m1(obs, st.drop_duplicates("npi"), source="policy/state")
+                    pf = policy_features(_preg.load_policy(root), obs, asof=args.asof_cutoff)
+                    pol_cols = [c for c in pf.columns if c != "npi"]
+                    if len(pf) and pol_cols:
+                        adapter_frames["policy"] = pf
+                        n_rule = int(sum(int(pd.to_numeric(pf[c], errors="coerce").fillna(0).gt(0).sum())
+                                         for c in pol_cols if c.endswith("_rule_present")))
+                        audit(f"    [policy] {len(pf):,} NPIs x {len(pol_cols)} policy columns from "
+                              f"{pol_path.name} ({n_rule:,} NPI-topic pairs under a stated rule)")
+                    else:
+                        audit("    [policy] skipped: the library yielded no policy column")
+        except Exception as e:
+            audit(f"    [policy] skipped: {e}")
+
         # J-code drug markup: the drug-spread essence (priced far above same-drug
         # peers) straight from the spending fact — no NDC slice, no NADAC needed.
         # Runs on the as-of file under a freeze, so it is point_in_time.
@@ -3448,7 +3551,7 @@ def main() -> None:
         prior_min_n=args.prior_min_n, prior_weighted=(args.prior_weighted == "1"),
         prior_inner_folds=args.prior_inner_folds,
         settlement_weight=args.settlement_weight, feature_set=args.feature_set,
-        case_budget=args.case_budget)
+        case_budget=args.case_budget, segment=args.segment)
 
     # Consolidated source audit: the single table of what each source DID this run
     # (used/skipped + reason + file), so a silent skip is impossible to miss.

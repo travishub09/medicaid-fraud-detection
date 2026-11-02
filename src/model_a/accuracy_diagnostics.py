@@ -203,7 +203,7 @@ def load_ruler(path: str | Path) -> pd.DataFrame:
                "undated_exclusion", "fca_tier"]]
 
 
-OUTCOME_SOURCES = {"doj_case", "hcf_commercial"}      # a case label that is a public OUTCOME
+OUTCOME_SOURCES = {"doj_case", "docket_outcome", "hcf_commercial"}   # a case label that is a public OUTCOME (docket_outcome: batch 5b-G)
 
 
 def known_in_matrix(matrix: pd.DataFrame) -> np.ndarray:
@@ -318,6 +318,11 @@ def oof_with_folds(matrix: pd.DataFrame, manifest: dict, cols: list[str], y_trai
     ambiguous = ambiguous | unassessable_mask(matrix)
     if pol["broadcast"] == "mask":
         ambiguous = ambiguous | (broadcast_only_mask(matrix) & (np.asarray(y_train) == 1))
+    if pol.get("segment") == "operator":
+        # batch 5b-E (audit experiment 5): the segment scorer trains on operator-class
+        # rows only and scores everyone; the refit arm reproduces it with the same mask
+        from .company_list import operator_mask
+        ambiguous = ambiguous | ~operator_mask(matrix)
     scores = np.zeros(len(matrix))
     fold = np.full(len(matrix), -1)
     it = fold_assignments(y_train, groups, n_splits, seed=(RANDOM_STATE + repeat if repeat else None))
@@ -402,7 +407,7 @@ def load_priority_list(run_dir: Path, name: str = "provider_priority_list.csv") 
             df[c] = pd.to_numeric(df[c], errors="coerce")
     # a companion book's own rank column is its order: pmax_rank (the pmax book carries
     # no pursuit_rank), large_rank / pursuit_rank (the large book keeps the pursuit order)
-    for rc in ("pmax_rank", "pursuit_rank", "large_rank"):
+    for rc in ("pmax_rank", "pursuit_rank", "large_rank", "solo_rank"):
         if rc in df.columns:
             df["priority_rank"] = pd.to_numeric(df[rc], errors="coerce")
             break
@@ -693,7 +698,10 @@ def order_sweep(orgs_hit: pd.DataFrame, budgets=(16, 50, 100, 250)) -> list[dict
     (score_p_any, score_p_max, score_dollar_weighted, score_max), each with and
     without basis-backed case sizes ranked before cap-pinned ones. One run answers
     'which sort key finds the cases' instead of one rerun per key."""
-    keys = [k for k in ("score_p_any", "score_p_max", "score_dollar_weighted", "score_max") if k in orgs_hit.columns]
+    # batch 5b-E (audit experiment 8): the size-neutral rollup statistics (mean, top-2
+    # mean, max exceedance over the roster-size null) ride in the sweep beside the shipped keys
+    keys = [k for k in ("score_p_any", "score_p_max", "score_dollar_weighted", "score_max",
+                        "score_mean", "score_top2_mean", "score_max_exceedance") if k in orgs_hit.columns]
     capped = orgs_hit.get("case_size_capped", pd.Series(False, index=orgs_hit.index))
     capped = capped.astype(str).str.lower().isin(["true", "1"]).astype(int).to_numpy()
     pool_pos = int(orgs_hit["hit"].sum())
@@ -1642,6 +1650,9 @@ def main() -> None:
     ap.add_argument("--settlement-weight", type=float, default=None,
                     help="training policy arm (2026-11-01): scale civil-settlement positives' sample weight "
                          "(1 = like convictions, the ship)")
+    ap.add_argument("--segment", default=None, choices=["all", "operator"],
+                    help="training policy arm (2026-11-02, audit experiment 5): refit on the operator-class "
+                         "rows only (every row scored); default = the manifest's training_policy.segment")
     ap.add_argument("--seeds", type=int, default=None,
                     help="refit only: LightGBM fits averaged per fold (default: the manifest's "
                          "training_policy.n_seeds, else 1)")
@@ -1669,7 +1680,8 @@ def main() -> None:
                     help="which shipped list to grade: provider_priority_list.csv (default), "
                          "provider_priority_list_pursuit.csv (the operator book) or "
                          "provider_priority_list_large.csv (the operator book over the "
-                         "--large-min-billed band)")
+                         "--large-min-billed band) or provider_priority_list_solo.csv (the solo "
+                         "individuals' book, batch 5b-E; read it on the state ruler)")
     ap.add_argument("--out", default=None, help="default <run-dir>/ACCURACY_DIAGNOSTICS.md")
     a = ap.parse_args()
 
@@ -1690,17 +1702,19 @@ def main() -> None:
         print(f"[accuracy_diagnostics] training label policy {a.label_tier} from {ex}")
     if (a.seeds is not None or a.broadcast_rows is not None or a.class_priors is not None
             or a.drop_schemes is not None or a.prior_min_n is not None or a.prior_weighted is not None
-            or a.prior_inner_folds is not None or a.feature_set is not None or a.settlement_weight is not None):
+            or a.prior_inner_folds is not None or a.feature_set is not None or a.settlement_weight is not None
+            or a.segment is not None):
         from .company_list import set_training_policy
         set_training_policy(n_seeds=a.seeds, broadcast=a.broadcast_rows, class_priors=a.class_priors,
                             drop_schemes=a.drop_schemes, prior_min_n=a.prior_min_n,
                             prior_weighted=a.prior_weighted, prior_inner_folds=a.prior_inner_folds,
-                            settlement_weight=a.settlement_weight, feature_set=a.feature_set)
+                            settlement_weight=a.settlement_weight, feature_set=a.feature_set,
+                            segment=a.segment)
         print(f"[accuracy_diagnostics] training policy override: seeds={a.seeds}, "
               f"broadcast={a.broadcast_rows}, class_priors={a.class_priors}, drop_schemes={a.drop_schemes}, "
               f"prior_min_n={a.prior_min_n}, prior_weighted={a.prior_weighted}, "
               f"prior_inner_folds={a.prior_inner_folds}, feature_set={a.feature_set}, "
-              f"settlement_weight={a.settlement_weight}")
+              f"settlement_weight={a.settlement_weight}, segment={a.segment}")
     rulers: dict[str, pd.DataFrame] = {}
     if a.forward_label:
         for item in a.forward_label:

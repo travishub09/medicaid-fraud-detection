@@ -996,6 +996,36 @@
     "python -u -m src.model_a.pi_facts --run-dir \"C:\\Users\\treyr\\OneDrive\\Desktop\\data\\model_a\\frozen_2021-12_v11\" --npis \"1508848441;1588703995;1558688754\" --deep --out-prefix pi_facts_chinatown",
     "REM say 'Sage first-call list + Wallabout follow-ups sent' when the email goes"
    ]
+  },
+  {
+   "key": "repo_remotes_equityable",
+   "added": "2026-11-02",
+   "what": "THE REPO MOVED to the Equityable Claims GitHub account (Brad admin, 2026-11-02). Three remotes still point at travishub09: the laptop, the VM and the Claude session's GitHub connector. Paste block A on the laptop once the new URL is known (replace <ORG> with the account name as it appears in the GitHub address bar); block B on the VM; then in claude.ai/code reconnect GitHub to the Equityable Claims account (Brad installs the Claude GitHub App there first: Step 8 of the team email) and start the next session on the new repo. Until then the session pushes to the old account and the laptop pulls from it: nothing is lost, the two copies are identical. Close when `git remote -v` on the laptop AND the VM show the new URL and a session push lands there.",
+   "commands": [
+    "REM A. laptop (replace <ORG>):",
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection && git remote set-url origin https://github.com/<ORG>/medicaid-fraud-detection.git && git fetch origin && git remote -v",
+    "REM B. VM (replace <ORG>; NOT while a run is going):",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && git remote set-url origin https://github.com/<ORG>/medicaid-fraud-detection.git && git fetch origin && git remote -v\"",
+    "REM C. close:",
+    "python -m src.reminders --done-task repo_remotes_equityable"
+   ]
+  },
+  {
+   "key": "v29_run",
+   "added": "2026-11-02",
+   "what": "v29 = THE FIRST RUN ON BATCH 5b (merged 2026-11-02 after v28 launched; v29 semantics, NEW pre-registration): per-case label budget (npi100 ship), the case ruler on the AS-OF graph (every diagnostics line passes --asof-graph-dir; ruler_graph = asof), the case as the unit (acc_cluster_*), tie-aware hits, per-CCN facility inputs + capacity per CCN (facility_rollup = own_ccn), honest patient-month bases, deactivation per NPI, drug spread within state, the SOLO book (__solo, state ruler), the operator-segment arm (ab_segment_operator/), the policy-aware features (source policy), the held-out FIELD ruler (future_bans_after_2023-12__field33.csv from field_outcomes.csv), employers of the state-side positives (step 2c -> the state ruler) and docket outcomes on the ruler. ORDER: v28 read first (v28_run line 2), then pull the code on the VM (never during a run), pre-register (line 1: the v28 checks + ruler_graph = asof + facility_rollup = own_ccn + segment = all + case_budget = npi100; the solo book, the field ruler and the state ruler are READ, not barred), launch (line 2), read (line 3). NOTE: the as-of ruler changes the positive count versus v28, so v29's hits are read beside v28's with that note, never as the same ruler.",
+   "commands": [
+    "REM 0. pull the code on the VM (only after v28 is DONE):",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux ls 2>/dev/null | grep -q '^v28' && echo 'v28 STILL RUNNING: do not pull' || (git pull --ff-only && git log --oneline -1)\"",
+    "REM 0b. print v28's registered checks first; line 1 must carry the SAME bars plus the four batch-5b keys (edit it if v28's differ):",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -h 'frozen_2023-12_v28' /data/medicaid/model_a/run_registry.jsonl | python3 -c 'import sys,json; [print(json.loads(l).get(\\\"checks\\\")) for l in sys.stdin]' | tail -2\"",
+    "REM 1. pre-register v29 (copy v28's checks, add the four batch-5b keys):",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.run_registry --preregister --tag frozen_2023-12_v29 --series '2023-12 | hard' --expected 'v28 checks + the batch-5b policy keys; solo / field / state rulers read' --check 'hits100 >= 2' --check 'hits250 >= 4' --check 'large_hits50 >= 2' --check 'npi_lift1pct >= 3' --check 'score_scale >= 0.1' --check 'inst_share50 <= 0.2' --check 'top50_jaccard >= 0.6' --check 'train = hard' --check 'policy = hard' --check 'frozen = True' --check 'seeds >= 10' --check 'groups = case_cluster' --check 'broadcast = weight' --check 'priors = none' --check 'prune = none' --check 'embeddings = 0' --check 'fca_reach >= 0.02' --check 'ruler_graph = asof' --check 'facility_rollup = own_ccn' --check 'segment = all' --check 'case_budget = npi100'\"",
+    "REM 2. launch (tmux v29; the runner's step 2c builds the state-side employers, step 3 the field ruler):",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && tmux new -d -s v29 'HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v29 2023-12 > /data/medicaid/model_a/v29.log 2>&1'\"",
+    "REM 3. the read (DONE banner, the registry verdict, the pursuit / large / solo grades, the field ruler counts):",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -E 'DONE|FAILED|step [0-9]' /data/medicaid/model_a/v29.log | tail -25; grep -A3 'field ruler' /data/medicaid/model_a/v29.log | tail -8; tail -5 /data/medicaid/model_a/MODEL_RUNS.md\""
+   ]
   }
  ],
  "closed": [

@@ -190,6 +190,10 @@ def conduct_ok(conduct_start, cut_year: int, missing: str = "drop") -> pd.Series
 
 CHARGED_TIER = "charged"
 CHARGED_SOURCE = "charged_case"
+# batch 5b-G (2026-11-02): a docket ENTRY recording a settlement / judgment
+# (docket_backfill.docket_outcome_rows, case_type docket_outcome) is its own source,
+# ranked under doj_case and above charged_case; an allegation docket stays docket_case
+DOCKET_OUTCOME_SOURCE = "docket_outcome"
 # COMMERCIAL-PLAN FRAUD (operator 2026-10-14; docs/EXCLUSION_SOURCES_AUDIT §commercial):
 # a provider convicted of billing a commercial health plan falsely has the same hands,
 # codes and staff on its Medicaid claims. case_type ``hcf_commercial`` (state AG /
@@ -421,6 +425,11 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
 
     def _case_source(c, otier: str | None = None) -> str:
         ct = str(c.get("case_type") or "") if hasattr(c, "get") else ""
+        if ct.strip().lower() == DOCKET_OUTCOME_SOURCE:
+            # batch 5b-G: a docket entry recording a settlement / judgment is an OUTCOME
+            # (fca_label_export.outcome_tier reads it on the civil path); it is its own
+            # source so the read-outs can tell a court-record outcome from a release
+            return DOCKET_OUTCOME_SOURCE
         if ct.startswith("docket"):
             return "docket_case"
         if ct.strip().lower() == COMMERCIAL_CASE_TYPE:
@@ -655,9 +664,11 @@ def build_case_labels(case_db: pd.DataFrame, org_nodes: pd.DataFrame,
             "conduct_end": int(ends.max()) if len(ends) else None,
             "case_ids": ";".join(sorted(set(g["case_ids"]))),
             "amount_usd": float(dedup["amount_usd"].sum()),
-            # a prosecuted outcome (doj_case) outranks a charge (charged_case), which
-            # outranks a relator's allegation (docket_case)
+            # a prosecuted outcome (doj_case) outranks a court-record outcome
+            # (docket_outcome, batch 5b-G), which outranks a charge (charged_case),
+            # which outranks a relator's allegation (docket_case)
             "label_source": ("doj_case" if (g["label_source"] == "doj_case").any()
+                             else DOCKET_OUTCOME_SOURCE if (g["label_source"] == DOCKET_OUTCOME_SOURCE).any()
                              else CHARGED_SOURCE if (g["label_source"] == CHARGED_SOURCE).any()
                              else COMMERCIAL_SOURCE if (g["label_source"] == COMMERCIAL_SOURCE).any()
                              else "docket_case"),

@@ -104,6 +104,14 @@ def outcome_tier(case_type: str, text: str, amount) -> tuple[str, str]:
             m = _CIVIL_OUTCOME.search(t)
             return "oig_cmp", (m.group(0) if m else "CMP settlement")
         return "", "CMP settlement without fraud-shaped conduct"
+    if ct == "docket_outcome":
+        # batch 5b-G (2026-11-02): a docket ENTRY recording a settlement or judgment
+        # (docket_backfill.docket_outcome_rows) is a resolved civil outcome on the
+        # court's own record; the words are the civil-outcome vocabulary
+        m = _CIVIL_OUTCOME.search(t)
+        if m:
+            return "fca_civil", m.group(0)
+        return "", "docket_outcome without outcome wording"
     if ct.startswith("docket"):
         return "", "docket (allegation)"
     if ct == "hcf_commercial":

@@ -5,6 +5,14 @@ code (Daschel), a reader who asks the model questions (Michelle) and counsel (Br
 rules below are the ones that keep two people from editing over each other, keep the VM
 and the data safe, and keep every change to model behaviour visible.
 
+## 0. Where the code lives (2026-11-02)
+
+The repository lives under the Equityable Claims GitHub account; Brad is its admin. The
+analyst and the reader each have their own GitHub login with Write access to
+`medicaid-fraud-detection`, and everyone is on the one Claude team plan (own login, same
+plan, same repository through the Claude GitHub App that Brad installed on the account).
+Setup steps are in the team-access email of 2026-11-02; the day-to-day rules are below.
+
 ## 1. One rule above the others: every change goes through a branch and a pull request
 
 Nobody pushes to `main` or to the integration branch directly. Each person works on a

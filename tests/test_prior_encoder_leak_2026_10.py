@@ -252,7 +252,7 @@ def test_night_runner_resume_gate_and_the_prune_echo_is_guarded():
     from pathlib import Path
     s = Path("ops/vm/run_frozen_night.sh").read_text()
     assert "PRUNE_AB=${PRUNE_AB:-auto}, PREV=${PREV:-none}" in s and "PREV=$PREV)" not in s
-    assert s.count("if run_step ") == 20 and "STEPS=(0 0m 1 2 2a 2b 3 4 5 6 7 8 8p 8c 8x 9 10 11 12 13)" in s
+    assert s.count("if run_step ") == 21 and "STEPS=(0 0m 1 2 2a 2b 2c 3 4 5 6 7 8 8p 8c 8x 9 10 11 12 13)" in s   # 2c: batch 5b-G employers of the state-side positives
     gate = s[s.index("STEPS=("):s.index("[ -n \"$RESUME_FROM\" ] && echo")]
     probe = "TAG=t\n" + gate + 'for x in 7 8 8p 8c 9 13; do run_step $x >/dev/null && echo "run $x"; done'
     out = subprocess.run(["bash", "-c", probe], capture_output=True, text=True, env={"RESUME_FROM": "8p"}).stdout.split()

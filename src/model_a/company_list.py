@@ -338,7 +338,7 @@ def broadcast_only_mask(matrix: pd.DataFrame) -> np.ndarray:
     bc = matrix["label_basis"].fillna("").astype(str).isin(BROADCAST_BASES)
     src = (matrix["exclusion_label_sources"] if "exclusion_label_sources" in matrix.columns
            else pd.Series("", index=matrix.index)).fillna("").astype(str)
-    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case", "charged_case", "hcf_commercial"})
+    only_doj = src.str.split(";").apply(lambda xs: {x for x in xs if x} <= {"doj_case", "docket_outcome", "charged_case", "hcf_commercial"})
     return (bc & only_doj).to_numpy(dtype=bool)
 
 

@@ -37,6 +37,7 @@ CIA_NPIS="$DATA/processed/cia_defendant_npis.parquet"
 AFFILIATED="$DATA/processed/affiliated_convictions.parquet"
 AFF_RESEARCH="$DATA/processed/affiliated_research.parquet"
 AFF_FILES="$AFFILIATED"; [ -f "$AFF_RESEARCH" ] && AFF_FILES="$AFFILIATED $AFF_RESEARCH"
+AFF_STATE="$DATA/processed/affiliated_state_${CUT}.parquet"   # batch 5b-G (run_frozen_night.sh step 2c writes it)
 CASES="$DATA/enforcement/doj_cases_v3_plus_cia.csv"
 DEFENDANTS="$DATA/processed/case_defendant_npis_plus_cia.parquet"
 REBUILD_RULERS="${REBUILD_RULERS:-}"
@@ -77,7 +78,9 @@ for f in provider_features_for_model.parquet feature_manifest.json provider_oof_
          future_bans_after_${CUT}.csv future_bans_after_${CUT}.TIERS.md future_bans_after_${CUT}__fca${HORIZON}.csv \
          future_bans_after_${CUT}__fca${HORIZON}.TIERS.md future_bans_after_${CUT}__aff${HORIZON}.csv \
          future_bans_after_${CUT}__aff${HORIZON}.TIERS.md future_bans_after_${CUT}__quitam${HORIZON}.csv \
-         future_bans_after_${CUT}__quitam${HORIZON}.TIERS.md freeze_inputs.json training_label_policy.json \
+         future_bans_after_${CUT}__quitam${HORIZON}.TIERS.md future_bans_after_${CUT}__state${HORIZON}.csv \
+         future_bans_after_${CUT}__state${HORIZON}.TIERS.md future_bans_after_${CUT}__field${HORIZON}.csv \
+         future_bans_after_${CUT}__field${HORIZON}.FIELD.md freeze_inputs.json training_label_policy.json \
          PROVIDER_FEATURES_EXPORT_REPORT.md PROVIDER_FEATURES_DICTIONARY.md \
          SOURCES_REPORT.md EXPECTATIONS_REPORT.md CASE_VALIDATION.md SCHEME_HEALTH.md scheme_health.json \
          SCHEME_TRIAGE.md NETWORK_AB_REPORT.md; do
@@ -102,7 +105,8 @@ if [ -n "$REBUILD_RULERS" ]; then
       --out "$RUN/future_bans_after_${CUT}__quitam${HORIZON}.csv" || fail 0
   python -u -m src.model_a.prospective_label --exclusion-nodes "$DATA/graph/nodes/exclusion_nodes.parquet" --cutoff "$CUT" --fca-tier hard \
       --sources state --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" \
-      --case-jurisdiction "MFCU|Attorney General|state" $( [ -f "$AFF_RESEARCH" ] && echo --affiliated "$AFF_RESEARCH" ) \
+      --case-jurisdiction "^(?!.*\baudit\b).*(?:MFCU|Attorney General|\bAG\b|\bstate\b)" \
+      $( { [ -f "$AFF_RESEARCH" ] || [ -f "$AFF_STATE" ]; } && echo --affiliated $( [ -f "$AFF_RESEARCH" ] && echo "$AFF_RESEARCH" ) $( [ -f "$AFF_STATE" ] && echo "$AFF_STATE" ) ) \
       --out "$RUN/future_bans_after_${CUT}__state${HORIZON}.csv" || fail 0
 # THE SCHEME-TYPED RULERS (2026-11-01): one forward case ruler per conduct type so a scheme is
 # graded on the cases it was written for (scheme_health --typed-dir, scheme_alternatives);
@@ -112,6 +116,10 @@ if [ -n "$REBUILD_RULERS" ]; then
         --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --horizon-months "$HORIZON" --fca-case-only \
         --case-scheme "$ct" --out "$RUN/future_bans_after_${CUT}__typed_${ct}${HORIZON}.csv" || fail 0
   done
+  if [ -f "$DATA/enforcement/field_outcomes.csv" ]; then       # batch 5b-F: the held-out field ruler
+    python -u -m src.model_a.field_ruler --data-root "$DATA" --cutoff "$CUT" --horizon "$HORIZON" --run-dir "$RUN" \
+        --matrix "$RUN/provider_features_for_model.parquet" --graph-dir "$GRAPH_ASOF" || fail 0
+  fi
 
 else
   [ -f "$CASES" ] || CASES="$CASES_BASE"
@@ -122,17 +130,17 @@ step 6/12 "priority list + pursuit book + large-biller book (the restored book d
 python -u -m src.model_a.pursuit_dossier --run-dir "$RUN" --priority-list --order "$PURSUIT_ORDER" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" $PRIOR_FLAGS || fail 6
 
 step 7/12 "accuracy diagnostics on the PURSUIT book"
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" $PRIOR_FLAGS --repeats 3 --qui-tam-ruler --list-name provider_priority_list_pursuit.csv || fail 7
 
 step 8/12 "the large-biller book, and the broadcast A/B"
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" $PRIOR_FLAGS --list-name provider_priority_list_large.csv || fail 8
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" $PRIOR_FLAGS --list-name provider_priority_list_pmax.csv || fail 8    # the v17 sweep's winning order, graded as a third book (2026-10-20)
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --out "$RUN/ab_broadcast_weight/ACCURACY_DIAGNOSTICS.md" || fail 8
-python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
     --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows mask --out "$RUN/ab_broadcast_mask/ACCURACY_DIAGNOSTICS.md" || fail 8
 # v21: the class-prior A/B. v22: when the SOURCE manifest ships class priors (its
 # training_policy.class_priors), the counterfactual is the no-priors arm (ab_no_priors/),
@@ -149,10 +157,10 @@ PY
 if [ -n "${CLASS_PRIORS+x}" ]; then SHIPPED_PRIORS="$CLASS_PRIORS"; fi     # v25: the override is the ship
 if [ -n "$SHIPPED_PRIORS" ]; then
   echo "[$NEW] shipped priors = $SHIPPED_PRIORS: grading the no-priors counterfactual (ab_no_priors/)"
-  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --class-priors "" --out "$RUN/ab_no_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 elif [ -n "${CLASS_PRIORS_AB:-taxonomy,entity}" ]; then
-  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --class-priors "${CLASS_PRIORS_AB:-taxonomy,entity}" --out "$RUN/ab_class_priors/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
 # v23: the prior-encoder A/B (the v22 read-out: floor + weights fixed the NPI grain and broke
@@ -166,7 +174,7 @@ for arm in $PRIOR_ARMS; do
   IFS=: read -r name mn wt inner <<< "$arm"
   if [ "$mn" = "$PRIOR_MIN_N" ] && [ "$wt" = "$PRIOR_WEIGHTED" ] && [ "$inner" = "$PRIOR_INNER" ]; then continue; fi
   echo "[$NEW] prior A/B arm $name (min_n $mn, weighted $wt, inner_folds $inner)"
-  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit --broadcast-rows weight --prior-min-n "$mn" --prior-weighted "$wt" --prior-inner-folds "$inner" --out "$RUN/ab_prior_${name}/ACCURACY_DIAGNOSTICS.md" || fail 8
 done
 # v21: the prune A/B (PRUNE_AB=auto reads the SOURCE run's scheme_health.json; a list overrides; empty skips)
@@ -178,10 +186,19 @@ case "${PRUNE_AB:-auto}" in
 esac
 if [ -n "$PRUNE_LIST" ]; then
   echo "[$NEW] prune A/B: holding out $PRUNE_LIST"
-  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
       --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --drop-schemes "$PRUNE_LIST" --out "$RUN/ab_prune/ACCURACY_DIAGNOSTICS.md" || fail 8
 else
   echo "[$NEW] prune A/B skipped (no prune list)"
+fi
+# batch 5b-E: the SOLO book (state ruler) and the operator-SEGMENT arm (SEGMENT_AB=0 skips)
+if [ -f "$RUN/provider_priority_list_solo.csv" ]; then
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" $PRIOR_FLAGS --list-name provider_priority_list_solo.csv || fail 8
+fi
+if [ "${SEGMENT_AB:-1}" = "1" ]; then
+  python -u -m src.model_a.accuracy_diagnostics --run-dir "$RUN" --case-db "$CASES" --graph-dir "$DATA/graph" --asof-graph-dir "$GRAPH_ASOF" --defendant-npis "$DEFENDANTS" --label-tier "$TRAIN_TIER" --exclusion-nodes "$EXCL" \
+      --horizon-months "$HORIZON" --score-source refit $PRIOR_FLAGS --broadcast-rows weight --segment operator --out "$RUN/ab_segment_operator/ACCURACY_DIAGNOSTICS.md" || fail 8
 fi
 
 step 9/12 "results digest + pursuit dossier (operator book, national chains set aside; no Manus dispatch here)"

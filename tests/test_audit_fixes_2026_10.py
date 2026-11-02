@@ -81,6 +81,29 @@ def test_label_widening_never_smears_an_org_flag_over_members(tmp_path):
     assert int(m.loc[others, "provider_on_exclusion"].sum()) == 0
 
 
+def test_npi_grain_deactivation_flag_flips_only_its_own_npi(tmp_path):
+    """Batch 5b-D (audit C5, 2026-11-02): the deactivation adapter now returns ONE row per
+    deactivated NPI (no org_node_id); the export joins it by npi and the widening reads the
+    NPI's own share with no single-NPI guard, so a sibling in a multi-NPI org never lights."""
+    inputs, org_nodes, npi_to_org = _graph(tmp_path)
+    org_id = npi_to_org.set_index("npi").loc[PAIR_NPI, "org_node_id"]
+    members = npi_to_org[npi_to_org["org_node_id"] == org_id]["npi"].astype(str).tolist()
+    assert len(members) > 1
+    leads = build_provider_leads(inputs["provider_dim"])
+    wl = pd.DataFrame({"npi": ["1003000415"], "provider_on_exclusion": [1], "exclusion_label_sources": ["leie"]})
+    npi_flag = pd.DataFrame({"npi": [PAIR_NPI], "post_deactivation_paid": [400.0], "total_paid": [1000.0],
+                             "billing_after_deactivation": [0.4]})
+    matrix, manifest = build_provider_matrix(leads, npi_to_org, widened_label=wl,
+                                             org_grain_frames={"nppes_deactivation": npi_flag}, min_peer=2)
+    m = matrix.set_index("npi")
+    assert int(m.loc[PAIR_NPI, "provider_on_exclusion"]) == 1
+    assert "deactivation" in str(m.loc[PAIR_NPI, "exclusion_label_sources"])
+    others = [n for n in members if n != PAIR_NPI]
+    assert int(m.loc[others, "provider_on_exclusion"].sum()) == 0
+    assert m.loc[others, "billing_after_deactivation"].isna().all()      # joined by npi, never broadcast
+    assert "billing_after_deactivation" in manifest["sources_used"]["nppes_deactivation"]
+
+
 def test_clean_anchor_fallback_reads_residual_percentiles():
     def row(**kw):
         base = dict(provider_on_exclusion=0, within_2_hops_of_exclusion=0, graph_fraud_proximity=0.1,
