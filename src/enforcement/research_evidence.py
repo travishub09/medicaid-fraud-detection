@@ -331,6 +331,51 @@ def quarantine_absent_defendants(case_db_path, fetch_page, jurisdiction_regex: s
     log(f"    [verify_sources] {len(absent):,} rows marked usable=0 ({ABSENT_NOTE}) in {p}")
     return int(len(absent))
 
+PROOF_NOTE = "page_proof: named on the page (browser copy)"
+
+
+def apply_page_proof(case_db_path, page_text_by_url: dict, log=print) -> dict:
+    """The browser-proof lane's answer applied to the case DB (2026-11-02): a research
+    agent opened each blocked page in a browser and attached the page's HTML (and a
+    screenshot for the audit); OUR gate reads the HTML. For every selected research row
+    whose cited URL is in the map: named -> usable 1 (PROOF_NOTE); absent -> usable 0
+    (ABSENT_NOTE); a URL the agent could not open leaves the row as it was."""
+    p = Path(case_db_path)
+    db = read_csv_text(str(p), dtype=str)
+    for c, v in (("usable", "1"), ("qc_note", ""), ("name_in_source", "")):
+        if c not in db.columns:
+            db[c] = v
+    jur = db.get("jurisdiction", pd.Series("", index=db.index)).fillna("").astype(str)
+    sel = jur.str.contains(RESEARCH_JURISDICTIONS, regex=True, na=False)
+    url_col = db["source_url"].fillna("").astype(str) if "source_url" in db.columns else pd.Series("", index=db.index)
+    url_col = url_col.where(url_col != "", db["case_id"].astype(str).str.replace(r"#.*$", "", regex=True))
+    named = absent = unread = 0
+    for i in db.index[sel]:
+        url = url_col.at[i].strip()
+        text = page_text_by_url.get(url)
+        if text is None:
+            continue
+        name = str(db.at[i, "defendant_name"])
+        kind = "org" if re.search(r"\b(inc|llc|corp|pllc|p\.?c\.?|p\.?a\.?|center|clinic|hospital|pharmacy|"
+                                  r"services|group|associates|health|care|home|lab)\b", name, re.I) else "person"
+        hit = name_in_page(name, kind, text)
+        if hit is None:
+            unread += 1
+            continue
+        db.at[i, "name_in_source"] = "1" if hit else "0"
+        if hit:
+            db.at[i, "usable"] = "1"
+            db.at[i, "qc_note"] = PROOF_NOTE
+            named += 1
+        else:
+            db.at[i, "usable"] = "0"
+            db.at[i, "qc_note"] = ABSENT_NOTE
+            absent += 1
+    db.to_csv(p, index=False)
+    log(f"    [page_proof] {named:,} rows named on the browser copy (usable), {absent:,} absent, {unread:,} unreadable")
+    return {"named": named, "absent": absent, "unread": unread}
+
+
 # state lists arrive in ~40 formats; resolve the essentials by alias
 _STATE_EXCL_ALIASES = {
     "npi": ["npi", "NPI", "provider npi", "npi number", "national provider identifier"],

@@ -85,7 +85,98 @@ PROOF_RULE = (" EVERY row must also carry evidence_quote (the exact sentence fro
               "oig.hhs.gov, a state attorney general's own release) over PDFs behind a portal.")
 LANES = ("cia", "names", "outcome_refresh", "commercial", "defendant_research",
          "label_verification", "label_review", "mfcu", "employer", "federal_reports", "policy",
-         "roster_finder", "fee_schedule", "state_audits", "plan_policy")
+         "roster_finder", "fee_schedule", "state_audits", "plan_policy", "page_proof")
+# 2026-11-02 THE BROWSER PROOF: OMIG, the Texas OIG, DOJ, NH DOJ, mass.gov and ncdoj refuse the
+# VM's address and a plain download (403 / reset / a challenge page); a research agent's
+# BROWSER reads them. The agent attaches the page's HTML and a full-page screenshot; OUR gate
+# (name_in_page) reads the HTML; the screenshot is the audit copy. The agent's own yes/no is
+# never the verdict.
+PAGE_PROOF_PER_TASK = 8
+PAGE_PROOF_PROMPT = (
+    "Browser task, no research. For EACH of the {n} URLs below, open it in your browser and wait until it has "
+    "fully loaded (accept any cookie banner; if a 'checking your browser' page appears, wait for the real "
+    "page). Then attach, for URL number k: (a) the complete page source as a file named page_k.html (for a "
+    "PDF, attach the PDF itself as page_k.pdf), and (b) a full-page screenshot named page_k.png. Do not "
+    "summarise or retype the page; the files are the deliverable. Finally return a CSV with the columns "
+    "k, url, opened (yes/no), http_status, final_url, page_title, names_seen (which of the names listed for "
+    "that URL appear on the page, separated by ';', or 'none'), evidence_quote (the exact sentence naming "
+    "them, or blank). Blank beats a guess.\n\nURLs:\n{urls}")
+
+
+def page_proof_items(case_db_path: Path, per_task: int = PAGE_PROOF_PER_TASK, hosts=None) -> list[dict]:
+    """One dispatch item per PAGE_PROOF_PER_TASK unverified cited pages: the research rows
+    whose page the VM could not read (UNVERIFIED_NOTE), grouped by URL with the defendant
+    names each page should carry. ``hosts`` narrows to a set of hostnames."""
+    from src.enforcement.research_evidence import UNVERIFIED_NOTE, RESEARCH_JURISDICTIONS
+    from urllib.parse import urlparse
+    import hashlib
+    if not Path(case_db_path).exists():
+        return []
+    db = pd.read_csv(case_db_path, dtype=str, low_memory=False).fillna("")
+    jur = db.get("jurisdiction", pd.Series("", index=db.index)).astype(str)
+    sel = jur.str.contains(RESEARCH_JURISDICTIONS, regex=True, na=False) & db.get("qc_note", pd.Series("", index=db.index)).eq(UNVERIFIED_NOTE)
+    d = db.loc[sel].copy()
+    if not len(d):
+        return []
+    d["url"] = d["source_url"].astype(str).str.strip() if "source_url" in d.columns else ""
+    d["url"] = d["url"].where(d["url"] != "", d["case_id"].astype(str).str.replace(r"#.*$", "", regex=True))
+    d = d[d["url"].str.startswith("http")]
+    if hosts:
+        hs = {h.lower() for h in hosts}
+        d = d[d["url"].map(lambda u: urlparse(u).netloc.lower() in hs)]
+    by_url = d.groupby("url")["defendant_name"].agg(lambda x: sorted({str(v) for v in x if str(v)}))
+    urls = list(by_url.index)
+    items = []
+    for i in range(0, len(urls), per_task):
+        chunk = urls[i:i + per_task]
+        listing = "\n".join(f"{k + 1}. {u}  (names: {'; '.join(by_url[u]) or 'unknown'})" for k, u in enumerate(chunk))
+        oid = "pageproof:" + hashlib.sha1("|".join(chunk).encode()).hexdigest()[:12]
+        items.append({"org_id": oid, "org_name": f"page proof {i // per_task + 1}", "urls": chunk,
+                      "prompt": PAGE_PROOF_PROMPT.format(n=len(chunk), urls=listing)})
+    return items
+
+
+def _proof_pages(env: dict, item: dict, dest: Path, fetch=None) -> dict:
+    """URL -> page text from a page-proof answer: page_k.html / page_k.pdf attachments
+    mapped to the k-th URL of the item; the screenshots are saved under ``dest`` for the
+    audit; nothing else is read."""
+    from src.enforcement.research_evidence import _html_text
+    out = {}
+    urls = list(item.get("urls") or [])
+    dest.mkdir(parents=True, exist_ok=True)
+    for a in env.get("attachments") or []:
+        if not isinstance(a, dict):
+            continue
+        name = str(a.get("filename") or "").lower()
+        url = str(a.get("url") or "")
+        m = re.match(r"page[_\- ]?(\d+)\.(html?|pdf|png|jpe?g)$", name)
+        if not m or not url:
+            continue
+        k, ext = int(m.group(1)) - 1, m.group(2)
+        if k < 0 or k >= len(urls):
+            continue
+        try:
+            if fetch is not None:
+                raw = fetch(url)
+                data = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8", "ignore")
+            else:
+                import requests
+                r = requests.get(url, timeout=120)
+                r.raise_for_status()
+                data = r.content
+        except Exception:  # noqa: BLE001
+            continue
+        (dest / name).write_bytes(data)
+        if ext.startswith("htm"):
+            out[urls[k]] = _html_text(data.decode("utf-8", errors="replace"))
+        elif ext == "pdf":
+            try:
+                import io
+                from pypdf import PdfReader
+                out[urls[k]] = " ".join((pg.extract_text() or "") for pg in PdfReader(io.BytesIO(data)).pages)
+            except Exception:  # noqa: BLE001
+                pass
+    return out
 DEFAULT_STATES = ["FL", "GA", "AL", "MS", "TN", "NC", "SC", "LA", "KY",
                   "CA", "NY", "TX", "PA", "IL", "OH", "MI"]
 DEFAULT_YEARS = list(range(2019, 2026))
@@ -356,6 +447,9 @@ def build_lane(lane: str, data_root: Path, run_dir: Path | None = None, states=N
         # loader's case path (one row per defendant, the outcome gate, the page check)
         prompts = chp.build_prompts(["takedown", "yir", "hcfac", "oig_sar"], years or DEFAULT_YEARS,
                                     states or DEFAULT_STATES)
+    elif lane == "page_proof":
+        prompts = page_proof_items(inp["case_db"], per_task=per_prompt or PAGE_PROOF_PER_TASK)
+        log(f"[manus_lanes:page_proof] {len(prompts)} task(s) over the unverified cited pages")
     elif lane == "employer":
         from src.model_a import employer_lane as el
         nodes = _read_table(inp["exclusion_nodes"])
@@ -864,6 +958,20 @@ def load_lane(lane: str, data_root: Path, run_dir: Path | None = None, fetch=Non
             pr._CACHE.clear()
             tally["notes"].append(f"{n} audit-applied rules into the policy library (topic audit_findings)")
             tally["files"].append(str(inp["policy"]))
+    elif lane == "page_proof":
+        pages = {}
+        proof_dir = Path(data_root) / "enforcement" / "page_proof"
+        for oid, env in done.items():
+            got = _proof_pages(env, items.get(oid, {}), proof_dir / oid.split(":")[-1], fetch=fetch)
+            if not got:
+                tally["no_table"] += 1
+            pages.update(got)
+        if pages:
+            res_ = rev.apply_page_proof(inp["case_db"], pages, log=log)
+            tally["loaded"] = int(res_["named"])
+            tally["quarantined"] = int(res_["absent"])
+            tally["files"].append(str(inp["case_db"]))
+            tally["notes"].append(f"{len(pages)} pages read from browser copies; screenshots under {proof_dir}")
     elif lane == "employer":
         from src.model_a import employer_lane as el
         cand = _read_table(inp["employer_candidates"])

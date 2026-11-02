@@ -329,3 +329,44 @@ def test_audit_batch4_small_fixes():
     assert "mue_violation_share" in pfe.RAW_SUBSCORE_INPUTS
     assert "99356" not in ss.PROLONGED_CODES and "99354" in ss.PROLONGED_CODES
     assert {"90791", "90853", "90837"} <= set(ss.PSY_INTERACTIVE_BASE_CODES)
+
+
+def test_page_proof_lane_reads_the_browser_copy_not_the_agents_word(tmp_path):
+    """2026-11-02: a research agent opens a page the VM cannot fetch and attaches its HTML;
+    OUR name gate decides from the HTML; the agent's yes/no is never read."""
+    from src.model_a import manus_lanes as ml
+    from src.enforcement import research_evidence as rev
+    root = tmp_path / "data"
+    (root / "enforcement").mkdir(parents=True)
+    db = pd.DataFrame([
+        {"case_id": "https://omig.ny.gov/a.pdf#ACME", "defendant_name": "Acme Home Care Inc", "source_url": "https://omig.ny.gov/a.pdf",
+         "jurisdiction": "NY audit (OMIG)", "usable": "0", "qc_note": rev.UNVERIFIED_NOTE, "name_in_source": ""},
+        {"case_id": "https://ag.state.x/b#JOHN", "defendant_name": "John Smith", "source_url": "https://ag.state.x/b",
+         "jurisdiction": "FL MFCU", "usable": "0", "qc_note": rev.UNVERIFIED_NOTE, "name_in_source": ""},
+        {"case_id": "https://ag.state.x/c#JANE", "defendant_name": "Jane Doe", "source_url": "https://ag.state.x/c",
+         "jurisdiction": "FL MFCU", "usable": "0", "qc_note": rev.UNVERIFIED_NOTE, "name_in_source": ""},
+        {"case_id": "https://justice.gov/d#DOJ", "defendant_name": "Doj Co", "source_url": "https://justice.gov/d",
+         "jurisdiction": "United States Attorney", "usable": "1", "qc_note": "", "name_in_source": ""}])
+    cdb = root / "enforcement" / "doj_cases_v3.csv"
+    db.to_csv(cdb, index=False)
+    items = ml.page_proof_items(cdb, per_task=8)
+    assert len(items) == 1 and set(items[0]["urls"]) == {"https://omig.ny.gov/a.pdf", "https://ag.state.x/b", "https://ag.state.x/c"}
+    assert "page_k.html" in items[0]["prompt"] and "Acme Home Care Inc" in items[0]["prompt"]
+    urls = items[0]["urls"]
+    k_b = urls.index("https://ag.state.x/b") + 1
+    k_c = urls.index("https://ag.state.x/c") + 1
+    pages = {"att-b": "<html><title>AG</title><body>" + "John Smith pleaded guilty to Medicaid fraud. " * 3 + "</body></html>",
+             "att-c": "<html><title>AG</title><body>" + "Omega Corp agreed to pay one million dollars. " * 3 + "</body></html>"}
+    env = {"status": "completed", "output": "k,url,opened,names_seen\n1,x,yes,Jane Doe\n",      # the agent SAYS Jane is there
+           "attachments": [{"filename": f"page_{k_b}.html", "url": "att-b"}, {"filename": f"page_{k_c}.html", "url": "att-c"},
+                           {"filename": f"page_{k_c}.png", "url": "att-png"}]}
+    got = ml._proof_pages(env, items[0], tmp_path / "proof", fetch=lambda u: pages.get(u, b"\x89PNG"))
+    assert set(got) == {"https://ag.state.x/b", "https://ag.state.x/c"}
+    assert (tmp_path / "proof" / f"page_{k_c}.png").exists()
+    res = rev.apply_page_proof(cdb, got, log=lambda *a: None)
+    assert res == {"named": 1, "absent": 1, "unread": 0}
+    back = pd.read_csv(cdb, dtype=str).fillna("").set_index("defendant_name")
+    assert back.loc["John Smith", "usable"] == "1" and back.loc["John Smith", "qc_note"] == rev.PROOF_NOTE
+    assert back.loc["Jane Doe", "usable"] == "0" and back.loc["Jane Doe", "qc_note"] == rev.ABSENT_NOTE   # the agent's word lost
+    assert back.loc["Acme Home Care Inc", "qc_note"] == rev.UNVERIFIED_NOTE                                # no copy: unchanged
+    assert back.loc["Doj Co", "usable"] == "1"                                                             # never selected
