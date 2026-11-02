@@ -38,7 +38,17 @@ What it computes (one run folder, one or more forward RULERS):
       random from the same filtered pool (hypergeometric mean and tail p),
       the dollar-ranked list, and a size-matched random list. Tie-aware:
       a tied block at the boundary gets fractional credit and the tie count is
-      reported (subscores and peer ranks tie-flood).
+      reported (subscores and peer ranks tie-flood); when ties straddle a budget
+      the KPI acc_org_hits<k>_tie_aware carries the fractional count, and a mixed
+      (basis50) order scored by rank reports the ties its underlying score hides
+      (acc_org_ties_hidden<k>; audit D5e, 2026-11-02).
+  (a2) the CASE as the unit (audit D3e): clusters hit at each budget (one release
+      naming twenty organizations is one cluster) against a seeded Monte Carlo
+      baseline over clusters (acc_cluster_hits<k> / _base<k> / _p<k>); the org
+      hypergeometric p-values are anti-conservative on clustered hits.
+  Ruler graph (audit D6e): --asof-graph-dir resolves the case ruler on the run's
+      point-in-time npi_to_org instead of the current-day graph (acc_ruler_graph =
+      current | asof); the default is unchanged.
   (b) lead time: months from the freeze to the event for the hits; precision at
       each horizon; share of hits with lead >= --gap-months (events inside the
       gap are investigations already under way, worth little to a relator);
@@ -494,22 +504,54 @@ def ruler_reach(oh: pd.DataFrame, ev: pd.DataFrame) -> dict:
 # (a) precision at review budgets
 # --------------------------------------------------------------------------- #
 
+def list_score(orgs: pd.DataFrame) -> tuple[np.ndarray, str | None]:
+    """The score that reads a list in ITS OWN ORDER, and the column it came from.
+
+    The sort key names the column that produced the order (so ties at the boundary
+    are real ties); without one the rank itself is the score (no tie block). Before
+    2026-10-09 the budgets always re-sorted by the dollar-weighted score, which graded
+    the pursuit book (sorted by P(any member)) in the wrong order while the lead-time
+    section read the true order."""
+    key = orgs.attrs.get("sort_key") if hasattr(orgs, "attrs") else None
+    if key and key in orgs.columns:
+        return pd.to_numeric(orgs[key], errors="coerce").fillna(-1).to_numpy(dtype=float), key
+    return -pd.to_numeric(orgs["priority_rank"], errors="coerce").to_numpy(dtype=float), None
+
+
+HIDDEN_TIE_COLUMNS = ("score_p_max", "score_dollar_weighted", "score_p_any", "score_max")
+
+
+def boundary_ties_hidden(orgs: pd.DataFrame, k: int) -> tuple[str | None, int]:
+    """Ties the order HIDES (2026-11-02, audit D5e): a basis50 book is a MIXED order
+    (basis-backed rows fill the first 50 by score, the rest by score), so no score column
+    explains it, the diagnostics score it as minus the rank, and a plateau in the
+    underlying score crossing the budget boundary reads as a fact. Returns (column,
+    n_tied) for the first underlying score column whose value at rank k equals its
+    value at rank k + 1 (the tie straddles the boundary), with n_tied = rows in the list
+    sharing that value; (None, 0) when no column ties there or k is the whole list."""
+    n = len(orgs)
+    if k <= 0 or k >= n:
+        return None, 0
+    for c in HIDDEN_TIE_COLUMNS:
+        if c not in orgs.columns:
+            continue
+        v = pd.to_numeric(orgs[c], errors="coerce").to_numpy(dtype=float)
+        a, b = v[k - 1], v[k]
+        if np.isfinite(a) and np.isfinite(b) and abs(a - b) <= 1e-12:
+            return c, int(np.sum(np.isfinite(v) & (np.abs(v - a) <= 1e-12)))
+    return None, 0
+
+
 def budget_rows_org(orgs: pd.DataFrame, budgets, pool: pd.DataFrame | None = None) -> list[dict]:
     """``orgs`` sorted by priority_rank with ``hit``; ``pool`` = the filtered pool the
     list was drawn from (same frame by default) for the random baseline."""
     pool = orgs if pool is None else pool
     pool_n, pool_pos = int(len(pool)), int(pool["hit"].sum())
     rows = []
-    # the budget is read in the LIST'S OWN ORDER. The sort key names the column that
-    # produced that order (so ties at the boundary are real ties); without one the
-    # rank itself is the score. Before 2026-10-09 this always re-sorted by the
-    # dollar-weighted score, which graded the pursuit book (sorted by P(any member))
-    # in the wrong order while the lead-time section read the true order.
-    key = orgs.attrs.get("sort_key") if hasattr(orgs, "attrs") else None
-    if key and key in orgs.columns:
-        score = pd.to_numeric(orgs[key], errors="coerce").fillna(-1).to_numpy()
-    else:
-        score = -pd.to_numeric(orgs["priority_rank"], errors="coerce").to_numpy(dtype=float)
+    # the budget is read in the LIST'S OWN ORDER (list_score); a mixed order the
+    # columns cannot explain is scored by rank, and boundary_ties_hidden says when a
+    # tie in the underlying score straddles the budget anyway
+    score, key = list_score(orgs)
     y = orgs["hit"].to_numpy()
     billed = _col(orgs, "total_billed", 0.0).to_numpy()
     size = _col(orgs, "n_providers", 1.0).to_numpy()
@@ -529,12 +571,120 @@ def budget_rows_org(orgs: pd.DataFrame, budgets, pool: pd.DataFrame | None = Non
         base = hypergeom_baseline(k, pool_n, pool_pos, exact)
         dollar_hits = int(y[np.argsort(-billed, kind="stable")[:k]].sum())
         size_matched = float(cell.iloc[:k].map(cell_rate).fillna(y.mean() if len(y) else 0).sum())
+        hid_col, hid_n = boundary_ties_hidden(orgs, k) if key is None else (None, 0)
         rows.append({"budget": k, "hits": exact, "hits_tie_aware": round(exp_hits, 2), "ties_at_boundary": n_tied,
+                     "ties_hidden_col": hid_col, "ties_hidden_n": hid_n,
                      "precision": exact / k, "wilson_lo": lo, "wilson_hi": hi, "cp_lo": cp_lo, "cp_hi": cp_hi,
                      "recall": (exact / pool_pos) if pool_pos else float("nan"),
                      "random_expected": base["expected"], "random_p": base["p_value"],
                      "dollar_ranked_hits": dollar_hits, "size_matched_expected": size_matched,
                      "lift_vs_random": (exact / base["expected"]) if base["expected"] and base["expected"] > 0 else float("nan")})
+    return rows
+
+
+# --------------------------------------------------------------------------- #
+# (a2) the CASE as the unit of the grade (2026-11-02, audit D3e)
+# --------------------------------------------------------------------------- #
+
+def post_cutoff_case_npis(case_labels: pd.DataFrame, case_db: pd.DataFrame, cutoff: str,
+                          horizon_months: int | None = None, ev_universe: set | None = None
+                          ) -> tuple[dict[str, set], pd.Series, pd.Series]:
+    """case_id -> the NPIs a build_case_labels frame ties to it, for cases ANNOUNCED after
+    the cutoff (within the horizon when given); ``ev_universe`` keeps only those NPIs.
+    Returns (case_npis, announced_date by case_id, amount_usd by case_id). Shared by the
+    dollar-recall tables and the case-cluster grade so both read one definition."""
+    cases = case_db.drop_duplicates("case_id")
+    cases = cases.set_index(cases["case_id"].astype(str))
+    ann = pd.to_datetime(cases.get("announced_date"), errors="coerce")
+    amt = pd.to_numeric(cases.get("amount_usd"), errors="coerce").fillna(0.0)
+    cut = _cutoff_ts(cutoff)
+    end = cut + pd.DateOffset(months=int(horizon_months)) if horizon_months else None
+    case_npis: dict[str, set] = {}
+    if case_labels is None or not len(case_labels):
+        return case_npis, ann, amt
+    for r in case_labels.itertuples():
+        npi = str(r.npi)
+        if ev_universe is not None and npi not in ev_universe:
+            continue
+        for cid in str(r.case_ids).split(";"):
+            if cid in ann.index and pd.notna(ann[cid]) and ann[cid] > cut and (end is None or ann[cid] <= end):
+                case_npis.setdefault(cid, set()).add(npi)
+    return case_npis, ann, amt
+
+
+def case_clusters(case_labels: pd.DataFrame, case_db: pd.DataFrame, cutoff: str,
+                  horizon_months: int | None = None) -> dict[str, set]:
+    """npi -> the post-cutoff case ids it belongs to (the inverse of post_cutoff_case_npis).
+    One release names twenty laboratories: they are ONE cluster, not twenty draws."""
+    case_npis, _, _ = post_cutoff_case_npis(case_labels, case_db, cutoff, horizon_months=horizon_months)
+    out: dict[str, set] = {}
+    for cid, npis in case_npis.items():
+        for n in npis:
+            out.setdefault(n, set()).add(cid)
+    return out
+
+
+def cluster_rows_org(orgs: pd.DataFrame, budgets, ev: pd.DataFrame, npi_clusters: dict[str, set],
+                     n_draws: int = 2000, seed: int = RANDOM_STATE) -> list[dict]:
+    """The case-cluster grade beside the org grade (2026-11-02, audit D3e): hits are
+    case-clustered (one settlement release names twenty laboratories, each a listed
+    organization) but the hypergeometric baseline treats every listed organization as an
+    independent draw, so the p-values at 100 / 250 were anti-conservative.
+
+    Per listed organization: the clusters it touches = the case ids (``npi_clusters``) of
+    its forward-positive members; a positive member with no case id (an exclusion ruler's
+    event) is its own singleton cluster ``npi:<npi>``. ``clusters_hit`` at k = distinct
+    clusters among the first k organizations in the list's own order. The baseline draws
+    k organizations uniformly without replacement from the same pool ``n_draws`` times
+    (seeded): a cluster is hit when ANY of its organizations is drawn; ``random_expected``
+    = the mean distinct clusters over the draws, ``random_p`` = (draws >= observed + 1) /
+    (n_draws + 1), the Monte Carlo one-sided tail."""
+    n = len(orgs)
+    if n == 0:
+        return []
+    pos = set(ev.loc[ev["y"] == 1, "npi"].astype(str)) if len(ev) else set()
+    members = orgs["member_npis"].fillna("").astype(str).str.split(";")
+    org_cl: list[set] = []
+    for m in members:
+        cl: set = set()
+        for x in m:
+            if x and x in pos:
+                cl |= set(npi_clusters.get(x) or {f"npi:{x}"})
+        org_cl.append(cl)
+    score, _ = list_score(orgs)
+    order = np.argsort(-score, kind="stable")
+    pool: set = set().union(*org_cl) if org_cl else set()
+    col = {c: i for i, c in enumerate(sorted(pool))}
+    carriers = [i for i, cl in enumerate(org_cl) if cl]
+    M = np.zeros((len(carriers), len(col)), dtype=bool)
+    row_of = np.full(n, -1, dtype=int)
+    for r, i in enumerate(carriers):
+        row_of[i] = r
+        for c in org_cl[i]:
+            M[r, col[c]] = True
+    has = row_of >= 0
+    n_singleton = sum(1 for c in pool if c.startswith("npi:"))
+    rng = np.random.default_rng(seed)
+    y = orgs["hit"].to_numpy() if "hit" in orgs.columns else np.zeros(n, dtype=int)
+    rows = []
+    for k in budgets:
+        k = int(k)
+        if k > n:
+            continue
+        top = order[:k]
+        obs = int(M[row_of[top[has[top]]]].any(axis=0).sum()) if has[top].any() else 0
+        draws = np.zeros(int(n_draws), dtype=float)
+        if len(col):
+            for d in range(int(n_draws)):
+                idx = rng.choice(n, k, replace=False)
+                sel = idx[has[idx]]
+                draws[d] = M[row_of[sel]].any(axis=0).sum() if len(sel) else 0
+        exp = float(draws.mean()) if n_draws else float("nan")
+        p = float(((draws >= obs).sum() + 1) / (int(n_draws) + 1)) if n_draws else float("nan")
+        rows.append({"budget": k, "hits": int(y[top].sum()), "clusters_hit": obs,
+                     "clusters_in_pool": int(len(col)), "singleton_clusters_in_pool": int(n_singleton),
+                     "random_expected": exp, "random_p": p, "n_draws": int(n_draws),
+                     "lift_vs_random": (obs / exp) if exp and exp > 0 else float("nan")})
     return rows
 
 
@@ -769,18 +919,10 @@ def dollar_recall(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame, n
         build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
     if lab is None or not len(lab):
         return {"available": False}
-    cases = case_db.drop_duplicates("case_id").set_index(case_db.drop_duplicates("case_id")["case_id"].astype(str))
-    ann = pd.to_datetime(cases.get("announced_date"), errors="coerce")
-    amt = pd.to_numeric(cases.get("amount_usd"), errors="coerce").fillna(0.0)
     cut = _cutoff_ts(cutoff)
     end = cut + pd.DateOffset(months=int(horizon_months)) if horizon_months else None
-    case_npis: dict[str, set] = {}
-    for r in lab.itertuples():
-        if str(r.npi) not in ev_universe:
-            continue
-        for cid in str(r.case_ids).split(";"):
-            if cid in ann.index and pd.notna(ann[cid]) and ann[cid] > cut and (end is None or ann[cid] <= end):
-                case_npis.setdefault(cid, set()).add(str(r.npi))
+    case_npis, ann, amt = post_cutoff_case_npis(lab, case_db, cutoff, horizon_months=horizon_months,
+                                                ev_universe=set(ev_universe))
     eligible = {cid: float(amt.get(cid, 0.0)) for cid in case_npis}
     total = sum(eligible.values())
     all_post = {cid for cid in ann.index if pd.notna(ann[cid]) and ann[cid] > cut and (end is None or ann[cid] <= end)}
@@ -948,9 +1090,14 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
                     active_within: int = 12, min_damages: float = 10_000_000.0, repeats: int = 0,
                     case_db: pd.DataFrame | None = None, org_nodes: pd.DataFrame | None = None,
                     npi_to_org: pd.DataFrame | None = None, defendant_npis: pd.DataFrame | None = None,
-                    headline: str | None = None) -> dict:
+                    headline: str | None = None, ruler_graph: str | None = None,
+                    cluster_ids: dict[str, set] | None = None, n_cluster_draws: int = 2000) -> dict:
+    """``ruler_graph`` = "current" | "asof": which graph resolved the case ruler (recorded,
+    audit D6e; None when no case ruler). ``cluster_ids`` = npi -> case ids for the
+    case-cluster grade (audit D3e; built from the case DB when None and a case DB is given).
+    ``n_cluster_draws`` = Monte Carlo draws for the cluster baseline."""
     res: dict = {"cutoff": cutoff, "horizon_months": horizon_months, "score_source": score_source,
-                 "rulers": {}, "n_matrix": int(len(matrix))}
+                 "rulers": {}, "n_matrix": int(len(matrix)), "ruler_graph": ruler_graph}
     names = list(rulers)
     headline = headline or ("fca" if "fca" in rulers else ("hard" if "hard" in rulers else names[0]))
     res["headline_ruler"] = headline
@@ -994,6 +1141,10 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
         from .case_labels import build_case_labels
         _log("case labels: resolving the case DB to NPIs once (shared by the dollar-recall tables)")
         case_labels = build_case_labels(case_db, org_nodes, npi_to_org, defendant_npis=defendant_npis)
+    if cluster_ids is None and case_labels is not None and case_db is not None:
+        cluster_ids = case_clusters(case_labels, case_db, cutoff, horizon_months=horizon_months)
+        _log(f"case clusters: {len(set().union(*cluster_ids.values())) if cluster_ids else 0:,} post-cutoff cases "
+             f"over {len(cluster_ids):,} NPIs (the unit of the cluster grade)")
     res["n_orgs_listed"] = int(len(orgs))
     top_rows = None
     for name, ev in ev_by.items():
@@ -1005,6 +1156,9 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
             _log(f"ruler {name}: NONE of its {block['reach']['positives_in_universe']:,} positives sits in a listed "
                  "organization's roster -- the ruler does not reach this book; its hit counts are a reach fact, not a grade")
         block["org_budgets"] = budget_rows_org(oh, budgets_org)
+        if cluster_ids is not None:
+            # 2026-11-02 (audit D3e): the same list graded with the CASE as the unit
+            block["cluster_budgets"] = cluster_rows_org(oh, budgets_org, ev, cluster_ids, n_draws=n_cluster_draws)
         if pursuit_refit is not None and len(pursuit_refit):
             # v23: the refit's operator book under the shipped order (acc_pursuit_* KPIs)
             block["pursuit_budgets"] = budget_rows_org(org_outcomes(pursuit_refit, ev), budgets_org)
@@ -1075,8 +1229,12 @@ def kpi_block(res: dict) -> dict:
     for name in res["rulers"]:
         # 100 and 250 joined the KPI block after v11 (2026-10-12): the deeper budgets are
         # where an 8-hit pool can tell a model from chance (v11: 4 at 100 and 6 at 250 at
-        # p 0.001 while 50 sat at 1 vs 0.3), so a pre-registration can hold them
-        for k in (16, 50, 100, 250):
+        # p 0.001 while 50 sat at 1 vs 0.3), so a pre-registration can hold them; any
+        # other budget the run graded (--budgets-org) is exposed under the same names
+        blk = res["rulers"].get(name, {})
+        graded = {int(r["budget"]) for key in ("org_budgets", "pursuit_budgets", "cluster_budgets")
+                  for r in blk.get(key, [])}
+        for k in sorted({16, 50, 100, 250} | graded):
             pr = next((x for x in res["rulers"].get(name, {}).get("pursuit_budgets", []) if x["budget"] == k), None)
             if pr:                                                 # v23: the refit's operator book
                 out[f"acc_pursuit_hits{k}_{name}"] = pr["hits"]
@@ -1089,6 +1247,20 @@ def kpi_block(res: dict) -> dict:
                 out[f"acc_base{k}_{name}"] = r["random_expected"] / k if k else None
                 out[f"acc_org_p{k}_vs_random_{name}"] = r["random_p"]
                 out[f"acc_org_lift{k}_vs_dollar_{name}"] = (r["hits"] / r["dollar_ranked_hits"]) if r["dollar_ranked_hits"] else None
+                # 2026-11-02 (audit D5e): a tie block straddling the budget boundary gets its
+                # fractional count beside the positional one; a tie the order hides (a mixed
+                # basis50 book scored by rank) is counted from the underlying score column
+                if (r.get("ties_at_boundary") or 0) > 1:
+                    out[f"acc_org_hits{k}_tie_aware_{name}"] = r["hits_tie_aware"]
+                if (r.get("ties_hidden_n") or 0) > 1:
+                    out[f"acc_org_ties_hidden{k}_{name}"] = r["ties_hidden_n"]
+            # 2026-11-02 (audit D3e): the case-cluster grade (clusters hit, the Monte Carlo
+            # baseline over clusters and its tail) beside the org grade
+            cr = next((x for x in res["rulers"].get(name, {}).get("cluster_budgets", []) if x["budget"] == k), None)
+            if cr:
+                out[f"acc_cluster_hits{k}_{name}"] = cr["clusters_hit"]
+                out[f"acc_cluster_base{k}_{name}"] = cr["random_expected"]
+                out[f"acc_cluster_p{k}_{name}"] = cr["random_p"]
         rc = res["rulers"][name].get("reach") or {}
         if rc:
             out[f"acc_ruler_reach_{name}"] = rc.get("share_in_listed")
@@ -1122,6 +1294,8 @@ def kpi_block(res: dict) -> dict:
             out[key[: -len(h) - 1]] = out[key]
         if h and key.endswith(f"_{h}_lo"):
             out[key[: -len(h) - 4] + "_lo"] = out[key]
+    if res.get("ruler_graph"):
+        out["acc_ruler_graph"] = res["ruler_graph"]                   # D6e: current | asof
     st = res.get("stability", {})
     out["acc_top50_jaccard_all"] = st.get("jaccard_top_org")
     out["acc_top50_jaccard_book"] = st.get("jaccard_top_book")
@@ -1179,7 +1353,11 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
                      f"more announced after the cutoff could not be tied to any scored provider).")
     L += ["", "## 1. Run identity and rulers", "",
           f"- cutoff {res['cutoff']}; horizon {res.get('horizon_months') or 'none (every later event counts)'}; "
-          f"scores from {res.get('org_list_source')}; {res.get('n_orgs_listed'):,} organizations listed",
+          f"scores from {res.get('org_list_source')}; {res.get('n_orgs_listed'):,} organizations listed"
+          + (f"; case ruler resolved on the **{res['ruler_graph']}** graph"
+             + (" (the roster as of the freeze)" if res["ruler_graph"] == "asof" else
+                " (today's roster: a post-freeze settlement lands on every member the org has NOW; pass "
+                "--asof-graph-dir for the as-of roster)") if res.get("ruler_graph") else ""),
           "", "| ruler | matrix rows | dropped known at freeze | dropped undated | beyond horizon | positives | eval rows | ambiguous negatives |",
           "|---|--:|--:|--:|--:|--:|--:|--:|"]
     for name, b in res["rulers"].items():
@@ -1209,6 +1387,34 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
                      f"{_f(r['wilson_lo'], '{:.1%}')} to {_f(r['wilson_hi'], '{:.1%}')} | {_f(r['cp_lo'], '{:.1%}')} to {_f(r['cp_hi'], '{:.1%}')} | "
                      f"{_f(r['recall'], '{:.1%}')} | {_f(r['random_expected'], '{:.1f}')} | {_f(r['random_p'])} | {r['dollar_ranked_hits']} | "
                      f"{_f(r['size_matched_expected'], '{:.1f}')} |")
+        # D5e: the tie read at every budget whose boundary sits inside a tie block
+        tied = [r for r in b.get("org_budgets", []) if (r.get("ties_at_boundary") or 0) > 1]
+        hidden = [r for r in b.get("org_budgets", []) if (r.get("ties_hidden_n") or 0) > 1]
+        if tied:
+            L += ["", "_Ties at the boundary: " + "; ".join(
+                f"@{r['budget']} {r['ties_at_boundary']} rows share the {r['budget']}th score, hits {r['hits']} by position "
+                f"vs {r['hits_tie_aware']} tie-aware" for r in tied)
+                + ". The positional count is one draw from the block; the tie-aware count is its expectation "
+                  "(KPI acc_org_hits<k>_tie_aware)._"]
+        if hidden:
+            L += ["", "_Ties INVISIBLE to the order: no score column explains this list's order (a mixed basis50 "
+                  "book is scored by rank, so ties_at_boundary reads 0), but the underlying score ties across the "
+                  "boundary: " + "; ".join(f"@{r['budget']} {r['ties_hidden_n']} rows share the {r['budget']}th "
+                                           f"{r['ties_hidden_col']}" for r in hidden)
+                  + ". The count at such a budget is a plateau read, not a fact (KPI acc_org_ties_hidden<k>)._"]
+        cb = b.get("cluster_budgets")
+        if cb:
+            L += ["", f"The CASE as the unit under {name} (one release naming twenty organizations is one cluster; "
+                  "baseline = Monte Carlo over clusters, "
+                  f"{cb[0]['n_draws']:,} seeded draws of k organizations from the same pool):", "",
+                  "| budget | org hits | clusters hit | clusters in pool | random expected (clusters) | p vs random | lift |",
+                  "|--:|--:|--:|--:|--:|--:|--:|"]
+            for r in cb:
+                L.append(f"| {r['budget']} | {r['hits']} | {r['clusters_hit']} | {r['clusters_in_pool']} | "
+                         f"{_f(r['random_expected'], '{:.2f}')} | {_f(r['random_p'])} | {_f(r['lift_vs_random'], '{:.2f}')} |")
+            if cb[0]["singleton_clusters_in_pool"]:
+                L.append(f"\n_{cb[0]['singleton_clusters_in_pool']} of the pool's clusters are single providers with no "
+                         "case id (an exclusion-type event): each is its own cluster._")
         nb = b.get("npi_budgets")
         if nb:
             L += ["", f"NPI grain under {name} (refit scores):", "", "| budget | k | hits | ties at k | precision | Wilson 95% | recall | random expected | lift vs random |",
@@ -1305,9 +1511,11 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
                     L.append(f"| {name} | {r['budget']} | {r['cases_touched']} | ${r['dollars_touched']:,.0f} | {_f(r['dollar_recall'], '{:.0%}')} |")
     L += ["", "## 10. Interval design and sanity", "",
           "- Wilson and exact (Clopper-Pearson) intervals treat each listed organization as one draw; the random "
-          "baseline is hypergeometric from the same filtered pool; a cluster design effect is not applied at org "
-          "grain because the organization IS the cluster. NPI-grain intervals are optimistic for ring members "
-          "(dependence through shared owners); read them with the stability section.", ""]
+          "baseline is hypergeometric from the same filtered pool. Hits are CASE-clustered (one release names "
+          "many organizations), so the org-grain p-values are anti-conservative; the case-cluster table in "
+          "section 2 (clusters hit against a Monte Carlo baseline over clusters) is the corrected read. NPI-grain "
+          "intervals are optimistic for ring members (dependence through shared owners); read them with the "
+          "stability section.", ""]
     for name, b in res["rulers"].items():
         s = b.get("sanity", {})
         if s:
@@ -1323,6 +1531,52 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
         L.append(f"{k} = {_f(v, '{:.4f}') if isinstance(v, float) else v}")
     L += ["```", ""]
     return "\n".join(L)
+
+
+RULER_COLS = ["npi", "event_date", "is_prospective_positive", "was_excluded_pre_cutoff",
+              "undated_exclusion", "fca_tier"]
+
+
+def load_graph_tables(graph_dir: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(org_nodes, npi_to_org) of a graph root: nodes/org_nodes.parquet + npi_to_org.parquet."""
+    g = Path(graph_dir)
+    return pd.read_parquet(g / "nodes" / "org_nodes.parquet"), pd.read_parquet(g / "npi_to_org.parquet")
+
+
+def ruler_graph_tables(graph_dir: str | Path, asof_graph_dir: str | Path | None = None
+                       ) -> tuple[pd.DataFrame, pd.DataFrame, str, Path]:
+    """Which graph resolves the case ruler (2026-11-02, audit D6e).
+
+    The runners pass ``--graph-dir $DATA/graph`` (the CURRENT-DAY graph), so a settlement
+    announced after the freeze lands on TODAY's roster of the settled organization: a
+    merged or renamed org carries members it did not have at the freeze, hits widen on
+    large merged orgs, and a mild forward leak enters the grade. With ``asof_graph_dir``
+    (the run's point-in-time graph, graph_asof_<cut>_full, whose npi_to_org is the
+    roster AS OF the freeze) the ruler is resolved on that roster instead. Returns
+    (org_nodes, npi_to_org, "asof" | "current", the directory read). The default
+    (no as-of dir) is the v7..v28 behaviour, unchanged."""
+    src = Path(asof_graph_dir) if asof_graph_dir else Path(graph_dir)
+    org_nodes, npi_to_org = load_graph_tables(src)
+    return org_nodes, npi_to_org, ("asof" if asof_graph_dir else "current"), src
+
+
+def build_case_rulers(case_db: pd.DataFrame, cutoff: str, org_nodes: pd.DataFrame, npi_to_org: pd.DataFrame,
+                      defendant_npis: pd.DataFrame | None = None, horizon_months: int | None = None,
+                      qui_tam: bool = False) -> dict[str, pd.DataFrame]:
+    """The FCA ruler (and the qui tam ruler when asked) in load_ruler's schema, resolved
+    on the graph tables GIVEN (ruler_graph_tables chooses current vs as-of)."""
+    from .prospective_label import build_forward_case_label
+    out: dict[str, pd.DataFrame] = {}
+    fca = build_forward_case_label(case_db, cutoff, org_nodes, npi_to_org, defendant_npis=defendant_npis,
+                                   horizon_months=horizon_months)
+    fca["event_date"] = pd.to_datetime(fca["first_excl_date"], errors="coerce")
+    out["fca"] = fca[RULER_COLS]
+    if qui_tam:
+        qt = build_forward_case_label(case_db, cutoff, org_nodes, npi_to_org, defendant_npis=defendant_npis,
+                                      horizon_months=horizon_months, qui_tam_only=True)
+        qt["event_date"] = pd.to_datetime(qt["first_excl_date"], errors="coerce")
+        out["qui_tam"] = qt[RULER_COLS]
+    return out
 
 
 def _discover_rulers(run_dir: Path, cutoff: str) -> dict[str, Path]:
@@ -1358,6 +1612,13 @@ def main() -> None:
     ap.add_argument("--cutoff", default=None, help="YYYY-MM (default: manifest asof_cutoff)")
     ap.add_argument("--case-db", default=None, help="enforcement/doj_cases_v3.csv: adds the FCA ruler + dollar recall")
     ap.add_argument("--graph-dir", default=None, help="FULL graph root (org_nodes + npi_to_org) for --case-db")
+    ap.add_argument("--asof-graph-dir", default=None,
+                    help="2026-11-02 (audit D6e): resolve the case ruler on THIS graph's nodes/org_nodes.parquet + "
+                         "npi_to_org.parquet (the run's point-in-time graph, graph_asof_<cut>_full) instead of the "
+                         "current-day --graph-dir, so a post-freeze settlement lands on the roster AS OF the freeze; "
+                         "the result records ruler_graph = asof | current (KPI acc_ruler_graph). Default: current.")
+    ap.add_argument("--cluster-draws", type=int, default=2000,
+                    help="2026-11-02 (audit D3e): Monte Carlo draws for the case-cluster baseline (acc_cluster_*)")
     ap.add_argument("--qui-tam-ruler", action="store_true",
                     help="with --case-db: add a third ruler of qui tam / whistleblower cases only (acc_*_qui_tam KPIs)")
     ap.add_argument("--defendant-npis", default=None)
@@ -1451,6 +1712,9 @@ def main() -> None:
         for name, p in _discover_rulers(run_dir, str(cutoff)[:7]).items():
             rulers[name] = load_ruler(p)
     case_db = org_nodes = npi_to_org = dn = None
+    ruler_graph = None
+    if a.asof_graph_dir and not a.case_db:
+        print("[accuracy_diagnostics] --asof-graph-dir without --case-db: no case ruler to resolve; ignored")
     if a.case_db:
         if not a.graph_dir:
             ap.error("--case-db needs --graph-dir")
@@ -1463,25 +1727,19 @@ def main() -> None:
         if len(case_db) < n_all:
             print(f"[accuracy_diagnostics] case DB: {n_all - len(case_db):,} duplicate announcements of the same "
                   f"settlement set aside for the dollar tables ({len(case_db):,} primary rows)")
-        g = Path(a.graph_dir)
-        org_nodes = pd.read_parquet(g / "nodes" / "org_nodes.parquet")
-        npi_to_org = pd.read_parquet(g / "npi_to_org.parquet")
+        # 2026-11-02 (audit D6e): the case ruler resolves on the AS-OF graph when one is
+        # given; the same tables feed the dollar / cluster tables so the case ids and the
+        # ruler come from ONE roster. Default = the current-day graph (unchanged).
+        org_nodes, npi_to_org, ruler_graph, graph_read = ruler_graph_tables(a.graph_dir, a.asof_graph_dir)
         dn = pd.read_parquet(a.defendant_npis) if a.defendant_npis else None
-        from .prospective_label import build_forward_case_label
-        fca = build_forward_case_label(case_db, cutoff, org_nodes, npi_to_org, defendant_npis=dn,
-                                       horizon_months=a.horizon_months)
-        fca["event_date"] = pd.to_datetime(fca["first_excl_date"], errors="coerce")
-        rulers["fca"] = fca[["npi", "event_date", "is_prospective_positive", "was_excluded_pre_cutoff",
-                             "undated_exclusion", "fca_tier"]]
-        print(f"[accuracy_diagnostics] FCA ruler: {int(fca['is_prospective_positive'].sum()):,} forward positives")
+        built = build_case_rulers(case_db, cutoff, org_nodes, npi_to_org, defendant_npis=dn,
+                                  horizon_months=a.horizon_months, qui_tam=a.qui_tam_ruler)
+        rulers.update(built)
+        print(f"[accuracy_diagnostics] case rulers resolved on the {ruler_graph} graph ({graph_read})")
+        print(f"[accuracy_diagnostics] FCA ruler: {int(built['fca']['is_prospective_positive'].sum()):,} forward positives")
         if a.qui_tam_ruler:
-            qt = build_forward_case_label(case_db, cutoff, org_nodes, npi_to_org, defendant_npis=dn,
-                                          horizon_months=a.horizon_months, qui_tam_only=True)
-            qt["event_date"] = pd.to_datetime(qt["first_excl_date"], errors="coerce")
-            rulers["qui_tam"] = qt[["npi", "event_date", "is_prospective_positive", "was_excluded_pre_cutoff",
-                                    "undated_exclusion", "fca_tier"]]
-            print(f"[accuracy_diagnostics] qui tam ruler: {int(qt['is_prospective_positive'].sum()):,} forward positives "
-                  "(relator-originated cases only)")
+            print(f"[accuracy_diagnostics] qui tam ruler: {int(built['qui_tam']['is_prospective_positive'].sum()):,} "
+                  "forward positives (relator-originated cases only)")
     # a ruler rebuilt from --case-db supersedes the runner's file copy of the same
     # ruler (never graded twice under two names); the affiliated ruler keeps its file
     for built, file_key in (("fca", "fca_file"), ("qui_tam", "qui_tam_file")):
@@ -1501,7 +1759,7 @@ def main() -> None:
                           horizons=[int(x) for x in a.horizons.split(",")], horizon_months=a.horizon_months,
                           gap_months=a.gap_months, active_within=a.active_within, min_damages=a.min_damages,
                           repeats=a.repeats, case_db=case_db, org_nodes=org_nodes, npi_to_org=npi_to_org,
-                          defendant_npis=dn)
+                          defendant_npis=dn, ruler_graph=ruler_graph, n_cluster_draws=a.cluster_draws)
     # A companion list (the pursuit book) gets its own output set so it never
     # overwrites the main list's report / accuracy_diagnostics.json (the file the
     # run registry reads). 2026-10-09: two pursuit re-grades clobbered v7's main
