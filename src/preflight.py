@@ -107,6 +107,12 @@ UNLOCKS = [
         "cost_report_fraud (needs ccn_to_npi)", "ingest_cms.hcris"),
     Src("pos", "Provider of Services file", "pos", ["pos.csv"], [".csv"],
         "worthless_services (capacity; needs ccn_to_npi)", "ingest_cms.pos"),
+    Src("clia", "Provider of Services file - Clinical Laboratories (the CLIA certificate file)",
+        "clia", ["pos_clia.csv"], [".csv", ".zip"],
+        "lab_testing (clia_volume_ratio = billed lab lines a year over the certificate's reported "
+        "annual volume; clia_waiver_high_complexity = a waiver-only lab on high-complexity codes); "
+        "dormant until preclean/clia/ holds the POS CLIA file (link: NPPES 'clia' other ids from "
+        "ccn_npi_crosswalk --other-ids-out, then exact name + address)", "ingest_cms.clia"),
     Src("nucc", "NUCC taxonomy code set", "nucc", ["nucc_taxonomy.csv"], [".csv"],
         "coherent peer grouping — improves EVERY scheme", "ingest_cms.nucc_taxonomy"),
     Src("revocations", "CMS revoked Medicare providers", "revocations",

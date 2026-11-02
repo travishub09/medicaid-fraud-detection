@@ -123,6 +123,31 @@ and the adapter is built, but this third input is not auto-wired into the export
 - **Save:** `preclean/pos/pos.csv`.
 - **Needs:** CCN, bed count, facility type, state.
 
+### B14. Provider of Services — Clinical Laboratories (CLIA) → `lab_testing` (the CLIA gap)
+*NPI-grain through the NPPES CLIA other-identifier, else exact name + address — no crosswalk needed.*
+The lab's billed lab lines a year against the annual test volume it reported on its own
+CLIA certificate (`clia_volume_ratio`), and a Certificate-of-Waiver lab billing
+definitive drug testing / molecular / PCR codes (`clia_waiver_high_complexity`).
+- **Get:** data.cms.gov → search "**Provider of Services File - Clinical Laboratories**"
+  (the quarterly POS "Other" / CLIA laboratory file; the older name is the POS CLIA
+  file) → download the CSV (a .zip of it is fine).
+- **Save:** `preclean/clia/pos_clia_<yyyymm>.csv` (the quarter's year-month in the name;
+  every `*.csv` / `*.zip` in the folder is read).
+- **Needs:** the CLIA number (`PRVDR_NUM`), facility name (`FAC_NAME`), street / city /
+  state / zip (`ST_ADR`, `CITY_NAME`, `STATE_CD`, `ZIP_CD`), certificate type
+  (`CRTFCT_TYPE_CD`: 1 compliance, 2 waiver, 3 accreditation, 4 PPM, 9 registration),
+  certificate effective / expiration dates (`CRTFCT_EFCTV_DT`, `CRTFCT_EXPRTN_DT`), and
+  the annual test-volume columns (the CMS-116 volumes: `ACRDTD_TEST_VOL_CNT`,
+  `NON_ACRDTD_TEST_VOL_CNT`, `PPMP_TEST_VOL_CNT`, `WVD_TEST_VOL_CNT` or a stated total;
+  the loader prints which it resolved and WARNS when none does).
+- **Then:** `python -m src.ingest_cms.ccn_npi_crosswalk --in preclean/NPPES.csv --out
+  processed/ccn_to_npi.parquet --other-ids-out processed/nppes_other_ids.parquet` once
+  (the `clia` rows of that table are the exact link); the export picks the folder up as
+  source `clia`, or run `python -m src.ingest_cms.clia --in preclean/clia --provider-dim
+  processed/provider_dim.parquet --spending processed/spending_fact.parquet --other-ids
+  processed/nppes_other_ids.parquet --out processed/clia_features.parquet` for the
+  standalone CLIA_REPORT.md (the top-25 ratios with name and state).
+
 ---
 
 ## C. The unlock builders (a download + one build command)

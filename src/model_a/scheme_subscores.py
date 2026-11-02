@@ -40,6 +40,13 @@ Changes recorded under that contract (all v29 semantics, a new pre-registration)
        rendering_identity, whose volume role sv_lines_per_active_month now carries
        at 0.4 (was 0.3; the other three weights unchanged, the engine normalises by
        the sum of present weights).
+  W-f  (2026-11-02, v30 semantics: a new pre-registration) ``lab_testing`` gains the two
+       CLIA-gap inputs from ingest_cms/clia.py at 0.25 each: ``clia_volume_ratio`` (lab
+       lines billed in the busiest year over the annual volume the lab's own CLIA
+       certificate reports; raw-driven, so >= 1 = Medicaid lines alone exceed the whole
+       certificate) and ``clia_waiver_high_complexity`` (a Certificate-of-Waiver lab
+       billing definitive drug testing / molecular / PCR codes a waiver never covers).
+       Both NULL for every provider without a linked certificate (the engine renormalises).
 """
 
 from __future__ import annotations
@@ -187,7 +194,11 @@ DEFAULT_SCHEME_WEIGHTS: dict[str, dict[str, float]] = {
     # lab dollars), each peer-ranked one-sided. v21 semantics: new pre-registration.
     "lab_testing": {"lab_paid_share": 0.3, "lab_lines_per_patient": 0.5,
                     "lab_definitive_drug_share": 0.5, "lab_genetic_share": 0.5,
-                    "lab_resp_panel_share": 0.3},
+                    "lab_resp_panel_share": 0.3,
+                    # W-f (2026-11-02, v30): the CLIA gap (ingest_cms/clia.py) — billed lab
+                    # lines a year over the certificate's reported annual volume, and a
+                    # waiver-only lab on high-complexity codes; both raw-driven
+                    "clia_volume_ratio": 0.25, "clia_waiver_high_complexity": 0.25},
     # BATCH ONE OF THE DEEP DIVE'S UNWIRED SCHEMES (v22, 2026-10-22; docs/SCHEME_DEEP_
     # DIVE section 5; ingest_cms/sector_schemes.py): personal-care hours not worked
     # (units and dollars per patient-month on the T1019 family; the Medicaid-specific
