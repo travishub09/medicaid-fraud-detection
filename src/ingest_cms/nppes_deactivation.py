@@ -9,12 +9,22 @@ SSN/name linkage we don't hold publicly), this is keyed by NPI, so the match is
 exact and the signal is defensible.
 
   deactivated_npis        parse NPI → deactivation_date (string IDs, real headers)
-  billing_after_deactivation  join to the spending fact + npi_to_org → per-org
-                          dollars billed on/after a constituent NPI's
-                          deactivation date, and the share of org billing that
-                          is. Feeds the new ``invalid_identity`` scheme — a high
-                          recovery-multiplier scheme, since billing under a dead
-                          NPI is near-fully unsupported.
+  billing_after_deactivation  join to the spending fact → per DEACTIVATED NPI the
+                          dollars billed on/after ITS OWN deactivation date and the
+                          share of its billing that is (grain="npi", the default);
+                          grain="org" gives the same fact at org grain for
+                          SINGLE-NPI organizations only. Feeds the
+                          ``invalid_identity`` scheme — a high recovery-multiplier
+                          scheme, since billing under a dead NPI is near-fully
+                          unsupported.
+
+THE GRAIN (2026-11-02, architecture audit C5): until this date the function returned
+one row per ORGANIZATION (every org with a deactivated member), carrying the member's
+own post/pre share as the org's, and the export broadcast it to every member NPI, so
+every clinician of a health system with one retiree still billing read as billing
+under a dead number. The fact belongs to the NPI that was deactivated. The default
+frame is now NPI-grain; the org-grain frame is produced only where the org IS that one
+NPI (member count 1 in npi_to_org), where broadcast and own-event coincide.
 
 Dormant until the deactivation file + spending are loaded; exact-match, no fuzz.
 """
@@ -179,42 +189,89 @@ def deactivated_npis(raw: pd.DataFrame) -> tuple[pd.DataFrame, int]:
     return out, quarantined
 
 
-def billing_after_deactivation(spending: pd.DataFrame, deactivated: pd.DataFrame,
-                               npi_to_org: pd.DataFrame) -> pd.DataFrame:
-    """Per-org dollars billed on/after a constituent NPI's deactivation date.
+NPI_GRAIN_COLS = ["npi", "post_deactivation_paid", "total_paid", "billing_after_deactivation"]
+ORG_GRAIN_COLS = ["org_node_id", "post_deactivation_paid", "total_paid",
+                  "billing_after_deactivation", "org_member_count"]
 
-    ``spending``: billing_npi, service_month (YYYY-MM), total_paid.
-    Returns org_node_id, post_deactivation_paid, total_paid,
-    billing_after_deactivation (0–1 share — the registry feature).
-    """
-    cols = ["org_node_id", "post_deactivation_paid", "total_paid",
-            "billing_after_deactivation"]
+
+def _npi_grain(spending: pd.DataFrame, deactivated: pd.DataFrame) -> pd.DataFrame:
+    """One row per DEACTIVATED NPI that appears in ``spending``."""
     s = spending.copy()
     s["billing_npi"] = s["billing_npi"].astype(str)
     s["total_paid"] = pd.to_numeric(s["total_paid"], errors="coerce").fillna(0.0)
     s["month_ts"] = pd.to_datetime(s["service_month"].astype(str).str.slice(0, 7),
                                    format="%Y-%m", errors="coerce")
-
-    xw = npi_to_org["npi"].astype(str)
-    assert xw.is_unique, "npi_to_org has duplicate NPIs (ambiguous attribution)"
-    s["org_node_id"] = s["billing_npi"].map(
-        dict(zip(xw, npi_to_org["org_node_id"].astype(str))))
-    s = s[s["org_node_id"].notna()]
-    if not len(s):
-        return pd.DataFrame(columns=cols)
-
     deact = dict(zip(deactivated["npi"].astype(str),
-                     pd.to_datetime(deactivated["deactivation_date"])))
+                     pd.to_datetime(deactivated["deactivation_date"], errors="coerce")))
     s["deact_date"] = s["billing_npi"].map(deact)
-    s["is_post"] = s["deact_date"].notna() & (s["month_ts"] >= s["deact_date"])
-
-    g = s.groupby("org_node_id")
-    out = pd.DataFrame({
-        "post_deactivation_paid": g.apply(
-            lambda x: float(x.loc[x["is_post"], "total_paid"].sum())),
-        "total_paid": g["total_paid"].sum(),
-    })
+    s = s[s["deact_date"].notna()]
+    if not len(s):
+        return pd.DataFrame(columns=NPI_GRAIN_COLS)
+    # positive-only dollars (a refund month never reads as negative post-deactivation
+    # billing, and the share stays inside [0, 1] by construction)
+    s["gross"] = s["total_paid"].clip(lower=0.0)
+    s["post_gross"] = s["gross"].where(s["month_ts"] >= s["deact_date"], 0.0)
+    g = s.groupby("billing_npi")
+    out = pd.DataFrame({"post_deactivation_paid": g["post_gross"].sum(),
+                        "total_paid": g["gross"].sum()})
+    # NULL when the NPI billed nothing positive (nothing to assess); an observed 0
+    # (deactivated, billed only before) is real
     out["billing_after_deactivation"] = (
-        out["post_deactivation_paid"] / out["total_paid"]).where(
-        out["total_paid"] > 0, 0.0).clip(0, 1)
-    return out.reset_index()[cols]
+        out["post_deactivation_paid"] / out["total_paid"]).where(out["total_paid"] > 0).clip(0, 1)
+    out.index.name = "npi"
+    return out.reset_index()[NPI_GRAIN_COLS]
+
+
+def billing_after_deactivation(spending: pd.DataFrame, deactivated: pd.DataFrame,
+                               npi_to_org: pd.DataFrame | None = None,
+                               grain: str = "npi") -> pd.DataFrame:
+    """Dollars billed on/after an NPI's OWN NPPES deactivation date.
+
+    ``spending``: billing_npi, service_month (YYYY-MM), total_paid (the export passes
+    only the deactivated NPIs' rows; a full fact works too, non-deactivated NPIs are
+    simply absent from the result: NULL downstream, never 0).
+
+    grain="npi" (default) returns ``npi, post_deactivation_paid, total_paid,
+    billing_after_deactivation`` — one row per deactivated NPI with billing; the share
+    is the NPI's post-deactivation gross over its gross (0..1; 0 = deactivated and
+    billed only before; NULL when nothing positive was billed). This is the frame
+    the matrix feature must come from (audit C5: the event is the NPI's, never the
+    organization's). ``npi_to_org`` is ignored.
+
+    grain="org" returns ``org_node_id, post_deactivation_paid, total_paid,
+    billing_after_deactivation, org_member_count`` for SINGLE-NPI organizations whose
+    one member is deactivated (member count 1 in ``npi_to_org``); a multi-member org
+    never gets a row, so nothing can be broadcast to a sibling. ``npi_to_org`` is
+    required. The column name is the same so an org-grain consumer needs no rename;
+    the two frames are alternatives for the same matrix column, never merged together.
+
+    Before 2026-11-02 this returned the org-grain frame for EVERY org with a
+    deactivated member (the member's own share as the org's), which the export
+    broadcast to every member NPI.
+    """
+    if grain not in ("npi", "org"):
+        raise ValueError(f"grain must be 'npi' or 'org', got {grain!r}")
+    npi_frame = _npi_grain(spending, deactivated)
+    if grain == "npi":
+        return npi_frame
+    if npi_to_org is None:
+        raise ValueError("grain='org' needs npi_to_org")
+    xw = pd.DataFrame({"npi": npi_to_org["npi"].astype(str),
+                       "org_node_id": npi_to_org["org_node_id"].astype(str)})
+    assert xw["npi"].is_unique, "npi_to_org has duplicate NPIs (ambiguous attribution)"
+    members = xw.groupby("org_node_id")["npi"].size()
+    if not len(npi_frame):
+        return pd.DataFrame(columns=ORG_GRAIN_COLS)
+    o = npi_frame.merge(xw, on="npi", how="inner")
+    o["org_member_count"] = o["org_node_id"].map(members).astype(int)
+    o = o[o["org_member_count"] == 1]
+    assert o["org_node_id"].is_unique, "a single-NPI org produced two rows"
+    return o[ORG_GRAIN_COLS].reset_index(drop=True)
+
+
+def billing_after_deactivation_frames(spending: pd.DataFrame, deactivated: pd.DataFrame,
+                                      npi_to_org: pd.DataFrame
+                                      ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """(npi_grain_frame, single_npi_org_frame): both grains in one call."""
+    return (billing_after_deactivation(spending, deactivated, grain="npi"),
+            billing_after_deactivation(spending, deactivated, npi_to_org, grain="org"))

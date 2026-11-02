@@ -24,6 +24,17 @@ own row, and adds the signals the rendering grain alone can carry:
   sv_paid_per_patient_month, sv_lines_per_active_month, sv_distinct_hcpcs,
   sv_active_months, sv_tenure_months, sv_first_month, sv_last_month
 
+THE PATIENT-MONTH BASE (2026-11-02, architecture audit C4): ``sv_patient_months`` is
+SUM(patients) over the rendering NPI's (billing NPI x code x month) rows, so a patient
+seen on two codes (or under two billers) in one month counted twice and the dollars
+per patient-month under-read. Distinct patients cannot be recovered from aggregate
+rows; ``sv_patient_months_max`` = SUM over months of MAX(patients over that month's
+rows) is the best available base (a lower bound on distinct patient-months), and
+``sv_paid_per_patient_month`` now = POSITIVE-only rendered dollars over it (an upper
+bound on the true intensity, the one-sided direction the scheme reads). The old
+formula (net dollars over the code-month sum) is kept as
+``sv_paid_per_patient_month_codemonth``.
+
 Point-in-time: pass the as-of spending parquet (already filtered to pre-cutoff
 months) and nothing here can see the future. Dollars are NEVER re-attributed: the
 billing NPI keeps the money (CLAUDE.md rule 3); these are per-clinician views of the
@@ -39,11 +50,13 @@ from pathlib import Path
 
 import pandas as pd
 
-SV_COLS = ["sv_paid_total", "sv_rows", "sv_lines", "sv_patient_months", "sv_distinct_hcpcs",
+SV_COLS = ["sv_paid_total", "sv_rows", "sv_lines", "sv_patient_months", "sv_patient_months_max",
+           "sv_distinct_hcpcs",
            "sv_active_months", "sv_first_month", "sv_last_month", "sv_tenure_months",
            "sv_n_billing_orgs", "sv_top_billing_share", "sv_paid_under_others",
            "sv_share_under_others", "sv_max_orgs_same_month", "sv_peak_lines_month",
-           "sv_lines_per_active_month", "sv_paid_per_patient_month"]
+           "sv_lines_per_active_month", "sv_paid_per_patient_month",
+           "sv_paid_per_patient_month_codemonth"]
 # the ones the scheme engine reads (peer-normalized one-sided, higher = more unusual)
 SV_SIGNALS = ["sv_max_orgs_same_month", "sv_peak_lines_month", "sv_n_billing_orgs",
               "sv_paid_per_patient_month", "sv_lines_per_active_month"]
@@ -86,8 +99,12 @@ def servicing_stats(spending_path: str | Path, cutoff: str | None = None,
                        SUM(CASE WHEN b.bn IS DISTINCT FROM b.sv THEN b.gross ELSE 0 END)
                        / NULLIF(MAX(t.tg), 0))) AS sv_share_under_others
             FROM by_bn b JOIN tot t USING (sv) GROUP BY b.sv),
-        by_month AS (SELECT sv, ym, COUNT(DISTINCT bn) n_orgs, SUM(lines) lines FROM s GROUP BY 1, 2),
-        peaks AS (SELECT sv, MAX(n_orgs) AS sv_max_orgs_same_month, MAX(lines) AS sv_peak_lines_month
+        -- audit C4: MAX(patients) over the month's rows = the month's lower bound on
+        -- distinct patients; summed over months it is sv_patient_months_max
+        by_month AS (SELECT sv, ym, COUNT(DISTINCT bn) n_orgs, SUM(lines) lines, MAX(pts) pts_max
+                     FROM s GROUP BY 1, 2),
+        peaks AS (SELECT sv, MAX(n_orgs) AS sv_max_orgs_same_month, MAX(lines) AS sv_peak_lines_month,
+                         SUM(pts_max) AS sv_patient_months_max
                   FROM by_month GROUP BY 1),
         base AS (
             SELECT sv, SUM(paid) sv_paid_total, COUNT(*) sv_rows, SUM(lines) sv_lines,
@@ -95,13 +112,18 @@ def servicing_stats(spending_path: str | Path, cutoff: str | None = None,
                    COUNT(DISTINCT ym) sv_active_months, MIN(ym) sv_first_month, MAX(ym) sv_last_month
             FROM s GROUP BY 1)
         SELECT b.sv AS npi, b.sv_paid_total, b.sv_rows, b.sv_lines, b.sv_patient_months,
+               p.sv_patient_months_max,
                b.sv_distinct_hcpcs, b.sv_active_months, b.sv_first_month, b.sv_last_month,
                c.sv_n_billing_orgs, c.sv_top_billing_share, c.sv_paid_under_others,
                c.sv_share_under_others,
                p.sv_max_orgs_same_month, p.sv_peak_lines_month,
                b.sv_lines / NULLIF(b.sv_active_months, 0) AS sv_lines_per_active_month,
-               b.sv_paid_total / NULLIF(b.sv_patient_months, 0) AS sv_paid_per_patient_month
+               -- audit C4: positive-only dollars over the max-based patient-months;
+               -- the old net-over-code-month formula keeps the _codemonth suffix
+               t.tg / NULLIF(p.sv_patient_months_max, 0) AS sv_paid_per_patient_month,
+               b.sv_paid_total / NULLIF(b.sv_patient_months, 0) AS sv_paid_per_patient_month_codemonth
         FROM base b LEFT JOIN conc c ON c.sv = b.sv LEFT JOIN peaks p ON p.sv = b.sv
+             LEFT JOIN tot t ON t.sv = b.sv
     """).df()
     df["npi"] = df["npi"].astype(str)
     if len(df):
