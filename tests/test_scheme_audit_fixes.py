@@ -105,9 +105,10 @@ def test_subscores_null_aware_no_floor():
     feats = pd.DataFrame({
         # single_service_mill = {concentration: 1.0}
         "concentration": [0.9, np.nan, 0.1],
-        # pharma_kickback = {op_payment_utilization_corr: .7, op_payment_concentration: .3}
+        # pharma_kickback = {op_payment_utilization_corr: .7, px_paid_mfr_share: .5, ...}
+        # (op_payment_concentration is RESERVED since W-d, 2026-11-02: no dollar floor)
         "op_payment_utilization_corr": [np.nan, np.nan, 0.8],
-        "op_payment_concentration": [1.0, np.nan, np.nan],
+        "px_paid_mfr_share": [1.0, np.nan, np.nan],
     })
     subs, _ = compute_subscores(feats)
     s_mill = subs["subscore_single_service_mill"]

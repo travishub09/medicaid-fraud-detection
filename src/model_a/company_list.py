@@ -86,7 +86,17 @@ BROADCAST_BASES = ("org_billing", "affiliated_individual")
 BROADCAST_BASES = ("org_billing", "affiliated_individual")
 _TRAINING_POLICY: dict = {"n_seeds": None, "broadcast": None, "class_priors": None, "drop_schemes": None,
                           "prior_min_n": None, "prior_weighted": None, "prior_inner_folds": None,
-                          "settlement_weight": None, "feature_set": None}
+                          "settlement_weight": None, "feature_set": None, "segment": None}
+
+# THE SEGMENT SCORER (2026-11-02, architecture audit S8 / experiment 5): ``segment``
+# names the population the scorer TRAINS on. "all" (default, the v8..v28 scorer) trains
+# on every row the masks keep; "operator" trains ONLY on rows whose organization is
+# operator-class (``operator_mask``: the pursuit book's entity_segments rule applied per
+# member) and still scores every row out-of-fold, so the pursuit book is ranked by a
+# model that never saw a hospital settlement as a positive. An arm graded on the
+# operator book beside the global scorer, never a ship without a sweep.
+SEGMENTS = ("all", "operator")
+MIN_SEGMENT_POSITIVES = 20      # fewer kept positives in the segment = not a result
 
 # the analyst's two experiments (2026-11-01, docs ANALYST_QUESTIONS_2026-10-31): FEATURE_SETS
 # names the three column sets a refit arm can train on (the 27 scheme subscores alone, the
@@ -116,7 +126,8 @@ def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None
                         class_priors=None, drop_schemes=None,
                         prior_min_n: int | None = None, prior_weighted=None,
                         prior_inner_folds: int | None = None,
-                        settlement_weight: float | None = None, feature_set: str | None = None) -> None:
+                        settlement_weight: float | None = None, feature_set: str | None = None,
+                        segment: str | None = None) -> None:
     """None = no override for that key ('' overrides class_priors / drop_schemes to none).
 
     v23: ``prior_min_n`` (the class-size floor of the prior encoder; 0 = none, the v21
@@ -138,8 +149,11 @@ def set_training_policy(n_seeds: int | None = None, broadcast: str | None = None
         raise ValueError("settlement_weight must be within [0, 1] (1 = settlements weigh like convictions)")
     if feature_set is not None and str(feature_set) not in FEATURE_SETS:
         raise ValueError(f"feature_set must be one of {FEATURE_SETS}")
+    if segment is not None and str(segment) not in SEGMENTS:
+        raise ValueError(f"segment must be one of {SEGMENTS}")
     _TRAINING_POLICY.update(settlement_weight=(float(settlement_weight) if settlement_weight is not None else None),
-                            feature_set=(str(feature_set) if feature_set is not None else None))
+                            feature_set=(str(feature_set) if feature_set is not None else None),
+                            segment=(str(segment) if segment is not None else None))
     _TRAINING_POLICY.update(n_seeds=(int(n_seeds) if n_seeds is not None else None),
                             broadcast=broadcast,
                             class_priors=(parse_spec(class_priors) if class_priors is not None else None),
@@ -173,11 +187,82 @@ def training_policy(manifest: dict | None) -> dict:
           else float(tp["settlement_weight"]) if tp.get("settlement_weight") is not None else 1.0)
     fs = (_TRAINING_POLICY["feature_set"] if _TRAINING_POLICY["feature_set"] is not None
           else str(tp.get("feature_set") or "all"))
+    seg = (_TRAINING_POLICY["segment"] if _TRAINING_POLICY["segment"] is not None
+           else str(tp.get("segment") or "all"))
+    if seg not in SEGMENTS:
+        raise ValueError(f"manifest training_policy.segment {seg!r}: choose from {SEGMENTS}")
     return {"n_seeds": max(1, n_seeds), "broadcast": broadcast,
             "group_policy": str(tp.get("group_policy") or "org"),
             "class_priors": list(priors), "drop_schemes": list(drop),
             "prior_min_n": int(pmn), "prior_weighted": bool(pw), "prior_inner_folds": int(pif),
-            "settlement_weight": float(sw), "feature_set": fs}
+            "settlement_weight": float(sw), "feature_set": fs, "segment": seg}
+
+
+def _org_names(matrix: pd.DataFrame, org: pd.Series) -> pd.Series:
+    """The rollup's org name per org id (``rollup._best_name``'s rule, vectorized: the first
+    name column with a non-blank value for the org, its modal value, ties by the smallest)."""
+    names = pd.Series("", index=pd.Index(pd.unique(org)), dtype=object)
+    for c in ("org_display_name", "org_name", "provider_name", "org_legal_name"):
+        if c not in matrix.columns:
+            continue
+        v = matrix[c].fillna("").astype(str).str.strip()
+        has = (v != "").to_numpy()
+        if not has.any():
+            continue
+        vc = (pd.DataFrame({"o": org.to_numpy()[has], "n": v.to_numpy()[has]})
+              .value_counts().reset_index(name="k")
+              .sort_values(["o", "k", "n"], ascending=[True, False, True])
+              .drop_duplicates("o").set_index("o")["n"])
+        fill = names == ""
+        names.loc[fill] = names.index[fill].map(vc).fillna("").to_numpy()
+    return names
+
+
+def operator_mask(matrix: pd.DataFrame, include_solo: bool = False) -> np.ndarray:
+    """True per matrix row where the row's ORGANIZATION is operator-class: the pursuit
+    book's ``pursuit_dossier.entity_segments`` 'operator' rule applied per member, so
+    the segment scorer (training policy ``segment = operator``) and the diagnostics'
+    refit share ONE definition. Not operator-class:
+
+      * institutional by name cue (_INSTITUTIONAL_RE: hospital / medical center / health
+        system / university / health plan ...), 25 or more members in the matrix, or a
+        screening caution (institutional-anchor name or taxonomy majority, a single
+        number at intermediary scale);
+      * hospital-licensed (a member on a 27xxxx / 28xxxx NUCC code or an FQHC);
+      * a national chain by the curated name list (NOT part of entity_segments' graded
+        segment, by the v13 lesson; here it only shapes the TRAINING population, the
+        graded book is untouched);
+      * a solo individual (a one-member org whose member is an individual NPI: the
+        'individual' segment) unless ``include_solo``.
+
+    The org id is org_node_id (else group_id, else the NPI itself)."""
+    from .clean_anchors import INSTITUTIONAL_NAME, INSTITUTIONAL_TAXONOMIES
+    from .pursuit_dossier import (INTERMEDIARY_SCALE, _INSTITUTIONAL_RE, hospital_org_ids,
+                                  is_national_name)
+    n = len(matrix)
+    if n == 0:
+        return np.zeros(0, dtype=bool)
+    org_col = next((c for c in ("org_node_id", "group_id", "npi") if c in matrix.columns), None)
+    org = (matrix[org_col].fillna("").astype(str) if org_col else
+           pd.Series([str(i) for i in range(n)], index=matrix.index))
+    counts = org.map(org.value_counts())
+    names = _org_names(matrix, org)
+    name = org.map(names).fillna("").astype(str)
+    billed = pd.to_numeric(matrix.get("net_paid", matrix.get("gross_paid", 0)), errors="coerce").fillna(0.0)
+    org_billed = org.map(billed.groupby(org).sum())
+    inst = (name.str.contains(_INSTITUTIONAL_RE, na=False)
+            | (counts >= 25)
+            | name.str.contains(INSTITUTIONAL_NAME, na=False)
+            | ((counts == 1) & (org_billed >= INTERMEDIARY_SCALE)))
+    if "primary_taxonomy" in matrix.columns:
+        tax_inst = matrix["primary_taxonomy"].fillna("").astype(str).str.upper().isin(INSTITUTIONAL_TAXONOMIES)
+        inst |= org.map(tax_inst.groupby(org).mean()) > 0.5
+    hosp = org.isin(hospital_org_ids(matrix)) if "org_node_id" in matrix.columns else pd.Series(False, index=matrix.index)
+    nat = name.map(is_national_name)
+    solo = pd.Series(False, index=matrix.index)
+    if "entity_type" in matrix.columns and not include_solo:
+        solo = (counts == 1) & (matrix["entity_type"].astype(str).str.strip() == "1")
+    return (~inst & ~hosp & ~nat & ~solo).to_numpy(dtype=bool)
 
 
 def apply_feature_set(cols: list[str], pol: dict, log=print) -> list[str]:
@@ -626,13 +711,26 @@ def oof_scores(matrix: pd.DataFrame, manifest: dict,
             print(f"[company_list] broadcast policy 'mask': {int(bmask.sum()):,} broadcast-only "
                   f"case positives held out of training folds (scored out-of-fold)")
         ambiguous = ambiguous | bmask
+    if pol["segment"] == "operator":
+        # THE SEGMENT SCORER (audit S8): only operator-class rows train; every row is
+        # still scored out-of-fold (the same hold-out mechanism as the ambiguous rows)
+        seg = operator_mask(matrix)
+        n_pos_seg = int(((np.asarray(y) == 1) & seg & ~ambiguous).sum())
+        print(f"[company_list] segment policy 'operator': {int(seg.sum()):,} of {len(matrix):,} rows are "
+              f"operator-class ({n_pos_seg:,} training positives among them); the rest are held out of "
+              f"every training fold and scored out-of-fold")
+        if n_pos_seg < MIN_SEGMENT_POSITIVES:
+            raise ValueError(f"segment policy 'operator' leaves {n_pos_seg} training positives "
+                             f"(minimum {MIN_SEGMENT_POSITIVES}): not a trainable arm on this matrix")
+        ambiguous = ambiguous | ~seg
     from src.model_a.network_ab import SCORER_PARAMS
     print(f"[company_list] scorer: LightGBM {', '.join(f'{k}={v}' for k, v in SCORER_PARAMS.items())}")
     print(f"[company_list] training policy: seeds={pol['n_seeds']}, broadcast={pol['broadcast']}, "
           f"groups={pol['group_policy']}, class_priors={pol['class_priors'] or 'none'}, "
           f"drop_schemes={pol['drop_schemes'] or 'none'}, prior_min_n={pol['prior_min_n']}, "
           f"prior_weighted={pol['prior_weighted']}, prior_inner_folds={pol['prior_inner_folds']}, "
-          f"settlement_weight={pol['settlement_weight']}, feature_set={pol['feature_set']}")
+          f"settlement_weight={pol['settlement_weight']}, feature_set={pol['feature_set']}, "
+          f"segment={pol['segment']}")
     keys = prior_keys_for(matrix, pol)
     if keys is not None:
         from .class_priors import rate_table
@@ -701,6 +799,19 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
         m.get("net_paid", m.get("gross_paid", 0)), errors="coerce").fillna(0.0)
     org_col = "org_node_id" if "org_node_id" in m.columns else "group_id"
     sub_cols = [c for c in m.columns if c.startswith("subscore_")]
+    # THE ORDER-STATISTIC NULL (2026-11-02, audit G2 / experiment 8): score_max and
+    # score_p_max grow with the roster (the max of n draws from the pooled score
+    # distribution sits at its n/(n+1) quantile in expectation), so a chain reads hot by
+    # size alone. ``score_max_exceedance`` = the observed max minus that quantile at the
+    # org's own size, clipped at 0: what the roster's hottest member reads OVER what a
+    # roster that size would read by chance. ``score_mean`` and ``score_top2_mean`` are
+    # the size-stable alternatives. All three are COLUMNS for the order sweep
+    # (pursuit_order 'mean' / 'top2' / 'exceedance'); the sort keys below are unchanged.
+    pooled = np.sort(m["_score"].to_numpy(dtype=float))
+    pooled = pooled[~np.isnan(pooled)]
+    sizes = m.groupby(org_col, dropna=False).size()
+    null_max = ({int(k): float(np.quantile(pooled, k / (k + 1.0))) for k in sorted(set(int(v) for v in sizes.to_numpy()))}
+                if len(pooled) else {})
 
     def _best_name(g):
         # try each name column in turn, ignoring blanks — a rollup row must
@@ -723,6 +834,10 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
             "total_billed": float(w.sum()),
             "score_max": float(s.max()),
             "score_dollar_weighted": wmean,
+            "score_mean": float(np.nanmean(s)) if len(s) else 0.0,
+            "score_top2_mean": float(np.nanmean(np.sort(s[~np.isnan(s)])[-2:])) if (~np.isnan(s)).any() else 0.0,
+            "score_max_exceedance": float(max(0.0, np.nanmax(s) - null_max.get(int(len(s)), np.nan)))
+            if (~np.isnan(s)).any() and int(len(s)) in null_max else 0.0,
         }
         if probs is not None:
             # P(any member is a positive) from calibrated member probabilities,
