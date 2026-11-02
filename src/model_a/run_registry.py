@@ -455,6 +455,10 @@ CHECK_ALIASES = {
     "lead_median": "acc_lead_median_mo", "lead_ge_gap": "acc_hits_lead_ge_gap_share",
     "inst_share50": "acc_inst_share50", "known_share50": "acc_known_share50",
     "ece_top": "acc_ece_top1000", "top50_jaccard": "acc_top50_jaccard",
+    "top50_jaccard_all": "acc_top50_jaccard_all", "top50_jaccard_book": "acc_top50_jaccard_book",
+    "jaccard_source": "acc_top50_jaccard_source",
+    # 2026-11-02 (audit D3e): cases touched at each budget (the case is the unit)
+    "cases50": "acc_cases_touched50", "cases100": "acc_cases_touched100", "cases250": "acc_cases_touched250",
     "prec50_sd": "acc_prec50_sd", "eval_policy": "acc_eval_policy",
     "horizon": "acc_horizon_mo", "dollar_recall50": "acc_dollar_recall50",
     # the large-biller book (accuracy_diagnostics__large.json), v13 co-primary

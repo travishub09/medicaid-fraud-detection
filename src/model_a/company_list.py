@@ -501,10 +501,19 @@ def calibrate_oof(matrix: pd.DataFrame, scores: np.ndarray, label_col: str | Non
     out = np.full(len(s), float(y.mean()) if len(y) else 0.0)
     if y.sum() < 5:
         return out
+    # 2026-11-02 (audit A4): the calibrator learns from the rows the scorer learned from.
+    # The listed-but-not-kept rows (license actions, state 'terminated', deactivations
+    # under a hard policy) and the unassessable rows used to be NEGATIVES for the isotonic
+    # map while oof_scores refused to train on them; the P scale flattened exactly where
+    # small Medicaid providers sit (the 296-way plateau of v22). They are still scored.
+    held = (np.asarray(_to_num(matrix[label_col]) > 0) & (y == 0)) if label_col in matrix.columns \
+        else np.zeros(len(y), dtype=bool)
+    held = np.asarray(held, dtype=bool) | unassessable_mask(matrix)
     for tr, te in fold_assignments(y, groups, n_splits):
-        if y[tr].sum() == 0:
+        fit = tr[~held[tr]]
+        if y[fit].sum() == 0:
             continue
-        out[te] = fit_calibrator(s[tr], y[tr]).predict(s[te])
+        out[te] = fit_calibrator(s[fit], y[fit]).predict(s[te])
     return out
 
 
@@ -674,8 +683,16 @@ def rollup(matrix: pd.DataFrame, scores: np.ndarray,
                   else np.nan)
     n_excl = None
     if drop_excluded and "provider_on_exclusion" in m.columns:
-        excl = pd.to_numeric(m["provider_on_exclusion"],
-                             errors="coerce").fillna(0).astype(int)
+        # 2026-11-02 (audit A8): the already-caught are the TRAINING label's positives under
+        # the run's tier policy, not every row of the 'all' column (license actions, state
+        # 'terminated', suspensions): those providers are exactly the owner-run class's
+        # likeliest forward cases and were being dropped from every list
+        try:
+            excl = pd.Series(np.asarray(_training_label(m, "provider_on_exclusion")) > 0, index=m.index).astype(int) \
+                if _LABEL_POLICY["tier"] != "all" else \
+                pd.to_numeric(m["provider_on_exclusion"], errors="coerce").fillna(0).astype(int)
+        except Exception:  # noqa: BLE001  (no exclusion nodes for the policy: the column)
+            excl = pd.to_numeric(m["provider_on_exclusion"], errors="coerce").fillna(0).astype(int)
         org_key = "org_node_id" if "org_node_id" in m.columns else "group_id"
         n_excl = (m.loc[excl == 1].groupby(m.loc[excl == 1][org_key])
                   .size() if excl.any() else pd.Series(dtype=int))

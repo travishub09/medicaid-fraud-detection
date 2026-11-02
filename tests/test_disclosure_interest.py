@@ -78,7 +78,9 @@ def test_disclosure_caps_citations_with_count():
 
 def test_gov_interest_overlay_names_its_drivers():
     g = government_interest_overlay(pd.Series(["hospice", "default", ""]))
-    assert g.loc[0, "gov_interest_multiplier"] == 1.3
+    from src.model_a.government_interest import WORK_PLAN_ITEMS
+    hospice_w = max(it["weight"] for it in WORK_PLAN_ITEMS if it["sector"] == "hospice")   # the table's own weight (refreshed quarterly)
+    assert g.loc[0, "gov_interest_multiplier"] == hospice_w
     assert "hospice" in g.loc[0, "gov_interest_items"].lower()
     assert g.loc[1, "gov_interest_multiplier"] == 1.0
     assert g.loc[1, "gov_interest_items"] == ""

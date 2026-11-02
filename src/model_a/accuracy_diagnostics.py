@@ -193,6 +193,39 @@ def load_ruler(path: str | Path) -> pd.DataFrame:
                "undated_exclusion", "fca_tier"]]
 
 
+OUTCOME_SOURCES = {"doj_case", "hcf_commercial"}      # a case label that is a public OUTCOME
+
+
+def known_in_matrix(matrix: pd.DataFrame) -> np.ndarray:
+    """Rows the list could never surface and the grade must not count (2026-11-02, audit
+    A8): a provider the TRAINING label calls positive under the run's tier policy (not the
+    'all' column, which also carries license actions, suspensions and deactivations), or a
+    provider with a DOJ / commercial case OUTCOME resolved before the freeze. A docketed
+    allegation or a charge is not knowledge of an outcome: that provider stays in the
+    universe and may be a hit."""
+    n = len(matrix)
+    known = np.zeros(n, dtype=bool)
+    if "provider_on_exclusion" in matrix.columns:
+        try:
+            from .company_list import _training_label, label_policy
+            if label_policy().get("tier", "all") != "all":
+                known |= np.asarray(_training_label(matrix, "provider_on_exclusion")) > 0
+            else:
+                known |= pd.to_numeric(matrix["provider_on_exclusion"], errors="coerce").fillna(0).astype(int).eq(1).to_numpy()
+        except Exception as e:  # noqa: BLE001  (a tier policy without nodes: fall back to the column)
+            _log(f"known_in_matrix: tier label unavailable ({e}); reading the in-matrix column")
+            known |= pd.to_numeric(matrix["provider_on_exclusion"], errors="coerce").fillna(0).astype(int).eq(1).to_numpy()
+    if "case_ids" in matrix.columns:
+        has_case = matrix["case_ids"].fillna("").astype(str).str.len().gt(0).to_numpy()
+        if "exclusion_label_sources" in matrix.columns:
+            src = matrix["exclusion_label_sources"].fillna("").astype(str).str.split(";")
+            outcome = src.apply(lambda xs: bool(set(xs) & OUTCOME_SOURCES)).to_numpy()
+            known |= has_case & outcome
+        else:
+            known |= has_case
+    return known
+
+
 def eval_frame(matrix: pd.DataFrame, ruler: pd.DataFrame, cutoff: str,
                horizon_months: int | None = None,
                other_rulers: list[pd.DataFrame] | None = None) -> tuple[pd.DataFrame, dict]:
@@ -211,10 +244,7 @@ def eval_frame(matrix: pd.DataFrame, ruler: pd.DataFrame, cutoff: str,
     m["undated"] = m["npi"].map(r["undated_exclusion"]).fillna(0).astype(int).astype(bool)
     # in-matrix knowledge: a provider the training label already calls positive, or
     # a DOJ case the export resolved before the freeze, was known when the list was built
-    if "provider_on_exclusion" in matrix.columns:
-        m["known"] |= pd.to_numeric(matrix["provider_on_exclusion"], errors="coerce").fillna(0).astype(int).eq(1).to_numpy()
-    if "case_ids" in matrix.columns:
-        m["known"] |= matrix["case_ids"].fillna("").astype(str).str.len().gt(0).to_numpy()
+    m["known"] |= known_in_matrix(matrix)
     m.loc[m["known"], "y"] = 0
     m["lead_months"] = _months_between(pd.Series(cut, index=m.index), m["event_date"])
     n_pos_raw = int(m["y"].sum())
@@ -786,13 +816,14 @@ def _fast_org_top(matrix: pd.DataFrame, scores: np.ndarray, k_org: int) -> set:
 
 def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler: dict, repeats: int,
               k_org: int = 50, min_damages: float = 10_000_000.0, top_frac: float = 0.01,
-              base: tuple[np.ndarray, np.ndarray] | None = None) -> dict:
+              base: tuple[np.ndarray, np.ndarray] | None = None, order: str = "dollar") -> dict:
     """R re-shuffled fold assignments: SD of precision@k, Jaccard of the top sets.
     ``base`` = (scores, fold) of the main refit, reused as repeat 0."""
     if repeats <= 0:
         return {"repeats": 0}
-    npi_sets, org_sets, prec = [], [], {r: [] for r in ev_by_ruler}
+    npi_sets, org_sets, book_sets, prec = [], [], [], {r: [] for r in ev_by_ruler}
     org_freq: dict[str, int] = {}
+    book_freq: dict[str, int] = {}
     org_col = "org_node_id" if "org_node_id" in matrix.columns else "group_id"
     members = matrix.groupby(matrix[org_col].astype(str))["npi"].apply(lambda s_: ";".join(s_.astype(str)))
     for rep in range(repeats + 1):
@@ -808,6 +839,22 @@ def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler
         org_sets.append(top)
         for o in top:
             org_freq[o] = org_freq.get(o, 0) + 1
+        # 2026-11-02 (audit D1e): the Jaccard that gates a run is the Jaccard of the SHIPPED
+        # book's top k (operator segment, case-size bar, the shipped order), not of the
+        # national top k by dollar-weighted mean; v17 / v21 / v24 / v26 held on the latter
+        try:
+            probs_r = None
+            if order.startswith("pmax"):
+                from .company_list import calibrate_oof
+                probs_r = calibrate_oof(matrix, scores)
+            orgs_r = org_table_from_refit(matrix, scores, min_damages=min_damages, probs=probs_r)
+            book_r = operator_book_from_refit(orgs_r, matrix, order=order)
+            tb = set(book_r["org_id"].astype(str).head(k_org))
+            book_sets.append(tb)
+            for o in tb:
+                book_freq[o] = book_freq.get(o, 0) + 1
+        except Exception as e:  # noqa: BLE001
+            _log(f"stability: book top-{k_org} for repeat {rep} not built ({e})")
         orgs = pd.DataFrame({"org_id": sorted(top)})
         orgs["member_npis"] = orgs["org_id"].map(members).fillna("")
         for name, ev in ev_by_ruler.items():
@@ -822,12 +869,17 @@ def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler
                 vals.append(len(sets[i] & sets[j]) / len(u) if u else 1.0)
         return float(np.mean(vals)) if vals else float("nan")
     return {"repeats": int(repeats), "jaccard_top_npi": _jac(npi_sets), "jaccard_top_org": _jac(org_sets),
+            "jaccard_top_book": _jac(book_sets) if len(book_sets) == repeats + 1 else None,
+            "book_order": order,
             "precision_sd": {r: float(np.nanstd(v)) for r, v in prec.items()},
             "precision_mean": {r: float(np.nanmean(v)) for r, v in prec.items()},
             "orgs_in_every_top": int(sum(1 for v in org_freq.values() if v == repeats + 1)),
             "orgs_ever_in_top": int(len(org_freq)),
-            "note": "org sets here are the top-k by dollar-weighted mean score over ALL orgs (no "
-                    "government / damages filter), a stability measure only"}
+            "book_orgs_in_every_top": int(sum(1 for v in book_freq.values() if v == repeats + 1)),
+            "book_orgs_ever_in_top": int(len(book_freq)),
+            "note": "jaccard_top_org = the top-k by dollar-weighted mean score over ALL orgs (no "
+                    "government / damages filter); jaccard_top_book = the shipped operator book's top-k "
+                    "under the shipped order (the one a pre-registration reads from 2026-11-02)"}
 
 
 def tie_block(matrix: pd.DataFrame, scores: np.ndarray, ev: pd.DataFrame, max_rows: int = 2000) -> pd.DataFrame:
@@ -985,7 +1037,8 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
                 res["_tie_block"] = tie_block(matrix, scores, ev)
     if repeats and cols:
         res["stability"] = stability(matrix, manifest, cols, ev_by, repeats, min_damages=min_damages,
-                                     base=(scores, fold) if scores is not None else None)
+                                     base=(scores, fold) if scores is not None else None,
+                                     order=refit_pursuit_order)
     if scores is not None:
         # v24: the score-scale sanity check (a degenerate scorer is caught before any hit is read)
         try:
@@ -1059,6 +1112,10 @@ def kpi_block(res: dict) -> dict:
         if dl.get("available"):
             r50 = next((r for r in dl["rows"] if r["budget"] == 50), None)
             out[f"acc_dollar_recall50_{name}"] = r50["dollar_recall"] if r50 else None
+            # 2026-11-02 (audit D3e): the case is the unit; hits are case-clustered (one
+            # release names twenty labs), so the count a bar should read is cases touched
+            for rr in dl["rows"]:
+                out[f"acc_cases_touched{int(rr['budget'])}_{name}"] = rr.get("cases_touched")
     # headline aliases (what --check reads by default)
     for key in list(out):
         if h and key.endswith(f"_{h}"):
@@ -1066,7 +1123,12 @@ def kpi_block(res: dict) -> dict:
         if h and key.endswith(f"_{h}_lo"):
             out[key[: -len(h) - 4] + "_lo"] = out[key]
     st = res.get("stability", {})
-    out["acc_top50_jaccard"] = st.get("jaccard_top_org")
+    out["acc_top50_jaccard_all"] = st.get("jaccard_top_org")
+    out["acc_top50_jaccard_book"] = st.get("jaccard_top_book")
+    # the headline Jaccard is the BOOK's from 2026-11-02 (falls back to the national set
+    # only when the book could not be built, and the registry row says which it read)
+    out["acc_top50_jaccard"] = st.get("jaccard_top_book") if st.get("jaccard_top_book") is not None else st.get("jaccard_top_org")
+    out["acc_top50_jaccard_source"] = "book" if st.get("jaccard_top_book") is not None else "all_orgs"
     out["acc_prec50_sd"] = (st.get("precision_sd", {}) or {}).get(h)
     return out
 
