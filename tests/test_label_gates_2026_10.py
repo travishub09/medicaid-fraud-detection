@@ -350,8 +350,9 @@ def test_page_proof_lane_reads_the_browser_copy_not_the_agents_word(tmp_path):
     cdb = root / "enforcement" / "doj_cases_v3.csv"
     db.to_csv(cdb, index=False)
     items = ml.page_proof_items(cdb, per_task=8)
-    assert len(items) == 1 and set(items[0]["urls"]) == {"https://omig.ny.gov/a.pdf", "https://ag.state.x/b", "https://ag.state.x/c"}
-    assert "page_k.html" in items[0]["prompt"] and "Acme Home Care Inc" in items[0]["prompt"]
+    # the audit finding is left out (it never passes the outcome rule, so a browser task on it buys nothing)
+    assert len(items) == 1 and set(items[0]["urls"]) == {"https://ag.state.x/b", "https://ag.state.x/c"}
+    assert "page_k.html" in items[0]["prompt"] and "John Smith" in items[0]["prompt"]
     urls = items[0]["urls"]
     k_b = urls.index("https://ag.state.x/b") + 1
     k_c = urls.index("https://ag.state.x/c") + 1
