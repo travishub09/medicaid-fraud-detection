@@ -743,6 +743,23 @@ def run_screen(spending: Path, screen: Screen, con=None, provider_dim: Path | No
         else:
             print(f"[theory_screens] {screen.key}: no supplier x referrer table; the out-of-state order share "
                   "is not computed (--dme-referrers <parquet|csv> with supplier_npi, referrer_npi, dollars|lines)")
+        # 2026-11-02: the Medicaid analogue of "ordered from 41 states" is the number of STATE
+        # Medicaid programs the supplier is enrolled in (medicaid_enrollment_features.parquet,
+        # mcd_states_enrolled): a brace supplier in one state billing the nation is enrolled
+        # everywhere it ships. Reported, and the candidates break ties on it; blank when the
+        # enrollment features are not beside provider_dim.
+        df["states_enrolled"] = pd.NA
+        ef = (Path(provider_dim).parent / "medicaid_enrollment_features.parquet") if provider_dim else None
+        if ef is not None and ef.exists():
+            try:
+                st = con.execute(f"SELECT CAST(npi AS VARCHAR) npi, mcd_states_enrolled AS states_enrolled "
+                                 f"FROM read_parquet('{ef}')").df()
+                st["npi"] = st["npi"].astype(str)
+                df = df.drop(columns=["states_enrolled"]).merge(st.drop_duplicates("npi"), on="npi", how="left")
+                print(f"[theory_screens] {screen.key}: states_enrolled joined from {ef.name} "
+                      f"({int(df['states_enrolled'].notna().sum()):,} suppliers)")
+            except Exception as e:                       # the column set differs on an older features file
+                print(f"[theory_screens] {screen.key}: states_enrolled not joined ({e})")
     out = classify(df, screen, verdicts, top=top)
     return out.drop(columns=["capacity_known"])
 
@@ -879,8 +896,10 @@ def classify(df: pd.DataFrame, screen: Screen, verdicts: pd.DataFrame | None, to
         df.loc[order, "rank"] = range(1, len(order) + 1)
     elif screen.national_share_rule and cand.any():
         # the largest national share first (the per-se shape), then numerator dollars
-        order = df[cand].assign(_ns=pd.to_numeric(df.loc[cand, "national_code_share"], errors="coerce").fillna(-1.0)) \
-                        .sort_values(["_ns", "paid_num"], ascending=[False, False]).index
+        order = df[cand].assign(_ns=pd.to_numeric(df.loc[cand, "national_code_share"], errors="coerce").fillna(-1.0),
+                                _se=pd.to_numeric(df.loc[cand, "states_enrolled"], errors="coerce").fillna(-1.0)
+                                if "states_enrolled" in df.columns else -1.0) \
+                        .sort_values(["_ns", "_se", "paid_num"], ascending=[False, False, False]).index
         df.loc[order, "rank"] = range(1, len(order) + 1)
     else:
         df.loc[cand, "rank"] = range(1, int(cand.sum()) + 1)
@@ -965,9 +984,9 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50, policy_df: pd.D
         L.append("")
         if s.national_share_rule:
             L.append("| rank | npi | name | st | numerator $ | top code | share of national lines | share of national $ | "
-                     "supplier $ on code | national $ on code | national suppliers on code | out-of-state order share | "
-                     "referrers | referrer states | first | last | peak year | last year $ |")
-            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+                     "supplier $ on code | national $ on code | national suppliers on code | states enrolled | "
+                     "out-of-state order share | referrers | referrer states | first | last | peak year | last year $ |")
+            L.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
 
             def _pct(v):
                 return "" if pd.isna(v) else f"{float(v) * 100:.1f}%"
@@ -982,7 +1001,7 @@ def to_markdown(results: dict[str, pd.DataFrame], top: int = 50, policy_df: pd.D
                 L.append(f"| {r.rank} | {r.npi} | {str(r.name)[:48]} | {r.state or ''} | ${r.paid_num:,.0f} | "
                          f"{'' if pd.isna(r.top_share_code) else r.top_share_code} | {_pct(r.top_share_lines)} | "
                          f"{_pct(r.top_share_dollars)} | {_usd(r.top_code_paid)} | {_usd(r.top_code_nat_paid)} | "
-                         f"{_int(r.top_code_nat_suppliers)} | {_pct(r.out_of_state_order_share)} | {_int(r.n_referrers)} | "
+                         f"{_int(r.top_code_nat_suppliers)} | {_int(getattr(r, 'states_enrolled', pd.NA))} | {_pct(r.out_of_state_order_share)} | {_int(r.n_referrers)} | "
                          f"{_int(r.n_referrer_states)} | {r.first_month} | {r.last_month} | "
                          f"{r.peak_year} (${(r.peak_year_paid or 0):,.0f}) | ${(r.last_year_paid or 0):,.0f} |")
         elif s.address_rule:
