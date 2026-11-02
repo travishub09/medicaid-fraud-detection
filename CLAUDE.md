@@ -1563,6 +1563,39 @@ first, then paste" above every move/done block.
   loaded box); v29 = the first run on batch 5b, pre-registered under the v28 checks +
   `ruler_graph = asof` + `facility_rollup = own_ccn` + `segment = all` + `case_budget = npi100`,
   the solo book and the field ruler READ, not barred.
+  THE THREAD CHECKS (2026-11-02, operator "yes let's build those", from a public thread of
+  per-se Medicare fraud facts found by an AI agent swarm; two builders, merged the same
+  evening): (1) CLIA (`ingest_cms/clia.py`, export source `clia`, partition group `clia`,
+  preflight / data-audit / acquisition-guide entries, reminder `clia`): the CMS Provider of
+  Services file for CLIA labs -> per NPI `clia_certificate_type` (operational string),
+  `clia_waiver_only`, `clia_annual_volume` (the CMS-116 reported volumes summed; the column
+  map is a best belief of the POS layout and the loader prints what it resolved: CHECK the
+  header on the first real file), `clia_billed_lab_lines_per_year` (the busiest calendar
+  year of lab-family lines on the as-of fact), `clia_volume_ratio` (billed / reported, NULL
+  without a volume, clipped 1000) and `clia_waiver_high_complexity` (a waiver-only lab
+  billing G0480-83 / 81xxx / 87xxx PCR), the last two RAW_SUBSCORE_INPUTS at 0.25 each in
+  `lab_testing` (v30 semantics); CLIA numbers reach NPIs through the NPPES other-identifier
+  table (`ccn_npi_crosswalk --other-ids-out` now emits type-01 rows whose issuer says CLIA as
+  id_type clia) then exact name + standardized address (several NPIs = quarantined). (2)
+  `theory_screens` screen `dme_national_share`: a DME supplier's share of the NATION's lines
+  on one code (max over its codes with >= $250k; candidate >= 5 percent; the public example
+  was seven suppliers filling 99.6 percent of the nation's hip braces) and, when a supplier x
+  referrer table is given (`--dme-referrers`; the public DMEPOS referring file carries NO
+  supplier NPI, so nobody has one yet), the out-of-state ordering share. (3) `contradictions`
+  Tier A `successor_after_exclusion`: a second NPI in the excluded NPI's organization whose
+  billing starts within 3 months of the event (or was under 10 percent of the excluded
+  trailing-6 average) and reaches 50 percent of it in the 6 months after, shared top codes
+  reported (the public example: a psychotherapy clinic's impossible volume moving to the next
+  clinician's number after the indictment). (4) Tier A `enrolled_after_owner_exclusion`: a
+  PECOS owner the graph already matched to an exclusion (the graph's own `excluded_in`
+  match, its tier printed as the basis) whose exclusion date precedes the association date
+  (else the org's first billed month), dollars since the association (the public example: an
+  excluded person still owner of two home health agencies, one certified after the ban).
+  Both checks read the graph folder (`--graph-dir`), write their own csv beside
+  contradictions.csv, no-op with a line when the inputs are absent; task thread_checks_run
+  carries the VM lines. RULE: a per-se fact from a public thread is a check to build the
+  same day, graded by whether the operator's own data carries it; a tip filed with the
+  government is a referral, an insider is a case.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is

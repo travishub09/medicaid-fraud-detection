@@ -51,6 +51,19 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
   - step 1: Open https://340bopais.hrsa.gov/reports → 'Covered Entity Daily Report' → Excel export (must be the 3-worksheet .xlsx with Contract Pharmacies)
   - step 2: Save as "...preclean\hrsa_340b\opais_covered_entity_<yyyymmdd>.xlsx"
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/hrsa_340b/*.xlsx or preclean/hrsa_340b/*.csv
+- **clia** — CMS Provider of Services file for CLIA laboratories (certificate type + the reported annual test volume per lab: the 'a lab certified for 600 tests a year billed 105,977' check, feeds lab_testing via clia_volume_ratio / clia_waiver_high_complexity; the analyst downloads it)
+  - save to: preclean/clia/pos_clia_<yyyymm>.csv  |  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-clinical-laboratories
+  - due: freshness unknown  (2026-11-02: new (the public thread's CLIA finds). The adapter's column map is a best belief of the POS CLIA layout; paste the header line from the block into chat so the map can be corrected before the first run. On the VM the file is linked to NPIs through the NPPES other-identifier table (ccn_npi_crosswalk --other-ids-out now emits CLIA ids) and name+address.)
+  - step 1: Open data.cms.gov and search 'Provider of Services File - Clinical Laboratories' (the quarterly POS file for CLIA labs; the page lists one CSV per quarter)
+  - step 2: Download the newest quarter's CSV (about 300,000 rows; the columns start with PRVDR_NUM, FAC_NAME, CRTFCT_TYPE_CD)
+  - step 3: Save it as preclean\clia\pos_clia_<yyyymm>.csv in the shared data folder (create the clia folder; <yyyymm> = the quarter's month, e.g. pos_clia_202509.csv)
+  - step 4: Download first, then paste the block: it moves the file, prints its header line so the column names can be checked against the adapter's map (src/ingest_cms/clia.py CLIA_COLS), and closes the item
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/clia/pos_clia_*.csv
+
+```bat
+move "%USERPROFILE%\Downloads\POS_CLIA*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\clia\pos_clia_202509.csv" && powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\clia\pos_clia_202509.csv' -TotalCount 1" && python -m src.reminders --done clia
+```
+
 
 ## COMING UP (30 days)
 
@@ -373,6 +386,18 @@ REM 3. close:
 python -m src.reminders --done-task manus_credits_topup
 ```
 
+- [ ] **thread_checks_run** — RUN THE FOUR NEW CHECKS ON THE VM (built 2026-11-02 from the public per-se fraud thread; merged + pushed): (1) the DME national-share screen (a supplier's share of the nation's lines on one code, max over its codes; the out-of-state ordering share needs a supplier x referrer table nobody has yet, so that column reads NOT computed); (2) the successor-number check (a new NPI at the same organization absorbing an excluded NPI's volume) and (3) the enrolled-after-owner-exclusion check, both new Tier A types in CONTRADICTIONS.md with their own csv files; (4) the CLIA volume check runs inside the next export once the download item `clia` is done (nothing to run by hand). Lines 1 and 2 are current-day reads on the live fact: run them from the tools worktree while v28 runs (they read, never write under model_a/frozen_*), then read the two reports. Close on your word once the tables are read. (added 2026-11-02)
+
+```bat
+REM 1. the DME national-share screen (report under model_a/screens_dme_share_<date>/THEORY_SCREENS.md):
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && git fetch -q origin claude/happy-mccarthy-3skrn3 && (cd /tmp/mfd-tools && git checkout -q --detach origin/claude/happy-mccarthy-3skrn3) && cd /tmp/mfd-tools && source ~/medicaid-fraud-detection/.venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.theory_screens --screen dme_national_share --spending /data/medicaid/processed/spending_fact.parquet --provider-dim /data/medicaid/processed/provider_dim.parquet --verdicts /data/medicaid/model_a/pursuit_verdicts.csv --out /data/medicaid/model_a/screens_dme_share_20261102 2>&1 | tail -5; grep -n -A 30 '### Candidates' /data/medicaid/model_a/screens_dme_share_20261102/THEORY_SCREENS.md | head -45"
+REM 2. the two new Tier A checks (successors + owners excluded before they joined), in tmux (the fact pass takes a while):
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tmux new -d -s contra 'cd /tmp/mfd-tools && source ~/medicaid-fraud-detection/.venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -u -m src.model_a.contradictions --spending /data/medicaid/processed/spending_fact.parquet --graph-dir /data/medicaid/graph --provider-dim /data/medicaid/processed/provider_dim.parquet --out /data/medicaid/model_a/contradictions_20261102 > /data/medicaid/model_a/contradictions_20261102.log 2>&1'; sleep 5; tmux ls"
+REM 3. the read (after the tmux session contra is gone):
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "tail -5 /data/medicaid/model_a/contradictions_20261102.log; grep -n -A 25 'successor_after_exclusion\|enrolled_after_owner_exclusion' /data/medicaid/model_a/contradictions_20261102/CONTRADICTIONS.md | head -80"
+python -m src.reminders --done-task thread_checks_run
+```
+
 
 ## After ANY download session (standing rule)
 
@@ -390,4 +415,3 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
-
