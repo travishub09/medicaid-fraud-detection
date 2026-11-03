@@ -1596,6 +1596,24 @@ first, then paste" above every move/done block.
   carries the VM lines. RULE: a per-se fact from a public thread is a check to build the
   same day, graded by whether the operator's own data carries it; a tip filed with the
   government is a referral, an insider is a case.
+  THE SECOND CURRENT-DAY CONTRADICTIONS READ (2026-11-03, the first run of the two thread checks on
+  the live fact): `enrolled_after_owner_exclusion` read 4,632 rows and $128B because it RANKED name-only
+  owner matches (RAMIREZ TERESA against Kaiser $1.6B, three common names against Montefiore $1.4B);
+  `split_owner_matches` now sends every probable (normalized-name, no identifier) match to
+  contradictions_owner_exclusions_research.csv and ranks the exact identifier matches only (the
+  section says how many were set aside). The top of Tier A was Quest / Tenet St Mary's / Baptist
+  Hospital of Miami / Manatee Memorial on a 2008-2015 Florida weak-tier sanction code, no
+  reinstatement date, 'first post-event month 2018-01' = the fact's first month: `setaside_pre_fact`
+  (+ `fact_first_month`) sets aside a WEAK-tier exclusion that predates the paid fact, carries no end
+  date and is followed by billing from the fact's first month (a record with a missing end date, not
+  a bar the data can see; hard-tier LEIE rows stay: there the continuous billing IS the fact).
+  `successor_after_exclusion` found one real shape: Ascend Behavioral Health and Wellness (AZ, a 2024
+  enrollment end whose book moved to five sibling numbers the same month). The DME national-share
+  screen's category leaders (enrolled in 39 to 50 states) are innocent by shape; the ring-shape
+  candidates (Pacific Medical CA, Grace Care MD) went to the court-record check (clean; Pacific Medical
+  refused, reruns alone). The lanes ran out of credits a SECOND time overnight (task
+  manus_credits_topup carries the lanes7 line). The two complete packet sets were re-issued as v4
+  (2026-11-02) with the Accu findings folded in: one zip per audience, never partial documents.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is

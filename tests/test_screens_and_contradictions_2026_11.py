@@ -273,3 +273,56 @@ def test_national_share_screen_lists_a_proprietary_code_and_never_ranks_it(tmp_p
     assert pd.isna(row["national_code_share"])
     md = ts.to_markdown({"dme_national_share": df})
     assert "proprietary_code" in md and "ONE MAKER INC" in md
+
+
+# ---------------------------------------------------------------- D. the 2026-11-03 read of the second current-day run
+def test_owner_matches_split_name_only_rows_into_research_never_the_ranked_table(tmp_path):
+    """Kaiser ($1.6B) and Montefiore ($1.4B) led the owner check on 'RAMIREZ TERESA' / 'BUTLER JAMES'
+    name-only matches: 4,632 rows, $128B of name collisions. A probable match is a research row."""
+    fact, n2o, owned_by, excluded_in, excl_nodes, owner_nodes, org_nodes = _owner_graph(tmp_path)
+    ob = owned_by.copy()
+    ob["association_date"] = [None, None]
+    res = cx.enrolled_after_owner_exclusion(fact, ob, excluded_in, excl_nodes, owner_nodes, n2o, org_nodes)
+    ranked, research = cx.split_owner_matches(res)
+    assert ranked["org_node_id"].tolist() == ["org:LATE"] and ranked["match_basis"].str.startswith("exact").all()
+    assert research["org_node_id"].tolist() == ["org:EARLY"] and research["match_basis"].str.startswith("probable").all()
+    assert list(ranked.columns) == cx.OWNER_EXCL_COLS and list(research.columns) == cx.OWNER_EXCL_COLS
+    e1, e2 = cx.split_owner_matches(None)
+    assert e1.empty and e2.empty
+    t = cx.assemble(pd.DataFrame(columns=["npi", "event", "event_date", "end_date", "detail", "name", "post_paid",
+                                          "post_months", "first_post_month", "last_month", "total_paid"]),
+                    pd.DataFrame(columns=["npi"]), pd.DataFrame(columns=["npi"]), None, min_post_paid=1.0, owner_excl=ranked)
+    md = cx.to_markdown(t, {"enrolled_after_owner_exclusion_status": "computed", "n_owner_research": len(research)})
+    assert "1 name-only (probable) owner matches are listed in contradictions_owner_exclusions_research.csv" in md
+    assert "EARLY HOME CARE" not in md and "LATE HOME CARE" in md
+
+
+def test_weak_sanction_older_than_the_fact_with_billing_from_month_one_is_set_aside(tmp_path):
+    """Quest, Tenet St Mary's and Baptist Hospital of Miami led Tier A on a 2008-2015 Florida sanction
+    code (weak tier, no reinstatement date) with 'first post-event month 2018-01' = the fact's first
+    month. The record's end date is missing; the data saw no bar. A hard-tier LEIE exclusion with the
+    same shape stays (there the continuous billing is the fact), and a weak sanction INSIDE the window
+    stays (the billing after it is real)."""
+    rows = []
+    for ym in [f"{y}-{m:02d}" for y in (2018, 2019) for m in range(1, 13)]:
+        for npi in ("1000000011", "1000000012", "1000000013"):
+            rows.append({"billing_npi": npi, "service_month": ym, "total_paid": 50_000.0, "hcpcs_code": "99213"})
+    fact = tmp_path / "spending_fact.parquet"
+    pd.DataFrame(rows).to_parquet(fact, index=False)
+    assert cx.fact_first_month(fact) == "2018-01"
+    excl = pd.DataFrame({"npi": ["1000000011", "1000000012", "1000000013"],
+                         "excl_type": ["state_term:FL:7(C) [GENERAL HOSPITAL]", "1128a1", "state_term:FL:7(C) / SUSPENSION"],
+                         "excl_date": ["2011-04-06", "2011-04-06", "2019-03-01"],
+                         "reinstate_date": [None, None, None], "entity_name": ["OLD FL HOSPITAL", "OLD LEIE", "NEW FL"]})
+    pdim = pd.DataFrame({"npi": excl["npi"], "addr_state": "FL"})
+    events, aside0 = cx.events_with_setaside(excl, None, pdim)
+    assert len(events) == 3 and aside0.empty
+    post = cx.post_event_billing(fact, events)
+    kept, aside = cx.setaside_pre_fact(post, "2018-01")
+    assert aside["npi"].tolist() == ["1000000011"]
+    assert aside["reason"].iloc[0].startswith("weak-tier sanction predates the paid fact (first month 2018-01)")
+    assert aside["excl_type"].iloc[0] == "state_term:FL:7(C) [GENERAL HOSPITAL]" and aside["excl_date"].iloc[0] == "2011-04"
+    assert sorted(kept["npi"]) == ["1000000012", "1000000013"]
+    # an empty frame and a blank first month are no-ops
+    k2, a2 = cx.setaside_pre_fact(post, "")
+    assert len(k2) == len(post) and a2.empty

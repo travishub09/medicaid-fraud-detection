@@ -145,6 +145,65 @@ def event_keep(excl_type: str, provider_state: str = "") -> tuple[bool, str]:
     return True, ""
 
 
+_TIER_IN_DETAIL = re.compile(r"\(tier (\w+)\)")
+
+
+def fact_first_month(spending_path: str | Path, con=None) -> str:
+    """The first service month in the paid fact (YYYY-MM): the window the data can see."""
+    import duckdb
+    own = con is None
+    con = con or duckdb.connect()
+    try:
+        row = con.execute(f"SELECT MIN(substr(CAST(service_month AS VARCHAR), 1, 7)) FROM read_parquet('{_sql(spending_path)}')").fetchone()
+    finally:
+        if own:
+            con.close()
+    return str(row[0] or "")
+
+
+def setaside_pre_fact(post: pd.DataFrame, first_month: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """2026-11-03 (the second current-day run): the top of Tier A was Quest, Tenet St Mary's,
+    Baptist Hospital of Miami and Manatee Memorial on a Florida sanction code from 2008 to 2015,
+    'first post-event month 2018-01' = the first month of the fact, billing in every month since.
+    A WEAK-tier record (an unstated-cause state sanction) that predates the fact, carries no
+    reinstatement date and is followed by billing from the fact's very first month is a record
+    with a missing end date, not a billing bar the data can see: the provider was reinstated (or
+    never barred) before the window opened. Hard-tier records (an LEIE fraud exclusion) stay:
+    there the continuous billing IS the fact. Returns (kept, set_aside_rows)."""
+    if post is None or not len(post) or not first_month:
+        return post, pd.DataFrame(columns=["npi", "name", "excl_type", "excl_date", "reason"])
+    det = post["detail"].fillna("").astype(str)
+    tier = det.str.extract(_TIER_IN_DETAIL)[0].fillna("")
+    ev_month = pd.to_datetime(post["event_date"], errors="coerce").dt.strftime("%Y-%m").fillna("")
+    first_post = post["first_post_month"].fillna("").astype(str)
+    end_open = pd.to_datetime(post["end_date"], errors="coerce").isna() if "end_date" in post.columns else pd.Series(True, index=post.index)
+    m = (post["event"].eq("billing_after_exclusion") & tier.ne("hard") & tier.ne("") & end_open
+         & (ev_month < first_month) & first_post.eq(first_month))
+    why = (f"-tier sanction predates the paid fact (first month {first_month}), no reinstatement date on the "
+           "record, billing from the fact's first month: a record with a missing end date, not a bar the data can see")
+    aside = pd.DataFrame({
+        "npi": post.loc[m, "npi"].astype(str).values, "name": post.loc[m, "name"].fillna("").astype(str).values,
+        "excl_type": det[m].str.replace(r" \(tier \w+\).*$", "", regex=True).values,
+        "excl_date": ev_month[m].values,
+        "reason": (tier[m] + why).values,
+    }, columns=["npi", "name", "excl_type", "excl_date", "reason"])
+    return post[~m].reset_index(drop=True), aside.reset_index(drop=True)
+
+
+def split_owner_matches(owner_excl: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """2026-11-03: the first run of the owner check ranked Kaiser ($1.6B) and Montefiore ($1.4B)
+    first on 'RAMIREZ TERESA' / 'BUTLER JAMES' / 'KLEIN ALAN' name-only matches: 4,632 rows and
+    $128B of name collisions. A probable (normalized-name, no identifier) match is a RESEARCH
+    row, never a ranked Tier A fact. Returns (ranked = exact identifier matches, research = the
+    rest), each in OWNER_EXCL_COLS order."""
+    if owner_excl is None or not len(owner_excl):
+        e = pd.DataFrame(columns=OWNER_EXCL_COLS)
+        return e, e.copy()
+    exact = owner_excl["match_basis"].fillna("").astype(str).str.startswith("exact")
+    return (owner_excl[exact].reset_index(drop=True),
+            owner_excl[~exact].reset_index(drop=True))
+
+
 def events_with_setaside(exclusion_nodes: pd.DataFrame | None,
                          deactivations: pd.DataFrame | None,
                          provider_dim: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -802,6 +861,10 @@ def _sectioned_markdown(t: pd.DataFrame, inputs: dict) -> list[str]:
         if status and status != "computed":
             L += [f"_This check did not run: {status}._"]
             continue
+        if k == "enrolled_after_owner_exclusion" and inputs.get("n_owner_research"):
+            L += [f"_{int(inputs['n_owner_research']):,} name-only (probable) owner matches are listed in "
+                  "contradictions_owner_exclusions_research.csv as research rows, never ranked here: a normalized-name "
+                  "match with no identifier is a name collision until a record says otherwise._", ""]
         if not len(sub):
             L += ["_No rows met the thresholds._"]
             continue
@@ -820,11 +883,12 @@ def to_markdown(t: pd.DataFrame, inputs: dict) -> str:
          "death; individual NPIs whose timed "
          "codes exceed a working day; individual NPIs billing organization-only codes. Each "
          "has innocent explanations listed at the end; rule those out first._", "",
-         f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v and k != 'n_setaside' and not k.endswith('_status'))}._", ""]
+         f"_Inputs: {', '.join(f'{k}={v}' for k, v in inputs.items() if v and not k.startswith('n_') and not k.endswith('_status'))}._", ""]
     if inputs.get("n_setaside"):
         L += [f"_{int(inputs['n_setaside']):,} exclusion record(s) were set aside as NOT a billing bar for the "
               "provider (a state's fine / cap / probation, another state's action against a provider billing "
-              "from elsewhere, OpenSanctions mirrors): contradictions_setaside.csv lists each with the reason._", ""]
+              "from elsewhere, OpenSanctions mirrors, a weak-tier sanction older than the paid fact with billing "
+              "from its first month): contradictions_setaside.csv lists each with the reason._", ""]
     if not len(t):
         return "\n".join(L + ["_No rows met the thresholds._"] + _sectioned_markdown(t, inputs)) + "\n"
     by = t.groupby(["tier", "contradiction"])["post_event_paid"].agg(["size", "sum"])
@@ -952,6 +1016,13 @@ def main() -> None:
               + "; ".join(f"{k}: {v:,}" for k, v in top.items()))
     post = post_event_billing(a.spending, events)
     print(f"[contradictions] providers with any post-event billing: {(post['post_paid'] > 0).sum():,}")
+    fm = fact_first_month(a.spending)
+    post, pre_fact = setaside_pre_fact(post, fm)
+    if len(pre_fact):
+        setaside = pd.concat([setaside, pre_fact], ignore_index=True)
+        setaside.to_csv(out / "contradictions_setaside.csv", index=False)
+        print(f"[contradictions] {len(pre_fact):,} weak-tier sanction(s) predating the fact ({fm}) with billing from its first "
+              f"month set aside (a record with a missing end date) -> contradictions_setaside.csv")
 
     hours = pd.DataFrame(columns=["npi"])
     minutes = Path(a.minutes) if a.minutes else next(
@@ -977,6 +1048,7 @@ def main() -> None:
             succ_status = f"no npi_to_org ({n2o_p})"
             print(f"[contradictions] successor_after_exclusion: skipped ({succ_status})")
     owner_excl, own_status = pd.DataFrame(columns=OWNER_EXCL_COLS), "skipped by --skip-owner-excl"
+    owner_research = pd.DataFrame(columns=OWNER_EXCL_COLS)
     if not a.skip_owner_excl:
         ob_p, ei_p = graph_dir / "edges" / "owned_by_edges.parquet", graph_dir / "edges" / "excluded_in_edges.parquet"
         if ob_p.exists() and ei_p.exists() and n2o_p.exists():
@@ -986,6 +1058,12 @@ def main() -> None:
                 pd.read_parquet(on_p, columns=["node_id", "owner_type"]) if on_p.exists() else None, n2o_p,
                 pd.read_parquet(og_p, columns=["org_node_id", "org_name"]) if og_p.exists() else None)
             own_status = "computed"
+            owner_excl, owner_research = split_owner_matches(owner_excl)
+            if len(owner_research):
+                owner_research.to_csv(out / "contradictions_owner_exclusions_research.csv", index=False)
+                print(f"[contradictions] enrolled_after_owner_exclusion: {len(owner_research):,} name-only (probable) owner "
+                      f"matches are RESEARCH rows, never ranked -> contradictions_owner_exclusions_research.csv; "
+                      f"{len(owner_excl):,} identifier-matched rows ranked")
         else:
             missing = [str(p.name) for p in (ob_p, ei_p, n2o_p) if not p.exists()]
             own_status = f"graph files missing under {graph_dir}: {', '.join(missing)}"
@@ -1004,6 +1082,7 @@ def main() -> None:
     inputs = {"n_setaside": int(len(setaside)), "spending": Path(a.spending).name, "exclusions": Path(a.exclusion_nodes).name if a.exclusion_nodes else "",
               "deactivation": Path(dp).name if dp else "", "matrix": Path(a.matrix).name if a.matrix else "",
               "graph": str(graph_dir) if n2o_p.exists() else "",
+              "n_owner_research": int(len(owner_research)),
               "successor_after_exclusion_status": succ_status, "enrolled_after_owner_exclusion_status": own_status}
     (out / "CONTRADICTIONS.md").write_text(to_markdown(t, inputs), encoding="utf-8")
     (out / "contradictions_summary.json").write_text(json.dumps({
