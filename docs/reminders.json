@@ -208,7 +208,7 @@
    "where": "src/model_a/government_interest.py (Claude updates the code table)",
    "url": "https://oig.hhs.gov/reports-and-publications/workplan/",
    "every_months": 3,
-   "last_done": "2026-08-02",
+   "last_done": "2026-11-03",
    "steps": [
     "Nothing to download \u2014 just tell Claude: 'work plan refresh is due'",
     "Claude re-reads the OIG Work Plan active items and updates the curated table in code"
@@ -1074,6 +1074,17 @@
     "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"grep -h 'RESEARCH\\|providers  \\$' /data/medicaid/model_a/contradictions_20261103b.log | cut -c1-260; grep -n -A 14 'excluded before joining' /data/medicaid/model_a/contradictions_20261103b/CONTRADICTIONS.md | cut -c1-300 | head -20\"",
     "python -m src.reminders --done-task thread_checks_run"
    ]
+  },
+  {
+   "key": "post_download_checks",
+   "what": "New files landed \u2014 run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
+   "commands": [
+    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
+    "python -m src.vintage_inspect --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "python -m src.model_a.scheme_discovery --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "python -m src.reminders --done-task post_download_checks"
+   ],
+   "added": "2026-11-03"
   }
  ],
  "closed": [

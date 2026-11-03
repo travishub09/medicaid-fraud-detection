@@ -40,11 +40,6 @@ _Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-
   - step 2: Download the current full CSV
   - step 3: Save as "...preclean\nadac\nadac_<yyyymm>.csv"
   - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/nadac/*.csv
-- **work_plan** — OIG Work Plan curated table refresh (government_interest overlay)
-  - save to: src/model_a/government_interest.py (Claude updates the code table)  |  https://oig.hhs.gov/reports-and-publications/workplan/
-  - due: 2026-11-02
-  - step 1: Nothing to download — just tell Claude: 'work plan refresh is due'
-  - step 2: Claude re-reads the OIG Work Plan active items and updates the curated table in code
 - **hrsa_340b** — 340B OPAIS Covered Entity Daily Report (contract_pharmacy)
   - save to: preclean/hrsa_340b/ (3-worksheet .xlsx)  |  https://340bopais.hrsa.gov/reports
   - due: 2026-11-02
@@ -398,6 +393,15 @@ ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o
 python -m src.reminders --done-task thread_checks_run
 ```
 
+- [ ] **post_download_checks** — New files landed — run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-11-03)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.vintage_inspect --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+python -m src.reminders --done-task post_download_checks
+```
+
 
 ## After ANY download session (standing rule)
 
@@ -415,3 +419,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+
