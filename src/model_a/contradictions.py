@@ -196,12 +196,30 @@ def split_owner_matches(owner_excl: pd.DataFrame) -> tuple[pd.DataFrame, pd.Data
     $128B of name collisions. A probable (normalized-name, no identifier) match is a RESEARCH
     row, never a ranked Tier A fact. Returns (ranked = exact identifier matches, research = the
     rest), each in OWNER_EXCL_COLS order."""
+    cols = OWNER_EXCL_COLS + ["set_aside_reason"]
     if owner_excl is None or not len(owner_excl):
-        e = pd.DataFrame(columns=OWNER_EXCL_COLS)
-        return e, e.copy()
-    exact = owner_excl["match_basis"].fillna("").astype(str).str.startswith("exact")
-    return (owner_excl[exact].reset_index(drop=True),
-            owner_excl[~exact].reset_index(drop=True))
+        return pd.DataFrame(columns=OWNER_EXCL_COLS), pd.DataFrame(columns=cols)
+    df = owner_excl.copy()
+    exact = df["match_basis"].fillna("").astype(str).str.startswith("exact")
+    # 2026-11-03, the second read: the twelve 'identifier' rows were hospitals whose corporate
+    # director carries a WEAK-tier enrollment end in another state (a Florida 'loss of license'
+    # row on a Virginia hospital's board member) and one Florida FINE. 42 CFR 1001.1901(b)
+    # reaches an OIG exclusion; a state licence action or a fine on the owner is not that bar.
+    # The owner's record gets the same ruler the provider rows get: hard tier AND event_keep.
+    et = df["excl_type"].fillna("").astype(str)
+    tier = classify_series(et)["fca_tier"].values if len(df) else []
+    keep = pd.Series([event_keep(x)[0] for x in et], index=df.index)
+    hard = pd.Series(tier, index=df.index).eq("hard")
+    reason = pd.Series("", index=df.index, dtype=object)
+    reason[~exact] = "probable: a normalized-name match with no identifier (a name collision until a record says otherwise)"
+    reason[exact & ~keep] = "the owner's record is a fine / cap / probation or a mirror, not a bar"
+    reason[exact & keep & ~hard] = ("the owner's record is " + pd.Series(tier, index=df.index).astype(str)
+                                   + "-tier (a licence action, an unstated-cause state or enrollment end, a derivative "
+                                     "exclusion): not an OIG exclusion under 42 CFR 1001.1901")
+    ranked_mask = exact & keep & hard
+    df["set_aside_reason"] = reason
+    return (df.loc[ranked_mask, OWNER_EXCL_COLS].reset_index(drop=True),
+            df.loc[~ranked_mask, cols].reset_index(drop=True))
 
 
 def events_with_setaside(exclusion_nodes: pd.DataFrame | None,
@@ -862,9 +880,11 @@ def _sectioned_markdown(t: pd.DataFrame, inputs: dict) -> list[str]:
             L += [f"_This check did not run: {status}._"]
             continue
         if k == "enrolled_after_owner_exclusion" and inputs.get("n_owner_research"):
-            L += [f"_{int(inputs['n_owner_research']):,} name-only (probable) owner matches are listed in "
-                  "contradictions_owner_exclusions_research.csv as research rows, never ranked here: a normalized-name "
-                  "match with no identifier is a name collision until a record says otherwise._", ""]
+            L += [f"_{int(inputs['n_owner_research']):,} owner rows are listed in "
+                  "contradictions_owner_exclusions_research.csv with a reason and never ranked here: a normalized-name "
+                  "match with no identifier (a name collision until a record says otherwise), or an owner whose record is "
+                  "a weak-tier licence / state action or a fine rather than an OIG exclusion. Ranked rows = identifier "
+                  "match + hard-tier exclusion + a bar._", ""]
         if not len(sub):
             L += ["_No rows met the thresholds._"]
             continue
@@ -1061,9 +1081,11 @@ def main() -> None:
             owner_excl, owner_research = split_owner_matches(owner_excl)
             if len(owner_research):
                 owner_research.to_csv(out / "contradictions_owner_exclusions_research.csv", index=False)
-                print(f"[contradictions] enrolled_after_owner_exclusion: {len(owner_research):,} name-only (probable) owner "
-                      f"matches are RESEARCH rows, never ranked -> contradictions_owner_exclusions_research.csv; "
-                      f"{len(owner_excl):,} identifier-matched rows ranked")
+                why = owner_research["set_aside_reason"].astype(str).str.slice(0, 40).value_counts()
+                print(f"[contradictions] enrolled_after_owner_exclusion: {len(owner_research):,} owner rows are RESEARCH / set-aside "
+                      f"rows, never ranked -> contradictions_owner_exclusions_research.csv ("
+                      + "; ".join(f"{k}: {v:,}" for k, v in why.items()) + f"); "
+                      f"{len(owner_excl):,} rows ranked (identifier match, hard-tier OIG-type exclusion, a bar)")
         else:
             missing = [str(p.name) for p in (ob_p, ei_p, n2o_p) if not p.exists()]
             own_status = f"graph files missing under {graph_dir}: {', '.join(missing)}"

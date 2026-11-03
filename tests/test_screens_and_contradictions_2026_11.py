@@ -283,17 +283,28 @@ def test_owner_matches_split_name_only_rows_into_research_never_the_ranked_table
     ob = owned_by.copy()
     ob["association_date"] = [None, None]
     res = cx.enrolled_after_owner_exclusion(fact, ob, excluded_in, excl_nodes, owner_nodes, n2o, org_nodes)
+    # the second read (same day): exact matches on a WEAK-tier record (a Florida 'loss of licence'
+    # enrollment end on a Virginia hospital's director) and on a FINE led the ranked table; only a
+    # hard-tier OIG-type exclusion that is a bar ranks
+    weak = res.iloc[[0]].copy()
+    weak["org_node_id"], weak["match_basis"] = "org:HOSP", "exact: the owner NPI is on the exclusion list"
+    weak["excl_type"] = "mcd_enroll:FL:TERM - LOSS OF LICENSE OR OTHER STATE ACTION [INDIVIDUAL]"
+    fine = weak.copy()
+    fine["org_node_id"], fine["excl_type"] = "org:FINED", "state_term:FL:7(E) / FINE [HOME HEALTH AGENCY]"
+    res = pd.concat([res, weak, fine], ignore_index=True)
     ranked, research = cx.split_owner_matches(res)
     assert ranked["org_node_id"].tolist() == ["org:LATE"] and ranked["match_basis"].str.startswith("exact").all()
-    assert research["org_node_id"].tolist() == ["org:EARLY"] and research["match_basis"].str.startswith("probable").all()
-    assert list(ranked.columns) == cx.OWNER_EXCL_COLS and list(research.columns) == cx.OWNER_EXCL_COLS
+    assert sorted(research["org_node_id"]) == ["org:EARLY", "org:FINED", "org:HOSP"]
+    why = dict(zip(research["org_node_id"], research["set_aside_reason"]))
+    assert why["org:EARLY"].startswith("probable") and "fine" in why["org:FINED"] and "weak-tier" in why["org:HOSP"]
+    assert list(ranked.columns) == cx.OWNER_EXCL_COLS and list(research.columns) == cx.OWNER_EXCL_COLS + ["set_aside_reason"]
     e1, e2 = cx.split_owner_matches(None)
     assert e1.empty and e2.empty
     t = cx.assemble(pd.DataFrame(columns=["npi", "event", "event_date", "end_date", "detail", "name", "post_paid",
                                           "post_months", "first_post_month", "last_month", "total_paid"]),
                     pd.DataFrame(columns=["npi"]), pd.DataFrame(columns=["npi"]), None, min_post_paid=1.0, owner_excl=ranked)
     md = cx.to_markdown(t, {"enrolled_after_owner_exclusion_status": "computed", "n_owner_research": len(research)})
-    assert "1 name-only (probable) owner matches are listed in contradictions_owner_exclusions_research.csv" in md
+    assert "3 owner rows are listed in contradictions_owner_exclusions_research.csv" in md
     assert "EARLY HOME CARE" not in md and "LATE HOME CARE" in md
 
 
