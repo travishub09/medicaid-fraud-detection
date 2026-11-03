@@ -82,7 +82,13 @@ def harmonize_exclusion_frames(frames: list[pd.DataFrame]) -> list[pd.DataFrame]
     of type str cannot be converted to int, column excl_date": one lane-written file carried
     the date as an integer beside the LEIE's strings, and the concat produced an object
     column pyarrow refuses). Dates become YYYY-MM-DD strings, every identifier / text column a
-    string, missing stays missing; the files on disk are untouched."""
+    string, missing stays missing; the files on disk are untouched.
+
+    2026-11-03: the first version returned pandas' ``string`` extension dtype, whose missing
+    value is ``pd.NA``; v28's resumed rebuild then died one step later in graph_features on
+    ``name or ""`` ("boolean value of NA is ambiguous"). The columns come back as plain
+    OBJECT dtype with ``None`` for missing, which every ``or ""`` / ``str()`` downstream and
+    pyarrow all handle."""
     out = []
     for f in frames:
         if f is None or not len(f):
@@ -93,10 +99,11 @@ def harmonize_exclusion_frames(frames: list[pd.DataFrame]) -> list[pd.DataFrame]
                 continue
             col = f[c]
             if pd.api.types.is_datetime64_any_dtype(col):
-                f[c] = col.dt.strftime("%Y-%m-%d").astype("string")
+                s = col.dt.strftime("%Y-%m-%d").astype("string")
             else:
                 s = col.astype("string")
-                f[c] = s.mask(s.str.strip().isin(["", "nan", "None", "NaT", "<NA>"]), pd.NA)
+            s = s.mask(s.str.strip().isin(["", "nan", "None", "NaT", "<NA>"]), pd.NA)
+            f[c] = s.astype(object).where(s.notna(), None)
         out.append(f)
     return out
 

@@ -71,3 +71,17 @@ def test_exclusion_sources_with_mixed_date_types_concatenate_and_write(tmp_path)
     assert pd.isna(ex.loc[2, "entity_name"])
     ex.to_parquet(tmp_path / "ok.parquet", index=False)           # the write that failed on v28
     assert len(pd.read_parquet(tmp_path / "ok.parquet")) == 3
+    # 2026-11-03: the resumed v28 died one step later on `name or ""` against pd.NA (the string
+    # dtype's missing): the harmonized columns are plain object with None, never pd.NA
+    for col in ("entity_name", "excl_type", "excl_date", "npi"):
+        assert ex[col].dtype == object
+        assert not any(v is pd.NA for v in ex[col])
+    assert (ex.loc[2, "entity_name"] or "") == ""
+    from src.entity_graph.graph_features import compute_graph_features
+    nodes = ex.copy()
+    nodes["node_id"] = [f"exclusion:{i}" for i in range(len(nodes))]
+    orgs = pd.DataFrame({"org_node_id": ["org:X"], "org_name": ["X"], "state": ["FL"]})
+    feats = compute_graph_features(orgs, pd.DataFrame(columns=["node_id"]), nodes,
+                                   pd.DataFrame(columns=["src_id", "dst_id"]), pd.DataFrame(columns=["src_id", "dst_id"]),
+                                   pd.DataFrame(columns=["src_id", "dst_id"]), pd.DataFrame(columns=["src_id", "dst_id"]))
+    assert len(feats) == 1                                        # the identity loop survives a None name

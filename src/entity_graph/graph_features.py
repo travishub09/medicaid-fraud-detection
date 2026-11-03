@@ -352,11 +352,15 @@ def compute_graph_features(org_nodes: pd.DataFrame, owner_nodes: pd.DataFrame,
     # named (entity / type / date) in the dossier rather than left anonymous.
     excl_identity: dict[str, dict] = {}
     if exclusion_nodes is not None and len(exclusion_nodes):
+        def _txt(v) -> str:
+            # a missing value may be None, NaN, NaT or pd.NA (the string dtype's missing,
+            # whose truth value raises): every one of them reads as ""
+            return "" if v is None or (isinstance(v, float) and v != v) or v is pd.NaT or v is pd.NA else str(v)
         for r in exclusion_nodes.itertuples():
             excl_identity[str(r.node_id)] = {
-                "name": str(getattr(r, "entity_name", "") or ""),
-                "type": str(getattr(r, "excl_type", "") or ""),
-                "date": str(getattr(r, "excl_date", "") or ""),
+                "name": _txt(getattr(r, "entity_name", "")),
+                "type": _txt(getattr(r, "excl_type", "")),
+                "date": _txt(getattr(r, "excl_date", "")),
             }
     # community / betweenness were computed above (per scale path).
 
