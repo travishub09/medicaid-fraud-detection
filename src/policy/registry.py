@@ -173,7 +173,10 @@ _GOV_HOST = re.compile(r"\.(gov|us|state\.[a-z]{2}\.us)$|\.(gov|us)/|(medicaid|h
                        r"conduent|dxc|forwardhealth|mihealth|ctdssmap|kymmis|mmisportal|"
                        # 2026-11-01: official codes and state portals on .com / .org hosts
                        r"govt\.westlaw|flrules|myflorida|myflfamilies|wadsworth|casetext\.com/regulation|"
-                       r"regulations\.justia|law\.cornell|ecfr)", re.I)
+                       r"regulations\.justia|law\.cornell|ecfr|"
+                       # 2026-11-04 (the lanes10 quarantine read: 79 Tennessee rule citations refused):
+                       # the Tennessee Secretary of State publishes the rules at publications.tnsosfiles.com
+                       r"tnsosfiles)", re.I)
 _PLAN_HOST = re.compile(r"(molina|centene|wellcare|amerigroup|anthem|uhc|unitedhealth|aetna|humana|caresource|"
                         r"horizon|fidelis|healthfirst|metroplus|emblem|meridian|bcbs|bluecross|sunshine|simply|"
                         r"superior|amerihealth|upmc|geisinger|carefirst|neighborhood|tufts|priority|mdwise|"
@@ -184,7 +187,12 @@ _PLAN_HOST = re.compile(r"(molina|centene|wellcare|amerigroup|anthem|uhc|unitedh
                         r"hpsm|hfproviders|healthfirst|molina|kaiser|blueshield|calopt|ccah|partnership|"
                         r"alameda|sfhp|goldcoast|kernfamily|scfhp|communityhealthchoice|amerigroup|"
                         r"superiorhealth|dellchildrens|firstcare|sendero|bcbstx|sunshinehealth|"
-                        r"humana|aetnabetterhealth|simplyhealthcare|vivida|mcna|uhccommunityplan)", re.I)
+                        r"humana|aetnabetterhealth|simplyhealthcare|vivida|mcna|uhccommunityplan|"
+                        # 2026-11-04 (the lanes10 quarantine read: 568 plan rows refused on their own
+                        # provider sites): the NC / IL / PA / TX / MS / NY / LA plans the lane asks about
+                        r"healthybluenc|carolinacompletehealth|countycare|keystonefirst|bswhealthplan|"
+                        r"swhp|mstruecare|cigna|trinityhealthpace|amidacare|communityfirsthealthplans|"
+                        r"cdphp|louisianahealthconnect|hfprovidermanual)", re.I)
 
 
 def _state_names() -> dict[str, str]:

@@ -182,3 +182,20 @@ def test_poll_research_backs_off_on_429_and_never_marks_the_task_errored(tmp_pat
             raise RuntimeError("connection reset")
     res = pdm.poll_research(reg, tmp_path / "res3.json", transport=Dead(), sleep=waits.append)
     assert res["o1"]["status"] == "poll_failed"
+
+
+def test_domain_gate_admits_the_plan_and_state_hosts_the_lanes10_quarantine_refused():
+    """2026-11-04: 568 plan_policy / policy rows sat in quarantine as 'not on a government or
+    plan domain' while their hosts were the plans the lane itself asked about (Healthy Blue
+    NC, Carolina Complete Health, CountyCare, Keystone First, BSW, True Care, Cigna, CDPHP,
+    Louisiana Healthcare Connections) or the Tennessee Secretary of State's rules host. A
+    CDN host and a plain .com stay refused."""
+    from src.policy.registry import government_domain
+    for u in ("https://provider.healthybluenc.com/x", "https://network.carolinacompletehealth.com/y",
+              "https://countycare.com/p", "[www.keystonefirstpa.com](https://www.keystonefirstpa.com/providers)",
+              "https://publications.tnsosfiles.com/rules/1200/1200-13.pdf", "https://rightcare.swhp.org/a",
+              "https://www.cigna.com/medicaid", "https://www.cdphp.com/providers",
+              "https://www.louisianahealthconnect.com/providers"):
+        assert government_domain(u), u
+    for u in ("https://cop-p-001.sitecorecontenthub.cloud/x", "https://example.com/a", ""):
+        assert not government_domain(u), u
