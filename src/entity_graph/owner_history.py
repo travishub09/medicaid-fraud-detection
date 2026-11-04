@@ -61,8 +61,10 @@ def _q(s: str) -> str:
     return s.replace("'", "''")
 
 
-def owner_rows(data_root: Path, org: str = "", owner: str = "", con=None) -> pd.DataFrame:
-    """One row per (edition, facility, owner) matching the regexes, over every edition."""
+def owner_rows(data_root: Path, org: str = "", owner: str = "", con=None,
+               datasets: list[str] | None = None) -> pd.DataFrame:
+    """One row per (edition, facility, owner) matching the regexes, over every edition
+    (``datasets`` limits the families read: FACILITY = the SNF editions)."""
     files = edition_files(Path(data_root))
     if not files or not (org or owner):
         return pd.DataFrame(columns=COLS)
@@ -71,8 +73,24 @@ def owner_rows(data_root: Path, org: str = "", owner: str = "", con=None) -> pd.
     frames = []
     try:
         for ed, ds, p in files:
-            cols = [r[0] for r in con.execute(
-                f"DESCRIBE SELECT * FROM read_csv_auto('{_q(str(p))}', all_varchar=true, header=true, sample_size=2000)").fetchall()]
+            if datasets and ds.upper() not in {d.upper() for d in datasets}:
+                continue
+            # the shared raw-CSV convention: UTF-8 first, Latin-1 fallback, and a file the
+            # sniffer refuses in strict mode (the 2026-11-04 crash on the Hospital edition)
+            # is read tolerant; one that fails both ways is skipped BY NAME, never fatal
+            read = ""
+            for enc in ("utf-8", "latin-1"):
+                try:
+                    opts = f"all_varchar=true, header=true, ignore_errors=true, strict_mode=false, encoding='{enc}'"
+                    cols = [r[0] for r in con.execute(
+                        f"DESCRIBE SELECT * FROM read_csv_auto('{_q(str(p))}', {opts})").fetchall()]
+                    read = opts
+                    break
+                except Exception as e:      # noqa: BLE001
+                    last = e
+            if not read:
+                print(f"[owner_history] skipped {p.name}: unreadable ({str(last)[:120]})")
+                continue
             if not {"ORGANIZATION NAME", "ASSOCIATE ID - OWNER"} <= set(cols):
                 continue
             sel = []
@@ -88,7 +106,7 @@ def owner_rows(data_root: Path, org: str = "", owner: str = "", con=None) -> pd.
                     where.append("(" + " OR ".join(parts) + ")")
             f = con.execute(
                 f"SELECT '{_q(ed)}' AS edition, '{_q(ds)}' AS dataset, {', '.join(sel)} "
-                f"FROM read_csv_auto('{_q(str(p))}', all_varchar=true, header=true, ignore_errors=true) "
+                f"FROM read_csv_auto('{_q(str(p))}', {read}) "
                 + ("WHERE " + " AND ".join(where) if where else "")).df()
             frames.append(f)
     finally:
@@ -148,10 +166,12 @@ def main() -> None:
     ap.add_argument("--org", default="", help="regex over the facility ORGANIZATION NAME (case-insensitive)")
     ap.add_argument("--owner", default="", help="regex over the owner's LAST NAME / ORGANIZATION NAME - OWNER")
     ap.add_argument("--out", default="", help="Markdown path (default: print)")
+    ap.add_argument("--datasets", default="", help="comma list of families to read (FACILITY = SNF, HOSPITAL, AGENCY, HOSPICE, FQHC, CLINIC); default all")
     a = ap.parse_args()
     root = Path(a.data_root)
-    eds = edition_files(root)
-    rows = owner_rows(root, a.org, a.owner)
+    ds = [d.strip() for d in a.datasets.split(",") if d.strip()] or None
+    eds = [e for e in edition_files(root) if not ds or e[1].upper() in {d.upper() for d in ds}]
+    rows = owner_rows(root, a.org, a.owner, datasets=ds)
     tl = owner_timeline(rows)
     md = to_markdown(tl, eds, a.org, a.owner)
     if a.out:

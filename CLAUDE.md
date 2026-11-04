@@ -1614,6 +1614,28 @@ first, then paste" above every move/done block.
   refused, reruns alone). The lanes ran out of credits a SECOND time overnight (task
   manus_credits_topup carries the lanes7 line). The two complete packet sets were re-issued as v4
   (2026-11-02) with the Accu findings folded in: one zip per audience, never partial documents.
+  THE ANALYST'S OHIO READ (2026-11-03/04): the Secretary of State and county-recorder pulls (Piqua,
+  Wesleyan Village) showed the same people signing for landlord and tenant on the 2021 financing and
+  the 2026 Piqua transfer while the cost reports deny related-party costs (42 CFR 413.17; the money
+  question is which cost-report years fed an Ohio Medicaid rate: a rebasing year, verify the 2023
+  rebasing on CY2022 reports); CMS lists the signatory at one home only from 2025-12 (42 CFR
+  424.516(e)); PBJ Apr-Jun 2026 put seven of eleven Ayden homes in Ohio's bottom quarter on nurse
+  hours (four in the bottom 5 percent, 19 percent agency hours) and Wesleyan Village AT the Ohio
+  average while cited four times for insufficient staff (four immediate-jeopardy findings, $219,798
+  fines, two payment denials), with Madeira / Jackson "steadier than 96 percent of homes". BUILT:
+  `entity_graph/owner_history.py` (every All-Owners edition in DuckDB -> per facility x owner the
+  first / last edition, the association date CMS carries, in-newest; `--datasets FACILITY`; a file
+  the strict sniffer refuses is read tolerant or skipped by name) and `ingest_cms/pbj_signature.py`
+  (per home x quarter over every PBJ nurse file: hprd / RN hprd / agency share = the worthless-
+  services level facts, and the FABRICATION SIGNATURE = identical-day share, whole-hour share,
+  weekend ratio, census correlation, CV, each a one-sided percentile against the state's assessable
+  homes (census >= 20, >= 60 days), `signature` = the mean of the four; `--events` = before / after
+  around a CHOW; innocent explanations first). RULES: worthless services is the highest FCA bar
+  (care so deficient it equals none, Momence Meadows, 7th Cir. 2014), so the Ayden homes' low hours
+  are a records-and-residents case; average reported hours beside repeated insufficient-staffing
+  citations is a contradiction between two of the home's own filings and the PBJ-vs-payroll test is
+  the card; a signatory on a financing is not an owner until the role column says so. Task
+  ohio_analyst_checks carries the three VM lines; every output is work product under enforcement/ohio.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is
