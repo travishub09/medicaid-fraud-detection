@@ -24,10 +24,22 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 RUN="${RUN_DIR:-$DATA/model_a/frozen_${CUT}_${TAG}}"
 # 2026-11-01: mfcu (the state Medicaid Fraud Control Unit sweeps, the owner-run Medicaid-side
 # label) and employer (convicted individuals -> the business that billed for them) join the
-# default set; the budget lines below cap each lane
-LANES="${MANUS_LANES:-cia,names,outcome_refresh,label_verification,commercial,defendant_research,label_review,mfcu,employer,federal_reports,policy,roster_finder,fee_schedule,state_audits,plan_policy}"
+# default set; the budget lines below cap each lane.
+# 2026-11-04 (the credits read): the four CASE-HARVEST lanes that write case rows from an
+# agent's reading of a web page (mfcu, state_audits, commercial, federal_reports) are OUT of
+# the default set. Under the page rule (2026-11-02) 123 of 123 readable cited pages lacked the
+# defendant's name, so those lanes cost the most tasks (about 119 each, 17 states x 7 years)
+# and loaded no training rows. They run only when named in MANUS_LANES (or
+# MANUS_CASE_LANES=1 restores the old default) and only after their prompts require the
+# quoted sentence naming the defendant. The default total per cycle drops to 100.
+CASE_LANES="mfcu,federal_reports,state_audits,commercial"
+if [ "${MANUS_CASE_LANES:-0}" = "1" ]; then
+  LANES="${MANUS_LANES:-cia,names,outcome_refresh,label_verification,defendant_research,label_review,employer,policy,roster_finder,fee_schedule,plan_policy,$CASE_LANES}"
+else
+  LANES="${MANUS_LANES:-cia,names,outcome_refresh,label_verification,defendant_research,label_review,employer,policy,roster_finder,fee_schedule,plan_policy}"
+fi
 MAX_NEW="${MANUS_MAX_NEW:-40}"
-TOTAL="${MANUS_TOTAL:-250}"
+TOTAL="${MANUS_TOTAL:-100}"
 WAIT="${MANUS_WAIT_MINUTES:-240}"
 EVERY="${MANUS_POLL_EVERY:-600}"
 GRAPH="$DATA/graph"

@@ -1636,6 +1636,21 @@ first, then paste" above every move/done block.
   citations is a contradiction between two of the home's own filings and the PBJ-vs-payroll test is
   the card; a signatory on a financing is not an owner until the role column says so. Task
   ohio_analyst_checks carries the three VM lines; every output is work product under enforcement/ohio.
+  THE CREDITS RULE (2026-11-04, operator: "what are the Manus credits being spent on; how do we
+  avoid paying for what does not return proportionate value"): a lane task is one browser-agent
+  run and the grids are large (policy 17 states x 12 topics = 204, plan_policy 61 plans x 2 =
+  122, roster_finder 17 x 7 = 119, the case-harvest lanes mfcu / state_audits / commercial /
+  federal_reports about 119 each at 17 states x 7 years). The lanes that paid: cia (910 rows),
+  label_verification (110 verdicts), outcome_refresh (208), names, defendant_research, and the
+  records lanes (rule text with citations, rates, rosters: one-time, finite). The lanes that did
+  not: the four case-harvest lanes, which under the page rule loaded no training rows (the
+  agents attach invented defendants to real URLs). So `ops/vm/manus_lanes.sh` drops the four
+  from the default set (MANUS_CASE_LANES=1 or MANUS_LANES names them back; their prompts must
+  first require the quoted sentence naming the defendant), MANUS_TOTAL defaults to 100, and the
+  yield table (`ops/vm/lanes_read.py /data/medicaid --no-heads`) is read BEFORE every cycle: a
+  lane loading fewer than one usable row per five tasks sent is paused. Nothing sends unless the
+  operator launches a cycle; a top-up first resumes the tasks already queued at the service
+  (committed spend), then the next cycle sends its budget. `--poll --load` is free.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is

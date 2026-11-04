@@ -354,8 +354,14 @@ re-pull, and `preclean/docgraph/` shared-patient (referral rings).
 Every line runs on the VM (`source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid` first).
 
 ```bash
-# all ten research lanes, unattended: build -> dispatch (credits) -> poll -> load -> report
-MANUS_MAX_NEW=40 MANUS_TOTAL=300 MANUS_WAIT_MINUTES=240 bash ops/vm/manus_lanes.sh cd1
+# the research lanes, unattended: build -> dispatch (credits) -> poll -> load -> report.
+# 2026-11-04 default set = the label lanes + the records lanes (policy, plan_policy, roster_finder,
+# fee_schedule); the four case-harvest lanes (mfcu, state_audits, commercial, federal_reports) are
+# off by default: under the page rule they loaded no training rows at about 119 tasks each.
+# MANUS_CASE_LANES=1 restores them; MANUS_TOTAL defaults to 100 tasks per cycle.
+MANUS_MAX_NEW=40 MANUS_TOTAL=100 MANUS_WAIT_MINUTES=240 bash ops/vm/manus_lanes.sh cd1
+# the yield table before any cycle (prompts / dispatched / completed / loaded / quarantined per lane)
+python ops/vm/lanes_read.py /data/medicaid --no-heads
 # re-poll and re-load the tasks still running (free)
 python -m src.model_a.manus_lanes --data-root /data/medicaid --poll --load
 
