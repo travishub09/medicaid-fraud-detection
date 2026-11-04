@@ -126,7 +126,29 @@ def party_lines(text: str, limit: int = 8) -> list[str]:
     return out
 
 
-def digest_pdf(path: Path, root: Path) -> dict:
+def ocr_available() -> bool:
+    import shutil
+    return bool(shutil.which("tesseract") and shutil.which("pdftoppm"))
+
+
+def ocr_text(path: Path, dpi: int = 200, max_pages: int = 40) -> str:
+    """OCR a scanned PDF: pdftoppm rasterizes each page, tesseract reads it. The recorder
+    sites serve mortgage images with no text layer; this is how their borrower / lender
+    lines reach the digest. Needs the two binaries (Ubuntu: apt-get install -y
+    tesseract-ocr poppler-utils)."""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="filings_ocr_") as tmp:
+        subprocess.run(["pdftoppm", "-r", str(dpi), "-l", str(max_pages), "-png", str(path), str(Path(tmp) / "pg")],
+                       capture_output=True)
+        parts = []
+        for png in sorted(Path(tmp).glob("pg*.png")):
+            r = subprocess.run(["tesseract", str(png), "-", "--psm", "6"], capture_output=True, text=True, errors="replace")
+            parts.append(r.stdout)
+    return "\n".join(parts)
+
+
+def digest_pdf(path: Path, root: Path, ocr: bool = False) -> dict:
     try:
         text, pages = pdf_text(path)
         err = ""
@@ -134,6 +156,15 @@ def digest_pdf(path: Path, root: Path) -> dict:
         text, pages, err = "", 0, str(e)[:160]
     chars = len(text.strip())
     has_text = pages > 0 and chars / max(pages, 1) >= MIN_CHARS_PER_PAGE
+    ocr_used = False
+    if ocr and not has_text and pages > 0 and ocr_available():
+        try:
+            text = ocr_text(path)
+            chars = len(text.strip())
+            has_text = chars / max(pages, 1) >= MIN_CHARS_PER_PAGE
+            ocr_used = has_text
+        except Exception as e:      # noqa: BLE001
+            err = f"ocr: {str(e)[:120]}"
     amounts = [a.replace(" ", "") for a in AMOUNT_RE.findall(text)]
     amount_max = ""
     if amounts:
@@ -149,6 +180,7 @@ def digest_pdf(path: Path, root: Path) -> dict:
         "pages": pages,
         "chars": chars,
         "has_text_layer": has_text,
+        "ocr": ocr_used,
         "doc_type": classify(text) if has_text else ("" if not err else "error"),
         "first_date": dates[0] if dates else "",
         "dates": " | ".join(dict.fromkeys(dates[:6])),
@@ -161,10 +193,17 @@ def digest_pdf(path: Path, root: Path) -> dict:
     }
 
 
-def run(root: Path, out: Path) -> pd.DataFrame:
+def run(root: Path, out: Path, ocr: bool = False) -> pd.DataFrame:
     out.mkdir(parents=True, exist_ok=True)
     pdfs = sorted(p for p in root.rglob("*.pdf") if p.is_file())
-    rows = [digest_pdf(p, root) for p in pdfs]
+    if ocr and not ocr_available():
+        print("[filings_digest] --ocr asked but tesseract / pdftoppm are not installed: scans stay unread "
+              "(Ubuntu: sudo apt-get install -y tesseract-ocr poppler-utils)")
+    rows = []
+    for i, p in enumerate(pdfs, 1):
+        rows.append(digest_pdf(p, root, ocr=ocr))
+        if ocr and i % 10 == 0:
+            print(f"[filings_digest] {i}/{len(pdfs)} ...", flush=True)
     df = pd.DataFrame(rows)
     if len(df):
         with zipfile.ZipFile(out / "filings_text.zip", "w", zipfile.ZIP_DEFLATED) as zf:
@@ -192,7 +231,7 @@ def to_markdown(df: pd.DataFrame, root: Path) -> str:
         L += [f"## {folder}  ({len(g)} files, {int(g['has_text_layer'].sum())} with text)", "",
               "| file | pages | type | first date | largest amount | instrument | parties |", "|---|--:|---|---|--:|---|---|"]
         for r in g.sort_values("file").itertuples():
-            typ = r.doc_type if r.has_text_layer else "(no text layer)"
+            typ = (r.doc_type + (" (ocr)" if getattr(r, "ocr", False) else "")) if r.has_text_layer else "(no text layer)"
             L.append(f"| {r.file} | {r.pages} | {typ} | {r.first_date} | {r.amount_max} | {r.instrument} | {str(r.parties)[:200]} |")
         L.append("")
     nt = df[~df["has_text_layer"]]
@@ -205,10 +244,12 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--root", required=True, help="folder of PDFs (searched recursively)")
     ap.add_argument("--out", required=True, help="output folder for the digest")
+    ap.add_argument("--ocr", action="store_true", help="OCR the scanned PDFs (tesseract + pdftoppm)")
     a = ap.parse_args()
-    df = run(Path(a.root), Path(a.out))
+    df = run(Path(a.root), Path(a.out), ocr=a.ocr)
     n_text = int(df["has_text_layer"].sum()) if len(df) else 0
-    print(f"[filings_digest] {len(df)} PDF(s), {n_text} with a text layer, {len(df) - n_text} scanned -> {Path(a.out) / 'FILINGS_DIGEST.md'}")
+    n_ocr = int(df["ocr"].sum()) if len(df) and "ocr" in df.columns else 0
+    print(f"[filings_digest] {len(df)} PDF(s), {n_text} with a text layer ({n_ocr} by OCR), {len(df) - n_text} scanned -> {Path(a.out) / 'FILINGS_DIGEST.md'}")
     if len(df):
         print(df["doc_type"].value_counts().to_string())
 

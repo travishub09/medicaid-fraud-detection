@@ -61,5 +61,6 @@ def test_digest_classifies_and_zips_texts_and_lists_scans(tmp_path):
     assert "scan.pdf" in (out / "NO_TEXT_LAYER.txt").read_text(encoding="utf-8")
     r = subprocess.run([sys.executable, "-m", "src.enforcement.filings_digest", "--root", str(root), "--out", str(tmp_path / "d2")],
                        capture_output=True, text=True, cwd=Path(__file__).resolve().parents[1])
-    assert r.returncode == 0 and "4 PDF(s), 3 with a text layer, 1 scanned" in r.stdout
+    assert r.returncode == 0 and "4 PDF(s), 3 with a text layer (0 by OCR), 1 scanned" in r.stdout
+    assert fd.run(root, tmp_path / "d4", ocr=True)["has_text_layer"].sum() >= 3   # no OCR binaries here: scans stay unread, no crash
     assert fd.run(tmp_path / "empty", tmp_path / "d3").empty
