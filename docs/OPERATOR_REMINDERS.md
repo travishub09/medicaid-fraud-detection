@@ -343,7 +343,7 @@ ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o
 REM 0b. print v28's registered checks first; line 1 must carry the SAME bars plus the four batch-5b keys (edit it if v28's differ):
 ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "grep -h 'frozen_2023-12_v28' /data/medicaid/model_a/run_registry.jsonl | python3 -c 'import sys,json; [print(json.loads(l).get(\"checks\")) for l in sys.stdin]' | tail -2"
 REM 1. pre-register v29 (copy v28's checks, add the four batch-5b keys):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.run_registry --preregister --tag frozen_2023-12_v29 --series '2023-12 | hard' --expected 'v28 checks + the batch-5b policy keys; solo / field / state rulers read' --check 'hits100 >= 2' --check 'hits250 >= 4' --check 'large_hits50 >= 2' --check 'npi_lift1pct >= 3' --check 'score_scale >= 0.1' --check 'inst_share50 <= 0.2' --check 'top50_jaccard >= 0.6' --check 'train = hard' --check 'policy = hard' --check 'frozen = True' --check 'seeds >= 10' --check 'groups = case_cluster' --check 'broadcast = weight' --check 'priors = none' --check 'prune = none' --check 'embeddings = 0' --check 'fca_reach >= 0.02' --check 'ruler_graph = asof' --check 'facility_rollup = own_ccn' --check 'segment = all' --check 'case_budget = npi100'"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.model_a.run_registry --preregister --tag frozen_2023-12_v29 --goal 'v29 = the first run on batch 5b (case-cluster hits, the ruler on the as-of graph, per-CCN facility inputs, the solo book, the field ruler) under v28 policy' --expected 'v28 checks + the batch-5b policy keys; solo / field / state rulers read' --check 'hits100 >= 2' --check 'hits250 >= 4' --check 'large_hits50 >= 2' --check 'npi_lift1pct >= 3' --check 'score_scale >= 0.1' --check 'inst_share50 <= 0.2' --check 'top50_jaccard >= 0.6' --check 'train = hard' --check 'policy = hard' --check 'frozen = True' --check 'seeds >= 10' --check 'groups = case_cluster' --check 'broadcast = weight' --check 'priors = none' --check 'prune = none' --check 'embeddings = 0' --check 'fca_reach >= 0.02' --check 'ruler_graph = asof' --check 'facility_rollup = own_ccn' --check 'segment = all' --check 'case_budget = npi100'"
 REM 2. launch (tmux v29; the runner's step 2c builds the state-side employers, step 3 the field ruler):
 ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s v29 'HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v29 2023-12 > /data/medicaid/model_a/v29.log 2>&1'"
 REM 3. the read (DONE banner, the registry verdict, the pursuit / large / solo grades, the field ruler counts):
@@ -384,6 +384,32 @@ ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o
 python -m src.reminders --done-task ohio_analyst_checks
 ```
 
+- [ ] **run_packet__frozen_2023-12_v28** — Send the run packet for frozen_2023-12_v28 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-11-04)
+
+```bat
+set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v28
+powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
+REM then upload run_packet.zip to the chat
+python -m src.reminders --done-task run_packet__frozen_2023-12_v28
+```
+
+- [ ] **pursuit_dossier__frozen_2023-12_v28** — Build + dispatch the pursuit dossier for frozen_2023-12_v28 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) (added 2026-11-04)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v28" --dispatch
+python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v28
+```
+
+- [ ] **dossier_poll__frozen_2023-12_v28** — ~30 min after dispatch: collect Manus research into the frozen_2023-12_v28 dossier and send PURSUIT_DOSSIER.md (added 2026-11-04)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v28" --poll
+python -m src.reminders --done-task dossier_poll__frozen_2023-12_v28
+```
+
+- [ ] **registry_verdict__frozen_2023-12_v28** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v28 — close only when you have them (added 2026-11-04)
 
 ## After ANY download session (standing rule)
 

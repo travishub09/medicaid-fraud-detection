@@ -607,6 +607,10 @@ _NATIONAL_NAMES = (
     "AURORA HEALTH CARE", "ADVOCATE AURORA", "CAREDX",
     # v19 dossier (2026-10-22): a Virginia hospital system and a national genetic-testing lab
     "INOVA", "INVITAE",
+    # 2026-11-04: the v28 dossier named five more national chains (Aveanna's acquired
+    # subsidiaries under their old names, two national genetics labs, Caris)
+    "EPIC HEALTH SERVICES", "PREMIER HEALTHCARE SERVICES", "CARIS MPI", "CARIS LIFE SCIENCES",
+    "MYRIAD GENETIC", "AMBRY GENETICS",
     # v21..v25 dossiers (2026-10-25): an Arizona hospital system enrolled under one NPI with no cue
     # word, and a national reference lab (the Quest Diagnostics joint venture)
     "KINGMAN HEALTHCARE", "SONORA QUEST",

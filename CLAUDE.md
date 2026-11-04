@@ -1651,6 +1651,24 @@ first, then paste" above every move/done block.
   lane loading fewer than one usable row per five tasks sent is paused. Nothing sends unless the
   operator launches a cycle; a top-up first resumes the tasks already queued at the service
   (committed spend), then the next cycle sends its budget. `--poll --load` is free.
+  V28 READ-OUT (2026-11-04, `docs/ACCURACY_READOUT_v28_2026-11-04.md`): the second freeze
+  under the label levers (train = hard 2,915, DOJ 2,619, embeddings 0, the state and typed
+  rulers read). HOLD on ONE check: top-50 Jaccard 0.522 (bar 0.6); pursuit 1 / 2 / 2 / 4
+  (random 0.1 / 0.2 / 0.4 / 0.9), large 2 / 2 / 3 / 5 (the best large 16 yet), NPI lift
+  21.2, scale 0.22, inst 0, fca_reach 0.067. One model with v26 / v27 at the deep budgets; the
+  head measures the fold draw. Arms: settlement 0.5 and the encoder knobs identical to the
+  ship; subscores-only loses the NPI grain (lift 6.4); "other" (no subscores) equals the full
+  refit on the operator book; charged / priors +2 at 50 on the draw; mask degenerate; the
+  embeddings arm folder is MISSING from the packet (check the runner's branch before v29's
+  read). SCHEME NEWS: contract_pharmacy 0.705 on the kickback typed ruler (64 positives)
+  while coin-flip on FCA; rendering_identity 0.614 on the state ruler; ownership_integrity
+  INVERTED 0.419 (476; its batch-5b inputs missing); the typed / state rulers veto three
+  prune candidates. Label ablation: doj_case and medicare_revocation carry the forward
+  signal, the state-side sources are inert on the FCA ruler. The dossier named Aveanna's
+  subsidiaries (Epic Health Services, Premier Healthcare Services), Caris, Myriad and Ambry:
+  on `_NATIONAL_NAMES` now; the four operator-run names (NSTX, Andventure, Advanced Pain
+  Management Specialists, Port City Operating) get the free code-mix line first. Not
+  dispatched (HOLD). v29 = batch 5b, same bars + the four policy keys.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is
