@@ -137,8 +137,8 @@ def test_owners_archive_is_idempotent(tmp_path):
     (cur / "notes.csv").write_text("a,b\n1,2\n")                                   # not an All-Owners layout
     rows = oa.archive_editions(tmp_path)
     acts = {r["file"]: r["action"] for r in rows}
-    assert acts["SNF_All_Owners_2026.10.01.csv"] == "copied -> SNF_All_Owners_2026.10.01.csv"
-    assert acts["HHA_All_Owners.csv"].startswith("copied -> HHA_All_Owners_")
+    assert acts["SNF_All_Owners_2026.10.01.csv"] == "copied -> FACILITY_All_Owners_2026.10.01.csv"
+    assert acts["HHA_All_Owners.csv"].startswith("copied -> AGENCY_All_Owners_")
     assert acts["notes.csv"] == "not_all_owners"
     arc = tmp_path / "preclean" / "owners_prior"
     n = len(list(arc.glob("*.csv")))

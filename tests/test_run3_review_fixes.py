@@ -329,13 +329,13 @@ def test_multi_edition_chain_sees_between_edition_churn(tmp_path):
     pd.DataFrame({"ENROLLMENT ID": ["O111"], "ASSOCIATE ID - OWNER": ["P1"]}
                  ).to_csv(cur_d / "SNF_All_Owners_2026.05.01.csv", index=False)
     prior_ds = load_editions(prior_d)
-    assert [d for d, _ in prior_ds["SNF"]] == ["2023-06", "2024-06", "2025-06"]
+    assert [d for d, _ in prior_ds["FACILITY"]] == ["2023-06", "2024-06", "2025-06"]
     turn, chains = multi_edition_turnover(prior_ds, load_editions(cur_d))
     turn = turn.set_index("facility_enrollment_id")
     # P2: one entry (2023->2024) + one exit (2024->2025) = 2 events
     assert turn.loc["O111", "n_owner_entries"] == 1
     assert turn.loc["O111", "n_owner_exits"] == 1
-    assert any(c.startswith("SNF:") for c in chains)
+    assert any(c.startswith("FACILITY:") for c in chains)
 
 
 def test_asof_editions_frozen_churn(tmp_path):
@@ -361,17 +361,17 @@ def test_asof_editions_frozen_churn(tmp_path):
     pd.DataFrame({"ENROLLMENT ID": ["H1"], "ASSOCIATE ID - OWNER": ["Z"]}
                  ).to_csv(prior_d / "HHA_All_Owners_2023-06.csv", index=False)
     merged = merge_editions(load_editions(prior_d), load_editions(cur_d))
-    assert [d for d, _ in merged["SNF"]] == ["2022-06", "2023-06", "2026-05-01"]
+    assert [d for d, _ in merged["FACILITY"]] == ["2022-06", "2023-06", "2026-05-01"]
     pri, cur, skipped = asof_editions(merged, "2023-12")
-    assert set(pri) == {"SNF"}                      # HHA: only 1 pre-cutoff
-    assert any(s.startswith("HHA") for s in skipped)
-    assert [d for d, _ in cur["SNF"]] == ["2023-06"]  # chain ENDS pre-cutoff
+    assert set(pri) == {"FACILITY"}                      # HHA: only 1 pre-cutoff
+    assert any(s.startswith("AGENCY") for s in skipped)
+    assert [d for d, _ in cur["FACILITY"]] == ["2023-06"]  # chain ENDS pre-cutoff
     turn, chains = multi_edition_turnover(pri, cur)
     t = turn.set_index("facility_enrollment_id")
     # 2022-06 -> 2023-06: B exited, C entered; the 2026 edition never touched
     assert t.loc["S1", "n_owner_entries"] == 1
     assert t.loc["S1", "n_owner_exits"] == 1
-    assert chains == ["SNF: 2022-06 → 2023-06"]
+    assert chains == ["FACILITY: 2022-06 → 2023-06"]
 
 
 def test_mixed_cadence_datasets_chain_independently(tmp_path):
@@ -404,7 +404,7 @@ def test_mixed_cadence_datasets_chain_independently(tmp_path):
     assert turn.loc["S1", "n_owner_exits"] == 1
     # FQHC unchanged, and the 2026-06 edition was excluded from its chain
     assert turn.loc["F1", "ownership_turnover"] == 0.0
-    fq = next(c for c in chains if c.startswith("FQHC:"))
+    fq = next(c for c in chains if c.startswith("CENTER:"))
     assert "2026-06" not in fq and "2023-12" in fq
 
 

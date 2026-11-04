@@ -33,12 +33,12 @@ def test_empty_edition_is_skipped_by_name_and_the_chain_continues(tmp_path):
     merged = merge_editions(load_editions(prior, skipped), load_editions(cur, skipped))
     assert sorted(skipped) == ["HHA_All_Owners_2023-10.csv (empty file)",
                                "hospice_2023-12.csv (empty file)"]
-    assert "HHA" not in merged and "HOSPICE" not in merged
+    assert "AGENCY" not in merged and "HOSPICE" not in merged
     pri, cur_ed, _ = asof_editions(merged, "2023-12")
     turn, chains = multi_edition_turnover(pri, cur_ed)
     t = turn.set_index("facility_enrollment_id")
     assert t.loc["O1", "n_owner_entries"] == 1          # P2 entered 2022-06 -> 2023-06
-    assert any(c.startswith("SNF:") for c in chains)
+    assert any(c.startswith("FACILITY:") for c in chains)
 
 
 def test_load_owner_pairs_ignores_an_empty_file(tmp_path):

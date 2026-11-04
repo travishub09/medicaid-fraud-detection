@@ -96,7 +96,11 @@ _SHORT_FAMILY = {"hospital": "HOSPITAL", "snf": "FACILITY", "hha": "AGENCY", "ho
 def _dataset_of(name: str) -> str:
     m = _DATASET_RE.search(name)
     if m:
-        return m.group(1).upper()
+        # 2026-11-04: the operator's archive names the same family three ways
+        # (SNF_All_Owners_2024-06, Skilled_Nursing_Facility_All_Owners_2026.05.01,
+        # snf_2023-12); the short token maps through the same table so one ladder holds them
+        tok = m.group(1).upper()
+        return _SHORT_FAMILY.get(tok.lower(), tok)
     head = re.split(r"[._\-\s]", Path(name).stem, maxsplit=1)[0].lower()
     return _SHORT_FAMILY.get(head, "OWNERS")
 
