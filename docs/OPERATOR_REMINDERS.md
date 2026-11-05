@@ -4,61 +4,7 @@ _As of 2026-11-05. Regenerate/update: `python -m src.reminders` (`--done <key>` 
 
 ## DUE NOW
 
-_Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
-
-- **mue** — CMS MUE quarterly files (practitioner + facility)
-  - save to: preclean/mue/  |  https://www.cms.gov/medicare/coding-billing/national-correct-coding-initiative-ncci-edits/medicare-ncci-medically-unlikely-edits
-  - due: 2026-11-02
-  - step 1: Open the MUE page (url above); download BOTH quarterly zips: 'Practitioner Services MUE Table' + 'Facility Outpatient Hospital Services MUE Table'
-  - step 2: Extract each zip; take the DATA sheet (the AMA-copyright cover sheet is the known trap)
-  - step 3: Save as "...preclean\mue\mue_practitioner_<yyyyQq>.csv" and "...preclean\mue\mue_facility_<yyyyQq>.csv"
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/mue/*.csv or preclean/mue/*.xlsx
-- **pos** — Provider of Services file (quarterly)
-  - save to: preclean/pos/ (current editions to pos_current_hold/ while frozen builds run)  |  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-hospital-non-hospital-facilities
-  - due: 2026-11-02
-  - step 1: Open the POS page (url above) → newest quarter → download the CSV set
-  - step 2: Keep the quarter in every filename (e.g. pos_other_<yyyyQq>.csv)
-  - step 3: IMPORTANT: while the 2023-12 frozen builds are the working runs, save CURRENT editions to preclean\pos_current_hold\ so they never leak into a frozen build
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/pos_current_hold/*.csv or preclean/pos/*.csv
-- **pbj** — PBJ Daily Nurse Staffing (quarterly)
-  - save to: preclean/facility/ (current to facility_current_hold/)  |  https://data.cms.gov/quality-of-care/payroll-based-journal-daily-nurse-staffing
-  - due: 2026-11-02
-  - step 1: Open the PBJ page (url above) → newest quarter → download the Nurse Staffing CSV (the one WITH Hrs_RN columns — the 'non-nurse' file is the known trap)
-  - step 2: Save as "...preclean\facility_current_hold\pbj_daily_staffing_<yyyyQq>.csv" while frozen builds are the working runs (the frozen 2023Q4 edition stays in facility\)
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility_current_hold/pbj_daily_staffing_*.csv or preclean/facility/pbj_daily_staffing_*.csv
-- **care_compare** — Care Compare provider-data archives (hospice measures, NH citations/ownership/penalties)
-  - save to: preclean/facility/ (current to facility_current_hold/)  |  https://data.cms.gov/provider-data/archived-data
-  - due: 2026-11-02
-  - step 1: Open https://data.cms.gov/provider-data/archived-data → 'Hospice care' + 'Nursing homes' → newest month's zip
-  - step 2: From the hospice zip keep Hospice_Provider; from the NH zip keep HealthCitations, Ownership, Penalties, SurveyDates
-  - step 3: Rename each with the month (e.g. Hospice_Provider_<Mon><yyyy>.csv) and save to preclean\facility_current_hold\ (frozen Nov2023 editions stay in facility\)
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/facility_current_hold/*.csv or preclean/facility/Hospice_Provider_*.csv
-- **nadac** — NADAC drug pricing (drug_spread_anomaly)
-  - save to: preclean/nadac/  |  https://data.medicaid.gov/datasets
-  - due: 2026-11-02
-  - step 1: Open https://data.medicaid.gov/datasets and search 'NADAC (National Average Drug Acquisition Cost)'
-  - step 2: Download the current full CSV
-  - step 3: Save as "...preclean\nadac\nadac_<yyyymm>.csv"
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/nadac/*.csv
-- **hrsa_340b** — 340B OPAIS Covered Entity Daily Report (contract_pharmacy)
-  - save to: preclean/hrsa_340b/ (3-worksheet .xlsx)  |  https://340bopais.hrsa.gov/reports
-  - due: 2026-11-02
-  - step 1: Open https://340bopais.hrsa.gov/reports → 'Covered Entity Daily Report' → Excel export (must be the 3-worksheet .xlsx with Contract Pharmacies)
-  - step 2: Save as "...preclean\hrsa_340b\opais_covered_entity_<yyyymmdd>.xlsx"
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/hrsa_340b/*.xlsx or preclean/hrsa_340b/*.csv
-- **clia** — CMS Provider of Services file for CLIA laboratories (certificate type + the reported annual test volume per lab: the 'a lab certified for 600 tests a year billed 105,977' check, feeds lab_testing via clia_volume_ratio / clia_waiver_high_complexity; the analyst downloads it)
-  - save to: preclean/clia/pos_clia_<yyyymm>.csv  |  https://data.cms.gov/provider-characteristics/hospitals-and-other-facilities/provider-of-services-file-clinical-laboratories
-  - due: freshness unknown  (2026-11-02: new (the public thread's CLIA finds). The adapter's column map is a best belief of the POS CLIA layout; paste the header line from the block into chat so the map can be corrected before the first run. On the VM the file is linked to NPIs through the NPPES other-identifier table (ccn_npi_crosswalk --other-ids-out now emits CLIA ids) and name+address.)
-  - step 1: Open data.cms.gov and search 'Provider of Services File - Clinical Laboratories' (the quarterly POS file for CLIA labs; the page lists one CSV per quarter)
-  - step 2: Download the newest quarter's CSV (about 300,000 rows; the columns start with PRVDR_NUM, FAC_NAME, CRTFCT_TYPE_CD)
-  - step 3: Save it as preclean\clia\pos_clia_<yyyymm>.csv in the shared data folder (create the clia folder; <yyyymm> = the quarter's month, e.g. pos_clia_202509.csv)
-  - step 4: Download first, then paste the block: it moves the file, prints its header line so the column names can be checked against the adapter's map (src/ingest_cms/clia.py CLIA_COLS), and closes the item
-  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/clia/pos_clia_*.csv
-
-```bat
-move "%USERPROFILE%\Downloads\POS_CLIA*.csv" "C:\Users\treyr\OneDrive\Desktop\data\preclean\clia\pos_clia_202509.csv" && powershell -Command "Get-Content 'C:\Users\treyr\OneDrive\Desktop\data\preclean\clia\pos_clia_202509.csv' -TotalCount 1" && python -m src.reminders --done clia
-```
-
+Nothing due. Good.
 
 ## COMING UP (30 days)
 
@@ -385,4 +331,3 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
-

@@ -85,6 +85,10 @@ ROSTER_COLS = {
     "attribute_value": ["attribute value", "attribute_value", "bed type", "service/bed"],
 }
 BED_ATTRIBUTE = re.compile(r"bed", re.I)
+# a second capacity column that carries the LICENSING AGENCY's own figure beside a
+# statutory or default one (AZ DD group homes: capacity_adhs beside the A.R.S. 36-551 six)
+_AGENCY_CAPACITY = re.compile(r"^capacity[_ ]?(adhs|dhs|doh|dhhs|dss|agency|official|state|licensed)$", re.I)
+
 OUT_COLS = ["state", "facility_name", "name_key", "addr_line1", "city", "zip", "addr_key",
             "license_type", "license_number", "status", "capacity", "facility_id", "source_file"]
 
@@ -174,6 +178,25 @@ def load_roster(path: str | Path, state: str, column_map: dict[str, str] | None 
     def col(k):
         return df[k].fillna("").astype(str).str.strip() if k in df.columns else pd.Series([""] * n, index=df.index)
 
+    capacity = pd.to_numeric(col("capacity").str.replace(r"[^\d.]", "", regex=True), errors="coerce")
+    # 2026-11-05 (the Arizona rosters): the analyst's DD group-home file carries the
+    # STATUTORY maximum (6, A.R.S. 36-551) in the capacity column on every row and the
+    # agency's own figure in a second column (capacity_adhs, filled for the homes the
+    # agency lists, mostly 3). The agency's number is the licence; the statute is a
+    # ceiling. Where a `capacity_<agency>` column carries a number it replaces the
+    # statutory one; rows without it keep the ceiling (an overstated capacity only makes
+    # the occupancy test more conservative).
+    agency_col = next((c for c in raw.columns if _AGENCY_CAPACITY.match(str(c).strip())), None)
+    if agency_col is not None and len(raw) == n:
+        agency = pd.to_numeric(raw[agency_col].fillna("").astype(str).str.replace(r"[^\d.]", "", regex=True),
+                               errors="coerce")
+        agency.index = df.index
+        use = agency.notna() & (agency > 0)
+        replaced = int((use & capacity.notna() & (agency != capacity)).sum())
+        capacity = capacity.where(~use, agency)
+        print(f"  [licensed_capacity] {p.name}: agency capacity column '{agency_col}' used on {int(use.sum()):,} "
+              f"of {n:,} rows ({replaced:,} differ from the statutory figure); the rest keep the ceiling")
+
     out = pd.DataFrame({
         "state": state.upper(),
         "facility_name": col("facility_name"),
@@ -184,7 +207,7 @@ def load_roster(path: str | Path, state: str, column_map: dict[str, str] | None 
         "license_type": col("license_type"),
         "license_number": col("license_number"),
         "status": col("status"),
-        "capacity": pd.to_numeric(col("capacity").str.replace(r"[^\d.]", "", regex=True), errors="coerce"),
+        "capacity": capacity,
         "facility_id": col("facility_id"),
         "source_file": p.name,
     }, index=df.index)
