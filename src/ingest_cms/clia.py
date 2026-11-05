@@ -86,19 +86,29 @@ CLIA_COLS = {
                          "termination_code"],
     "termination_date": ["TRMNTN_EXPRTN_DT", "trmntn_exprtn_dt", "Termination Expiration Date",
                          "termination_date"],
-    "lab_classification": ["CLIA_LAB_CLSFCTN_CD", "clia_lab_clsfctn_cd", "Lab Classification Code",
-                           "lab_classification_code", "lab_classification"],
+    # 2026-11-05: the first real file (pos_clia_202609.csv, Q3 2026, 686,058 labs, 103 columns)
+    # names these CURRENT_CLIA_LAB_CLSFCTN_CD (plus CLIA_LAB_CLASSIFICATION_CD_1..10, the history),
+    # ACRDTN_SCHDL_CD, FORM_116_TEST_VOL_CNT / FORM_116_ACRDTD_TEST_VOL_CNT (the CMS-116 volumes),
+    # FORM_1557_TEST_VOL_CNT (the survey form's volume, kept apart) and CLIA_MDCR_NUM
+    "lab_classification": ["CURRENT_CLIA_LAB_CLSFCTN_CD", "CLIA_LAB_CLSFCTN_CD", "clia_lab_clsfctn_cd",
+                           "Lab Classification Code", "lab_classification_code", "lab_classification"],
     "general_control": ["GNRL_CNTL_TYPE_CD", "gnrl_cntl_type_cd", "General Control Type Code"],
-    "accreditation_org": ["ACRDTN_TYPE_CD", "acrdtn_type_cd", "Accreditation Type Code"],
+    "accreditation_org": ["ACRDTN_SCHDL_CD", "ACRDTN_TYPE_CD", "acrdtn_type_cd", "Accreditation Type Code"],
+    "medicare_number": ["CLIA_MDCR_NUM", "clia_mdcr_num"],
+    "chow_date": ["CHOW_DT", "chow_dt"],
+    "lab_site_count": ["LAB_SITE_CNT", "lab_site_cnt"],
     # a stated TOTAL annual volume, where the edition carries one
     "annual_volume_total": ["TOT_ANNUAL_TEST_VOL_CNT", "TOTAL_ANNUAL_TEST_VOLUME",
                             "ANNUAL_TEST_VOL_CNT", "ANNUAL_TEST_VOLUME", "annual_test_volume",
                             "Total Annual Test Volume", "TEST_VOL_CNT"],
     # the CMS-116 volumes by certificate / specialty class (summed when no total exists)
-    "annual_volume_accredited": ["ACRDTD_TEST_VOL_CNT", "acrdtd_test_vol_cnt",
-                                 "Accredited Test Volume Count"],
-    "annual_volume_nonaccredited": ["NON_ACRDTD_TEST_VOL_CNT", "non_acrdtd_test_vol_cnt",
-                                    "Non-Accredited Test Volume Count"],
+    "annual_volume_accredited": ["FORM_116_ACRDTD_TEST_VOL_CNT", "ACRDTD_TEST_VOL_CNT",
+                                 "acrdtd_test_vol_cnt", "Accredited Test Volume Count"],
+    "annual_volume_nonaccredited": ["FORM_116_TEST_VOL_CNT", "NON_ACRDTD_TEST_VOL_CNT",
+                                    "non_acrdtd_test_vol_cnt", "Non-Accredited Test Volume Count"],
+    # the CMS-1557 (survey report) volume: an operational column, NOT summed into
+    # clia_annual_volume (it restates a 116 volume for surveyed labs; summing would double count)
+    "annual_volume_1557": ["FORM_1557_TEST_VOL_CNT", "form_1557_test_vol_cnt"],
     "annual_volume_ppm": ["PPMP_TEST_VOL_CNT", "ppmp_test_vol_cnt", "PPM_TEST_VOL_CNT",
                           "PPM Test Volume Count"],
     "annual_volume_waived": ["WVD_TEST_VOL_CNT", "wvd_test_vol_cnt", "WAIVED_TEST_VOL_CNT",

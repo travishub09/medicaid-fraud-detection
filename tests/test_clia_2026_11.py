@@ -316,3 +316,35 @@ def test_scheme_wiring_lint_partition_and_registry():
     assert cov["lab_testing"] == ["clia_volume_ratio", "clia_waiver_high_complexity"]
     s = sub["subscore_lab_testing"]
     assert s.iloc[0] > 0.9 and s.iloc[1] < 0.5 and s.iloc[2] > 0.9      # the ratio clips at 1 raw
+
+
+def test_load_clia_reads_the_real_pos_header_and_keeps_the_1557_volume_apart(tmp_path, capsys):
+    """2026-11-05: the first real file (pos_clia_202609.csv) names the columns
+    CURRENT_CLIA_LAB_CLSFCTN_CD, ACRDTN_SCHDL_CD, FORM_116_TEST_VOL_CNT,
+    FORM_116_ACRDTD_TEST_VOL_CNT, FORM_1557_TEST_VOL_CNT, PPMP / WVD. The two CMS-116
+    volumes and the waived / PPM volumes sum into clia_annual_volume; the CMS-1557 survey
+    volume is resolved (so the *TEST_VOL* fallback never sweeps it in) and NOT summed."""
+    rows = pd.DataFrame({
+        "PRVDR_NUM": ["05D0642827", "05D0642828"],
+        "FAC_NAME": ["GENOME LAB INC", "CORNER CLINIC LLC"],
+        "ST_ADR": ["100 MAIN ST", "200 OAK AVE"], "CITY_NAME": ["SPRINGFIELD", "SHELBY"],
+        "STATE_CD": ["IL", "OH"], "ZIP_CD": ["62701", "44875"],
+        "CRTFCT_TYPE_CD": ["1", "2"], "CRTFCT_EFCTV_DT": ["20200101", "20210315"],
+        "CRTFCT_EXPRTN_DT": ["20260101", "20230314"],
+        "CURRENT_CLIA_LAB_CLSFCTN_CD": ["01", "01"], "ACRDTN_SCHDL_CD": ["3", ""],
+        "CLIA_MDCR_NUM": ["140001", ""], "CHOW_DT": ["", "20240101"], "LAB_SITE_CNT": ["1", "1"],
+        "FORM_116_TEST_VOL_CNT": ["600", ""], "FORM_116_ACRDTD_TEST_VOL_CNT": ["", "40000"],
+        "FORM_1557_TEST_VOL_CNT": ["999999", "999999"],
+        "PPMP_TEST_VOL_CNT": ["", ""], "WVD_TEST_VOL_CNT": ["", "25"],
+    })
+    d = tmp_path / "clia"; d.mkdir()
+    rows.to_csv(d / "pos_clia_202609.csv", index=False)
+    df = C.load_clia(d)
+    by = df.set_index("clia_number")
+    assert by.loc["05D0642827", "clia_annual_volume"] == 600
+    assert by.loc["05D0642828", "clia_annual_volume"] == 40025
+    assert "FORM_1557_TEST_VOL_CNT" not in df.attrs["volume_columns"]
+    assert {"FORM_116_TEST_VOL_CNT", "FORM_116_ACRDTD_TEST_VOL_CNT", "WVD_TEST_VOL_CNT"} <= set(df.attrs["volume_columns"])
+    assert "lab_classification" in df.columns and "medicare_number" in df.columns
+    out = capsys.readouterr().out
+    assert "lab_classification=CURRENT_CLIA_LAB_CLSFCTN_CD" in out
