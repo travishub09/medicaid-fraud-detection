@@ -40,6 +40,11 @@ else
 fi
 MAX_NEW="${MANUS_MAX_NEW:-40}"
 TOTAL="${MANUS_TOTAL:-100}"
+# 2026-11-05 (the lanes12 read: 88 tasks died at the service with "Internal server error"):
+# MANUS_RETRY_ERRORS=1 passes --retry-errors, which forgets the service-failed tasks so the
+# dispatch step re-sends them inside the same budget (a resend spends credits: the
+# operator's go, never the default).
+RETRY_ERRORS="${MANUS_RETRY_ERRORS:-0}"
 WAIT="${MANUS_WAIT_MINUTES:-240}"
 EVERY="${MANUS_POLL_EVERY:-600}"
 GRAPH="$DATA/graph"
@@ -54,7 +59,7 @@ exec > >(tee -a "$LOG") 2>&1
 step() { echo; echo "[lanes] step $1: $2   ($(date '+%F %T'))"; }
 warn() { echo "[lanes] step $1 had a problem ($(date '+%F %T')); continuing (the report says what loaded)"; }
 
-echo "[lanes] started $(date '+%F %T')  lanes=$LANES max_new=$MAX_NEW total=$TOTAL wait=${WAIT}m run=$RUN"
+echo "[lanes] started $(date '+%F %T')  lanes=$LANES max_new=$MAX_NEW total=$TOTAL retry_errors=$RETRY_ERRORS wait=${WAIT}m run=$RUN"
 
 step 0/5 "refresh the lane inputs (label_expansion cia + names)"
 if [ -f "$DATA/preclean/cia/cia_list.csv" ]; then
@@ -69,7 +74,8 @@ fi
 
 step 1/5 "build + dispatch (budget $MAX_NEW per lane, $TOTAL total)"
 python -u -m src.model_a.manus_lanes --data-root "$DATA" ${TAG:+--run-dir "$RUN"} --lanes "$LANES" \
-    --build --dispatch --max-new "$MAX_NEW" --total-budget "$TOTAL" || warn 1
+    --build --dispatch --max-new "$MAX_NEW" --total-budget "$TOTAL" \
+    $( [ "$RETRY_ERRORS" = "1" ] && echo --retry-errors ) || warn 1
 
 step 2/5 "poll for up to ${WAIT} minutes, then load through the gates"
 python -u -m src.model_a.manus_lanes --data-root "$DATA" ${TAG:+--run-dir "$RUN"} --lanes "$LANES" \

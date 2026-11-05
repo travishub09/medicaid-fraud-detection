@@ -104,6 +104,42 @@ def test_discovered_by_the_diagnostics_and_graded(tmp_path):
     assert set(ev.loc[ev["y"] == 1, "npi"]) == {A, F, G} and D in set(ev["npi"])
 
 
+def test_header_only_field_ruler_is_read_and_not_graded(tmp_path):
+    """v29 (2026-11-05): no visit inside the horizon -> a header-only ruler csv; the diagnostics
+    died mapping its EMPTY datetime column (pandas 3 rebuilds an empty mapper as float64).
+    The eval frame reads zero positives and run_diagnostics sets the ruler aside by name."""
+    from src.model_a.accuracy_diagnostics import run_diagnostics
+    run = tmp_path / "run"
+    run.mkdir()
+    empty, _ = fr.build_field_ruler(pd.DataFrame(columns=["org_id", "npi", "date", "outcome", "basis", "note", "source"]),
+                                    "2023-12", "2026-10-28", horizon_months=33)
+    p = run / fr.ruler_filename("2023-12", 33)
+    empty.to_csv(p, index=False)
+    loaded = load_ruler(p)
+    assert len(loaded) == 0 and str(loaded["event_date"].dtype).startswith("datetime64")
+    matrix = pd.DataFrame({"npi": [A, B, C], "provider_on_exclusion": [0, 0, 1]})
+    ev, stats = eval_frame(matrix, loaded, "2023-12", horizon_months=33)
+    assert stats["positives"] == 0 and len(ev) == 2 and ev["event_date"].isna().all()
+    # beside a ruler that carries positives the empty one is listed, never graded, never the headline
+    live = pd.DataFrame({"npi": [A, B], "first_excl_date": ["2024-06-01", "2024-07-01"], "excl_type": "1128a1",
+                         "is_prospective_positive": [1, 1], "was_excluded_pre_cutoff": 0, "undated_exclusion": 0,
+                         "fca_tier": "hard"})
+    live["event_date"] = pd.to_datetime(live["first_excl_date"])
+    book = pd.DataFrame({"org_id": ["org:1", "org:2"], "org_name": ["X", "Y"], "priority_rank": [1, 2],
+                         "member_npis": [A, B], "n_providers": [1, 1], "total_billed": [1e6, 1e6]})
+    big = pd.DataFrame({"npi": [A, B, C, D, E, F, G], "provider_on_exclusion": 0, "org_id": ["org:1", "org:2", "org:3", "org:4", "org:5", "org:6", "org:7"],
+                        "net_paid": 1e5, "f1": [0.9, 0.8, 0.1, 0.2, 0.3, 0.4, 0.5]})
+    res = run_diagnostics(big, {"feature_partition": {"trainable": ["f1"]}}, {"field": loaded, "hard": live}, "2023-12",
+                          priority_list=book, score_source="priority_list", min_damages=0.0, horizon_months=33,
+                          headline="field")
+    assert "field" in res["rulers_skipped"] and "field" not in res["rulers"]
+    assert res["headline_ruler"] == "hard"
+    from src.model_a.accuracy_diagnostics import kpi_block, to_markdown
+    md = to_markdown(res, "t")
+    assert "field (not graded: no positive in the universe)" in md
+    assert not any(k.endswith("_field") for k in kpi_block(res))
+
+
 def test_cli_with_run_dir_registry_date_and_matrix(tmp_path):
     root = tmp_path / "d"
     (root / "enforcement").mkdir(parents=True)

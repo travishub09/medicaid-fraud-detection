@@ -248,10 +248,20 @@ def eval_frame(matrix: pd.DataFrame, ruler: pd.DataFrame, cutoff: str,
     m = matrix[["npi"]].copy()
     m["npi"] = m["npi"].astype(str)
     r = ruler.drop_duplicates("npi").set_index("npi")
-    m["y"] = m["npi"].map(r["is_prospective_positive"]).fillna(0).astype(int)
-    m["event_date"] = m["npi"].map(r["event_date"])
-    m["known"] = m["npi"].map(r["was_excluded_pre_cutoff"]).fillna(0).astype(int).astype(bool)
-    m["undated"] = m["npi"].map(r["undated_exclusion"]).fillna(0).astype(int).astype(bool)
+    if len(r) == 0:
+        # v29 (2026-11-05): the held-out field ruler had no outcome inside the horizon, its
+        # csv was header-only, and pandas 3 rebuilds an EMPTY mapping Series as float64
+        # before mapping, which a datetime column refuses ("Cannot cast DatetimeArray to
+        # dtype float64"): the whole diagnostics step died on a ruler with nothing to grade.
+        m["y"] = 0
+        m["event_date"] = pd.Series(pd.NaT, index=m.index, dtype="datetime64[ns]")
+        m["known"] = False
+        m["undated"] = False
+    else:
+        m["y"] = m["npi"].map(r["is_prospective_positive"]).fillna(0).astype(int)
+        m["event_date"] = pd.to_datetime(m["npi"].map(r["event_date"]), errors="coerce")
+        m["known"] = m["npi"].map(r["was_excluded_pre_cutoff"]).fillna(0).astype(int).astype(bool)
+        m["undated"] = m["npi"].map(r["undated_exclusion"]).fillna(0).astype(int).astype(bool)
     # in-matrix knowledge: a provider the training label already calls positive, or
     # a DOJ case the export resolved before the freeze, was known when the list was built
     m["known"] |= known_in_matrix(matrix)
@@ -1112,11 +1122,27 @@ def run_diagnostics(matrix: pd.DataFrame, manifest: dict, rulers: dict[str, pd.D
     _log(f"{len(matrix):,} matrix rows; rulers {names}; headline {headline}; score source {score_source}")
     # eval frames per ruler (ambiguous = positive under another ruler)
     ev_by: dict[str, pd.DataFrame] = {}
+    res["rulers_skipped"] = {}
     for name in names:
         others = [rulers[o] for o in names if o != name]
         ev, st = eval_frame(matrix, rulers[name], cutoff, horizon_months=horizon_months, other_rulers=others)
+        if st["positives"] == 0:
+            # 2026-11-05: a ruler with no positive in the universe (the field ruler before any
+            # visit lands inside the horizon) has nothing to grade; it is reported, never
+            # graded, and never the headline (its zeros would read as misses)
+            _log(f"ruler {name}: 0 positives in the eval universe ({st['n_eval']:,} rows; "
+                 f"{st['dropped_known']:,} known, {st['dropped_beyond_horizon']:,} beyond the horizon): not graded")
+            res["rulers_skipped"][name] = st
+            continue
         ev_by[name] = ev
         res["rulers"][name] = {"universe": st}
+    names = list(ev_by)
+    if not names:
+        raise ValueError("no ruler carries a positive in the eval universe; nothing to grade")
+    if headline not in ev_by:
+        headline = "fca" if "fca" in ev_by else ("hard" if "hard" in ev_by else names[0])
+        res["headline_ruler"] = headline
+        _log(f"headline ruler re-picked: {headline}")
     # scores
     scores = fold = None
     cols: list[str] = []
@@ -1372,9 +1398,15 @@ def to_markdown(res: dict, run_tag: str = "") -> str:
         u = b["universe"]
         L.append(f"| {name}{' (headline)' if name == h else ''} | {u['n_matrix']:,} | {u['dropped_known']:,} | {u['dropped_undated']:,} | "
                  f"{u['dropped_beyond_horizon']:,} | {u['positives']:,} | {u['n_eval']:,} | {u['ambiguous_negatives']:,} |")
+    for name, u in (res.get("rulers_skipped") or {}).items():
+        L.append(f"| {name} (not graded: no positive in the universe) | {u['n_matrix']:,} | {u['dropped_known']:,} | "
+                 f"{u['dropped_undated']:,} | {u['dropped_beyond_horizon']:,} | 0 | {u['n_eval']:,} | {u['ambiguous_negatives']:,} |")
     L += ["", "_Known at the freeze = a pre-cutoff record under the ruler, an in-matrix positive, or a DOJ case "
           "the export resolved before the cutoff. Ambiguous = positive under another ruler only; section 6 "
           "re-runs the budgets without them._"]
+    if res.get("rulers_skipped"):
+        L += ["", "_A ruler with no positive in the eval universe is listed and not graded (its zeros would read as "
+              "misses): the field ruler reads this way until a visit dated after the list lands inside the horizon._"]
     if any(b.get("reach") for b in res["rulers"].values()):
         L += ["", "| ruler | positives in the eval universe | inside a listed organization's roster | listed organizations with a hit | reach |",
               "|---|--:|--:|--:|--:|"]

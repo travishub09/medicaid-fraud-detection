@@ -1686,7 +1686,16 @@ first, then paste" above every move/done block.
   in; the pre-registration stands). The home-folder as-of facts are moved to
   /data/medicaid/interim/ once. The CLIA file (pos_clia_202609.csv, Daschel 2026-11-04) is
   NOT synced before v29's re-export: it would add a source the pre-registration did not
-  declare (two of its columns feed lab_testing: v30 semantics).
+  declare (two of its columns feed lab_testing: v30 semantics). THE SECOND V29 STOP
+  (2026-11-05 06:39 UTC): the re-export completed on the fixed root and step 7 (the pursuit-book
+  diagnostics) died on the held-out FIELD ruler: no visit lands inside the 33-month horizon,
+  the ruler csv is header-only, and pandas 3 rebuilds an EMPTY mapping Series as float64
+  before `Series.map`, which the datetime column refuses ("Cannot cast DatetimeArray to
+  dtype float64"). FIXED: `eval_frame` reads an empty ruler as zero positives, and
+  `run_diagnostics` sets aside every ruler with no positive in the universe by name
+  (`rulers_skipped`, a row in the report's ruler table, never a grade, never the headline);
+  tests/test_batch5_field_ruler_2026_11.py pins it. v29 resumes at step 7. RULE: a runner
+  branch no run has taken (a ruler file with no rows) is untested until a test writes it.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is
