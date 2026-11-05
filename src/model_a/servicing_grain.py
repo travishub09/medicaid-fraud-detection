@@ -35,6 +35,34 @@ bound on the true intensity, the one-sided direction the scheme reads). The old
 formula (net dollars over the code-month sum) is kept as
 ``sv_paid_per_patient_month_codemonth``.
 
+THE BILLER'S SERVICING MIX (2026-11-05, ``billing_servicing_mix``; export source
+``servicing_mix``, its own partition group so a run grades it on its own). The sv_*
+columns above describe the CLINICIAN; these three describe the BILLING provider: the
+share of its gross (positive) paid dollars that went through servicing NPIs of a kind.
+Every numerator leaves out self-rendered rows (servicing NPI = billing NPI) and rows
+with no servicing NPI; the denominator is every positive dollar the biller was paid.
+
+  srv_hub_share           dollars under servicing NPIs that appear under 10 or more
+                          distinct billing NPIs in the window (THIS biller counted
+                          among the 10; the clinician's own NPI billing for itself is
+                          not a biller it "shows up under")
+  srv_out_of_state_share  dollars under servicing NPIs whose NPPES practice state
+                          differs from the biller's NPPES practice state (rows where
+                          either state is unknown never count; NULL when the
+                          biller's own state is unknown)
+  srv_inactive_share      dollars under servicing NPIs deactivated in NPPES on/before
+                          the first day of the service month and not reactivated by
+                          then (the integrate ``active_at_claim`` month rule; a
+                          reactivation dated before the deactivation is an older
+                          cycle and does not count, as in provider_dim.is_active)
+
+NULL (never 0) for a biller with no positive dollars, and srv_inactive_share is NULL
+everywhere when provider_dim carries no deactivation date. No exclusion list is read.
+KNOWN LIMITS (for the reviewer): provider_dim is TODAY's NPPES, so on a frozen run a
+clinician who moved states after the cutoff reads with the new state (the export has
+no as-of provider_dim; the graph's --asof-nppes covers only the graph), and NPPES keeps
+one deactivation / reactivation pair per NPI, so an earlier cycle is invisible.
+
 Point-in-time: pass the as-of spending parquet (already filtered to pre-cutoff
 months) and nothing here can see the future. Dollars are NEVER re-attributed: the
 billing NPI keeps the money (CLAUDE.md rule 3); these are per-clinician views of the
@@ -133,6 +161,88 @@ def servicing_stats(spending_path: str | Path, cutoff: str | None = None,
     else:
         df["sv_tenure_months"] = pd.Series(dtype=float)
     return df[["npi"] + SV_COLS]
+
+
+SRV_COLS = ["srv_hub_share", "srv_out_of_state_share", "srv_inactive_share"]
+HUB_MIN_BILLERS = 10
+
+
+def _dim_select(cols) -> str:
+    """The provider_dim columns the mix reads, NULL-typed when the table lacks one."""
+    cols = set(cols)
+    st = next((c for c in ("addr_state", "practice_state", "state") if c in cols), None)
+    parts = ["CAST(npi AS VARCHAR) AS npi",
+             (f"NULLIF(UPPER(TRIM(CAST({st} AS VARCHAR))), '') AS st" if st else "CAST(NULL AS VARCHAR) AS st"),
+             ("TRY_CAST(deactivation_date AS DATE) AS deact" if "deactivation_date" in cols
+              else "CAST(NULL AS DATE) AS deact"),
+             ("TRY_CAST(reactivation_date AS DATE) AS react" if "reactivation_date" in cols
+              else "CAST(NULL AS DATE) AS react")]
+    return ", ".join(parts)
+
+
+def billing_servicing_mix(spending_path: str | Path, provider_dim, cutoff: str | None = None,
+                          con=None, hub_min_billers: int = HUB_MIN_BILLERS) -> pd.DataFrame:
+    """Per BILLING NPI: ``npi`` + SRV_COLS (see the module docstring). DuckDB-streamed;
+    ``provider_dim`` is a parquet path or a DataFrame (npi, addr_state,
+    deactivation_date, reactivation_date). ``cutoff`` ("YYYY-MM") keeps service months
+    strictly before it; frozen runs pass the as-of parquet instead."""
+    from src.attempt_2.duck import connect as _duck
+    con = con or _duck()
+    if isinstance(provider_dim, pd.DataFrame):
+        con.register("_srv_pdim", provider_dim)
+        dim_src, dim_cols = "_srv_pdim", list(provider_dim.columns)
+    else:
+        dim_src = f"read_parquet('{_pq(provider_dim)}')"
+        dim_cols = list(con.execute(f"SELECT * FROM {dim_src} LIMIT 0").df().columns)
+    has_deact = "deactivation_date" in dim_cols
+    where = (f"AND substr(CAST(service_month AS VARCHAR), 1, 7) < '{cutoff[:7]}'" if cutoff else "")
+    df = con.execute(f"""
+        WITH s AS (
+            SELECT CAST(billing_npi AS VARCHAR) bn,
+                   CASE WHEN length(CAST(servicing_npi AS VARCHAR)) = 10
+                        THEN CAST(servicing_npi AS VARCHAR) END sv,
+                   TRY_CAST(substr(CAST(service_month AS VARCHAR), 1, 7) || '-01' AS DATE) m0,
+                   GREATEST(CAST(total_paid AS DOUBLE), 0) gross
+            FROM read_parquet('{_pq(spending_path)}')
+            WHERE billing_npi IS NOT NULL AND length(CAST(billing_npi AS VARCHAR)) = 10
+                  AND COALESCE(total_paid, 0) <= 500000000 {where}),
+        dim AS (SELECT * FROM (SELECT {_dim_select(dim_cols)},
+                                      row_number() OVER (PARTITION BY CAST(npi AS VARCHAR)) rn
+                               FROM {dim_src}) WHERE rn = 1),
+        -- distinct billers per clinician, its own NPI billing for itself left out:
+        -- THIS biller is one of them whenever the clinician renders for it
+        hub AS (SELECT sv, COUNT(DISTINCT bn) n_billers FROM s
+                WHERE sv IS NOT NULL AND sv <> bn GROUP BY 1),
+        r AS (
+            SELECT s.bn, s.gross, (s.sv IS NOT NULL AND s.sv <> s.bn) AS other,
+                   h.n_billers, b.st AS b_st, v.st AS v_st,
+                   (v.deact IS NOT NULL AND v.deact <= s.m0
+                    AND NOT (v.react IS NOT NULL AND v.react >= v.deact AND v.react <= s.m0)) AS inactive
+            FROM s LEFT JOIN hub h ON h.sv = s.sv
+                   LEFT JOIN dim b ON b.npi = s.bn
+                   LEFT JOIN dim v ON v.npi = s.sv)
+        SELECT bn AS npi,
+               SUM(gross) AS tg,
+               MAX(b_st) AS b_st,
+               SUM(CASE WHEN other AND n_billers >= {int(hub_min_billers)} THEN gross ELSE 0 END) AS hub,
+               SUM(CASE WHEN other AND b_st IS NOT NULL AND v_st IS NOT NULL AND b_st <> v_st
+                        THEN gross ELSE 0 END) AS oos,
+               SUM(CASE WHEN other AND inactive THEN gross ELSE 0 END) AS inact
+        FROM r GROUP BY bn
+    """).df()
+    out = pd.DataFrame({"npi": df["npi"].astype(str)})
+    tg = df["tg"].where(df["tg"] > 0)
+
+    def _share(num, mask=None):
+        v = (num / tg).clip(0.0, 1.0)
+        return v.where(mask) if mask is not None else v
+
+    out["srv_hub_share"] = _share(df["hub"])
+    out["srv_out_of_state_share"] = _share(df["oos"], df["b_st"].notna())
+    out["srv_inactive_share"] = _share(df["inact"]) if has_deact else float("nan")
+    for c in SRV_COLS:
+        out[c] = out[c].astype(float)
+    return out[["npi"] + SRV_COLS].reset_index(drop=True)
 
 
 def servicing_only_rows(stats: pd.DataFrame, billing_npis, provider_dim: pd.DataFrame,

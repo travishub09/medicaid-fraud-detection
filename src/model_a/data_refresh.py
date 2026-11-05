@@ -31,7 +31,7 @@ import pandas as pd
 DERIVED = {"address", "billing_lm", "graph_embeddings", "growth", "plausibility", "sector_schemes",
            "smoking_gun_timeline", "label", "kickback", "capacity", "entity_graph", "servicing", "mue",
            "drug_markup", "facility_code", "asof_v3", "doj_case", "medicaid_ndc", "medicaid_enrollment",
-           "ownership_churn", "graph_velocity", "nucc", "saturation"}
+           "ownership_churn", "graph_velocity", "nucc", "saturation", "servicing_mix"}
 # source -> reminder key (docs/reminders.json cadence)
 REMINDER_KEY = {
     "facility": "pre_cutoff_editions_2021", "pbj": "pre_cutoff_editions_2021", "pos": "pre_cutoff_editions_2021",
