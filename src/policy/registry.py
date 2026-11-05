@@ -176,7 +176,9 @@ _GOV_HOST = re.compile(r"\.(gov|us|state\.[a-z]{2}\.us)$|\.(gov|us)/|(medicaid|h
                        r"regulations\.justia|law\.cornell|ecfr|"
                        # 2026-11-04 (the lanes10 quarantine read: 79 Tennessee rule citations refused):
                        # the Tennessee Secretary of State publishes the rules at publications.tnsosfiles.com
-                       r"tnsosfiles)", re.I)
+                       r"tnsosfiles|"
+                       # 2026-11-05 (the lanes12 read): the Texas Secretary of State's rules portal
+                       r"appianportalsgov)", re.I)
 _PLAN_HOST = re.compile(r"(molina|centene|wellcare|amerigroup|anthem|uhc|unitedhealth|aetna|humana|caresource|"
                         r"horizon|fidelis|healthfirst|metroplus|emblem|meridian|bcbs|bluecross|sunshine|simply|"
                         r"superior|amerihealth|upmc|geisinger|carefirst|neighborhood|tufts|priority|mdwise|"
@@ -192,7 +194,15 @@ _PLAN_HOST = re.compile(r"(molina|centene|wellcare|amerigroup|anthem|uhc|unitedh
                         # provider sites): the NC / IL / PA / TX / MS / NY / LA plans the lane asks about
                         r"healthybluenc|carolinacompletehealth|countycare|keystonefirst|bswhealthplan|"
                         r"swhp|mstruecare|cigna|trinityhealthpace|amidacare|communityfirsthealthplans|"
-                        r"cdphp|louisianahealthconnect|hfprovidermanual)", re.I)
+                        r"cdphp|louisianahealthconnect|hfprovidermanual|"
+                        # 2026-11-05 (the lanes12 read: 164 policy + 68 plan_policy rows refused on
+                        # their own plan sites): Buckeye (OH), McLaren (MI), Florida Community Care,
+                        # Clear Health Alliance (FL), Jefferson Health Plans (PA), VNS Health (NY),
+                        # Southwest Michigan Behavioral Health and the Detroit Wayne network (MI
+                        # Medicaid behavioral-health plans), Community LIFE (PA), Empire BlueCross
+                        # (NY), Community Care Plan (FL). A document CDN host stays refused.
+                        r"buckeyehealthplan|mclarenhealthplan|fcchealthplan|clearhealthalliance|"
+                        r"jeffersonhealthplans|vnshealthplans|swmbh|commlife|empireblue|dwihn|ccpcares)", re.I)
 
 
 def _state_names() -> dict[str, str]:

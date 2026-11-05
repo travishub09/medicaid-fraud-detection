@@ -195,7 +195,14 @@ def test_domain_gate_admits_the_plan_and_state_hosts_the_lanes10_quarantine_refu
               "https://countycare.com/p", "[www.keystonefirstpa.com](https://www.keystonefirstpa.com/providers)",
               "https://publications.tnsosfiles.com/rules/1200/1200-13.pdf", "https://rightcare.swhp.org/a",
               "https://www.cigna.com/medicaid", "https://www.cdphp.com/providers",
-              "https://www.louisianahealthconnect.com/providers"):
+              "https://www.louisianahealthconnect.com/providers",
+              # 2026-11-05 (the lanes12 read): the plans refused on their own sites + the Texas SOS portal
+              "[www.buckeyehealthplan.com](https://www.buckeyehealthplan.com/providers/x)",
+              "https://www.mclarenhealthplan.org/providers", "https://fcchealthplan.com/providers/manual.pdf",
+              "https://provider.clearhealthalliance.com/x", "https://www.jeffersonhealthplans.com/p",
+              "https://www.vnshealthplans.org/p", "https://www.swmbh.org/providers", "https://www.commlife.org/p",
+              "https://mediprovider.empireblue.com/x", "https://dwihn.org/providers", "https://ccpcares.org/x",
+              "https://texas-sos.appianportalsgov.com/rules/tac"):
         assert government_domain(u), u
     for u in ("https://cop-p-001.sitecorecontenthub.cloud/x", "https://example.com/a", ""):
         assert not government_domain(u), u
