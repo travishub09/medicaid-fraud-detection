@@ -1709,6 +1709,27 @@ def _deactivation_file(folder: Path, log=None, label: str = "nppes_deactivation"
     return dp
 
 
+def _resolve_data_root(data_root: str | None, processed: str | None) -> Path:
+    """The export's data root: --data-root, else MEDICAID_DATA_ROOT, else the PARENT of
+    --processed, else ~/Desktop/data. 2026-11-05 (the v29 stop): the VM runner passes
+    --preclean / --processed / --out and never --data-root, and it does not export
+    MEDICAID_DATA_ROOT, so every frozen run resolved root to /home/ubuntu/Desktop/data:
+    the policy library was 'missing' (it sits under /data/medicaid/processed/policy), the
+    enrollment per-se check found 'no as-of spending fact', and interim/spending_asof_*.parquet
+    plus owner_snapshots/ were written under the home folder. A processed folder names its
+    root by construction (<root>/processed), so that is the fallback before the home default."""
+    if data_root:
+        return Path(data_root)
+    env = os.environ.get("MEDICAID_DATA_ROOT")
+    if env:
+        return Path(env)
+    if processed:
+        p = Path(processed)
+        if p.name == "processed":
+            return p.resolve().parent
+    return Path.home() / "Desktop" / "data"
+
+
 def _asof_spend_path(root: Path, asof_cutoff: str | None) -> Path | None:
     """interim/spending_asof_<cut>.parquet when a frozen run has written it (the per-NPI
     adapters run before the freeze step, so the file exists from the previous run of the
@@ -2930,8 +2951,8 @@ def main() -> None:
     args = ap.parse_args()
     skip = {s.strip().lower() for s in (args.skip_sources or "").split(",") if s.strip()}
 
-    root = Path(args.data_root or os.environ.get(
-        "MEDICAID_DATA_ROOT", str(Path.home() / "Desktop" / "data")))
+    root = _resolve_data_root(args.data_root, args.processed)
+    print(f"  [root] data root = {root}  (interim/, owner_snapshots/, processed/policy/ resolve here)")
 
     # Capture every "[source] …" progress line into a structured audit so the run
     # ends with one SOURCES_REPORT table (used/skipped + reason + file), not a console

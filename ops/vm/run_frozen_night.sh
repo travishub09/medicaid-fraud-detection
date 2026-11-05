@@ -19,6 +19,10 @@ TAG="${1:?tag, e.g. v12}"
 CUT="${2:?freeze month, e.g. 2021-12}"
 REBUILD="${3:-}"
 DATA="${MEDICAID_DATA_ROOT:-/data/medicaid}"
+# 2026-11-05: exported, so every module that reads MEDICAID_DATA_ROOT (the export's interim/,
+# owner_snapshots/ and processed/policy/ paths among them) resolves to the data disk and
+# never to /home/ubuntu/Desktop/data (where v26..v29 wrote the as-of spending fact)
+export MEDICAID_DATA_ROOT="$DATA"
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 RUN="$DATA/model_a/frozen_${CUT}_${TAG}"
 PREV="${PREV_RUN:-}"
@@ -189,7 +193,7 @@ fi
 
 if run_step 2; then
 step 2/13 "the per-NPI matrix (DOJ case labels ON, billing-NPI universe, label_weight, case-cluster groups, seeds=$SEEDS, as-of v3 scores, priors=${CLASS_PRIORS:-none}, prune=${DROP_SCHEMES:-none}, skip=${FROZEN_SKIP:-none})"
-python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH_ASOF" --asof-cutoff "$CUT" --with-analytics \
+python -u -m src.model_a.provider_features_export --data-root "$DATA" --graph-dir "$GRAPH_ASOF" --asof-cutoff "$CUT" --with-analytics \
     --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
     --group-policy case_cluster --class-priors "$CLASS_PRIORS" --drop-schemes "$DROP_SCHEMES" $PRIOR_FLAGS \
     --case-budget "$CASE_BUDGET" --segment "$SEGMENT" \
@@ -199,7 +203,10 @@ grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matr
 grep -q "\[asof_v3\] restored" "$RUN/night_run.log" || { echo "[$TAG] the as-of v3 scores were NOT restored (no '[asof_v3] restored' line) -- stop"; fail 2; }
 STOP_SOURCES="servicing mue sector_schemes medicaid_enrollment billing_lm"; [ "$EMBEDDINGS" = "1" ] && STOP_SOURCES="$STOP_SOURCES graph_embeddings"
 for s in $STOP_SOURCES; do
-  if grep -E "^\| \`$s\` \| .*skipped" "$RUN/SOURCES_REPORT.md" >/dev/null; then
+  # 2026-11-05: the STATUS cell only (`| name | ⏭️ skipped |`); the old pattern matched the word
+  # 'skipped' anywhere in the row and stopped v29 on a USED medicaid_enrollment whose detail
+  # said 'paid-after-end check skipped'
+  if grep -E "^\| \`$s\` \| [^|]*skipped" "$RUN/SOURCES_REPORT.md" >/dev/null; then
     echo "[$TAG] source $s was SKIPPED -- not a full-feature run; stop and paste its SOURCES_REPORT line"; fail 2
   fi
 done

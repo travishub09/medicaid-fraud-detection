@@ -1669,6 +1669,24 @@ first, then paste" above every move/done block.
   on `_NATIONAL_NAMES` now; the four operator-run names (NSTX, Andventure, Advanced Pain
   Management Specialists, Port City Operating) get the free code-mix line first. Not
   dispatched (HOLD). v29 = batch 5b, same bars + the four policy keys.
+  THE V29 STOP AND THE DATA-ROOT DEFECT (2026-11-05): v29's export completed (617,062 x 401,
+  0 calc FAILs) and the runner's skip guard stopped it on medicaid_enrollment, which was USED:
+  the guard matched the word 'skipped' anywhere in the row, and the used row's detail said
+  'paid-after-end check skipped: no as-of spending fact'. Behind that detail the real defect:
+  the VM runners pass --preclean / --processed / --out and never --data-root, and did not
+  export MEDICAID_DATA_ROOT, so the export's `root` defaulted to /home/ubuntu/Desktop/data on
+  the VM for every frozen run v26..v29: the policy library (processed/policy/state_policy.parquet)
+  read as missing (v29 skipped the batch-5b policy source), the enrollment per-se check never
+  found the as-of fact, and interim/spending_asof_<cut>.parquet plus owner_snapshots/ were
+  written under the home folder (the export never saw the owner snapshots owners_archive
+  wrote under /data/medicaid). FIXED: `_resolve_data_root` (--data-root, else the env, else
+  the PARENT of --processed, else the home default; the root is printed), both runners
+  export MEDICAID_DATA_ROOT and pass --data-root, and the guard reads the STATUS cell only.
+  v29 resumes at step 2 (a full re-export, so the policy source and the owner snapshots are
+  in; the pre-registration stands). The home-folder as-of facts are moved to
+  /data/medicaid/interim/ once. The CLIA file (pos_clia_202609.csv, Daschel 2026-11-04) is
+  NOT synced before v29's re-export: it would add a source the pre-registration did not
+  declare (two of its columns feed lab_testing: v30 semantics).
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is

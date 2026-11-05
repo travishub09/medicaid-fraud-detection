@@ -199,3 +199,37 @@ def test_observed_from_parquet_and_cli(tmp_path):
     md = (out.parent / "POLICY_FEATURES.md").read_text()
     assert "max_definitive_per_year" in md and "no observed quantity" in md and "scored" in md
     assert (out.parent / "policy_features.json").exists()
+
+
+def test_export_data_root_falls_back_to_the_processed_folders_parent(tmp_path, monkeypatch):
+    """2026-11-05 (the v29 stop): the VM runner passes --processed and never --data-root, and
+    did not export MEDICAID_DATA_ROOT, so the export resolved its root to ~/Desktop/data and
+    reported the policy library missing (it sat under /data/medicaid/processed/policy) while
+    writing the as-of spending fact under the home folder. The root is now: --data-root,
+    else the env, else the parent of --processed, else the home default."""
+    from src.model_a.provider_features_export import _resolve_data_root
+    monkeypatch.delenv("MEDICAID_DATA_ROOT", raising=False)
+    proc = tmp_path / "data" / "processed"
+    proc.mkdir(parents=True)
+    assert _resolve_data_root(None, str(proc)) == (tmp_path / "data").resolve()
+    assert _resolve_data_root(str(tmp_path / "other"), str(proc)) == tmp_path / "other"
+    monkeypatch.setenv("MEDICAID_DATA_ROOT", str(tmp_path / "env"))
+    assert _resolve_data_root(None, str(proc)) == tmp_path / "env"
+    monkeypatch.delenv("MEDICAID_DATA_ROOT", raising=False)
+    assert _resolve_data_root(None, None).name == "data"
+
+
+def test_runner_skip_guard_reads_the_status_cell_not_the_detail():
+    """The guard regex in both VM runners matches only the status cell: a USED row whose
+    detail says 'paid-after-end check skipped' (v29's medicaid_enrollment) must not stop a run."""
+    import re
+    from pathlib import Path
+    used = "| `medicaid_enrollment` | ✅ used | paid-after-end check skipped: no as-of spending fact for 2023-12 |"
+    skipped = "| `medicaid_enrollment` | ⏭️ skipped | needs processed/medicaid_enrollment_segments.parquet |"
+    for runner in ("ops/vm/run_frozen_night.sh", "ops/vm/run_current_day.sh"):
+        text = Path(runner).read_text(encoding="utf-8")
+        m = re.search(r'grep -E "(\^\\\| \\`\$s\\` \\\| \[\^\|\]\*skipped)"', text)
+        assert m, f"{runner}: the status-cell guard pattern is missing"
+        pat = m.group(1).replace("\\\\", "\\").replace("$s", "medicaid_enrollment")
+        assert not re.search(pat, used), f"{runner}: the guard still stops on a USED row"
+        assert re.search(pat, skipped), f"{runner}: the guard misses a real skip"

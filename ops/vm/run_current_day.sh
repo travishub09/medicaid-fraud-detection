@@ -19,6 +19,7 @@
 set -uo pipefail
 TAG="${1:?tag, e.g. cd1}"
 DATA="${MEDICAID_DATA_ROOT:-/data/medicaid}"
+export MEDICAID_DATA_ROOT="$DATA"   # 2026-11-05: the export's root (interim/, owner_snapshots/, processed/policy/)
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 YM="$(date +%Y%m)"
 RUN="$DATA/model_a/current_${YM}_${TAG}"
@@ -101,7 +102,7 @@ fi
 
 if run_step 2; then
 step 2/6 "the per-NPI matrix on the CURRENT fact (no --asof-cutoff; DOJ case labels ON, billing-NPI universe, seeds=$SEEDS, priors=${CLASS_PRIORS:-none}, prune=${DROP_SCHEMES:-none})"
-python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH" --with-analytics \
+python -u -m src.model_a.provider_features_export --data-root "$DATA" --graph-dir "$GRAPH" --with-analytics \
     --case-db "$CASES" --defendant-npis "$DEFENDANTS" --no-servicing-rows --seeds "$SEEDS" --broadcast-rows weight \
     --group-policy case_cluster --class-priors "$CLASS_PRIORS" --drop-schemes "$DROP_SCHEMES" $PRIOR_FLAGS \
     --case-budget "$CASE_BUDGET" --segment "$SEGMENT" \
@@ -109,7 +110,7 @@ python -u -m src.model_a.provider_features_export --graph-dir "$GRAPH" --with-an
     --processed "$DATA/processed" --out "$RUN" ${CURRENT_SKIP:+--skip-sources "$CURRENT_SKIP"} || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }
 for s in servicing mue sector_schemes medicaid_enrollment billing_lm; do
-  if grep -E "^\| \`$s\` \| .*skipped" "$RUN/SOURCES_REPORT.md" >/dev/null; then
+  if grep -E "^\| \`$s\` \| [^|]*skipped" "$RUN/SOURCES_REPORT.md" >/dev/null; then   # the STATUS cell only (2026-11-05)
     echo "[$TAG] source $s was SKIPPED -- not a full-feature run; stop and paste its SOURCES_REPORT line"; fail 2
   fi
 done
