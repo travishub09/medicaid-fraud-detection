@@ -370,44 +370,6 @@ python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desk
 python -m src.reminders --done-task post_download_checks
 ```
 
-- [ ] **ohio_analyst_checks** — THE ANALYST'S OHIO READ (2026-11-03, two emails; details in his Ohio Entity Research doc, to be saved under data\enforcement\ohio\): (1) the same people sign for landlord and tenant on the 2021 financing and the 2026 Piqua transfer while the cost reports say No to related-party costs (42 CFR 413.17; materiality = which cost-report years fed an Ohio Medicaid rate: the 2023 rebasing on CY2022 reports is the year to check with counsel); (2) CMS lists the signatory at Piqua only from 2025-12 against his 2021 signatures (42 CFR 424.516(e), 30 days): `entity_graph.owner_history` reads every All-Owners edition on the VM and prints first / last edition per owner (line 1); (3) PBJ: seven of eleven Ayden homes in Ohio's bottom quarter for nurse hours, four in the bottom 5 percent, 19 percent agency hours at Piqua and Fairfield; Wesleyan Village at the Ohio average while cited four times for insufficient staff, four immediate-jeopardy findings, $219,798 fines, two payment denials; Madeira and Jackson steadier than 96 percent of homes: `ingest_cms.pbj_signature` ranks every Ohio home per quarter on the fabrication signature (identical days, whole-hour totals, weekend flatness, census decoupling) and the level facts, with before / after around the 2021-12-31 CHOWs (line 2, needs the 12 CCNs: Daschel's workbook or ohio_cost_reports.csv); (4) citations / penalties per CCN through `ingest_cms.ccn_lookup` (line 3). The outputs are work product under /data/medicaid/enforcement/ohio/ (sync up, never git). Close when the three reads are pasted and folded into the Ohio handoff addendum. (added 2026-11-04)
-
-```bat
-REM 1. owner history (when CMS first listed each owner at each home; the SNF editions only):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && git fetch -q origin claude/happy-mccarthy-3skrn3 && (cd /tmp/mfd-tools && git checkout -q --detach origin/claude/happy-mccarthy-3skrn3) && cd /tmp/mfd-tools && source ~/medicaid-fraud-detection/.venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && mkdir -p /data/medicaid/enforcement/ohio && python -m src.entity_graph.owner_history --data-root /data/medicaid --datasets FACILITY --org 'BUCKEYE FOREST|WESLEYAN VILLAGE|NORTHWOOD|EASTWOOD|GARDEN HEALTHCARE|EDGEWOOD MANOR' --out /data/medicaid/enforcement/ohio/OWNER_HISTORY.md 2>&1 | tail -3 | cut -c1-200; grep -v '^$' /data/medicaid/enforcement/ohio/OWNER_HISTORY.md | cut -c1-230 | head -70"
-REM 2. PBJ signature (replace CCN1,CCN2,... with the twelve CCNs; the events file is optional):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /tmp/mfd-tools && source ~/medicaid-fraud-detection/.venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && ls /data/medicaid/preclean/facility/pbj_daily_staffing* /data/medicaid/preclean/facility_current_hold/pbj_daily_staffing* 2>/dev/null; python -m src.ingest_cms.pbj_signature --pbj-dir /data/medicaid/preclean/facility --pbj-dir /data/medicaid/preclean/facility_current_hold --state OH --ccns CCN1,CCN2 --out /data/medicaid/enforcement/ohio/pbj_signature 2>&1 | tail -3; grep -v '^$' /data/medicaid/enforcement/ohio/pbj_signature/PBJ_SIGNATURE.md | cut -c1-260 | head -40"
-REM 3. citations / penalties / survey dates for one CCN (repeat per CCN):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /tmp/mfd-tools && source ~/medicaid-fraud-detection/.venv/bin/activate && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.ingest_cms.ccn_lookup --dir /data/medicaid/preclean/facility --ccn CCN1 --out /data/medicaid/enforcement/ohio/ccn_CCN1.md | tail -1; grep -v '^$' /data/medicaid/enforcement/ohio/ccn_CCN1.md | cut -c1-220 | head -40"
-python -m src.reminders --done-task ohio_analyst_checks
-```
-
-- [ ] **run_packet__frozen_2023-12_v28** — Send the run packet for frozen_2023-12_v28 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-11-04)
-
-```bat
-set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v28
-powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
-REM then upload run_packet.zip to the chat
-python -m src.reminders --done-task run_packet__frozen_2023-12_v28
-```
-
-- [ ] **pursuit_dossier__frozen_2023-12_v28** — Build + dispatch the pursuit dossier for frozen_2023-12_v28 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) (added 2026-11-04)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v28" --dispatch
-python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v28
-```
-
-- [ ] **dossier_poll__frozen_2023-12_v28** — ~30 min after dispatch: collect Manus research into the frozen_2023-12_v28 dossier and send PURSUIT_DOSSIER.md (added 2026-11-04)
-
-```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v28" --poll
-python -m src.reminders --done-task dossier_poll__frozen_2023-12_v28
-```
-
-- [ ] **registry_verdict__frozen_2023-12_v28** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v28 — close only when you have them (added 2026-11-04)
 
 ## After ANY download session (standing rule)
 
@@ -425,4 +387,3 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
-

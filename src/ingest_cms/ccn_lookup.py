@@ -33,16 +33,35 @@ def rows_for_ccn(path: str | Path, ccn: str, con=None) -> pd.DataFrame | None:
     has no CCN column. CCNs compare zero-padded to 6 and with spaces removed."""
     con = con or _duck_connect()
     path = str(path)
-    enc = _csv_encoding(con, path)
-    hdr = [r[0] for r in con.execute(
-        f"DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}')", [path]).fetchall()]
-    col = _resolve_columns(hdr, CCN_COLS).get("ccn")
+    want = str(ccn).strip().replace(" ", "").zfill(6)
+    # 2026-11-05: NH_Penalties_Nov2021.csv carries a CP1252 curly apostrophe (byte 0x92)
+    # on line 2,375; the one-row encoding sniff said UTF-8, the full scan raised, and
+    # DuckDB's own 'latin-1' decoder refuses the 0x80-0x9F range CP1252 uses, so the
+    # file read as "neither UTF-8 nor Latin-1" and every Ohio ccn file's Nov-2021 penalty
+    # section said 'could not read'. DuckDB first; on any read failure the file goes
+    # through pandas with Python's Latin-1 (which decodes every byte), the shared
+    # raw-CSV convention of clean_data.read_csv_text. These files are tens of MB.
+    try:
+        enc = _csv_encoding(con, path)
+        hdr = [r[0] for r in con.execute(
+            f"DESCRIBE SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}')", [path]).fetchall()]
+        col = _resolve_columns(hdr, CCN_COLS).get("ccn")
+        if not col:
+            return None
+        q = (f"SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}') "
+             f"WHERE lpad(replace(trim(\"{col}\"), ' ', ''), 6, '0') = ?")
+        return con.execute(q, [path, want]).df()
+    except Exception:  # noqa: BLE001 - the pandas fallback is the point
+        pass
+    try:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="utf-8")
+    except UnicodeDecodeError:
+        df = pd.read_csv(path, dtype=str, keep_default_na=False, encoding="latin-1")
+    col = _resolve_columns(list(df.columns), CCN_COLS).get("ccn")
     if not col:
         return None
-    want = str(ccn).strip().replace(" ", "").zfill(6)
-    q = (f"SELECT * FROM read_csv_auto(?, all_varchar=true, encoding='{enc}') "
-         f"WHERE lpad(replace(trim(\"{col}\"), ' ', ''), 6, '0') = ?")
-    return con.execute(q, [path, want]).df()
+    key = df[col].astype(str).str.strip().str.replace(" ", "", regex=False).str.zfill(6)
+    return df[key == want].reset_index(drop=True)
 
 
 def _pipe_table(df: pd.DataFrame) -> str:

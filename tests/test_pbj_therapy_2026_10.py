@@ -119,3 +119,19 @@ def test_missing_discipline_reads_not_in_file(tmp_path):
     assert s["slp_in_file"] is False and s["ot_in_file"] is True
     md = to_markdown("365162", days, None, s)
     assert "| SLP | not in file |" in md
+
+
+def test_ccn_lookup_survives_a_latin1_byte_beyond_the_first_row(tmp_path):
+    """2026-11-05: NH_Penalties_Nov2021.csv carries a CP1252 apostrophe on line 2,375; the
+    one-row encoding sniff said UTF-8 and the full scan raised, so the Nov-2021 penalty
+    section of every Ohio ccn file read 'could not read'. The scan now retries as Latin-1."""
+    from src.ingest_cms.ccn_lookup import rows_for_ccn
+    p = tmp_path / "NH_Penalties_Nov2021.csv"
+    body = ('"CMS Certification Number (CCN)","Provider Name","Fine Amount"\r\n'
+            '"365162","WESLEYAN VILLAGE","1000"\r\n'
+            '"075338","GOVERNOR\x92S HOUSE","9750"\r\n'
+            '"365162","WESLEYAN VILLAGE","2500"\r\n')
+    p.write_bytes(body.encode("latin-1"))
+    df = rows_for_ccn(p, "365162")
+    assert df is not None and len(df) == 2
+    assert sorted(df["Fine Amount"].tolist()) == ["1000", "2500"]
