@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-11-05. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-11-06. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -281,15 +281,13 @@ REM C. close:
 python -m src.reminders --done-task repo_remotes_equityable
 ```
 
-- [ ] **v29_run** — v29 (pre-registered 2026-11-04 17:25 UTC, 21 checks). The re-export on the fixed data root completed overnight (steps 2 to 6 done: matrix, rulers, lists, OOF scores), then step 7 (the pursuit-book diagnostics) FAILED at 2026-11-05 06:39 UTC on the held-out FIELD ruler: no visit lands inside the 33-month horizon, its csv is header-only, and pandas 3 cannot map an empty datetime column. Fixed 2026-11-05: an empty ruler is read and set aside by name, never graded. ORDER: (0) the server pulls the fix over the deploy key; (1) resume v29 at step 7 in the same folder (the diagnostics on three books, the arms, the dossier, registration, measurement, the ledger: a few hours); (2) the read. Do NOT sync preclean (the CLIA file) until v29 is DONE: a source the pre-registration did not declare. The DONE banner is the signal; then python -m src.reminders --run-complete frozen_2023-12_v29. (added 2026-11-02)
+- [ ] **v29_run** — v29 DONE on the server (banner read 2026-11-06; the resume at step 7 after the empty-field-ruler fix ran steps 7 to 13). OPEN until the read-out: the packet comes down as a tar (task run_packet__frozen_2023-12_v29), Claude writes docs/ACCURACY_READOUT_v29, the registry verdict is returned (task registry_verdict__frozen_2023-12_v29). The CLIA file goes to the server NOW (v30 semantics; it was held off until DONE). Pre-registered 2026-11-04 17:25 UTC, 21 checks (the v28 seventeen + ruler_graph = asof, facility_rollup = own_ccn, segment = all, case_budget = npi100). (added 2026-11-02)
 
 ```bat
-REM 0. pull the fixed code on the server (the deploy key; plain pull):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux ls 2>/dev/null | grep -q -E '^v2[0-9]' && echo 'a run is going: wait' || (git pull --ff-only && git log --oneline -1)"
-REM 1. resume v29 at step 7 (same run folder, every earlier artifact reused, the pre-registration untouched):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && tmux new -d -s v29 'RESUME_FROM=7 HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v29 2023-12 >> /data/medicaid/model_a/v29.log 2>&1' && sleep 2 && tmux ls"
-REM 2. the read (DONE banner, the registry verdict, the pursuit / large / solo grades, the field ruler set aside):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "grep -E 'DONE|FAILED|step [0-9]' /data/medicaid/model_a/frozen_2023-12_v29/night_run.log | tail -25; grep -E 'ruler field|not graded' /data/medicaid/model_a/frozen_2023-12_v29/night_run.log | tail -4; tail -5 /data/medicaid/model_a/MODEL_RUNS.md"
+REM 1. the DONE line + the registry verdict + the field ruler set aside:
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "grep -E \"DONE|FAILED\" /data/medicaid/model_a/frozen_2023-12_v29/night_run.log | tail -3; grep -E \"ruler field|not graded\" /data/medicaid/model_a/frozen_2023-12_v29/night_run.log | tail -3; tail -5 /data/medicaid/model_a/MODEL_RUNS.md"
+REM 2. CLIA to the server (held until DONE; v30 is the first run that carries it):
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "mkdir -p /data/medicaid/preclean/clia" && scp -i C:\Users\treyr\.ssh\medicaid-vm.pem "C:\Users\treyr\OneDrive\Desktop\data\preclean\clia\pos_clia_202609.csv" ubuntu@3.17.37.139:/data/medicaid/preclean/clia/ && ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "ls -la /data/medicaid/preclean/clia/"
 ```
 
 - [ ] **manus_credits_topup** — THE CREDITS RULE (2026-11-04). The lanes10 cycle is sending the full grid (policy 204 tasks, plan_policy 122, roster_finder 119, and the four case-harvest lanes mfcu / state_audits / commercial / federal_reports at about 119 each). The case-harvest lanes loaded NO training rows under the page rule (123 of 123 readable cited pages lacked the defendant), so from this bundle manus_lanes.sh drops them from the default set and caps a cycle at 100 tasks. Nothing sends unless a cycle is launched; a top-up first resumes the tasks already queued at the service (committed spend). ORDER: (1) line 1 = the yield table (free): read loaded vs dispatched per lane; (2) line 2 = poll and load only (free) whenever answers are wanted; (3) line 3 = the next cycle (CREDITS), the records lanes + the label residues only, 100 tasks: run it only when the table shows the records lanes still short of their grids (policy 204 / plan_policy 122 / roster_finder 119); (4) close this task when policy, plan_policy and roster_finder read prompts = dispatched and every label lane's residue is sent. 2026-11-05 (the lanes12 read): paying lanes = policy, plan_policy, state_audits, outcome_refresh, roster_finder (one-time, 39 cells left); paused = employer (0 of 80 loaded: no employer NPI found on 713 of 890 rows), fee_schedule (every row refused for no url until the prompt demands the citation column), the case-harvest lanes; 88 tasks died at the service (Internal server error) and resend under MANUS_RETRY_ERRORS=1. (added 2026-11-02)
@@ -314,6 +312,35 @@ python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desk
 python -m src.reminders --done-task post_download_checks
 ```
 
+- [ ] **run_packet__frozen_2023-12_v29** — Pull the v29 run packet off the server (every report + audit file + the arms, zero raw data) and upload the tar to the chat: Claude cannot see the run finished, so this tar IS the run's arrival. (added 2026-11-06)
+
+```bat
+REM 1. pack on the server (the DONE banner's own line):
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/frozen_2023-12_v29 && tar -czf /home/ubuntu/run_packet_v29.tar.gz *.md *.json *.csv ab_* 2>/dev/null; ls -la /home/ubuntu/run_packet_v29.tar.gz"
+REM 2. copy it to the laptop, then upload run_packet_v29.tar.gz to the chat:
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v29.tar.gz "%USERPROFILE%\Desktop\run_packet_v29.tar.gz"
+REM 3. reports back to OneDrive (optional, runs on the server):
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && bash ops/vm/sync_data.sh up frozen_2023-12_v29"
+python -m src.reminders --done-task run_packet__frozen_2023-12_v29
+```
+
+- [ ] **pursuit_dossier__frozen_2023-12_v29** — The runner already built the v29 pursuit dossier (step 9: PURSUIT_DOSSIER.md in the run folder, operator-book pick, verdicts file honoured). DISPATCH is gated: the rule is no Manus credits on a HOLD run, so this waits for the registry verdict and the operator's word. If v29 reads PROMOTE (or the operator says dispatch anyway), run the dispatch on the server in tmux, never through a bare ssh (the plain --poll died silently three times in an ssh session). (added 2026-11-06)
+
+```bat
+REM only on the operator's word, after the read-out:
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && tmux new -d -s v29dossier 'python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v29 --operator-book --dispatch >> /data/medicaid/model_a/frozen_2023-12_v29/dossier_dispatch.log 2>&1' && sleep 2 && tmux ls"
+python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v29
+```
+
+- [ ] **dossier_poll__frozen_2023-12_v29** — About 30 minutes after a v29 dossier dispatch: poll the research into the dossier on the server and bring PURSUIT_DOSSIER.md to the chat. Skip (close) if the dossier was never dispatched. (added 2026-11-06)
+
+```bat
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.pursuit_dossier --run-dir /data/medicaid/model_a/frozen_2023-12_v29 --poll-only 2>&1 | tail -15"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/model_a/frozen_2023-12_v29/PURSUIT_DOSSIER.md "%USERPROFILE%\Desktop\PURSUIT_DOSSIER_v29.md"
+python -m src.reminders --done-task dossier_poll__frozen_2023-12_v29
+```
+
+- [ ] **registry_verdict__frozen_2023-12_v29** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v29 — close only when you have them (added 2026-11-06)
 
 ## After ANY download session (standing rule)
 
