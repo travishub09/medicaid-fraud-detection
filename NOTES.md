@@ -49,6 +49,26 @@ never by name (the team rule).
 - Shared files I don't edit directly: `CLAUDE.md`, `docs/reminders.json` (the operator's).
   The operator's reminder list is not mine to work through in my sessions.
 
+## My objectives (set 2026-11-06; remind me of these and tick them off here)
+
+- [ ] **Reduce bloat** (scope to agree: the codebase, the docs, or the run folders?).
+- [ ] **Run the model myself**: v30 is the first one (plan below).
+- [ ] **Add the Tier A check** (rendering NPI deactivated at service time): my next PR.
+- [ ] **Fix why v29 failed**: HOLD on top-50 stability 0.599 vs 0.6; first find out why the
+      pursuit-list measure did not run (`acc_top50_jaccard_book = None`).
+- [ ] **Fix the leakage we found**: the export reads today's NPPES on frozen runs; build an
+      as-of `provider_dim` (on the operator's backlog; agree it with the operator first).
+- [ ] **Finish the state capacity rosters**: NH, NY, TEN (Tennessee?) (licensed-facility
+      rosters that give each facility's licensed capacity; NJ and NY were the first loaded).
+- [ ] **Send the operator a master list** of everything I've done and where each piece is saved.
+- [ ] **Finish the Ohio recordings** (the Ohio records work; details stay in the work-product
+      folder, never in this file).
+- [ ] **Read the PurpleLab emails** (the claims-data proof of concept; the plan's outline is
+      `docs/ANALYST_BRIEFING_2026-10-26.md` section 8).
+- [ ] **Learn about .md (Markdown) files**: how they work and how the project uses them.
+- [ ] **Make sure I can test model features** myself (the test suite on fake data, and a
+      full-size check on the VM).
+
 ## Current state (2026-11-06)
 
 - **PR #2 merged** (2026-11-06): three "ghost staff" features in `src/model_a/servicing_grain.py`
