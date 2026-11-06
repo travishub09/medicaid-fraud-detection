@@ -1696,6 +1696,29 @@ first, then paste" above every move/done block.
   (`rulers_skipped`, a row in the report's ruler table, never a grade, never the headline);
   tests/test_batch5_field_ruler_2026_11.py pins it. v29 resumes at step 7. RULE: a runner
   branch no run has taken (a ruler file with no rows) is untested until a test writes it.
+  THE ANALYST'S FIRST PULL REQUEST (2026-11-05, merged 2026-11-06; the ghost-staff idea):
+  `servicing_grain.billing_servicing_mix` = three BILLING-provider shares of gross paid
+  dollars on the as-of fact, self-rendered rows out of every numerator: `srv_hub_share`
+  (through servicing NPIs that render for 10+ distinct billers), `srv_out_of_state_share`
+  (the clinician's NPPES state differs from the biller's; unknown states never count),
+  `srv_inactive_share` (the clinician's NPI deactivated on/before the service month and not
+  reactivated, the active_at_claim rule); NULL never 0; export source `servicing_mix` with
+  its OWN partition group (the per-group ablation grades it alone), merged m:1 onto the
+  billing rows (never a new row), vintage current_state, `--skip-sources servicing_mix`
+  honoured, not in any scheme weight. v30 SEMANTICS beside the CLIA source: a run carrying
+  either is a new pre-registration. THE KNOWN LIMIT HE NAMED IS REAL AND OLDER THAN HIS CODE:
+  the export has no as-of provider_dim (processed/provider_dim.parquet is today's NPPES; the
+  export reads it in some 30 places for taxonomy, entity type, state, address and
+  deactivation), the as-of NPPES resolver (`freeze_inputs`) feeds only the graph build, and
+  the vintage map classes every such source current_state. BACKLOG: build
+  processed/provider_dim_asof_<cut>.parquet from the as-of NPPES in the frozen runner's step
+  0 and point the export's provider_dim reads at it under a freeze (a point-in-time
+  improvement, not a label leak: the label never enters provider_dim). RULES for the team's
+  pull requests: a branch starts from the integration branch, never from main until main
+  carries the platform; the operator merges (a merge commit, the author's commit kept), runs
+  the full suite on the merge, pushes, and the laptop forward closes the pull request on the
+  organization repo by itself; a new export source is never a silent change to a running
+  series.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is
