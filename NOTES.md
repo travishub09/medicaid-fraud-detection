@@ -98,6 +98,14 @@ never by name (the team rule).
      `HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v30 2023-12`.
   5. After the export step, confirm `servicing_mix` reads "used" in the run's
      `SOURCES_REPORT.md`; if skipped, stop the run.
+  6. After the run: read `SOURCE_ABLATION.md` in the run folder. Its per-group row for
+     `servicing_mix` (the run re-scored without my three features) is the answer to "did
+     my features help?". Also read them on the pursuit/operator books and the state ruler.
+- **Operator's PR #2 answers (2026-11-06)**: `srv_inactive_share` trains; `current_state`
+  label stays until the leak fix; hub rule as built. Side note (optional FYI to the
+  operator, not sent): his reason "billing_after_deactivation already trains" does not
+  match the code (it is on `LEAKAGE_HARD`); his conclusion still holds (deactivation is not
+  in the hard-tier training label, self rows are excluded, the single-column screen).
 - **Next PR (requested by the operator)**: Tier A contradiction = paid months under a rendering
   NPI deactivated at service time, innocent explanations printed first. Start by reading
   `src/model_a/contradictions.py` and explaining the existing deactivation check before coding.
