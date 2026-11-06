@@ -1,0 +1,107 @@
+# Analyst notes (personal working notes for the analyst's Claude sessions)
+
+This file lives ALONE on branch `daschel/notes` (no project code; never merged, never a pull
+request). It is NOT private: anyone with access to the repository can read it. Work notes only:
+no passwords, keys or tokens, no data, no lead lists or case work product, and people by ROLE,
+never by name (the team rule).
+
+## For Claude: how to use this file
+
+1. At the start of a session, read it with
+   `git fetch origin daschel/notes && git show origin/daschel/notes:NOTES.md`.
+2. Follow "How to work with me" below for the whole session.
+3. Keep it current WITHOUT being asked at natural milestones (a pull request opened, merged or
+   reviewed; a model run started, finished or read; a decision made; a new open question; an
+   item closed), and whenever the analyst says "update my notes". Edit only this file, on this
+   branch, from a separate worktree so the working branch is untouched:
+   ```bash
+   git fetch origin daschel/notes
+   git worktree add /tmp/notes origin/daschel/notes --detach
+   # edit /tmp/notes/NOTES.md, then:
+   git -C /tmp/notes commit -am "notes: <what changed> [skip ci]" && git -C /tmp/notes push origin HEAD:daschel/notes
+   git worktree remove /tmp/notes
+   ```
+   Every notes commit message ends with `[skip ci]`: the branch has no code, so the project's
+   test workflow (which runs on pushes to every branch) would otherwise fail on it.
+   Commit author `Claude <noreply@anthropic.com>`. Keep the file short: replace stale lines,
+   move finished items to "Done (recent)", and drop old done items after a couple of weeks.
+4. Say in one line when the notes were updated. Never put anything here the rules above exclude.
+
+## How to work with me
+
+- I'm new to the codebase, the model and the command line. Use plain language, explain every
+  code name or piece of jargon the first time it comes up, and go one step at a time.
+- Give commands in their own code blocks, say whether each one only reads or changes something,
+  and say what output to expect and how to read it.
+- NEVER post, reply or comment on GitHub (or send email) on my behalf. Draft the text, show me,
+  and I decide. Ask before any action others can see.
+- Before acting on something I paste (an email, a comment), say what it is and what it asks.
+- Don't make me memorise names: when a code name matters, give its plain meaning.
+
+## My role and permissions
+
+- Technical analyst on the Medicaid fraud-detection platform. My work goes on `daschel/<topic>`
+  branches as pull requests into the integration branch `claude/happy-mccarthy-3skrn3`
+  (never into `main`, never pushed to directly). The operator reviews and merges.
+- Management has authorised me to use the VM and run model runs. Habits kept anyway: a one-line
+  heads-up to the operator before starting a run (one big run at a time on the VM), and a
+  heads-up before editing the shared environment's setup script.
+- Shared files I don't edit directly: `CLAUDE.md`, `docs/reminders.json` (the operator's).
+  The operator's reminder list is not mine to work through in my sessions.
+
+## Current state (2026-11-06)
+
+- **PR #2 merged** (2026-11-06): three "ghost staff" features in `src/model_a/servicing_grain.py`
+  (`srv_hub_share`, `srv_out_of_state_share`, `srv_inactive_share`), their own export source
+  `servicing_mix`. They first take effect in **v30** (with CLIA). v29 did not include them.
+- **v29 read**: HOLD on one check, top-50 stability (Jaccard) 0.599 vs bar 0.6. Its pursuit
+  report shows `acc_top50_jaccard_book = None`, `source = all_orgs`: the failing number looks
+  like the all-orgs fallback, not the pursuit-list measure. Open question for the operator.
+- **v30 plan (I run it)**, in order:
+  1. `tmux ls` (nothing running), `git pull --ff-only` on the VM (expect merge commit 606aab4).
+  2. Test my features at full size on the v29 as-of fact before the run (they are NOT on the
+     runner's stop-if-skipped list, so a failure would be silent).
+  3. Settle with the operator: the v30 checks (draft from v29's preregistration line +
+     `servicing_mix` + CLIA), whether the CLIA file is synced (`ops/vm/sync_data.sh
+     down-preclean`), and the Jaccard question.
+  4. Pre-register, then start in tmux:
+     `HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v30 2023-12`.
+  5. After the export step, confirm `servicing_mix` reads "used" in the run's
+     `SOURCES_REPORT.md`; if skipped, stop the run.
+- **Next PR (requested by the operator)**: Tier A contradiction = paid months under a rendering
+  NPI deactivated at service time, innocent explanations printed first. Start by reading
+  `src/model_a/contradictions.py` and explaining the existing deactivation check before coding.
+- **Known leak (operator's backlog, credited to me)**: on frozen runs the export reads today's
+  NPPES (`processed/provider_dim.parquet`) instead of an as-of copy; the graph is already fixed
+  via `--asof-nppes`. A possible PR of mine if the operator wants it.
+
+## Open questions
+
+- Was the pursuit-list Jaccard meant to run in v29 (why `jaccard_book = None`)?
+- Is CLIA already synced on the VM for v30?
+- Does the operator want the as-of provider_dim fix before v30, or later?
+
+## Done (recent)
+
+- 2026-11-05: setup script fixed (operator's guarded install line, tested in a fresh session).
+- 2026-11-05/06: PR #2 written, reviewed, merged; branches renamed to lowercase `daschel/...`.
+- 2026-11-06: checked a publicly reported ABA (autism therapy) case against the current-day run:
+  the entities never billed Medicaid under their own NPIs, so the model could not score them
+  (outside its data, not a miss). Worth noting to the operator as a private-insurance gap.
+
+## Quick reference
+
+- VM login: `ssh -i ~/.ssh/medicaid-vm ubuntu@<VM address>`, then
+  `cd ~/medicaid-fraud-detection && source .venv/bin/activate` (add `&& source ~/.medicaid_env`
+  only when a step needs the service logins; never print that file into a chat).
+- Run results: `/data/medicaid/model_a/<run folder>/`. Current-day run: `current_202610_cd1`.
+  Newest test run: `frozen_2023-12_v29`. Verdicts: `/data/medicaid/model_a/MODEL_RUNS.md`.
+- Search a run's lists for a company: `grep -in "name" <run folder>/provider_priority_list*.csv`
+  (rank = line number - 1). Rows are leads for review, never accusations.
+- Read-only by default on the VM: `ls`, `head`, `less`, `grep`, `cat`. Never `git pull` or
+  restart the VM while a run is going.
+- Glossary: NPI = 10-digit provider ID; NPPES = the national provider registry; servicing /
+  rendering NPI = the clinician who did the work; freeze / frozen run = a test run rewound to an
+  old date; pre-registration = the pass/fail checks written before a run; Tier A = hard,
+  checkable facts that contradict each other in the records (not model guesses); PI = private
+  investigator.
