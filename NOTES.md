@@ -38,6 +38,36 @@ never by name (the team rule).
 - Before acting on something I paste (an email, a comment), say what it is and what it asks.
 - Don't make me memorise names: when a code name matters, give its plain meaning.
 
+## The operator's rules (from his emails; check every plan against them)
+
+Code: (1) branches `daschel/<topic>` from `claude/happy-mccarthy-3skrn3`; (2) never `main`, never
+push to his branch; (3) every change is a PR into his branch, he merges; (4) no merge without a
+test that plants a known case in made-up data; (5) targeted test, then the full suite, with
+`OMP_NUM_THREADS=1`; (6) touching the export, graph or scorer: also `make ci-local`; (7) an
+unrelated failing test: tell him, never edit it; (8) the PR says what it does, what the test
+plants, what I'm unsure about.
+Sessions: (9) never paste passwords / tokens / keys, never save them in files; if Claude asks
+for one, stop and ask him; (10) no real data files in the repo; (11) no people's names in
+committed files; (12) IDs stay text; every join checks row and dollar counts.
+VM: (13) `tmux ls` first; a run (v29, v30, cd2, lanes) means wait; (14) never work in the main
+checkout `~/medicaid-fraud-detection`: use my worktree `/tmp/mfd-daschel`; (15) never `git pull`
+on the server without asking him, never during a run; (16) small probes only, no full export
+(a registered run's job); (17) anything over a minute in `tmux`; (18) never write into
+`/data/medicaid/processed` or `/data/medicaid/model_a`; my outputs go to `/tmp/mfd-daschel/out`;
+(19) never open, copy or edit `~/.medicaid_env`; (20) no data leaves the server (reports and
+packets may; data files and rows naming people may not: paste counts, not rows); (21) nothing
+with "dispatch" without his go-ahead; (22) starting / stopping the server is his job; (23) a
+probe's findings go in the PR as numbers. Environment: (24) heads-up before editing the shared
+setup script. Behind all of it: (25) a new feature changes nothing now; it goes into the next
+registered run and is graded there.
+Target: FCA-applicable cases only (government money: Medicaid / Medicare); private-insurance
+cases are out of scope except as lessons about the model's reach.
+Known slips to avoid repeating (2026-11-06): probes run in the main checkout; `source
+~/.medicaid_env` in the login line; a planned `git pull` and full v30 run on the VM; a CLIA
+lookup rebuild that would have written into processed/; query rows naming individuals pasted
+into chat; `make ci-local` skipped for PR #2. v30 itself: confirm with the operator how the
+management go-ahead fits rule 16 before starting it.
+
 ## My role and permissions
 
 - Technical analyst on the Medicaid fraud-detection platform. My work goes on `daschel/<topic>`
@@ -146,8 +176,9 @@ never by name (the team rule).
 ## Quick reference
 
 - VM login: `ssh -i ~/.ssh/medicaid-vm ubuntu@<VM address>`, then
-  `cd ~/medicaid-fraud-detection && source .venv/bin/activate` (add `&& source ~/.medicaid_env`
-  only when a step needs the service logins; never print that file into a chat).
+  `cd /tmp/mfd-daschel && source ~/medicaid-fraud-detection/.venv/bin/activate` (rule 14; never
+  `source ~/.medicaid_env`, rule 19). One-time worktree setup (redo if /tmp was cleared):
+  `cd ~/medicaid-fraud-detection && git worktree add /tmp/mfd-daschel HEAD && mkdir -p /tmp/mfd-daschel/out`.
 - Run results: `/data/medicaid/model_a/<run folder>/`. Current-day run: `current_202610_cd1`.
   Newest test run: `frozen_2023-12_v29`. Verdicts: `/data/medicaid/model_a/MODEL_RUNS.md`.
 - Search a run's lists for a company: `grep -in "name" <run folder>/provider_priority_list*.csv`
