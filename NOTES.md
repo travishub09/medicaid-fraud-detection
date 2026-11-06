@@ -58,6 +58,13 @@ never by name (the team rule).
       pursuit-list measure did not run (`acc_top50_jaccard_book = None`).
 - [ ] **Fix the leakage we found**: the export reads today's NPPES on frozen runs; build an
       as-of `provider_dim` (on the operator's backlog; agree it with the operator first).
+      Steps: (1) on frozen runs build `processed/provider_dim_asof_<cut>.parquet` from the as-of
+      NPPES (reuse the graph's `--asof-nppes` / `apply_asof_addresses` method); (2) point every
+      export read of `provider_dim` at it under a freeze (~30 reads; PR #2's table lists the 11
+      blocks); (3) a test that a frozen run sees only the old registry. **THEN, in the same PR,
+      the one-line label switch** in `provider_features_export.py`'s `_SRC_VINTAGE`:
+      `"servicing_mix": "current_state"` -> `"point_in_time"`, and re-check the vintage tag of
+      every other source that reads provider_dim. Never flip a tag before the fix exists.
 - [ ] **Finish the state capacity rosters**: NH, NY, TEN (Tennessee?) (licensed-facility
       rosters that give each facility's licensed capacity; NJ and NY were the first loaded).
 - [ ] **Send the operator a master list** of everything I've done and where each piece is saved.
