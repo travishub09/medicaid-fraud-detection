@@ -996,6 +996,9 @@ def build_provider_matrix(leads: pd.DataFrame, npi_to_org: pd.DataFrame,
         "servicing": "point_in_time", "medicaid_ndc": "point_in_time",
         "medicaid_enrollment": "point_in_time",
         "policy": "point_in_time",      # batch 5b-F: the as-of fact over the state's rule as of the cutoff
+        # 2026-11-05: the as-of fact, but the states and the deactivation dates come
+        # from TODAY's provider_dim (no as-of NPPES in the export), so the honest class
+        "servicing_mix": "current_state",
     }  # every unlisted source (entity_graph, address, facility, pos, hcris,
     #    saturation, ownership, graph_embeddings, order_referring_referrer, …)
     #    is current_state — the safe default direction.
@@ -3619,6 +3622,33 @@ def main() -> None:
                 audit("    [servicing] skipped: needs processed/spending_fact.parquet + provider_dim.parquet")
         except Exception as e:
             audit(f"    [servicing] skipped: {e}")
+
+    # --- the biller's servicing mix (model_a/servicing_grain.billing_servicing_mix) ---
+    # 2026-11-05: three BILLING-provider shares (srv_hub_share / srv_out_of_state_share /
+    # srv_inactive_share) on the same (as-of) spending fact, under their OWN source and
+    # partition group (feature_partition 'servicing_mix') so a run grades them on their
+    # own. Keyed by billing NPI and merged m:1 onto the existing rows: this block never
+    # adds a matrix row. provider_dim is today's NPPES (vintage current_state).
+    if "servicing_mix" in skip:
+        audit("    [servicing_mix] skipped: --skip-sources")
+    else:
+        try:
+            from .servicing_grain import billing_servicing_mix
+            mix_spend = (asof_spend_p if (args.asof_cutoff and asof_spend_p is not None)
+                         else _first_existing(processed, "spending_fact.parquet"))
+            pdim_mix = _first_existing(processed, "provider_dim.parquet")
+            if mix_spend and pdim_mix:
+                mix = billing_servicing_mix(mix_spend, pdim_mix)
+                adapter_frames["servicing_mix"] = mix
+                audit(f"    [servicing_mix] {len(mix):,} billing NPIs from {Path(mix_spend).name} "
+                      f"(provider_dim {Path(pdim_mix).name}: today's NPPES, current_state); "
+                      f"hub>0 {int((mix['srv_hub_share'] > 0).sum()):,}, "
+                      f"out-of-state>0 {int((mix['srv_out_of_state_share'] > 0).sum()):,}, "
+                      f"inactive>0 {int((mix['srv_inactive_share'] > 0).sum()):,}")
+            else:
+                audit("    [servicing_mix] skipped: needs processed/spending_fact.parquet + provider_dim.parquet")
+        except Exception as e:
+            audit(f"    [servicing_mix] skipped: {e}")
 
     # the 14-provider fixture can never fill a 30-provider peer cell: without a
     # small min_peer every percentile and subscore came back NaN and the demo's

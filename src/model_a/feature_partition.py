@@ -57,6 +57,11 @@ EXTRA_SOURCE_GROUPS = {
     "policy": {"policy"},
     # 2026-11-02: the POS CLIA laboratory file (preclean/clia/) -> clia_* (ingest_cms/clia.py)
     "clia": {"clia"},
+    # 2026-11-05: the biller's servicing mix (servicing_grain.billing_servicing_mix ->
+    # srv_*). Built from core files (spending + NPPES), but kept OUT of CORE_SOURCES as
+    # its own group so source_ablation's per-group leave-one-out grades the addition on
+    # its own (inside CORE it would be invisible to the per-group read).
+    "servicing_mix": {"servicing_mix"},
 }
 
 _SRC_TO_GROUP = {s: g for g, ss in EXTRA_SOURCE_GROUPS.items() for s in ss}
