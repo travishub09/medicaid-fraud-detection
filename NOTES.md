@@ -78,6 +78,10 @@ never by name (the team rule).
 - [ ] **Build a data research plan for import/export** (scope to agree: researching new data
       to bring INTO the pipeline (import) and what the pipeline sends OUT, i.e. the export
       step and the files it produces? or something else?).
+- [ ] **Independent stage agents under a master agent** (run each part of the model on its
+      own, e.g. reuse a graph for a new export; subagents for discrete tasks; maximise
+      efficiency; avoid code bloat). Plan: `AGENT_PLAN.md` on this branch
+      (`git show origin/daschel/notes:AGENT_PLAN.md`). Next step: Phase 0, the stage map.
 
 ## Current state (2026-11-06)
 
