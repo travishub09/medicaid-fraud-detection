@@ -68,6 +68,9 @@ never by name (the team rule).
 - [ ] **Learn about .md (Markdown) files**: how they work and how the project uses them.
 - [ ] **Make sure I can test model features** myself (the test suite on fake data, and a
       full-size check on the VM).
+- [ ] **Build a data research plan for import/export** (scope to agree: researching new data
+      to bring INTO the pipeline (import) and what the pipeline sends OUT, i.e. the export
+      step and the files it produces? or something else?).
 
 ## Current state (2026-11-06)
 
