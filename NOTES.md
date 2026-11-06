@@ -54,8 +54,17 @@ never by name (the team rule).
 - [ ] **Reduce bloat** (scope to agree: the codebase, the docs, or the run folders?).
 - [ ] **Run the model myself**: v30 is the first one (plan below).
 - [ ] **Add the Tier A check** (rendering NPI deactivated at service time): my next PR.
-- [ ] **Fix why v29 failed**: HOLD on top-50 stability 0.599 vs 0.6; first find out why the
-      pursuit-list measure did not run (`acc_top50_jaccard_book = None`).
+- [ ] **Fix why v29 failed**: HOLD on top-50 stability 0.599 vs 0.6. CAUSE FOUND 2026-11-06:
+      in `accuracy_diagnostics.stability()` the rank array was named `order`, overwriting
+      the book's sort key, so the pursuit-list (book) Jaccard errored on every repeat
+      (v29 `night_run.log`: "book top-50 for repeat N not built ('numpy.ndarray' object has
+      no attribute 'startswith')") and the check fell back to the national measure.
+      FIX: branch `daschel/fix-book-jaccard` (commit 6d28546, pushed; suite 1,459 passed);
+      PR NOT opened yet (my go-ahead). Must be merged before v30.
+      DECIDED: v30 grades stability on the BOOK measure, bar 0.6, top 50; the pre-registration
+      carries `"top50_jaccard_book >= 0.6" "jaccard_source = book"` (the second fails the run
+      if the book measure silently falls back again); the national number is info only.
+      Heads-up to the operator with the PR link.
 - [ ] **Fix the leakage we found**: the export reads today's NPPES on frozen runs; build an
       as-of `provider_dim` (on the operator's backlog; agree it with the operator first).
       Steps: (1) on frozen runs build `processed/provider_dim_asof_<cut>.parquet` from the as-of
@@ -119,8 +128,11 @@ never by name (the team rule).
 
 ## Open questions
 
-- Was the pursuit-list Jaccard meant to run in v29 (why `jaccard_book = None`)?
-- Is CLIA already synced on the VM for v30?
+- CLIA for v30: the file is on the VM (`preclean/clia/pos_clia_202609.csv`, 686,058 rows, all
+  columns incl. the four volume columns resolved). BUT `processed/nppes_other_ids.parquet`
+  (2026-10-13) holds only `medicaid` ids, no `clia` (or UPIN) rows: rebuild with
+  `ccn_npi_crosswalk --other-ids-out` into interim/ scratch names first (never overwrite
+  `ccn_to_npi.parquet`), check, back up the old table, then swap; heads-up to the operator.
 - Does the operator want the as-of provider_dim fix before v30, or later?
 
 ## Done (recent)
