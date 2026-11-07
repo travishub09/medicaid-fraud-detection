@@ -49,6 +49,18 @@ def test_v30_sources_are_on_the_stop_list():
     assert {"servicing", "mue", "sector_schemes", "medicaid_enrollment", "billing_lm"} <= set(names)
 
 
+import pytest
+
+
+@pytest.mark.parametrize("count", ["12,345", "987", "1,234,567"])
+def test_clia_success_line_matches_comma_formatted_counts(tmp_path, count):
+    """The export prints the count with thousands separators ({len(cf):,}); a real run says
+    '12,345 NPIs', so the guard must accept commas as well as plain digits."""
+    log = f"    [clia] {count} NPIs with a CLIA certificate from pos_clia_202609.csv: 9 with a volume ratio\n"
+    r = _run(tmp_path, OK_ROWS, log)
+    assert r.returncode == 0 and "GUARD_PASSED" in r.stdout, r.stdout + r.stderr
+
+
 def test_both_sources_used_and_clia_linked_passes(tmp_path):
     r = _run(tmp_path, OK_ROWS, OK_LOG)
     assert r.returncode == 0 and "GUARD_PASSED" in r.stdout, r.stdout + r.stderr
