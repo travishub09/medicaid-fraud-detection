@@ -27,7 +27,7 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
       no REQUIRED MISSING on a source v30 uses.
 - [x] Branch `daschel/v30` pushed at **e6f5030**; `make ci-local` green on it (1,468 passed,
       2 skipped, both fixture end-to-end runs OK; 2026-11-07).
-- [ ] v29's pre-registration line captured:
+- [x] v29's pre-registration line captured (21 checks, 2026-11-07):
       `grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`
 **GATE 0:** all five ticked.
 
@@ -91,6 +91,14 @@ its commit, and the reading plan (servicing_mix on the pursuit / operator books,
 misses and the state ruler; SOURCE_ABLATION's servicing_mix group). Claude drafts the exact
 `python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag
 frozen_2023-12_v30 ...` command from v29's line.
+DRAFT (2026-11-07; replace BAR with the chosen bar before running; the other 20 checks are v29's
+word for word):
+```bash
+cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v30 \
+  --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e6f5030, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4)" \
+  --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= BAR, jaccard_source = book; BAR chosen from v29's re-measured book Jaccard before this run, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH" \
+  --check "hits100 >= 2" "hits250 >= 4" "large_hits50 >= 2" "npi_lift1pct >= 3" "score_scale >= 0.1" "inst_share50 <= 0.2" "top50_jaccard_book >= BAR" "jaccard_source = book" "train = hard" "policy = hard" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight" "priors = none" "prune = none" "embeddings = 0" "fca_reach >= 0.02" "ruler_graph = asof" "facility_rollup = own_ccn" "segment = all" "case_budget = npi100"
+```
 **GATE 5:** `grep "frozen_2023-12_v30" /data/medicaid/model_a/preregistrations.jsonl` shows it.
 
 ## Phase 6: start v30
