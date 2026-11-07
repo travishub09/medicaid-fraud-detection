@@ -183,6 +183,11 @@ names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`)
     `"top50_jaccard_book >= 0.6" "jaccard_source = book"`; the goal names both new sources and
     says to read servicing_mix on the pursuit / operator books, near misses and the state ruler.
     NEEDS: v29's line (`grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`).
+- **THE CEO APPROVED v30 (2026-11-07): "create a new branch, be systematic".** v30 runs from
+  branch `daschel/v30` (integration branch + PR #3 + PR #4 merged in; PRs stay open for review).
+  THE AUTHORITATIVE STEP-BY-STEP IS `V30_RUN_PLAN.md` on this branch
+  (`git show origin/daschel/notes:V30_RUN_PLAN.md`): 9 phases, each ending in a gate, each
+  started only on my "go". The list below is the earlier summary.
 - **v30 order on the day:**
   1. PR merged (fix + stop list).
   2. Email the current operator that the server is in use (EMAIL RULE below).
