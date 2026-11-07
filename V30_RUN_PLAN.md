@@ -21,20 +21,20 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
 
 - [x] v29 book-Jaccard check finished (2026-11-07): `acc_top50_jaccard_book` **0.7493**,
       `source = book`, 0 "not built" lines; `acc_top50_jaccard_all` 0.5990 = v29's registered
-      number exactly (the setup reproduces v29). On the book measure v29 passes. Comment on
-      PR #3: drafted, posts on the analyst's OK.
+      number exactly (the setup reproduces v29). On the book measure v29 passes. Evidence posted
+      on PR #3 (comment 6702970785).
 - [x] v30 stability bar: **0.7** (analyst's decision, 2026-11-07, before v30). Reason: 0.6 would
       pass a quarter of the 50 reshuffling (about 37-38 of 50 shared), too weak to catch a real
       drop; 0.7 = about 41 of 50 shared, about two companies of margin below v29's re-measured
       0.749 (about 43) to absorb 3-repeat noise; not set at v29's own number.
-- [ ] Data scan PREVIEW read (report folder `/data/medicaid/audit_20261107_0028/`, the frozen
-      report under `frozen_2023-12/`): no REQUIRED MISSING on a source v30 uses. Flagged:
-      "clia: every edition is after 2023-12": the export reads the 2026-09 file anyway and keeps
-      only certificates effective on/before 2023-12 (clia.asof_certificates); the labs' details
-      (volumes, certificate type) are 2026 values = a known current_state limit (pending the
-      analyst's decision: run as is + record it, or fix first; v31 fix = an edition picker + the
-      CMS Q4-2023 CLIA edition). Owners editions all after 2023-12 and the absent optional files
-      were the same for v29.
+- [x] Data scan PREVIEW read (2026-11-07, `/data/medicaid/audit_20261107_0028/frozen_2023-12/DATA_AUDIT.md`;
+      the table lists issue rows first): no REQUIRED MISSING on a source v30 uses. Issues, none new
+      except CLIA: clia NOTHING ELIGIBLE (the 2026-09 edition is post-cutoff: handled in the
+      pre-registration, below); hcris SILENT BLANK admin_costs (known since v26); mue UNDATED (as
+      v29); owners NOTHING ELIGIBLE (as v28 / v29); cms_priority / dmf / preclusion /
+      state_licensing / usps_cmra no file on disk (optional, absent for v29 too).
+      CLIA DECISION (analyst, 2026-11-07): run v30 with the 2026-09 edition and SAY SO in the
+      pre-registration; read CLIA's effect separately (phase 8); a pre-cutoff edition comes in v31.
 - [x] Branch `daschel/v30` pushed at **e6f5030**; `make ci-local` green on it (1,468 passed,
       2 skipped, both fixture end-to-end runs OK; 2026-11-07).
 - [x] v29's pre-registration line captured (21 checks, 2026-11-07):
@@ -117,12 +117,12 @@ its commit, and the reading plan (servicing_mix on the pursuit / operator books,
 misses and the state ruler; SOURCE_ABLATION's servicing_mix group). Claude drafts the exact
 `python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag
 frozen_2023-12_v30 ...` command from v29's line.
-DRAFT (2026-11-07; bar filled in: 0.7; the other 20 checks are v29's word for word; before
-running, add the CLIA known-limit sentence to --expected if the analyst runs CLIA as is):
+DRAFT (2026-11-07; bar 0.7 filled in; the CLIA known-limit sentence is in --goal; the other 20
+checks are v29's word for word):
 ```bash
 cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v30 \
-  --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e6f5030, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4)" \
-  --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= 0.7, jaccard_source = book; 0.7 chosen before this run from v29's re-measured book Jaccard 0.749, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH" \
+  --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e6f5030, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4). CLIA uses the Sept 2026 edition (no pre-cutoff edition on hand; certificates effective after 2023-12 are dropped, but the labs' volumes and certificate types are 2026 values), so it is post-cutoff by design; the data scan flags it and that flag is expected; its effect is read separately (SOURCE_ABLATION clia row, SCHEME_HEALTH lab_testing leak_suspect) and a pre-cutoff edition comes in v31" \
+  --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= 0.7, jaccard_source = book; 0.7 chosen before this run from v29's re-measured book Jaccard 0.749, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH; if CLIA's ablation gain is large or lab_testing reads leak_suspect, v30 is judged on everything except CLIA (servicing_mix is unaffected either way)" \
   --check "hits100 >= 2" "hits250 >= 4" "large_hits50 >= 2" "npi_lift1pct >= 3" "score_scale >= 0.1" "inst_share50 <= 0.2" "top50_jaccard_book >= 0.7" "jaccard_source = book" "train = hard" "policy = hard" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight" "priors = none" "prune = none" "embeddings = 0" "fca_reach >= 0.02" "ruler_graph = asof" "facility_rollup = own_ccn" "segment = all" "case_budget = npi100"
 ```
 HARD STOP: the word `BAR` must NOT be in the command when it runs. A literal `BAR` cannot be
@@ -162,8 +162,14 @@ grep "\[clia\] linked" /data/medicaid/model_a/frozen_2023-12_v30/night_run.log
 - DONE banner in `night_run.log`; the registry verdict (`tail` of `MODEL_RUNS.md`): PROMOTE or HOLD
   with the failing checks.
 - Read: `RESULTS_DIGEST.md`; `ACCURACY_DIAGNOSTICS__pursuit.md` (hits, the book Jaccard);
-  `SOURCE_ABLATION.md` (the `servicing_mix` group: did the features help?); `SCHEME_HEALTH.md`
-  (lab_testing with CLIA); `RUN_ISSUES.md`.
+  `SOURCE_ABLATION.md` (the `servicing_mix` group: did the features help?); `RUN_ISSUES.md`.
+- CLIA, read SEPARATELY before trusting any gain (it is post-cutoff by design):
+  - `SOURCE_ABLATION.md`, the `clia` row: how much the model drops without CLIA. A big jump from
+    one lab file is a WARNING SIGN, not good news.
+  - `SCHEME_HEALTH.md`, `lab_testing`: `leak_suspect` (much better on future cases than past
+    ones) = the leak showing.
+  - If either looks suspicious: judge v30 on everything except CLIA. `servicing_mix` is
+    unaffected either way.
 - Email the current operator: the server is free.
 - Post the evidence on PRs #3 / #4 and keep them open for the integration-branch owner to
   review and merge. The main folder was never switched; remove the worktree when v30's
