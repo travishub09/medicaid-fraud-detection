@@ -43,23 +43,30 @@ import pandas as pd
 from src.attempt_2.clean_data import _normalize_name, _resolve_columns, _standardize_address, read_csv_text
 
 ROSTER_COLS = {
-    "facility_name": ["facility name", "facility_name", "licensed facility name", "provider name",
-                      "provider_name", "name",
+    # 2026-11-07: the analyst's normalised rosters (AZ / ME / NH / VA) carry the Arizona
+    # export's headers (AccountName, Street, City, Zip, Capacity / TotalCapacity,
+    # LicenseNumber, Type / Subtype); Missouri adult day is ADCNAME / ADCADDRESSCENTER /
+    # ADCCITY / ADCZIP / MAXCAP; the Texas HHSC workbooks say Physical Address /
+    # Physical Address CITY / Physical Address Zipcode / Total Licensed Capacity under a
+    # banner row (see _read). Eighteen files were skipped for want of these aliases.
+    "facility_name": ["facility name", "facility_name", "licensed facility name", "adcname",
+                      "account name", "accountname", "provider name", "provider_name", "name",
                       "licensed name", "licensed_name", "licensee", "legal name", "dba", "business name",
                       "program name", "entity name", "agency name", "organization name"],
-    "addr_line1": ["address", "address 1", "address1", "street", "street address", "addr_line1",
+    "addr_line1": ["adcaddresscenter", "address", "address 1", "address1", "street", "street address", "addr_line1",
                    "physical address", "location address", "facility address", "site address",
                    "facility address 1", "facility address1", "address line 1", "street address 1",
                    "provider address", "program address", "fac_addr_1", "fac addr 1", "fac_addr",
                    "res_street_addr", "res street addr",
                    "street 1", "address line1", "physical address 1", "location address 1"],
-    "city": ["city", "facility city", "location city", "provider city", "program city", "fac_city",
-             "fac city", "physical city", "site city", "res_city", "res city"],
+    "city": ["adccity", "city", "facility city", "location city", "provider city", "program city", "fac_city",
+             "fac city", "physical city", "site city", "res_city", "res city",
+             "physical address city"],
     "state": ["state", "st", "facility state", "provider state", "fac_st", "fac st", "physical state",
-              "res_state", "res state"],
-    "zip": ["zip", "zip code", "zipcode", "postal code", "zip5", "facility zip", "facility zip code",
+              "res_state", "res state", "physical address state"],
+    "zip": ["adczip", "zip", "zip code", "zipcode", "postal code", "zip5", "facility zip", "facility zip code",
             "provider zip", "program zip", "zip code (5)", "fac_zip", "physical zip", "site zip",
-            "res_zip_code", "res zip code"],
+            "res_zip_code", "res zip code", "physical address zipcode", "physical address zip"],
     "license_type": ["fac_type_desc", "fac type desc", "facility type description", "license type",
                      "licence type", "facility type", "provider type", "type",
                      "program type", "category", "license category", "service type", "facility_type",
@@ -69,6 +76,7 @@ ROSTER_COLS = {
                  "bed_count", "licensed_capacity", "capacity (beds)", "occupancy limit",
                  "total capacity", "certified capacity", "licensed bed count", "bed capacity",
                  "total licensed beds", "approved capacity", "certified bed count", "number of slots",
+                 "total licensed capacity", "maxcap", "max cap",
                  "hospbedtotal", "hosp bed total", "hospital bed total", "licensed bed total", "bed total",
                  "total licensed", "ltc beds", "nursing beds", "lic_beds_slots", "licensed beds/slots",
                  "beds/slots", "beds slots", "measure value", "measure_value"],
@@ -79,7 +87,7 @@ ROSTER_COLS = {
     # site identifier shared by a state's split exports (NY HFIS: beds live in the
     # Certification file, addresses in the General Information file, joined on Facility ID)
     "facility_id": ["facility id", "facility_id", "facid", "fac id", "fac_id", "site id",
-                    "provider id", "license id", "hfis id"],
+                    "provider id", "license id", "hfis id", "externalfacilityid", "adcfacid"],
     # long-format bed/service rows (NY HFIS Certification): keep only the bed rows
     "attribute_type": ["attribute type", "attribute_type", "measure type", "certification type"],
     "attribute_value": ["attribute value", "attribute_value", "bed type", "service/bed"],
@@ -93,8 +101,28 @@ OUT_COLS = ["state", "facility_name", "name_key", "addr_line1", "city", "zip", "
             "license_type", "license_number", "status", "capacity", "facility_id", "source_file"]
 
 
+def _header_row(raw: pd.DataFrame) -> int:
+    """The first row that looks like a header: at least three non-empty text cells and at
+    least half the row filled. Government workbooks (the Texas HHSC directories) put a
+    one-cell banner ("Directory of ... with an Active License as of ...") above the real
+    header; reading them with the default header made every column 'Unnamed'."""
+    for i in range(min(len(raw), 10)):
+        row = raw.iloc[i]
+        vals = [str(v).strip() for v in row.tolist() if pd.notna(v) and str(v).strip() != ""]
+        if len(vals) >= 3 and len(vals) >= 0.5 * raw.shape[1]:
+            return i
+    return 0
+
+
 def _read(path: Path) -> pd.DataFrame:
-    return read_csv_text(path) if path.suffix.lower() == ".csv" else pd.read_excel(path, dtype=str)
+    if path.suffix.lower() == ".csv":
+        return read_csv_text(path)
+    probe = pd.read_excel(path, dtype=str, header=None, nrows=10)
+    h = _header_row(probe)
+    df = pd.read_excel(path, dtype=str, header=h)
+    if h:
+        print(f"  [licensed_capacity] {path.name}: header found on row {h + 1} (a banner row above it)")
+    return df.rename(columns=lambda c: str(c).strip())
 
 
 def _canonical(raw: pd.DataFrame, column_map: dict[str, str] | None = None) -> pd.DataFrame:

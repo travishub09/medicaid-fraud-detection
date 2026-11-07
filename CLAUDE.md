@@ -1719,6 +1719,27 @@ first, then paste" above every move/done block.
   the full suite on the merge, pushes, and the laptop forward closes the pull request on the
   organization repo by itself; a new export source is never a silent change to a running
   series.
+  THE VM HANDOVER (2026-11-07, operator: "daschel is now the operator of the VM; i am not giving up my
+  purview permanently but yes for now"): the analyst runs the server (one run at a time, tmux first; the
+  roster loads, the data scan, the Ohio OCR, the run packets, v30 from daschel/v30 = integration + his
+  PRs #3 / #4 / #5 under his own pre-registration: the book-Jaccard measure at a 0.7 bar, CLIA
+  post-cutoff by design and read separately); the operator keeps the integration branch and every
+  merge, docs/reminders.json and CLAUDE.md, Manus credits and every --dispatch, the packets, PurpleLab.
+  The analyst's working notes live on the orphan branch daschel/notes (NOTES.md, V30_RUN_PLAN.md,
+  AGENT_PLAN.md; `git show origin/daschel/notes:NOTES.md`): read them before touching the VM or v30.
+  v29 REGISTERED HOLD on top-50 Jaccard 0.599 vs 0.6, and the analyst found the cause in MY code:
+  `accuracy_diagnostics.stability()` named the rank array `order`, overwriting the book's sort-key
+  argument, so the BOOK Jaccard was never built on any run (v28, v29) and the check fell back to the
+  national measure; re-measured on the book v29 reads 0.749 (PR #3, `daschel/fix-book-jaccard`). His
+  PR #5 (`daschel/clia-asof-original-date`) fixes a second defect of mine: the CLIA as-of filter read
+  the current certificate's effective date, and certificates renew every two years, so a 2026 edition
+  dropped the OPEN labs and kept the closed ones; the start of a lab is ORGNL_PRTCPTN_DT (325,338 of
+  686,058 kept at 2023-12). PR #4 adds servicing_mix + clia to the runner's stop list with a CLIA
+  success-line check. ROSTERS (same day): the analyst's normalised AZ / ME / NH / VA rosters
+  (AccountName / Street / Capacity / LicenseNumber / Type), Missouri adult day (ADCNAME / MAXCAP /
+  ADCADDRESSCENTER) and the Texas HHSC workbooks (a banner row above the header) were skipped by the
+  loader for want of aliases; `licensed_capacity` reads all three (site columns ahead of the generic
+  'provider ...' aliases; `_header_row` finds the header under a banner).
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is
