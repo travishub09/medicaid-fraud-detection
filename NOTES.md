@@ -169,8 +169,8 @@ names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`)
   phase 5 (pre-register: drafted, bar 0.7, CLIA notes in), phase 6 (start v30 + send the
   saved Gmail draft to the operator with the time). About 1.5-3 hours to v30 running, about
   30 min of typing.
-- PRs open: #3 (book Jaccard, evidence posted), #4 (runner stop list), C (CLIA original-date
-  fix; see below). None blocks v30: it runs from `daschel/v30`.
+- PRs open: #3 (book Jaccard, evidence posted), #4 (runner stop list), #5 (PR C: the CLIA original-date fix, branch `daschel/clia-asof-original-date`,
+  ci-local green). None blocks v30: it runs from `daschel/v30`.
 - Nothing is running on the VM (both checks finished).
 
 ## Current state (2026-11-06)

@@ -42,7 +42,7 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
       **264,893** renewed in 2024-26 (open labs the old filter dropped) and 60,445 with older
       certificates. About 310,000 labs closed / terminated before Dec 2023 are now dropped (the old
       filter kept them). ~325k in force matches the size of the US CLIA lab population.
-      PR C (the CLIA fix as its own PR into the integration branch): to open on the analyst's OK.
+      PR C opened as #5 (2026-11-07; the CLIA fix alone on `daschel/clia-asof-original-date`, ci-local green).
 - [x] v29's pre-registration line captured (21 checks, 2026-11-07):
       `grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`
 **GATE 0:** all five ticked.
