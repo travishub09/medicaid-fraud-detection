@@ -84,6 +84,17 @@ management go-ahead fits rule 16 before starting it.
   heads-up before editing the shared environment's setup script.
 - Shared files I don't edit directly: `CLAUDE.md`, `docs/reminders.json` (the operator's).
   The operator's reminder list is not mine to work through in my sessions.
+- **ROLE CHANGE IN PROGRESS (2026-11-06):** I'm taking over the operator role from the current
+  operator; the CEO wants it and wants the stage-agent plan (`AGENT_PLAN.md`). The notes
+  branch stays (the CEO knows). Once the handover is confirmed: the VM rules 13-23 that limited
+  a teammate no longer bind me (pulling, runs, pre-registration, rebuilding data files are my
+  job; sourcing `~/.medicaid_env` is fine); still binding: one run at a time, nothing during a
+  run, pre-registration before a graded run, no secrets / data / names in git,
+  `OMP_NUM_THREADS=1`, no research dispatch without a deliberate credit decision; the
+  reminder list (`docs/reminders.json`) and CLAUDE.md upkeep become mine.
+  FIRST: confirm the handover explicitly with the current operator (from when the VM is mine;
+  does he have anything running or queued, e.g. cd2 or a lanes cycle) so two operators never
+  act on the one-user VM at once. During the handover, have him or the CEO review my PRs.
 
 ## My objectives (set 2026-11-06; remind me of these and tick them off here)
 
