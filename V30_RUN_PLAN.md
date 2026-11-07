@@ -39,18 +39,34 @@ running overnight; until the all-clear, no git pull / branch switch / edits in
 servicing_mix + CLIA + the book-Jaccard fix + the runner stop list; an email when it finishes.
 **GATE 1:** email sent.
 
-## Phase 2: the v30 code on the VM
+## Phase 2: the v30 code on the VM, in its OWN worktree (never switch the main folder)
 
+The run happens in `~/mfd-v30`, a separate git worktree of `daschel/v30`. The main folder
+`~/medicaid-fraud-detection` (the integration branch, the current operator's tools) is never
+switched. A home folder, not /tmp (a reboot can wipe /tmp mid-run). Outputs still land in
+`/data/medicaid` as usual.
 ```bash
 tmux ls
 ```
-Only `jaccard` / `audit` (finished) or nothing. Any run (v29, v30, cd2, lanes): STOP.
+Only finished `jaccard` / `audit` or nothing. Any run (v29, v30, cd2, lanes): STOP.
+
+Branch check (the run must measure exactly "the integration branch + PR #3 + PR #4"):
 ```bash
-cd ~/medicaid-fraud-detection && git status --short | head && git fetch origin daschel/v30 && git checkout -B daschel/v30 origin/daschel/v30 && git log --oneline -1
+cd ~/medicaid-fraud-detection && git fetch origin claude/happy-mccarthy-3skrn3 daschel/v30 && git log --oneline origin/claude/happy-mccarthy-3skrn3 -1 && git log --oneline origin/claude/happy-mccarthy-3skrn3..origin/daschel/v30
 ```
-`git status` must be empty first (local edits in the main checkout: STOP and look). The last
-line must show the pushed `daschel/v30` commit (**e6f5030** unless the branch moved since).
-**GATE 2:** the main checkout is on `daschel/v30` at the pushed commit.
+Expect the integration head **2924671** and exactly five commits (e6f5030, 9dad277, 8d97fa8,
+8bf0930, 6d28546). If the integration branch has moved: STOP, Claude rebuilds `daschel/v30`
+on the new head (re-test, re-push), then repeat this check.
+
+Create the worktree:
+```bash
+cd ~/medicaid-fraud-detection && git worktree add --detach ~/mfd-v30 origin/daschel/v30 && git -C ~/mfd-v30 log --oneline -1
+```
+Must show **e6f5030** (or the rebuilt commit).
+PYTHON: the runner activates `$REPO/.venv`, which a worktree does not have (it would silently
+fall back to the system Python). EVERY command in `~/mfd-v30` therefore starts with
+`source ~/medicaid-fraud-detection/.venv/bin/activate` (child steps inherit it).
+**GATE 2:** `~/mfd-v30` exists at the expected commit; the main folder untouched.
 
 ## Phase 3: rebuild the CLIA lookup table (`processed/nppes_other_ids.parquet`)
 
@@ -60,7 +76,7 @@ labs by name + address. The rebuild adds the CLIA (and UPIN) ids.
 2. Build to NEW names, in tmux (nothing existing is touched; `--out` goes to scratch so
    `processed/ccn_to_npi.parquet` is never overwritten):
    ```bash
-   mkdir -p /data/medicaid/interim/otherids_rebuild && tmux new -d -s otherids 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.ingest_cms.ccn_npi_crosswalk --in <NPPES file> --out /data/medicaid/interim/otherids_rebuild/ccn_to_npi_scratch.parquet --other-ids-out /data/medicaid/interim/otherids_rebuild/nppes_other_ids.parquet > /data/medicaid/interim/otherids_rebuild/build.log 2>&1'
+   mkdir -p /data/medicaid/interim/otherids_rebuild && tmux new -d -s otherids 'cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && python -m src.ingest_cms.ccn_npi_crosswalk --in <NPPES file> --out /data/medicaid/interim/otherids_rebuild/ccn_to_npi_scratch.parquet --other-ids-out /data/medicaid/interim/otherids_rebuild/nppes_other_ids.parquet > /data/medicaid/interim/otherids_rebuild/build.log 2>&1'
    ```
    Run it alone (it loads the whole registry into memory).
 3. Check: `tail -3 /data/medicaid/interim/otherids_rebuild/build.log` prints
@@ -76,7 +92,7 @@ ROLLBACK: copy the backup back over `nppes_other_ids.parquet`.
 ## Phase 4: the official data scan (after the pull and the rebuild)
 
 ```bash
-tmux new -d -s audit 'cd ~/medicaid-fraud-detection && source .venv/bin/activate && bash ops/vm/data_audit.sh 2023-12 > /tmp/mfd-daschel/out/data_audit_v30.log 2>&1'
+tmux new -d -s audit 'cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && bash ops/vm/data_audit.sh 2023-12 > /tmp/mfd-daschel/out/data_audit_v30.log 2>&1'
 ```
 Read the summary (`DATA_AUDIT.md` in the folder the log names).
 **GATE 4:** no REQUIRED MISSING on a source v30 uses; anything SILENT BLANK or POST-CUTOFF is
@@ -94,11 +110,15 @@ frozen_2023-12_v30 ...` command from v29's line.
 DRAFT (2026-11-07; replace BAR with the chosen bar before running; the other 20 checks are v29's
 word for word):
 ```bash
-cd ~/medicaid-fraud-detection && source .venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v30 \
+cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v30 \
   --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e6f5030, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4)" \
   --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= BAR, jaccard_source = book; BAR chosen from v29's re-measured book Jaccard before this run, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH" \
   --check "hits100 >= 2" "hits250 >= 4" "large_hits50 >= 2" "npi_lift1pct >= 3" "score_scale >= 0.1" "inst_share50 <= 0.2" "top50_jaccard_book >= BAR" "jaccard_source = book" "train = hard" "policy = hard" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight" "priors = none" "prune = none" "embeddings = 0" "fca_reach >= 0.02" "ruler_graph = asof" "facility_rollup = own_ccn" "segment = all" "case_budget = npi100"
 ```
+HARD STOP: the word `BAR` must NOT be in the command when it runs. A literal `BAR` cannot be
+measured, an unmeasured check counts as a FAIL, and v30 would HOLD automatically. Replace it
+with the chosen number, then re-read the --check list before pressing Enter; if `BAR` appears
+anywhere, do not run it.
 **GATE 5:** `grep "frozen_2023-12_v30" /data/medicaid/model_a/preregistrations.jsonl` shows it.
 
 ## Phase 6: start v30
@@ -108,7 +128,7 @@ tmux ls
 ```
 Nothing running. Then:
 ```bash
-tmux new -d -s v30 'cd ~/medicaid-fraud-detection && HORIZON=33 SEEDS=10 PREV_RUN=/data/medicaid/model_a/frozen_2023-12_v29 bash ops/vm/run_frozen_night.sh v30 2023-12 >> /data/medicaid/model_a/v30.log 2>&1' && sleep 5 && tmux ls && tail -5 /data/medicaid/model_a/v30.log
+tmux new -d -s v30 'cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && HORIZON=33 SEEDS=10 PREV_RUN=/data/medicaid/model_a/frozen_2023-12_v29 bash ops/vm/run_frozen_night.sh v30 2023-12 >> /data/medicaid/model_a/v30.log 2>&1' && sleep 5 && tmux ls && tail -5 /data/medicaid/model_a/v30.log
 ```
 The runner refuses to start under 24 GB free RAM and names the problem.
 **GATE 6:** `v30` in `tmux ls`; the log shows step 0 starting.
@@ -135,13 +155,13 @@ grep "\[clia\] linked" /data/medicaid/model_a/frozen_2023-12_v30/night_run.log
   `SOURCE_ABLATION.md` (the `servicing_mix` group: did the features help?); `SCHEME_HEALTH.md`
   (lab_testing with CLIA); `RUN_ISSUES.md`.
 - Email the current operator: the server is free.
-- Post the evidence on PRs #3 / #4; ask for the merge; afterwards return the main checkout to the
-  integration branch (`git checkout claude/happy-mccarthy-3skrn3 && git pull --ff-only`) once
-  the PRs are in.
+- Post the evidence on PRs #3 / #4 and keep them open for the integration-branch owner to
+  review and merge. The main folder was never switched; remove the worktree when v30's
+  read-out is done (`git -C ~/medicaid-fraud-detection worktree remove ~/mfd-v30`).
 - Update NOTES.md (objectives: "Run the model myself" ticked).
 
 ## Rules that apply throughout
 
-One run at a time; nothing in the main checkout while v30 runs; long jobs in tmux; keys stay
+One run at a time; nothing in `~/mfd-v30` (and no data rebuilds) while v30 runs; long jobs in tmux; keys stay
 private (warning beside any command that shows them); no data or rows naming people leave the
 server; nothing with "dispatch".
