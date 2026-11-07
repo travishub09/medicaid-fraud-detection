@@ -120,7 +120,7 @@ understood and written here.
 ## Phase 5: pre-register v30
 
 Checks = v29's list, with `top50_jaccard >= 0.6` REPLACED by
-`"top50_jaccard_book >= <bar>" "jaccard_source = book"`. Goal names: the two new sources
+`"top50_jaccard_book >= 0.7" "jaccard_source = book"`. Goal names: the two new sources
 (servicing_mix, clia), the book-Jaccard fix, the runner stop list, the branch `daschel/v30` at
 its commit, and the reading plan (servicing_mix on the pursuit / operator books, the near
 misses and the state ruler; SOURCE_ABLATION's servicing_mix group). Claude drafts the exact
