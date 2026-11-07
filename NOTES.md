@@ -67,17 +67,17 @@ setup script. Behind all of it: (25) a new feature changes nothing now; it goes 
 registered run and is graded there.
 Target: FCA-applicable cases only (government money: Medicaid / Medicare); private-insurance
 cases are out of scope except as lessons about the model's reach.
-CONFLICT TO SETTLE WITH THE OPERATOR: his setup email says every VM command starts
-`cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env`; his rules
-list says use `/tmp/mfd-daschel` (14) and never open `~/.medicaid_env` (19). Likely reading of 19:
-sourcing (loads, shows nothing) is fine; viewing / copying / editing is not. Until he answers:
-probes in `/tmp/mfd-daschel`, source the env only when a step needs the service logins, never
-view it.
-Known slips to avoid repeating (2026-11-06): probes run in the main checkout; telling the
-analyst that viewing `~/.medicaid_env` was fine; a planned `git pull` and full v30 run on the VM; a CLIA
-lookup rebuild that would have written into processed/; query rows naming individuals pasted
-into chat; `make ci-local` skipped for PR #2. v30 itself: confirm with the operator how the
-management go-ahead fits rule 16 before starting it.
+SUPERSEDED BY THE HANDOVER (2026-11-07, my decision as incoming operator): rule 14 is DROPPED
+(the main checkout `~/medicaid-fraud-detection` is my working copy); rule 19 is replaced by the
+HARD RULE at the top (I may view `~/.medicaid_env`; the keys-stay-private warning goes beside every
+such command; sourcing it is fine); rules 15, 16, 18, 21, 22 bind the operator role no longer
+(they limited a teammate). PRACTICAL CONSTRAINT THAT STAYS: the runner runs from the main
+checkout, so while a run is going never switch branches, `git pull` or edit files there.
+Still binding: 13 (check `tmux ls`; one run at a time), 17 (long jobs in tmux), 20 (no data
+leaves the server; counts not rows naming people), 23, 24, 25, and the code rules 1-12.
+Lessons from 2026-11-06 (still worth keeping): `make ci-local` for export / graph / scorer
+changes; never paste rows naming individuals into chat; a CLIA lookup rebuild writes to scratch
+names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`).
 
 ## My role and permissions
 
@@ -198,10 +198,10 @@ management go-ahead fits rule 16 before starting it.
 ## Quick reference
 
 - VM login: `ssh -i ~/.ssh/medicaid-vm ubuntu@<VM address>`, then
-  `cd /tmp/mfd-daschel && source ~/medicaid-fraud-detection/.venv/bin/activate` (rule 14; add
-  `&& source ~/.medicaid_env` only when a step needs the service logins, never view it: see
-  the CONFLICT note above). One-time worktree setup (redo if /tmp was cleared):
-  `cd ~/medicaid-fraud-detection && git worktree add /tmp/mfd-daschel HEAD && mkdir -p /tmp/mfd-daschel/out`.
+  `cd ~/medicaid-fraud-detection && source .venv/bin/activate && source ~/.medicaid_env`
+  (the operator's standard line; never switch branches / pull / edit there while a run is going).
+  Optional scratch worktree for experiments that must not touch the running code:
+  `cd ~/medicaid-fraud-detection && git worktree add /tmp/mfd-daschel HEAD`.
 - Run results: `/data/medicaid/model_a/<run folder>/`. Current-day run: `current_202610_cd1`.
   Newest test run: `frozen_2023-12_v29`. Verdicts: `/data/medicaid/model_a/MODEL_RUNS.md`.
 - Search a run's lists for a company: `grep -in "name" <run folder>/provider_priority_list*.csv`
