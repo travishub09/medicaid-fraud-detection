@@ -29,6 +29,13 @@ never by name (the team rule).
 
 ## How to work with me
 
+- **EMAIL RULE: before any run or server work the current operator must not disturb**, an email
+  to him saying the server is in use, what is running, and what not to do (no git pull, no
+  branch switch, no edits in ~/medicaid-fraud-detection, no other run or lanes cycle) until I
+  confirm it is done; and a second email when it finishes. Claude drafts it; it is sent on my
+  OK (unless I change this to "send automatically").
+- **Writing into `/data/medicaid/processed` is allowed** (operator role); for a replacement, write
+  to a new name first, keep a backup of the old file, then swap.
 - **HARD RULE: KEYS STAY PRIVATE.** Every time a command would display `~/.medicaid_env` or any
   other file holding passwords, tokens or keys (`cat`, `less`, `head`, `grep`, an editor...), put
   this warning right next to the command, every time, no exceptions:
@@ -152,18 +159,35 @@ names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`)
 - **v29 read**: HOLD on one check, top-50 stability (Jaccard) 0.599 vs bar 0.6. Its pursuit
   report shows `acc_top50_jaccard_book = None`, `source = all_orgs`: the failing number looks
   like the all-orgs fallback, not the pursuit-list measure. Open question for the operator.
-- **v30 plan (I run it)**, in order:
-  1. `tmux ls` (nothing running), `git pull --ff-only` on the VM (expect merge commit 606aab4).
-  2. Test my features at full size on the v29 as-of fact before the run (they are NOT on the
-     runner's stop-if-skipped list, so a failure would be silent).
-  3. Settle with the operator: the v30 checks (draft from v29's preregistration line +
-     `servicing_mix` + CLIA), whether the CLIA file is synced (`ops/vm/sync_data.sh
-     down-preclean`), and the Jaccard question.
-  4. Pre-register, then start in tmux:
-     `HORIZON=33 SEEDS=10 bash ops/vm/run_frozen_night.sh v30 2023-12`.
-  5. After the export step, confirm `servicing_mix` reads "used" in the run's
+- **v30 = v29's setup (2023-12 freeze, HORIZON=33, SEEDS=10, train hard) PLUS** (summary
+  2026-11-07; v29 ran on 3256366):
+  - NEW SOURCES: `servicing_mix` (my PR #2, merged) and `clia` (code already there; v29 left the
+    file out on purpose; file on the VM, 686,058 certificates, all columns resolve).
+  - FIXES: the book-Jaccard fix (branch `daschel/fix-book-jaccard`, PR not opened); PROPOSED:
+    add `servicing_mix` and `clia` to the runner's STOP_SOURCES (ops/vm/run_frozen_night.sh) so a
+    silently skipped source stops the run. One PR for both.
+  - OTHER MERGED CODE SINCE v29: licensed-capacity loader (agency capacity column) and the policy
+    library's quote / domain gates: they change v30 only if the capacity rosters or the policy
+    library were rebuilt / reloaded since v29 (the data scan shows it).
+  - DATA: CLIA lookup table rebuild (`nppes_other_ids.parquet` has no clia rows): scratch names,
+    backup, swap; never overwrite `ccn_to_npi.parquet`.
+  - NOT IN v30: the NPPES leak fix (v31), Tier A (outside the model), rendering_identity weights.
+  - PRE-REGISTRATION: v29's checks with `top50_jaccard >= 0.6` replaced by
+    `"top50_jaccard_book >= 0.6" "jaccard_source = book"`; the goal names both new sources and
+    says to read servicing_mix on the pursuit / operator books, near misses and the state ruler.
+    NEEDS: v29's line (`grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`).
+- **v30 order on the day:**
+  1. PR merged (fix + stop list).
+  2. Email the current operator that the server is in use (EMAIL RULE below).
+  3. VM: `tmux ls` (nothing running), then `git pull --ff-only`.
+  4. Data scan: `bash ops/vm/data_audit.sh 2023-12` (before every pre-registration).
+  5. Rebuild the CLIA lookup table.
+  6. Pre-register v30.
+  7. Start in tmux: `HORIZON=33 SEEDS=10 PREV_RUN=/data/medicaid/model_a/frozen_2023-12_v29
+     bash ops/vm/run_frozen_night.sh v30 2023-12`.
+  8. About an hour in, confirm `servicing_mix` and `clia` read "used" in the run's
      `SOURCES_REPORT.md`; if skipped, stop the run.
-  6. After the run: read `SOURCE_ABLATION.md` in the run folder. Its per-group row for
+  9. After the run: read `SOURCE_ABLATION.md` in the run folder. Its per-group row for
      `servicing_mix` (the run re-scored without my three features) is the answer to "did
      my features help?". Also read them on the pursuit/operator books and the state ruler.
 - **Operator's PR #2 answers (2026-11-06)**: `srv_inactive_share` trains; `current_state`
