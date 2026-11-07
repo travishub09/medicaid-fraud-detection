@@ -201,7 +201,10 @@ python -u -m src.model_a.provider_features_export --data-root "$DATA" --graph-di
     --processed "$DATA/processed" --out "$RUN" ${FROZEN_SKIP:+--skip-sources "$FROZEN_SKIP"} || fail 2
 grep -q "NO DOJ case labels" "$RUN/SOURCES_REPORT.md" && { echo "[$TAG] the matrix carries NO DOJ case labels -- stop"; fail 2; }
 grep -q "\[asof_v3\] restored" "$RUN/night_run.log" || { echo "[$TAG] the as-of v3 scores were NOT restored (no '[asof_v3] restored' line) -- stop"; fail 2; }
-STOP_SOURCES="servicing mue sector_schemes medicaid_enrollment billing_lm"; [ "$EMBEDDINGS" = "1" ] && STOP_SOURCES="$STOP_SOURCES graph_embeddings"
+# 2026-11-07 (v30): servicing_mix and clia are the two sources v30 declares; a skip of either
+# makes the run a non-test of its pre-registration, so it stops here instead of finishing
+# "successfully" without them.
+STOP_SOURCES="servicing mue sector_schemes medicaid_enrollment billing_lm servicing_mix clia"; [ "$EMBEDDINGS" = "1" ] && STOP_SOURCES="$STOP_SOURCES graph_embeddings"
 for s in $STOP_SOURCES; do
   # 2026-11-05: the STATUS cell only (`| name | ⏭️ skipped |`); the old pattern matched the word
   # 'skipped' anywhere in the row and stopped v29 on a USED medicaid_enrollment whose detail
@@ -210,6 +213,10 @@ for s in $STOP_SOURCES; do
     echo "[$TAG] source $s was SKIPPED -- not a full-feature run; stop and paste its SOURCES_REPORT line"; fail 2
   fi
 done
+# CLIA logs its file-load line ('[clia] N rows from ...') BEFORE it links certificates to NPIs,
+# and the SOURCES_REPORT keeps 'used' over a later 'skipped', so a failed link would still read
+# as used. Its success line is the proof the features exist (the same pattern as asof_v3 above).
+grep -qE "\[clia\] [0-9,]+ NPIs with a CLIA certificate" "$RUN/night_run.log" || { echo "[$TAG] CLIA produced no linked certificates (no '[clia] N NPIs with a CLIA certificate' line) -- stop"; fail 2; }
 
 # 2026-10-21 (PLATFORM_AUDIT B.F-8 / D7): the forward rulers read the CURRENT-DAY graph
 # ($DATA/graph), the only merge point of processed/exclusions_*.parquet; it was never
