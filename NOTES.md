@@ -151,6 +151,28 @@ names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`)
       efficiency; avoid code bloat). Plan: `AGENT_PLAN.md` on this branch
       (`git show origin/daschel/notes:AGENT_PLAN.md`). Next step: Phase 0, the stage map.
 
+- [ ] **v31: a pre-cutoff CLIA edition** (so the labs' certificate type and test volumes are
+      their 2023 values, not 2026's). Needs (1) an older CLIA file downloaded from CMS (e.g. the
+      Q4 2023 edition of "Provider of Services File - Clinical Laboratories", historical
+      versions on data.cms.gov) into `preclean/clia/` with the quarter in its name, and (2) a
+      code change so the export picks the edition for each freeze date instead of stacking every
+      file in the folder (else each lab is read twice). Then PR D. The original-date filter
+      (PR C) stays either way. v30's pre-registration already says "a pre-cutoff edition comes
+      in v31".
+
+## WHERE WE LEFT OFF (2026-11-07, night) -> START HERE IN THE MORNING
+
+- v30 is READY TO RUN; the analyst chose to run it in the morning. Phase 0 of
+  `V30_RUN_PLAN.md` is complete (all items ticked). Next: phase 2 (create `~/mfd-v30` at
+  e7e8939 after `tmux ls`), phase 3 (CLIA lookup rebuild) and phase 4 (official data scan),
+  optionally 3 + 4 side by side with `MEDICAID_DUCKDB_MEM=24GB` each (saves about an hour),
+  phase 5 (pre-register: drafted, bar 0.7, CLIA notes in), phase 6 (start v30 + send the
+  saved Gmail draft to the operator with the time). About 1.5-3 hours to v30 running, about
+  30 min of typing.
+- PRs open: #3 (book Jaccard, evidence posted), #4 (runner stop list), C (CLIA original-date
+  fix; see below). None blocks v30: it runs from `daschel/v30`.
+- Nothing is running on the VM (both checks finished).
+
 ## Current state (2026-11-06)
 
 - **PR #2 merged** (2026-11-06): three "ghost staff" features in `src/model_a/servicing_grain.py`
