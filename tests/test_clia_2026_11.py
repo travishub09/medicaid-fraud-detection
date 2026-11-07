@@ -151,6 +151,51 @@ def test_asof_certificates_drops_post_cutoff_effective_dates():
     assert len(C.asof_certificates(raw, None)) == 4
 
 
+def _asof_frame(tmp_path, rows):
+    """Write a POS-CLIA-shaped csv and load it through the real loader (column map + dates)."""
+    d = tmp_path / "clia_asof"
+    d.mkdir()
+    cols = ["PRVDR_NUM", "FAC_NAME", "ST_ADR", "CITY_NAME", "STATE_CD", "ZIP_CD", "CRTFCT_TYPE_CD",
+            "CRTFCT_EFCTV_DT", "ORGNL_PRTCPTN_DT", "TRMNTN_EXPRTN_DT", "FORM_116_TEST_VOL_CNT"]
+    pd.DataFrame(rows, columns=cols).to_csv(d / "pos_clia_202609.csv", index=False)
+    return C.load_clia(d, log=lambda m: None)
+
+
+def test_asof_reads_the_original_participation_date_not_the_renewal(tmp_path):
+    """2026-11-07: certificates renew every two years, so a 2026 edition carries a 2024-2026
+    effective date for nearly every open lab; the freeze must ask when the lab FIRST joined."""
+    rows = [
+        # first certified 2019, renewed 2025, still open: existed in 2023 -> KEPT
+        ["05D1000001", "OLD LAB RENEWED", "1 A ST", "X", "IL", "60601", "1", "20250301", "20190315", "20270228", "500"],
+        # first certified 2024: did not exist at a 2023-12 freeze -> DROPPED
+        ["05D1000002", "NEW LAB 2024", "2 B ST", "X", "IL", "60601", "1", "20240601", "20240601", "20260531", "500"],
+        # terminated in 2020: already gone at the freeze -> DROPPED
+        ["05D1000003", "CLOSED 2020", "3 C ST", "X", "IL", "60601", "1", "20180101", "20120101", "20200630", "500"],
+        # no original date, effective 2020 (fallback) -> KEPT
+        ["05D1000004", "NO ORIG OLD", "4 D ST", "X", "IL", "60601", "1", "20200101", "", "", "500"],
+        # no original date, effective 2025 (fallback) -> DROPPED
+        ["05D1000005", "NO ORIG NEW", "5 E ST", "X", "IL", "60601", "1", "20250101", "", "", "500"],
+        # terminated IN the freeze month (Dec 2023): existed during it -> KEPT
+        ["05D1000006", "CLOSED DEC 2023", "6 F ST", "X", "IL", "60601", "1", "20210101", "20150101", "20231215", "500"],
+    ]
+    clia = _asof_frame(tmp_path, rows)
+    assert "orig_participation_date" in clia.columns
+    kept = C.asof_certificates(clia, "2023-12")
+    assert set(kept["clia_number"]) == {"05D1000001", "05D1000004", "05D1000006"}
+    assert kept.attrs["asof_kept"] == 3 and kept.attrs["asof_total"] == 6
+    assert kept.attrs["asof_basis"] == "original participation date"
+    assert kept.attrs["files"] == ["pos_clia_202609.csv"]             # loader attrs survive the filter
+    assert len(C.asof_certificates(clia, None)) == 6                   # no freeze: every lab
+
+
+def test_asof_falls_back_to_the_effective_date_without_an_original_column():
+    raw = pd.DataFrame({"clia_number": ["A", "B"],
+                        "cert_effective_date": pd.to_datetime(["2020-01-01", "2025-01-01"])})
+    kept = C.asof_certificates(raw, "2023-12")
+    assert list(kept["clia_number"]) == ["A"]
+    assert kept.attrs["asof_basis"].startswith("certificate effective date")
+
+
 def test_clia_to_npi_links_by_other_id_then_name_address(tmp_path):
     d = tmp_path / "clia"
     d.mkdir()

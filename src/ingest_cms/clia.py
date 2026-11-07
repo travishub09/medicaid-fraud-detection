@@ -86,6 +86,11 @@ CLIA_COLS = {
                          "termination_code"],
     "termination_date": ["TRMNTN_EXPRTN_DT", "trmntn_exprtn_dt", "Termination Expiration Date",
                          "termination_date"],
+    # 2026-11-07: when the lab FIRST entered the program. The as-of filter reads this, not the
+    # current certificate's effective date (certificates renew every two years, so on a 2026
+    # edition almost every open lab carries a 2024-2026 effective date)
+    "orig_participation_date": ["ORGNL_PRTCPTN_DT", "orgnl_prtcptn_dt", "Original Participation Date",
+                                "original_participation_date"],
     # 2026-11-05: the first real file (pos_clia_202609.csv, Q3 2026, 686,058 labs, 103 columns)
     # names these CURRENT_CLIA_LAB_CLSFCTN_CD (plus CLIA_LAB_CLASSIFICATION_CD_1..10, the history),
     # ACRDTN_SCHDL_CD, FORM_116_TEST_VOL_CNT / FORM_116_ACRDTD_TEST_VOL_CNT (the CMS-116 volumes),
@@ -256,7 +261,7 @@ def load_clia(path_or_folder: str | Path, log=print) -> pd.DataFrame:
     df["cert_type_code"] = (df["cert_type"].fillna("").astype(str).str.strip().str.lstrip("0")
                             if "cert_type" in df.columns else "")
     df["cert_type"] = df["cert_type_code"].map(CERT_TYPES).fillna("")
-    for c in ("cert_effective_date", "cert_expiration_date", "termination_date"):
+    for c in ("cert_effective_date", "cert_expiration_date", "termination_date", "orig_participation_date"):
         if c in df.columns:
             df[c] = _date(df[c])
     for c in ("facility_name", "addr_line1", "addr_city", "addr_state", "addr_zip",
@@ -277,14 +282,40 @@ def load_clia(path_or_folder: str | Path, log=print) -> pd.DataFrame:
 
 
 def asof_certificates(clia: pd.DataFrame, asof_cutoff: str | None) -> pd.DataFrame:
-    """Under a freeze (YYYY-MM) keep certificates effective on/before the cutoff month
-    (a certificate issued after the freeze did not exist then); rows without an
-    effective date are kept (undated, never dropped)."""
-    if not asof_cutoff or "cert_effective_date" not in clia.columns:
+    """Under a freeze (YYYY-MM) keep the labs that EXISTED at the cutoff month.
+
+    2026-11-07: the start of a lab is its ORIGINAL participation date (``ORGNL_PRTCPTN_DT``),
+    not its current certificate's effective date. Certificates renew every two years, so a
+    2026 edition carries a 2024-2026 effective date for almost every open lab: filtering on it
+    dropped the active labs (314,804 of 686,058 on pos_clia_202609) and kept mostly the ones
+    that stopped renewing (closed / terminated, which leans toward the answer key). Rule:
+      start = original participation date, else the certificate effective date when it is
+              blank; a row with neither is kept (undated, never dropped);
+      keep  = start on/before the cutoff month's end AND not terminated / expired before the
+              cutoff month began (``TRMNTN_EXPRTN_DT``).
+    The kept labs' details (certificate type, reported volumes) are still the edition's values:
+    a post-cutoff edition stays a known current-state limit."""
+    if not asof_cutoff:
         return clia
-    cut = pd.Timestamp(str(asof_cutoff)[:7] + "-01") + pd.offsets.MonthEnd(0)
-    eff = pd.to_datetime(clia["cert_effective_date"], errors="coerce")
-    return clia[eff.isna() | (eff <= cut)].copy()
+    cut_start = pd.Timestamp(str(asof_cutoff)[:7] + "-01")
+    cut_end = cut_start + pd.offsets.MonthEnd(0)
+    nat = pd.Series(pd.NaT, index=clia.index, dtype="datetime64[ns]")
+    eff = (pd.to_datetime(clia["cert_effective_date"], errors="coerce")
+           if "cert_effective_date" in clia.columns else nat)
+    orig = (pd.to_datetime(clia["orig_participation_date"], errors="coerce")
+            if "orig_participation_date" in clia.columns else nat)
+    start = orig.where(orig.notna(), eff)
+    keep = start.isna() | (start <= cut_end)
+    if "termination_date" in clia.columns:
+        term = pd.to_datetime(clia["termination_date"], errors="coerce")
+        keep &= ~(term.notna() & (term < cut_start))
+    out = clia[keep].copy()
+    out.attrs = dict(clia.attrs)
+    out.attrs["asof_kept"] = int(keep.sum())
+    out.attrs["asof_total"] = int(len(clia))
+    out.attrs["asof_basis"] = ("original participation date" if orig.notna().any()
+                               else "certificate effective date (no original participation date)")
+    return out
 
 
 # --------------------------------------------------------------------------- link
