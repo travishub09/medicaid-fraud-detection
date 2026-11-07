@@ -163,9 +163,16 @@ names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`)
   2026-11-07; v29 ran on 3256366):
   - NEW SOURCES: `servicing_mix` (my PR #2, merged) and `clia` (code already there; v29 left the
     file out on purpose; file on the VM, 686,058 certificates, all columns resolve).
-  - FIXES: the book-Jaccard fix (branch `daschel/fix-book-jaccard`, PR not opened); PROPOSED:
-    add `servicing_mix` and `clia` to the runner's STOP_SOURCES (ops/vm/run_frozen_night.sh) so a
-    silently skipped source stops the run. One PR for both.
+  - FIXES (two PRs, opened 2026-11-07): PR #3 = the book-Jaccard fix (branch
+    `daschel/fix-book-jaccard`; v29's real book number from the VM check to be added as a
+    comment); PR #4 = the runner stop list + `servicing_mix` / `clia` and a CLIA success-line
+    check (branch `daschel/runner-stop-list`; stops only at ZERO CLIA links; 9 tests; ci-local
+    and the full suite green). Both need review + merge before v30.
+    v29 check running on the VM: worktree `/tmp/mfd-daschel` at 6d28546, output
+    `/tmp/mfd-daschel/out/v29_book_jaccard_check/`; settings line identical to v29's. Data scan
+    PREVIEW (pre-pull) log `/tmp/mfd-daschel/out/data_audit_2023-12.log`; the official scan
+    reruns on v30 day after the pull + CLIA rebuild. Two jobs at once: cap each with
+    `export MEDICAID_DUCKDB_MEM=24GB` next time.
   - OTHER MERGED CODE SINCE v29: licensed-capacity loader (agency capacity column) and the policy
     library's quote / domain gates: they change v30 only if the capacity rosters or the policy
     library were rebuilt / reloaded since v29 (the data scan shows it).
@@ -186,7 +193,11 @@ names first, then a backup, then the swap (never overwrite `ccn_to_npi.parquet`)
   7. Start in tmux: `HORIZON=33 SEEDS=10 PREV_RUN=/data/medicaid/model_a/frozen_2023-12_v29
      bash ops/vm/run_frozen_night.sh v30 2023-12`.
   8. About an hour in, confirm `servicing_mix` and `clia` read "used" in the run's
-     `SOURCES_REPORT.md`; if skipped, stop the run.
+     `SOURCES_REPORT.md` (PR #4 now stops the run itself if either is skipped, or if CLIA
+     links ZERO labs: decided, keep the stop). Then read how CLIA matched:
+     `grep "\[clia\] linked" /data/medicaid/model_a/frozen_2023-12_v30/night_run.log`:
+     `other_id N` = matched through the rebuilt lookup table (good); only `name_address` =
+     the table was not used (CLIA still runs, less efficiently: note it, fix for the next run).
   9. After the run: read `SOURCE_ABLATION.md` in the run folder. Its per-group row for
      `servicing_mix` (the run re-scored without my three features) is the answer to "did
      my features help?". Also read them on the pursuit/operator books and the state ruler.
