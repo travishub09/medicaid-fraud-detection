@@ -19,12 +19,22 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
 
 ## Phase 0: preconditions
 
-- [ ] v29 book-Jaccard check finished (`/tmp/mfd-daschel/out/v29_book_jaccard_check/`):
-      `acc_top50_jaccard_book` is a number, `acc_top50_jaccard_source` = `book`, 0
-      "book top-50 ... not built" lines. Number posted on PR #3.
-- [ ] v30 stability bar chosen with the reason written here: ______
-- [ ] Data scan PREVIEW read (`/tmp/mfd-daschel/out/data_audit_2023-12.log` -> `DATA_AUDIT.md`):
-      no REQUIRED MISSING on a source v30 uses.
+- [x] v29 book-Jaccard check finished (2026-11-07): `acc_top50_jaccard_book` **0.7493**,
+      `source = book`, 0 "not built" lines; `acc_top50_jaccard_all` 0.5990 = v29's registered
+      number exactly (the setup reproduces v29). On the book measure v29 passes. Comment on
+      PR #3: drafted, posts on the analyst's OK.
+- [x] v30 stability bar: **0.7** (analyst's decision, 2026-11-07, before v30). Reason: 0.6 would
+      pass a quarter of the 50 reshuffling (about 37-38 of 50 shared), too weak to catch a real
+      drop; 0.7 = about 41 of 50 shared, about two companies of margin below v29's re-measured
+      0.749 (about 43) to absorb 3-repeat noise; not set at v29's own number.
+- [ ] Data scan PREVIEW read (report folder `/data/medicaid/audit_20261107_0028/`, the frozen
+      report under `frozen_2023-12/`): no REQUIRED MISSING on a source v30 uses. Flagged:
+      "clia: every edition is after 2023-12": the export reads the 2026-09 file anyway and keeps
+      only certificates effective on/before 2023-12 (clia.asof_certificates); the labs' details
+      (volumes, certificate type) are 2026 values = a known current_state limit (pending the
+      analyst's decision: run as is + record it, or fix first; v31 fix = an edition picker + the
+      CMS Q4-2023 CLIA edition). Owners editions all after 2023-12 and the absent optional files
+      were the same for v29.
 - [x] Branch `daschel/v30` pushed at **e6f5030**; `make ci-local` green on it (1,468 passed,
       2 skipped, both fixture end-to-end runs OK; 2026-11-07).
 - [x] v29's pre-registration line captured (21 checks, 2026-11-07):
@@ -107,13 +117,13 @@ its commit, and the reading plan (servicing_mix on the pursuit / operator books,
 misses and the state ruler; SOURCE_ABLATION's servicing_mix group). Claude drafts the exact
 `python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag
 frozen_2023-12_v30 ...` command from v29's line.
-DRAFT (2026-11-07; replace BAR with the chosen bar before running; the other 20 checks are v29's
-word for word):
+DRAFT (2026-11-07; bar filled in: 0.7; the other 20 checks are v29's word for word; before
+running, add the CLIA known-limit sentence to --expected if the analyst runs CLIA as is):
 ```bash
 cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v30 \
   --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e6f5030, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4)" \
-  --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= BAR, jaccard_source = book; BAR chosen from v29's re-measured book Jaccard before this run, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH" \
-  --check "hits100 >= 2" "hits250 >= 4" "large_hits50 >= 2" "npi_lift1pct >= 3" "score_scale >= 0.1" "inst_share50 <= 0.2" "top50_jaccard_book >= BAR" "jaccard_source = book" "train = hard" "policy = hard" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight" "priors = none" "prune = none" "embeddings = 0" "fca_reach >= 0.02" "ruler_graph = asof" "facility_rollup = own_ccn" "segment = all" "case_budget = npi100"
+  --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= 0.7, jaccard_source = book; 0.7 chosen before this run from v29's re-measured book Jaccard 0.749, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH" \
+  --check "hits100 >= 2" "hits250 >= 4" "large_hits50 >= 2" "npi_lift1pct >= 3" "score_scale >= 0.1" "inst_share50 <= 0.2" "top50_jaccard_book >= 0.7" "jaccard_source = book" "train = hard" "policy = hard" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight" "priors = none" "prune = none" "embeddings = 0" "fca_reach >= 0.02" "ruler_graph = asof" "facility_rollup = own_ccn" "segment = all" "case_budget = npi100"
 ```
 HARD STOP: the word `BAR` must NOT be in the command when it runs. A literal `BAR` cannot be
 measured, an unmeasured check counts as a FAIL, and v30 would HOLD automatically. Replace it
