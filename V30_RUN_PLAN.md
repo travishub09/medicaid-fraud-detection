@@ -35,8 +35,10 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
       state_licensing / usps_cmra no file on disk (optional, absent for v29 too).
       CLIA DECISION (analyst, 2026-11-07): run v30 with the 2026-09 edition and SAY SO in the
       pre-registration; read CLIA's effect separately (phase 8); a pre-cutoff edition comes in v31.
-- [x] Branch `daschel/v30` pushed at **e6f5030**; `make ci-local` green on it (1,468 passed,
-      2 skipped, both fixture end-to-end runs OK; 2026-11-07).
+- [x] Branch `daschel/v30` pushed at **e7e8939** (e6f5030 + the CLIA as-of fix); `make ci-local`
+      green on it (1,470 passed, 2 skipped, both fixture end-to-end runs OK; 2026-11-07).
+- [ ] CLIA as-of fix checked on the real file (probe): kept ______ of 686,058 (old filter: 371,254),
+      basis = original participation date; renewed 2024-26 but in force at 2023-12: ______.
 - [x] v29's pre-registration line captured (21 checks, 2026-11-07):
       `grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`
 **GATE 0:** all five ticked.
@@ -67,15 +69,15 @@ Branch check (the run must measure exactly "the integration branch + PR #3 + PR 
 ```bash
 cd ~/medicaid-fraud-detection && git fetch origin claude/happy-mccarthy-3skrn3 daschel/v30 && git log --oneline origin/claude/happy-mccarthy-3skrn3 -1 && git log --oneline origin/claude/happy-mccarthy-3skrn3..origin/daschel/v30
 ```
-Expect the integration head **2924671** and exactly five commits (e6f5030, 9dad277, 8d97fa8,
-8bf0930, 6d28546). If the integration branch has moved: STOP, Claude rebuilds `daschel/v30`
+Expect the integration head **2924671** and exactly six commits (e7e8939 the CLIA as-of fix, e6f5030,
+9dad277, 8d97fa8, 8bf0930, 6d28546). If the integration branch has moved: STOP, Claude rebuilds `daschel/v30`
 on the new head (re-test, re-push), then repeat this check.
 
 Create the worktree:
 ```bash
 cd ~/medicaid-fraud-detection && git worktree add --detach ~/mfd-v30 origin/daschel/v30 && git -C ~/mfd-v30 log --oneline -1
 ```
-Must show **e6f5030** (or the rebuilt commit).
+Must show **e7e8939** (or the rebuilt commit).
 PYTHON: the runner activates `$REPO/.venv`, which a worktree does not have (it would silently
 fall back to the system Python). EVERY command in `~/mfd-v30` therefore starts with
 `source ~/medicaid-fraud-detection/.venv/bin/activate` (child steps inherit it).
@@ -124,7 +126,7 @@ DRAFT (2026-11-07; bar 0.7 filled in; the CLIA known-limit sentence is in --goal
 checks are v29's word for word):
 ```bash
 cd ~/mfd-v30 && source ~/medicaid-fraud-detection/.venv/bin/activate && python -m src.model_a.run_registry --data-root /data/medicaid --preregister --tag frozen_2023-12_v30 \
-  --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e6f5030, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4). CLIA uses the Sept 2026 edition (no pre-cutoff edition on hand; certificates effective after 2023-12 are dropped, but the labs' volumes and certificate types are 2026 values), so it is post-cutoff by design; the data scan flags it and that flag is expected; its effect is read separately (SOURCE_ABLATION clia row, SCHEME_HEALTH lab_testing leak_suspect) and a pre-cutoff edition comes in v31" \
+  --goal "v30 = v29's setup (2023-12 freeze, horizon 33, 10 seeds, train hard, batch-5b policy) run from branch daschel/v30 at e7e8939, adding two sources: servicing_mix (srv_hub_share, srv_out_of_state_share, srv_inactive_share; PR #2) and clia (clia_volume_ratio, clia_waiver_high_complexity into lab_testing; CLIA ids from the rebuilt nppes_other_ids); plus the book top-50 Jaccard fix (PR #3) and the runner stop list (PR #4). CLIA uses the Sept 2026 edition (no pre-cutoff edition on hand; certificates effective after 2023-12 are dropped, but the labs' volumes and certificate types are 2026 values), so it is post-cutoff by design; the freeze keeps labs by their ORIGINAL participation date (the CLIA as-of fix on this branch: the old filter on the renewal date dropped the open labs), but their details stay 2026 values; the data scan flags it and that flag is expected; its effect is read separately (SOURCE_ABLATION clia row, SCHEME_HEALTH lab_testing leak_suspect) and a pre-cutoff edition comes in v31" \
   --expected "v29's checks with the stability check read on the pursuit book (top50_jaccard_book >= 0.7, jaccard_source = book; 0.7 chosen before this run from v29's re-measured book Jaccard 0.749, reason in V30_RUN_PLAN.md); read servicing_mix's per-group SOURCE_ABLATION row, the pursuit / operator books, the near misses and the state ruler; read lab_testing with CLIA in SCHEME_HEALTH; if CLIA's ablation gain is large or lab_testing reads leak_suspect, v30 is judged on everything except CLIA (servicing_mix is unaffected either way)" \
   --check "hits100 >= 2" "hits250 >= 4" "large_hits50 >= 2" "npi_lift1pct >= 3" "score_scale >= 0.1" "inst_share50 <= 0.2" "top50_jaccard_book >= 0.7" "jaccard_source = book" "train = hard" "policy = hard" "frozen = True" "seeds >= 10" "groups = case_cluster" "broadcast = weight" "priors = none" "prune = none" "embeddings = 0" "fca_reach >= 0.02" "ruler_graph = asof" "facility_rollup = own_ccn" "segment = all" "case_budget = npi100"
 ```
