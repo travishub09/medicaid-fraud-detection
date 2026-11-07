@@ -37,8 +37,12 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
       pre-registration; read CLIA's effect separately (phase 8); a pre-cutoff edition comes in v31.
 - [x] Branch `daschel/v30` pushed at **e7e8939** (e6f5030 + the CLIA as-of fix); `make ci-local`
       green on it (1,470 passed, 2 skipped, both fixture end-to-end runs OK; 2026-11-07).
-- [ ] CLIA as-of fix checked on the real file (probe): kept ______ of 686,058 (old filter: 371,254),
-      basis = original participation date; renewed 2024-26 but in force at 2023-12: ______.
+- [x] CLIA as-of fix checked on the real file (probe, 2026-11-07, worktree at e7e8939): kept
+      **325,338** of 686,058 (old filter: 371,254), basis = original participation date; of those,
+      **264,893** renewed in 2024-26 (open labs the old filter dropped) and 60,445 with older
+      certificates. About 310,000 labs closed / terminated before Dec 2023 are now dropped (the old
+      filter kept them). ~325k in force matches the size of the US CLIA lab population.
+      PR C (the CLIA fix as its own PR into the integration branch): to open on the analyst's OK.
 - [x] v29's pre-registration line captured (21 checks, 2026-11-07):
       `grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`
 **GATE 0:** all five ticked.
