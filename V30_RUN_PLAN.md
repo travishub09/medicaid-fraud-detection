@@ -25,7 +25,8 @@ the next phase until the gate holds. Each phase starts only on the analyst's "go
 - [ ] v30 stability bar chosen with the reason written here: ______
 - [ ] Data scan PREVIEW read (`/tmp/mfd-daschel/out/data_audit_2023-12.log` -> `DATA_AUDIT.md`):
       no REQUIRED MISSING on a source v30 uses.
-- [ ] Branch `daschel/v30` pushed; `make ci-local` green on it.
+- [x] Branch `daschel/v30` pushed at **e6f5030**; `make ci-local` green on it (1,468 passed,
+      2 skipped, both fixture end-to-end runs OK; 2026-11-07).
 - [ ] v29's pre-registration line captured:
       `grep "frozen_2023-12_v29" /data/medicaid/model_a/preregistrations.jsonl`
 **GATE 0:** all five ticked.
@@ -48,7 +49,7 @@ Only `jaccard` / `audit` (finished) or nothing. Any run (v29, v30, cd2, lanes): 
 cd ~/medicaid-fraud-detection && git status --short | head && git fetch origin daschel/v30 && git checkout -B daschel/v30 origin/daschel/v30 && git log --oneline -1
 ```
 `git status` must be empty first (local edits in the main checkout: STOP and look). The last
-line must show the pushed `daschel/v30` commit.
+line must show the pushed `daschel/v30` commit (**e6f5030** unless the branch moved since).
 **GATE 2:** the main checkout is on `daschel/v30` at the pushed commit.
 
 ## Phase 3: rebuild the CLIA lookup table (`processed/nppes_other_ids.parquet`)
