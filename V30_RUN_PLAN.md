@@ -47,7 +47,10 @@ Subject "VM in use: v30 run starting [time]". Body: v30 starting at [time] from 
 running overnight; until the all-clear, no git pull / branch switch / edits in
 ~/medicaid-fraud-detection, no other run or lanes cycle on the server; v30 = v29's setup +
 servicing_mix + CLIA + the book-Jaccard fix + the runner stop list; an email when it finishes.
-**GATE 1:** email sent.
+DRAFT SAVED in Gmail (2026-11-07, account djagt29@gmail.com, draft id r3281664260819789044), no
+recipient yet, `[TIME]` placeholder. SEND ONLY WHEN THE RUN ACTUALLY STARTS (analyst's rule): fill
+in the time and the operator's address, and update the wording if the CLIA decision changes.
+**GATE 1:** email sent at the start of the run.
 
 ## Phase 2: the v30 code on the VM, in its OWN worktree (never switch the main folder)
 
