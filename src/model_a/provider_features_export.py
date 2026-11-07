@@ -3376,7 +3376,10 @@ def main() -> None:
                               f"{', '.join(craw.attrs.get('files', []))}: {n_ratio:,} with a volume ratio "
                               f"(volume columns {craw.attrs.get('volume_columns') or 'NONE RESOLVED'}), "
                               f"{n_whc:,} waiver-only labs billing high-complexity codes"
-                              + (f"; certificates effective on/before {args.asof_cutoff}"
+                              + (f"; labs in force at {args.asof_cutoff}: "
+                                 f"{craw.attrs.get('asof_kept', len(craw)):,} of "
+                                 f"{craw.attrs.get('asof_total', len(craw)):,} certificates, by "
+                                 f"{craw.attrs.get('asof_basis', 'certificate effective date')}"
                                  if args.asof_cutoff else ""))
                     else:
                         audit("    [clia] skipped: the link produced no feature row")
