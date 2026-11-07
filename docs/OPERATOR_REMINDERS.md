@@ -1,15 +1,37 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-11-06. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-11-07. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
-Nothing due. Good.
+_Mark each fetch done with `python -m src.reminders --done <key>` — that AUTO-QUEUES the post-download checks (vintage inspect + scheme discovery + send reports) with exact commands, so nothing has to be remembered._
+
+- **nppes_deactivation** — CMS Deactivated NPI Report (invalid_identity scheme)
+  - save to: preclean/nppes_deactivation/ (keep as the .zip; loader unzips)  |  https://download.cms.gov/nppes/NPI_Files.html
+  - due: 2026-11-07
+  - step 1: Open https://download.cms.gov/nppes/NPI_Files.html
+  - step 2: Under 'Weekly/Monthly Deactivation', download the 'NPPES Deactivated NPI Report' .zip (do NOT unzip)
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/nppes_deactivation/*.zip or preclean/nppes_deactivation/*.xlsx
+
+```bat
+move "%USERPROFILE%\Downloads\NPPES_Deactivated_*.zip" "C:\Users\treyr\OneDrive\Desktop\data\preclean\nppes_deactivation\"
+python -m src.reminders --done nppes_deactivation
+```
+
+- **owner_snapshot** — make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
+  - save to: run from repo: make owner-snapshot
+  - due: 2026-11-07  (2026-10-21: AUTOMATIC on the VM from bundle 345 (run_frozen_night.sh step 0 archives the month's owner edges and copies every All-Owners file in preclean/owners into owners_prior/ under a dated name); the laptop line stays for months without a VM run.)
+  - step 1: Nothing to download — paste the commands below
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.entity_graph.ownership_snapshot --owned-by "C:\Users\treyr\OneDrive\Desktop\data\graph\edges\owned_by_edges.parquet" --snapshots-dir "C:\Users\treyr\OneDrive\Desktop\data\owner_snapshots"
+python -m src.reminders --done owner_snapshot
+```
+
 
 ## COMING UP (30 days)
 
-- nppes_deactivation — due 2026-11-07: CMS Deactivated NPI Report (invalid_identity scheme)
-- owner_snapshot — due 2026-11-07: make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
 - sam_exclusions — due 2026-11-09: SAM.gov exclusions extract (widens the PU label)
 - warn_notices — due 2026-11-09: WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.
 - nppes_practice_locations — due 2026-11-14: NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
@@ -126,7 +148,7 @@ ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o
 python -m src.reminders --done-task nj_amdc_opra
 ```
 
-- [ ] **capacity_rosters_next_states** — CA + NY LOADED 2026-10-30 (19,561 licensed sites from 5 files, CA / NJ / NY; 26,155 NPIs matched, 23,531 by address). THE READ of the per-diem sweep with them: no new door-count card above the case bar. The four rows that surfaced were California and small: a county alcohol-and-drug programme (government; now set aside by the widened rule), Right Choice Senior Living ($2.3M, a six-bed licence read 2.7x: the assisted-living-waiver shape where one number bills several six-bed homes, so the loader now sums a licensee's homes = basis address+name), Reimagine Network ($14M adult day, 1.28x on calendar days but 0.94 on two shifts and the peak was January 2021 under COVID remote-service rules: watch at most), Promise Assisted Living (exactly 1.00). New York's adult-home roster produced no candidate; the $5.9B NY no-roster rows are ADULT DAY HEALTH CARE (261Q), which needs the DOH ADHC list, not the ACF directory. NEXT: after the laptop pull, rerun the loader + sweep lines (the two fixes change the CA capacities); then the next rosters, one per session, in dollar order of the no-roster table: MO (DMH residential / day habilitation: Easter Seals Midwest $344M, Supported Living $235M, Easy Living, Emmaus), TX (HHSC HCS / ICF rosters: Consumer Directed Services $306M, Caregivers Home Health $168M), AZ (DDD / DHS licensed homes: Tungland $294M), ME (Granite Bay $281M), VA (DBHDS licensed residential: Wall Residences $274M), NH, TN; and the NY ADHC list. RULE learned: a residential-habilitation operator's capacity is the SUM of its licensed homes, so a state roster must carry the licensee or operator name, not just the home's name, or the join lands on one house. 2026-10-31: the analyst work-list email (MO first, then TX / AZ / ME / VA / NH / TN and the NY ADHC list) is sent; the shared OneDrive data folder is shared with the analyst and Dashel. 2026-11-01: the roster_finder lane (task lanes_dispatch_records) writes STATE_ROSTERS.md, the per-state download checklist with the capacity field named; work it top to bottom (capacity + licence number + a direct download first). (added 2026-10-29)
+- [ ] **capacity_rosters_next_states** — ROSTERS ON THE LAPTOP, NOT YET ON THE SERVER (Daschel's master list 2026-11-06 + the NH email 2026-11-07): AZ 12 files (adult day, assisted living, BH residential / respite / supported group / therapeutic home, DD group homes, ICF-IID, nursing home, nursing-supported group home, sober living, adult foster care), ME 3 (adult day, assisted living, residential care), MO 3 (adult day care, DD sites, long-term care), TX 4 xlsx (DAHS, ICF-IID, assisted living, nursing facilities), VA 3 (assisted living, DBHDS day support, DBHDS residential), NH 4 csv + the state's PDF (nursing home, residential care, community residence, all facilities). NH COUNTY NOTE: the state's list carries the wrong county on 17 rows (NH_county_check.csv in the folder; 4 of them in the capacity files); the loader never reads the county column (the join is street + city + zip), so the files load as-is and the check file is documentation. ORDER: sync preclean to the server (down-preclean), run the roster loader (the log names any file whose headers do not resolve: paste it), then the per-diem screen; the AZ capacity rule (agency figure over the statutory ceiling) is in the code since bundle 663e761. Earlier read (2026-10-30): CA + NY loaded, no new door-count card above the case bar; the $5.9B NY no-roster rows are adult day health care (needs the DOH ADHC list). Next rosters to ask Daschel for: NY ADHC, TN, then the Southeast. (added 2026-10-29)
 
 ```bat
 cd /d C:\Users\treyr\medicaid-fraud-detection && git pull --ff-only
@@ -303,12 +325,14 @@ REM 4. close (only when line 1 shows policy / plan_policy / roster_finder fully 
 python -m src.reminders --done-task manus_credits_topup
 ```
 
-- [ ] **post_download_checks** — New files landed — run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude (added 2026-11-03)
+- [ ] **post_download_checks** — New files landed (Daschel's master list 2026-11-06: CLIA, POS hold, facility Oct-2026 editions + PBJ 2026Q2, MUE 2026Q4, NADAC 2026-10-28, OPAIS 2026-10-28, 25 state rosters). THE LAPTOP IS NOT A COMPUTE SEAT: run the scan on the server after the preclean sync, then send DATA_AUDIT.md + VINTAGE_INSPECT.md to Claude. (added 2026-11-03)
 
 ```bat
-cd /d C:\Users\treyr\medicaid-fraud-detection
-python -m src.vintage_inspect --data-root "C:/Users/treyr/OneDrive/Desktop/data"
-python -m src.model_a.scheme_discovery --data-root "C:/Users/treyr/OneDrive/Desktop/data"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh down-preclean 2>&1 | tail -3"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && bash ops/vm/data_audit.sh 2023-12 2>&1 | tail -8"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.vintage_inspect --data-root /data/medicaid 2>&1 | tail -5"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/preclean/VINTAGE_INSPECT.md "%USERPROFILE%\Desktop\VINTAGE_INSPECT.md"
+REM then upload VINTAGE_INSPECT.md and the newest DATA_AUDIT.md (the data_audit.sh line prints its path) to the chat
 python -m src.reminders --done-task post_download_checks
 ```
 
@@ -341,6 +365,17 @@ python -m src.reminders --done-task dossier_poll__frozen_2023-12_v29
 ```
 
 - [ ] **registry_verdict__frozen_2023-12_v29** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v29 — close only when you have them (added 2026-11-06)
+- [ ] **ohio_filings_read_2** — THE SECOND OHIO FILINGS BATCH (Daschel's master list 2026-11-06): 243 county-recorder PDFs + 70 Secretary of State PDFs under OneDrive data\enforcement\Ohio\filings\ (the first addendum read 113). New since the first read: Lucas (Oregon, Toledo, Waterville), Fulton (Wauseon), Cuyahoga (Euclid Beach, Mayfield Heights, Mount Royal Villa, North Olmsted), Franklin (Capital City Gardens, Edgewood Manor of Westerville), the Magnolia Meadows JV deed + SOS articles, and 63 filings dated 2026: the Sept-Oct 2026 REFINANCING of the whole Ayden portfolio (White Oak releases; Greystone $36M mortgages on the Lucas / Fulton homes; DMT SPE I $46.5M on Greenville / Piqua; 'Propco TIC II' deeds; unemployment-tax liens on Toledo / Waterville). The VM's preclean sync never pulls enforcement/, so this is a one-off rclone copy of that folder, then filings_digest --ocr on the server, then filings_text.zip + filings_digest.csv to the chat for the second addendum (HANDOFF_ohio_ADDENDUM_2; work product, never git). Nothing in it names a private person in a committed file. (added 2026-11-07)
+
+```bat
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "rclone copy onedrive:Desktop/data/enforcement/Ohio/filings /data/medicaid/enforcement/ohio/filings --transfers 8 -P 2>&1 | tail -2; find /data/medicaid/enforcement/ohio/filings -name '*.pdf' | wc -l"
+ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.enforcement.filings_digest --root /data/medicaid/enforcement/ohio/filings --out /data/medicaid/enforcement/ohio/filings_digest_2 --ocr 2>&1 | tail -3"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/enforcement/ohio/filings_digest_2/filings_text.zip "%USERPROFILE%\Desktop\filings_text_2.zip"
+scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/enforcement/ohio/filings_digest_2/filings_digest.csv "%USERPROFILE%\Desktop\filings_digest_2.csv"
+REM upload filings_text_2.zip + filings_digest_2.csv to the chat; Claude writes the second addendum
+python -m src.reminders --done-task ohio_filings_read_2
+```
+
 
 ## After ANY download session (standing rule)
 
@@ -358,3 +393,4 @@ powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*
 ```
 
 That captures: PROVIDER_FEATURES_EXPORT_REPORT, SOURCES_REPORT, EXPECTATIONS, SCHEME_HEALTH + SCHEME_TRIAGE, CASE_VALIDATION, PURSUIT_DOSSIER, RESULTS_DIGEST, OPERATING_POINTS, the feature manifest, and the run-registry row. No parquet/csv goes in the zip (reports only). A run is not closed until the packet is sent and Claude has updated the release registry + triage follow-ups from it.
+

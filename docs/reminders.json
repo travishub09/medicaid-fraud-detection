@@ -792,7 +792,7 @@
   {
    "key": "capacity_rosters_next_states",
    "added": "2026-10-29",
-   "what": "CA + NY LOADED 2026-10-30 (19,561 licensed sites from 5 files, CA / NJ / NY; 26,155 NPIs matched, 23,531 by address). THE READ of the per-diem sweep with them: no new door-count card above the case bar. The four rows that surfaced were California and small: a county alcohol-and-drug programme (government; now set aside by the widened rule), Right Choice Senior Living ($2.3M, a six-bed licence read 2.7x: the assisted-living-waiver shape where one number bills several six-bed homes, so the loader now sums a licensee's homes = basis address+name), Reimagine Network ($14M adult day, 1.28x on calendar days but 0.94 on two shifts and the peak was January 2021 under COVID remote-service rules: watch at most), Promise Assisted Living (exactly 1.00). New York's adult-home roster produced no candidate; the $5.9B NY no-roster rows are ADULT DAY HEALTH CARE (261Q), which needs the DOH ADHC list, not the ACF directory. NEXT: after the laptop pull, rerun the loader + sweep lines (the two fixes change the CA capacities); then the next rosters, one per session, in dollar order of the no-roster table: MO (DMH residential / day habilitation: Easter Seals Midwest $344M, Supported Living $235M, Easy Living, Emmaus), TX (HHSC HCS / ICF rosters: Consumer Directed Services $306M, Caregivers Home Health $168M), AZ (DDD / DHS licensed homes: Tungland $294M), ME (Granite Bay $281M), VA (DBHDS licensed residential: Wall Residences $274M), NH, TN; and the NY ADHC list. RULE learned: a residential-habilitation operator's capacity is the SUM of its licensed homes, so a state roster must carry the licensee or operator name, not just the home's name, or the join lands on one house. 2026-10-31: the analyst work-list email (MO first, then TX / AZ / ME / VA / NH / TN and the NY ADHC list) is sent; the shared OneDrive data folder is shared with the analyst and Dashel. 2026-11-01: the roster_finder lane (task lanes_dispatch_records) writes STATE_ROSTERS.md, the per-state download checklist with the capacity field named; work it top to bottom (capacity + licence number + a direct download first).",
+   "what": "ROSTERS ON THE LAPTOP, NOT YET ON THE SERVER (Daschel's master list 2026-11-06 + the NH email 2026-11-07): AZ 12 files (adult day, assisted living, BH residential / respite / supported group / therapeutic home, DD group homes, ICF-IID, nursing home, nursing-supported group home, sober living, adult foster care), ME 3 (adult day, assisted living, residential care), MO 3 (adult day care, DD sites, long-term care), TX 4 xlsx (DAHS, ICF-IID, assisted living, nursing facilities), VA 3 (assisted living, DBHDS day support, DBHDS residential), NH 4 csv + the state's PDF (nursing home, residential care, community residence, all facilities). NH COUNTY NOTE: the state's list carries the wrong county on 17 rows (NH_county_check.csv in the folder; 4 of them in the capacity files); the loader never reads the county column (the join is street + city + zip), so the files load as-is and the check file is documentation. ORDER: sync preclean to the server (down-preclean), run the roster loader (the log names any file whose headers do not resolve: paste it), then the per-diem screen; the AZ capacity rule (agency figure over the statutory ceiling) is in the code since bundle 663e761. Earlier read (2026-10-30): CA + NY loaded, no new door-count card above the case bar; the $5.9B NY no-roster rows are adult day health care (needs the DOH ADHC list). Next rosters to ask Daschel for: NY ADHC, TN, then the Southeast.",
    "commands": [
     "cd /d C:\\Users\\treyr\\medicaid-fraud-detection && git pull --ff-only",
     "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh down-preclean 2>&1 | tail -3 && ls -la /data/medicaid/preclean/state_capacity/\"",
@@ -1033,11 +1033,13 @@
   },
   {
    "key": "post_download_checks",
-   "what": "New files landed \u2014 run the checks below, then send VINTAGE_INSPECT.md + SCHEME_DISCOVERY.md to Claude",
+   "what": "New files landed (Daschel's master list 2026-11-06: CLIA, POS hold, facility Oct-2026 editions + PBJ 2026Q2, MUE 2026Q4, NADAC 2026-10-28, OPAIS 2026-10-28, 25 state rosters). THE LAPTOP IS NOT A COMPUTE SEAT: run the scan on the server after the preclean sync, then send DATA_AUDIT.md + VINTAGE_INSPECT.md to Claude.",
    "commands": [
-    "cd /d C:\\Users\\treyr\\medicaid-fraud-detection",
-    "python -m src.vintage_inspect --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
-    "python -m src.model_a.scheme_discovery --data-root \"C:/Users/treyr/OneDrive/Desktop/data\"",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"bash ~/medicaid-fraud-detection/ops/vm/sync_data.sh down-preclean 2>&1 | tail -3\"",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && bash ops/vm/data_audit.sh 2023-12 2>&1 | tail -8\"",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.vintage_inspect --data-root /data/medicaid 2>&1 | tail -5\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/preclean/VINTAGE_INSPECT.md \"%USERPROFILE%\\Desktop\\VINTAGE_INSPECT.md\"",
+    "REM then upload VINTAGE_INSPECT.md and the newest DATA_AUDIT.md (the data_audit.sh line prints its path) to the chat",
     "python -m src.reminders --done-task post_download_checks"
    ],
    "added": "2026-11-03"
@@ -1080,6 +1082,19 @@
    "key": "registry_verdict__frozen_2023-12_v29",
    "what": "Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v29 \u2014 close only when you have them",
    "added": "2026-11-06"
+  },
+  {
+   "key": "ohio_filings_read_2",
+   "what": "THE SECOND OHIO FILINGS BATCH (Daschel's master list 2026-11-06): 243 county-recorder PDFs + 70 Secretary of State PDFs under OneDrive data\\enforcement\\Ohio\\filings\\ (the first addendum read 113). New since the first read: Lucas (Oregon, Toledo, Waterville), Fulton (Wauseon), Cuyahoga (Euclid Beach, Mayfield Heights, Mount Royal Villa, North Olmsted), Franklin (Capital City Gardens, Edgewood Manor of Westerville), the Magnolia Meadows JV deed + SOS articles, and 63 filings dated 2026: the Sept-Oct 2026 REFINANCING of the whole Ayden portfolio (White Oak releases; Greystone $36M mortgages on the Lucas / Fulton homes; DMT SPE I $46.5M on Greenville / Piqua; 'Propco TIC II' deeds; unemployment-tax liens on Toledo / Waterville). The VM's preclean sync never pulls enforcement/, so this is a one-off rclone copy of that folder, then filings_digest --ocr on the server, then filings_text.zip + filings_digest.csv to the chat for the second addendum (HANDOFF_ohio_ADDENDUM_2; work product, never git). Nothing in it names a private person in a committed file.",
+   "added": "2026-11-07",
+   "commands": [
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"rclone copy onedrive:Desktop/data/enforcement/Ohio/filings /data/medicaid/enforcement/ohio/filings --transfers 8 -P 2>&1 | tail -2; find /data/medicaid/enforcement/ohio/filings -name '*.pdf' | wc -l\"",
+    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.enforcement.filings_digest --root /data/medicaid/enforcement/ohio/filings --out /data/medicaid/enforcement/ohio/filings_digest_2 --ocr 2>&1 | tail -3\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/enforcement/ohio/filings_digest_2/filings_text.zip \"%USERPROFILE%\\Desktop\\filings_text_2.zip\"",
+    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/enforcement/ohio/filings_digest_2/filings_digest.csv \"%USERPROFILE%\\Desktop\\filings_digest_2.csv\"",
+    "REM upload filings_text_2.zip + filings_digest_2.csv to the chat; Claude writes the second addendum",
+    "python -m src.reminders --done-task ohio_filings_read_2"
+   ]
   }
  ],
  "closed": [
