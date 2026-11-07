@@ -993,8 +993,12 @@ def stability(matrix: pd.DataFrame, manifest: dict, cols: list[str], ev_by_ruler
             _log(f"stability: refit {rep} of {repeats}")
             scores, _, _ = refit_scores(matrix, manifest, repeat=rep, cols=cols)
         k = max(1, int(round(len(matrix) * top_frac)))
-        order = np.argsort(-np.nan_to_num(scores, nan=-np.inf), kind="stable")
-        npi_sets.append(set(matrix["npi"].astype(str).to_numpy()[order[:k]]))
+        # 2026-11-06: the rank array has its OWN name. It used to be called `order`, which
+        # overwrote the `order` argument (the book's sort key, e.g. 'dollar'): every
+        # repeat's book then failed on ndarray.startswith, jaccard_top_book was None and
+        # the gated top50_jaccard fell back to the all-orgs measure (v28 and v29)
+        rank = np.argsort(-np.nan_to_num(scores, nan=-np.inf), kind="stable")
+        npi_sets.append(set(matrix["npi"].astype(str).to_numpy()[rank[:k]]))
         top = _fast_org_top(matrix, scores, k_org)
         org_sets.append(top)
         for o in top:
