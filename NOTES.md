@@ -29,6 +29,11 @@ never by name (the team rule).
 
 ## How to work with me
 
+- **HARD RULE: KEYS STAY PRIVATE.** Every time a command would display `~/.medicaid_env` or any
+  other file holding passwords, tokens or keys (`cat`, `less`, `head`, `grep`, an editor...), put
+  this warning right next to the command, every time, no exceptions:
+  "⚠️ Do not paste what this shows into any chat, email, document or file. Keys stay private."
+  Never ask me for a key's value, never print one, never write one into any file or commit.
 - I'm new to the codebase, the model and the command line. Use plain language, explain every
   code name or piece of jargon the first time it comes up, and go one step at a time.
 - Give commands in their own code blocks, say whether each one only reads or changes something,
