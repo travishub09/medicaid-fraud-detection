@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-11-07. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-11-09. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -18,6 +18,21 @@ move "%USERPROFILE%\Downloads\NPPES_Deactivated_*.zip" "C:\Users\treyr\OneDrive\
 python -m src.reminders --done nppes_deactivation
 ```
 
+- **sam_exclusions** — SAM.gov exclusions extract (widens the PU label)
+  - save to: preclean/sam/  |  https://sam.gov/data-services
+  - due: 2026-11-09  (Bundle 250: the public extract is now the SAM source (enforcement/sam_api.py --from-csv): it writes processed/exclusions_sam.parquet in the exclusions schema with the NPI the extract carries and the agency in excl_type (HHS debarments tier weak). Run the load line after each download; the graph rebuild (part of every frozen run) merges it. The older undated sam_exclusions.CSV can be deleted. FIRST LOAD 2026-10-09: 168,445 exclusions, 19,357 with an NPI, 69,978 placed by HHS, all active -> processed/exclusions_sam.parquet (the paged-API parquet is superseded).)
+  - step 1: Open https://sam.gov/data-services and pick 'Exclusions' -> 'Public V2' current extract (CSV); no login needed
+  - step 2: Save it as sam_exclusions_<yyyymm>.csv under preclean\sam\ (replace <yyyymm> in the move line)
+  - step 3: Then the load line below (seconds); the next graph build merges it into the exclusion nodes + the PU label
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/sam/*.csv
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+move "%USERPROFILE%\Downloads\SAM_Exclusions_Public_Extract*.CSV" "C:\Users\treyr\OneDrive\Desktop\data\preclean\sam\sam_exclusions_<yyyymm>.csv"
+python -m src.enforcement.sam_api --from-csv "C:\Users\treyr\OneDrive\Desktop\data\preclean\sam" --out "C:\Users\treyr\OneDrive\Desktop\data\processed"
+python -m src.reminders --done sam_exclusions
+```
+
 - **owner_snapshot** — make owner-snapshot (no download — archives owner edges; ownership_turnover needs 2+ months)
   - save to: run from repo: make owner-snapshot
   - due: 2026-11-07  (2026-10-21: AUTOMATIC on the VM from bundle 345 (run_frozen_night.sh step 0 archives the month's owner edges and copies every All-Owners file in preclean/owners into owners_prior/ under a dated name); the laptop line stays for months without a VM run.)
@@ -29,11 +44,28 @@ python -m src.entity_graph.ownership_snapshot --owned-by "C:\Users\treyr\OneDriv
 python -m src.reminders --done owner_snapshot
 ```
 
+- **warn_notices** — WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.
+  - save to: preclean/warn/
+  - due: 2026-11-09  (2026-10-09: CA, TX, NC, RI filed under preclean/warn/ (guard accepted); FL still to retry)
+  - step 1: ALREADY DONE? run: dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"  (the --done line also refuses until files are there)
+  - step 2: 2026-10-09: CA, TX, NC and RI postings downloaded (three .xlsx, one .csv); the copy lines below file them as warn_<ST>_<yyyymm>.<ext>; the monitor (bundle 247) reads the whole folder, Excel included, and takes the state from the filename. FL did not download (a 37 KB 'Unconfirmed ...crdownload' in Downloads is the failed attempt): retry FloridaJobs WARN notices and save it as warn_FL_<yyyymm>.csv or .xlsx
+  - step 3: Each month: Google '<state> WARN notices' (RI, NC, FL, TX, CA first); each state DOL posts a table; export the current year as CSV or XLSX; save as warn_<ST>_<yyyymm>.<ext> under preclean\warn\
+  - DOWNLOAD FIRST (browser steps above), THEN paste the commands. The --done line refuses until this exists: preclean/warn/warn_*.csv or preclean/warn/warn_*.xlsx
+
+```bat
+mkdir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"
+python -m src.sourcing.warn_monitor --warn "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn" --summary
+for %f in ("%USERPROFILE%\Downloads\California warn_report*.xlsx") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_CA_202610.xlsx"
+for %f in ("%USERPROFILE%\Downloads\texas warn-act-listings*.xlsx") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_TX_202610.xlsx"
+for %f in ("%USERPROFILE%\Downloads\north carolina warn summary report*.csv") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_NC_202610.csv"
+for %f in ("%USERPROFILE%\Downloads\rhode island Warn Report*.xlsx") do copy /y "%f" "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn\warn_RI_202610.xlsx"
+dir "C:\Users\treyr\OneDrive\Desktop\data\preclean\warn"
+python -m src.reminders --done warn_notices
+```
+
 
 ## COMING UP (30 days)
 
-- sam_exclusions — due 2026-11-09: SAM.gov exclusions extract (widens the PU label)
-- warn_notices — due 2026-11-09: WARN layoff notices for the OUTREACH-TIMING tool only (sourcing/warn_monitor + event_timeline): not a model feature, never trained on. A notice is useful while its outreach window is open (6 to 18 months after the departure), so the current year and the one before are worth having; older years are expired windows. Monthly: the current-year table per state.
 - nppes_practice_locations — due 2026-11-14: NPPES Practice Location file (pl_pfile, inside the monthly NPPES zip): secondary practice sites per NPI, so 'one suite' is a fact in the capacity check
 - leie — due 2026-11-21: OIG LEIE exclusion list (THE label source — new bans are training labels)
 
@@ -303,13 +335,10 @@ REM C. close:
 python -m src.reminders --done-task repo_remotes_equityable
 ```
 
-- [ ] **v29_run** — v29 DONE on the server (banner read 2026-11-06; the resume at step 7 after the empty-field-ruler fix ran steps 7 to 13). OPEN until the read-out: the packet comes down as a tar (task run_packet__frozen_2023-12_v29), Claude writes docs/ACCURACY_READOUT_v29, the registry verdict is returned (task registry_verdict__frozen_2023-12_v29). The CLIA file goes to the server NOW (v30 semantics; it was held off until DONE). Pre-registered 2026-11-04 17:25 UTC, 21 checks (the v28 seventeen + ruler_graph = asof, facility_rollup = own_ccn, segment = all, case_budget = npi100). (added 2026-11-02)
+- [ ] **v29_run** — v29 READ OUT 2026-11-09 (docs/ACCURACY_READOUT_v29_2026-11-09.md): registered HOLD on one of 21 (top-50 Jaccard 0.599 vs 0.6), and the failing number was the NATIONAL measure because the book Jaccard never computed (my stability() bug; the analyst's PR #3 fixed it, merged in c9d7c34); on the book v29 reads 0.749 = 21 of 21. Pursuit 1/2/2/4, large 1/2/4/6 (the best large 100/250 of the series), NPI lift 17.8, scale 0.217, inst 0, reach 0.064. Not re-registered (v30 is the clean read on the fixed code); v27 stays champion. CLIA SYNCED to the server 2026-11-07 (the analyst's ls: 221,994,245 bytes). CLOSE THIS TASK on the operator's word: the read-out is written and the packet is read. (added 2026-11-02)
 
 ```bat
-REM 1. the DONE line + the registry verdict + the field ruler set aside:
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "grep -E \"DONE|FAILED\" /data/medicaid/model_a/frozen_2023-12_v29/night_run.log | tail -3; grep -E \"ruler field|not graded\" /data/medicaid/model_a/frozen_2023-12_v29/night_run.log | tail -3; tail -5 /data/medicaid/model_a/MODEL_RUNS.md"
-REM 2. CLIA to the server (held until DONE; v30 is the first run that carries it):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "mkdir -p /data/medicaid/preclean/clia" && scp -i C:\Users\treyr\.ssh\medicaid-vm.pem "C:\Users\treyr\OneDrive\Desktop\data\preclean\clia\pos_clia_202609.csv" ubuntu@3.17.37.139:/data/medicaid/preclean/clia/ && ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "ls -la /data/medicaid/preclean/clia/"
+python -m src.reminders --done-task v29_run
 ```
 
 - [ ] **manus_credits_topup** — THE CREDITS RULE (2026-11-04). The lanes10 cycle is sending the full grid (policy 204 tasks, plan_policy 122, roster_finder 119, and the four case-harvest lanes mfcu / state_audits / commercial / federal_reports at about 119 each). The case-harvest lanes loaded NO training rows under the page rule (123 of 123 readable cited pages lacked the defendant), so from this bundle manus_lanes.sh drops them from the default set and caps a cycle at 100 tasks. Nothing sends unless a cycle is launched; a top-up first resumes the tasks already queued at the service (committed spend). ORDER: (1) line 1 = the yield table (free): read loaded vs dispatched per lane; (2) line 2 = poll and load only (free) whenever answers are wanted; (3) line 3 = the next cycle (CREDITS), the records lanes + the label residues only, 100 tasks: run it only when the table shows the records lanes still short of their grids (policy 204 / plan_policy 122 / roster_finder 119); (4) close this task when policy, plan_policy and roster_finder read prompts = dispatched and every label lane's residue is sent. 2026-11-05 (the lanes12 read): paying lanes = policy, plan_policy, state_audits, outcome_refresh, roster_finder (one-time, 39 cells left); paused = employer (0 of 80 loaded: no employer NPI found on 713 of 890 rows), fee_schedule (every row refused for no url until the prompt demands the citation column), the case-harvest lanes; 88 tasks died at the service (Internal server error) and resend under MANUS_RETRY_ERRORS=1. (added 2026-11-02)
@@ -336,19 +365,13 @@ REM then upload VINTAGE_INSPECT.md and the newest DATA_AUDIT.md (the data_audit.
 python -m src.reminders --done-task post_download_checks
 ```
 
-- [ ] **run_packet__frozen_2023-12_v29** — VM HANDOVER (operator 2026-11-07: 'daschel is now the operator of the VM; not permanently, for now'): the server lines below are DASCHEL'S to run (the roster loads, the data scan, the OCR, the packet tar, v30); Trey keeps the integration branch, the merges, the reminders file, Manus credits and every dispatch decision. Pull the v29 run packet off the server (every report + audit file + the arms, zero raw data) and upload the tar to the chat: Claude cannot see the run finished, so this tar IS the run's arrival. (added 2026-11-06)
+- [ ] **run_packet__frozen_2023-12_v29** — DONE 2026-11-09: the analyst pulled run_packet_v29.tar.gz and the operator uploaded it; read. CLOSE on the operator's word. (added 2026-11-06)
 
 ```bat
-REM 1. pack on the server (the DONE banner's own line):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd /data/medicaid/model_a/frozen_2023-12_v29 && tar -czf /home/ubuntu/run_packet_v29.tar.gz *.md *.json *.csv ab_* 2>/dev/null; ls -la /home/ubuntu/run_packet_v29.tar.gz"
-REM 2. copy it to the laptop, then upload run_packet_v29.tar.gz to the chat:
-scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/home/ubuntu/run_packet_v29.tar.gz "%USERPROFILE%\Desktop\run_packet_v29.tar.gz"
-REM 3. reports back to OneDrive (optional, runs on the server):
-ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139 "cd ~/medicaid-fraud-detection && bash ops/vm/sync_data.sh up frozen_2023-12_v29"
 python -m src.reminders --done-task run_packet__frozen_2023-12_v29
 ```
 
-- [ ] **pursuit_dossier__frozen_2023-12_v29** — VM HANDOVER (operator 2026-11-07: 'daschel is now the operator of the VM; not permanently, for now'): the server lines below are DASCHEL'S to run (the roster loads, the data scan, the OCR, the packet tar, v30); Trey keeps the integration branch, the merges, the reminders file, Manus credits and every dispatch decision. The runner already built the v29 pursuit dossier (step 9: PURSUIT_DOSSIER.md in the run folder, operator-book pick, verdicts file honoured). DISPATCH is gated: the rule is no Manus credits on a HOLD run, so this waits for the registry verdict and the operator's word. If v29 reads PROMOTE (or the operator says dispatch anyway), run the dispatch on the server in tmux, never through a bare ssh (the plain --poll died silently three times in an ssh session). (added 2026-11-06)
+- [ ] **pursuit_dossier__frozen_2023-12_v29** — VM HANDOVER (operator 2026-11-07: 'daschel is now the operator of the VM; not permanently, for now'): the server lines below are DASCHEL'S to run (the roster loads, the data scan, the OCR, the packet tar, v30); Trey keeps the integration branch, the merges, the reminders file, Manus credits and every dispatch decision. The runner already built the v29 pursuit dossier (step 9: PURSUIT_DOSSIER.md in the run folder, operator-book pick, verdicts file honoured). DISPATCH is gated: the rule is no Manus credits on a HOLD run, so this waits for the registry verdict and the operator's word. If v29 reads PROMOTE (or the operator says dispatch anyway), run the dispatch on the server in tmux, never through a bare ssh (the plain --poll died silently three times in an ssh session). READ 2026-11-09: the default pick named four institutional / national entities (Cochlear Americas, Sequenom, Lester E Cox Medical Centers, La Clinica de la Raza: on _NATIONAL_NAMES now) and Loving Care Agency (its own 2011-2018 qui tam); the operator-run candidates are Centrus Premier Home Care, NSTX (v28 repeat), Healthcare Consultants, Universal Nursing Services, Beechtree Diagnostics. Any dispatch re-renders the pick with the pushed code first (the analyst runs it on the server). (added 2026-11-06)
 
 ```bat
 REM only on the operator's word, after the read-out:
@@ -364,7 +387,12 @@ scp -i C:\Users\treyr\.ssh\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/mod
 python -m src.reminders --done-task dossier_poll__frozen_2023-12_v29
 ```
 
-- [ ] **registry_verdict__frozen_2023-12_v29** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v29 — close only when you have them (added 2026-11-06)
+- [ ] **registry_verdict__frozen_2023-12_v29** — DELIVERED 2026-11-09: HOLD on paper (top-50 Jaccard 0.599 < 0.6 on the national measure), 21 of 21 on the book measure the check was written for (0.749, the analyst's re-measure after PR #3). Scheme-triage follow-ups: the scheme_health 'missing inputs' defect (fixed 2026-11-09: eight schemes read DEGRADED for raw-driven inputs the manifest showed used), ownership_integrity inverted (0.416, second run), single_service_mill's top_code_share alternative (0.623 vs 0.388: a v31 candidate), government / university rows out of the org-billing label tier (v31). CLOSE on the operator's word. (added 2026-11-06)
+
+```bat
+python -m src.reminders --done-task registry_verdict__frozen_2023-12_v29
+```
+
 - [ ] **ohio_filings_read_2** — VM HANDOVER (operator 2026-11-07: 'daschel is now the operator of the VM; not permanently, for now'): the server lines below are DASCHEL'S to run (the roster loads, the data scan, the OCR, the packet tar, v30); Trey keeps the integration branch, the merges, the reminders file, Manus credits and every dispatch decision. THE SECOND OHIO FILINGS BATCH (Daschel's master list 2026-11-06): 243 county-recorder PDFs + 70 Secretary of State PDFs under OneDrive data\enforcement\Ohio\filings\ (the first addendum read 113). New since the first read: Lucas (Oregon, Toledo, Waterville), Fulton (Wauseon), Cuyahoga (Euclid Beach, Mayfield Heights, Mount Royal Villa, North Olmsted), Franklin (Capital City Gardens, Edgewood Manor of Westerville), the Magnolia Meadows JV deed + SOS articles, and 63 filings dated 2026: the Sept-Oct 2026 REFINANCING of the whole Ayden portfolio (White Oak releases; Greystone $36M mortgages on the Lucas / Fulton homes; DMT SPE I $46.5M on Greenville / Piqua; 'Propco TIC II' deeds; unemployment-tax liens on Toledo / Waterville). The VM's preclean sync never pulls enforcement/, so this is a one-off rclone copy of that folder, then filings_digest --ocr on the server, then filings_text.zip + filings_digest.csv to the chat for the second addendum (HANDOFF_ohio_ADDENDUM_2; work product, never git). Nothing in it names a private person in a committed file. (added 2026-11-07)
 
 ```bat

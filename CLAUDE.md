@@ -1740,6 +1740,32 @@ first, then paste" above every move/done block.
   ADCADDRESSCENTER) and the Texas HHSC workbooks (a banner row above the header) were skipped by the
   loader for want of aliases; `licensed_capacity` reads all three (site columns ahead of the generic
   'provider ...' aliases; `_header_row` finds the header under a banner).
+  V29 READ-OUT (2026-11-09, `docs/ACCURACY_READOUT_v29_2026-11-09.md`; the container was rebuilt
+  between the push and the read, the scratchpad with it: the kit, the packets and the first Ohio
+  addendum survive only where they were sent). Registered HOLD on ONE of 21 (top-50 Jaccard 0.599
+  vs 0.6) and the number was the NATIONAL measure (`acc_top50_jaccard_source = all_orgs`): the book
+  Jaccard was None on v28 and v29 because of the stability() name collision (PR #3); re-measured on
+  the book 0.749 = 21 of 21. Not re-registered (v30 is the clean read); v27 stays champion. Pursuit
+  1 / 2 / 2 / 4 (random 0.1 / 0.2 / 0.4 / 1.0), large 1 / 2 / 4 / 6 (the best large 100 / 250 of the
+  series), pmax 1 / 2 / 3 / 4, solo zero reach, NPI lift 17.8, scale 0.217, inst 0, fca_reach 0.064,
+  39 of the top 50 capped_no_basis. Sweep: pmax wins 16, basis-first-in-50 wins 100 by one: sort
+  stays dollar. Arms: charged +1 at 16 / 50 / 100 (the recurring head win; policy stays hard until it
+  holds on two ten-seed runs), priors +1 / +1 with a weaker NPI grain, mask degenerate (scale
+  0.117), subscores-only loses the NPI grain, settlement 0.5 identical. THE POLICY SOURCE REACHED
+  THE MATRIX for the first time (179,018 NPIs x 26 columns); ablation: extras beat core (lift +0.54,
+  CI clear), saturation / enrollment / 340B carry it, policy +0.18 with the CI spanning zero (one
+  run). Label ablation: doj_case is the one source with forward signal (-1.36x when removed).
+  MEASUREMENT DEFECT FIXED: `scheme_health._input_reaches` looked only for a `__peerpct` twin, so
+  the RAW_SUBSCORE_INPUTS, the pre-ranked inputs and the engine-derived `*_norm` columns read
+  'missing' and eight schemes DEGRADED on v28 / v29 while the manifest's scheme_coverage showed
+  them used (the prune list inherited the error; the AUCs were right); it now reads the manifest
+  coverage first (tests/test_scheme_health_raw_inputs_2026_11.py). Scheme reads: impossible_day /
+  behavioral_health / lab_testing / specialty_mismatch signal on FCA; ownership_integrity INVERTED
+  (0.416, 501) for the second run; single_service_mill's `top_code_share` alternative 0.623 vs 0.388
+  on the typed ruler = a v31 candidate; the learning loop's suspect positives are led by org-billing
+  broadcast onto counties and a university (government names out of the org-billing tier: v31).
+  Dossier: Cochlear Americas / Sequenom / Lester E Cox / La Clinica de la Raza on _NATIONAL_NAMES;
+  not dispatched.
   GITHUB HOME (2026-11-02): the repository moved from travishub09 to the Equityable Claims
   GitHub account (Brad is the admin; the analyst and the reader get Write; main is protected by
   pull request + green tests). Every remote (laptop, VM, the Claude session's connector) is

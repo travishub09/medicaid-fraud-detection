@@ -638,6 +638,9 @@ _NATIONAL_NAMES = (
     # center's numbers: $1.3B of pass-through), a nonprofit laboratory cooperative, and a
     # nonprofit early-intervention provider. None is an operator a relator comes from.
     "UNILAB", "DIAGNOSTIC LABORATORY OF OKLAHOMA", "CENTER FOR INDEPENDENT LIVING",
+    # the v29 dossier pick (2026-11-09): a hearing-implant manufacturer, a LabCorp genetics
+    # arm, a Missouri hospital system enrolled as one NPI and a California FQHC
+    "COCHLEAR AMERICAS", "SEQUENOM", "LESTER E COX MEDICAL", "COXHEALTH", "LA CLINICA DE LA RAZA",
     "LABORATORY SERVICES COOPERATIVE", "KENNEDY DONOVAN CENTER",
     # the first current-day run (2026-10-28): two national-scale laboratories in the pick, and
     # the hospital systems, the public hospital, the national NEMT broker and the national

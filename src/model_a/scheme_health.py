@@ -39,18 +39,39 @@ import pandas as pd
 
 from .scheme_subscores import DEFAULT_SCHEME_WEIGHTS
 from .provider_features_export import (V3_CONCEPTS, GRAPH_FEATURES,
-                                       ANALYTICS_FEATURES)
+                                       ANALYTICS_FEATURES, RAW_SUBSCORE_INPUTS,
+                                       PRE_RANKED_INPUTS, PRE_RANKED_PREFIXES)
 
-_RAW_FED = set(V3_CONCEPTS) | set(GRAPH_FEATURES) | set(ANALYTICS_FEATURES)
+# 2026-11-09 (the v29 packet): the raw-driven inputs (RAW_SUBSCORE_INPUTS, the pre-ranked
+# facility / saturation / HCRIS inputs) and the *_norm columns compute_subscores derives
+# from a graph count have NO __peerpct twin, so this check filed them "missing" on eight
+# schemes whose manifest scheme_coverage showed them USED (single_service_mill read
+# 1/2 inputs with code_concentration_hhi in its coverage list). The DEGRADED status and
+# the prune list read from a measurement defect for about ten runs.
+_RAW_FED = (set(V3_CONCEPTS) | set(GRAPH_FEATURES) | set(ANALYTICS_FEATURES)
+            | set(RAW_SUBSCORE_INPUTS) | set(PRE_RANKED_INPUTS))
 COVERAGE_DROP_ALARM = 0.20        # >20% relative coverage loss vs baseline = regression
 NEAR_CONSTANT = 0.98              # one value shared by >= this share of covered rows
 
 
-def _input_reaches(col: str, matrix_cols: set) -> tuple[bool, str]:
+def _input_reaches(col: str, matrix_cols: set, used: set | None = None) -> tuple[bool, str]:
     """Would input ``col`` reach the subscore, and under what column name?
-    Raw-fed features (v3/graph/analytics + the graph-normalized *_norm) enter by
-    their own name; everything else is an adapter feature fed as __peerpct."""
-    if col in _RAW_FED or col.endswith("_norm"):
+
+    ``used`` = the manifest's scheme_coverage entry for the scheme (the inputs the
+    subscore engine actually consumed): when the export recorded the input as used,
+    that record wins over any name rule. Otherwise: raw-fed features (v3 / graph /
+    analytics, RAW_SUBSCORE_INPUTS, the pre-ranked facility inputs) enter by their own
+    name; a derived ``<base>_norm`` reaches when its base column is on the matrix
+    (compute_subscores derives it); everything else is an adapter feature fed as
+    __peerpct."""
+    if used is not None and col in used:
+        return (True, col)
+    if col.endswith("_norm"):
+        # excluded_within_2_hops_norm / related_party_density_norm are derived by the
+        # subscore engine from the graph count, so the count on the matrix is enough
+        base = col[: -len("_norm")]
+        return (col in matrix_cols or base in matrix_cols, col)
+    if col in _RAW_FED or col.startswith(PRE_RANKED_PREFIXES):
         return (col in matrix_cols, col)
     pk = f"{col}__peerpct"
     return (pk in matrix_cols, pk)
@@ -203,12 +224,14 @@ def audit_scheme_health(matrix: pd.DataFrame, manifest: dict | None = None,
     yv = None
     if label in matrix.columns:
         yv = pd.to_numeric(matrix[label], errors="coerce").fillna(0).to_numpy().astype(int)
+    coverage = (manifest or {}).get("scheme_coverage") or {}
     rows = []
     for scheme, wmap in weights.items():
         total_w = sum(wmap.values()) or 1.0
         present_w, present_inputs, missing_inputs = 0.0, [], []
+        used = set(coverage.get(scheme) or []) if isinstance(coverage.get(scheme), list) else None
         for c, w in wmap.items():
-            ok, name = _input_reaches(c, cols)
+            ok, name = _input_reaches(c, cols, used)
             if ok:
                 present_w += w
                 present_inputs.append(c)
