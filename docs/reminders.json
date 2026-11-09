@@ -1079,14 +1079,9 @@
   },
   {
    "key": "ohio_filings_read_2",
-   "what": "VM HANDOVER (operator 2026-11-07: 'daschel is now the operator of the VM; not permanently, for now'): the server lines below are DASCHEL'S to run (the roster loads, the data scan, the OCR, the packet tar, v30); Trey keeps the integration branch, the merges, the reminders file, Manus credits and every dispatch decision. THE SECOND OHIO FILINGS BATCH (Daschel's master list 2026-11-06): 243 county-recorder PDFs + 70 Secretary of State PDFs under OneDrive data\\enforcement\\Ohio\\filings\\ (the first addendum read 113). New since the first read: Lucas (Oregon, Toledo, Waterville), Fulton (Wauseon), Cuyahoga (Euclid Beach, Mayfield Heights, Mount Royal Villa, North Olmsted), Franklin (Capital City Gardens, Edgewood Manor of Westerville), the Magnolia Meadows JV deed + SOS articles, and 63 filings dated 2026: the Sept-Oct 2026 REFINANCING of the whole Ayden portfolio (White Oak releases; Greystone $36M mortgages on the Lucas / Fulton homes; DMT SPE I $46.5M on Greenville / Piqua; 'Propco TIC II' deeds; unemployment-tax liens on Toledo / Waterville). The VM's preclean sync never pulls enforcement/, so this is a one-off rclone copy of that folder, then filings_digest --ocr on the server, then filings_text.zip + filings_digest.csv to the chat for the second addendum (HANDOFF_ohio_ADDENDUM_2; work product, never git). Nothing in it names a private person in a committed file.",
+   "what": "DONE 2026-11-09: the analyst OCR'd the 313 filings on the server, the operator uploaded filings_text.zip + filings_digest.csv, and HANDOFF_ohio_ADDENDUM_2_filings_2026-11-09 (md + 14-page PDF) went to the operator in chat for enforcement\\Ohio\\ (never git). THE READ: the Greenville / Piqua pattern is portfolio-wide (Welltower -> <Town> SNF Realty 2018-19 with different signatories, -> <street> Propco 2021-12-31 with ONE signatory for all 15 landlords and all 12 Buckeye Forest tenants); the Sept-Oct 2026 refinancing (Greystone $36M on Lucas / Fulton, DMT SPE I $46.5M on Greenville / Piqua, Dime $20M on Euclid Beach / Mayfield with the lender's OWN recital that the operator is 'an affiliate of the Mortgagor', Bankwell $25M on Capital City Gardens) has landlord and tenant at one address with one signatory on every side; the two groups share signatories back to 2017; CORRECTION: the 2023-08-23 Wesleyan deed to Magnolia Meadows JV conveys Sheffield Village land (about 23.6 acres on Detroit Road), not the Elyria home, and the Magnolia entities' 2026 agent change is the law office's own move. OPEN: membership ownership (unrecorded loan agreements, guaranties, lease exhibits, DTE 100s) and the eight counties the analyst is still pulling (a THIRD addendum when they land). CLOSE on the operator's word.",
    "added": "2026-11-07",
    "commands": [
-    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"rclone copy onedrive:Desktop/data/enforcement/Ohio/filings /data/medicaid/enforcement/ohio/filings --transfers 8 -P 2>&1 | tail -2; find /data/medicaid/enforcement/ohio/filings -name '*.pdf' | wc -l\"",
-    "ssh -n -o ConnectionAttempts=6 -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139 \"cd ~/medicaid-fraud-detection && source .venv/bin/activate && set -a && source ~/.medicaid_env && set +a && export MEDICAID_DATA_ROOT=/data/medicaid && python -m src.enforcement.filings_digest --root /data/medicaid/enforcement/ohio/filings --out /data/medicaid/enforcement/ohio/filings_digest_2 --ocr 2>&1 | tail -3\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/enforcement/ohio/filings_digest_2/filings_text.zip \"%USERPROFILE%\\Desktop\\filings_text_2.zip\"",
-    "scp -i C:\\Users\\treyr\\.ssh\\medicaid-vm.pem ubuntu@3.17.37.139:/data/medicaid/enforcement/ohio/filings_digest_2/filings_digest.csv \"%USERPROFILE%\\Desktop\\filings_digest_2.csv\"",
-    "REM upload filings_text_2.zip + filings_digest_2.csv to the chat; Claude writes the second addendum",
     "python -m src.reminders --done-task ohio_filings_read_2"
    ]
   },
@@ -1097,6 +1092,17 @@
    "commands": [
     "REM Daschel runs the server lines in capacity_rosters_next_states, post_download_checks, ohio_filings_read_2 and run_packet__frozen_2023-12_v29",
     "python -m src.reminders --done-task vm_handover_2026_11   REM only when Trey takes the VM back"
+   ]
+  },
+  {
+   "key": "research_assets_to_drive",
+   "added": "2026-11-09",
+   "what": "BRAD (2026-11-09): 'save the research you've built (the provider-case label file, payer-policy library, investigator packets and case files) to the company Drive so it lives with us.' PLAN: one Drive folder 'Equitable Claims / Research Assets' with six subfolders + a README each: 01_Label (processed/fca_label_strong + the label dictionary), 02_Payer_policy_library (processed/policy: state_policy / fee_schedule / state_rosters + the .md reports), 03_Packets (SIU / BRAD / SAGE zips by version, handoffs, the PurpleLab kit), 04_Case_files (kill / depth rounds, court records, Ohio cost-report read, the 313 filings + both addendums), 05_Model_runs (every ACCURACY_READOUT + the packet tars), 06_Manus_answers_raw (processed/manus_lanes); a _restricted subfolder (Brad + Trey only) for anything naming a private individual (investigator appendices, former-staff CSVs). No spending / NPPES / graph files. WHO: the analyst tars the server pieces (line 1) and uploads; the operator drags the OneDrive pieces (enforcement\\handoffs, enforcement\\pi_reports, enforcement\\Ohio, the packet zips) and docs\\ACCURACY_READOUT_*.md; Claude writes the six READMEs + index once the folder link exists (upload through the Drive connector). CLOSE when Brad has the link and the folders are populated.",
+   "commands": [
+    "REM 1 (the analyst, on the server): one tar per server subfolder",
+    "cd /data/medicaid && tar -czf /home/ubuntu/drive_01_label.tar.gz processed/fca_label_strong && tar -czf /home/ubuntu/drive_02_policy.tar.gz processed/policy && tar -czf /home/ubuntu/drive_04_casefiles_server.tar.gz enforcement/kill_round enforcement/screen_kill enforcement/nj_amdc enforcement/first_to_file* enforcement/ohio/filings_digest_2 && tar -czf /home/ubuntu/drive_06_manus.tar.gz processed/manus_lanes && ls -la /home/ubuntu/drive_*.tar.gz",
+    "REM 2 (the operator): create the Drive folder, paste its link in chat; drag the OneDrive enforcement folders and the packet zips into 03 / 04 / 05",
+    "python -m src.reminders --done-task research_assets_to_drive"
    ]
   }
  ],
