@@ -2977,6 +2977,10 @@ first, then paste" above every move/done block.
 - See `docs/platform/ROADMAP.md` for the full phase plan and
   `docs/platform/09-data-procurement.md` for exactly what data to acquire and why.
 
+## HANDOVER (2026-11-10): READ `docs/HANDOVER_2026-11-10.md` NEXT
+
+The operator role, the history and the accounts are moving to the company's enterprise Claude workspace. A new session reads this file, then `docs/HANDOVER_2026-11-10.md` (asset map, personal accounts to re-issue, the state of the work on 2026-11-10, who does what, done criteria), then runs `python -m src.reminders`. Wherever this file says "the operator", read "the incoming operator" named by Brad. The laptop paths (`C:\Users\treyr\...`) belong to the outgoing operator: change `data_root` in `docs/reminders.json` to the incoming operator's path before running any reminder `--done`. Case work product is on the company Drive `Research Assets` (`_restricted` for anything naming a person), never in git.
+
 ## Team (2026-11-02, `docs/TEAM_WORKFLOW.md` is the full text)
 
 - Several people, one codebase: every change goes through a `<person>/<topic>` branch and a

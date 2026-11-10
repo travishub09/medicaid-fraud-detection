@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-11-09. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-11-10. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -70,6 +70,14 @@ python -m src.reminders --done warn_notices
 - leie — due 2026-11-21: OIG LEIE exclusion list (THE label source — new bans are training labels)
 
 ## STANDING TASK QUEUE
+
+- [ ] **operator_handover_2026_11** — HANDOVER (operator 2026-11-10: 'stop using this instance ... the team in the other enterprise account takes over my job completely'). The checklist is docs/HANDOVER_2026-11-10.md: (1) final forward to the company repo + remove the old remote; (2) Drive Research Assets complete incl. the Ohio merged report, the plain summary, the team context pack and the chat export (_restricted); (3) personal accounts re-issued under company accounts (AWS, Manus, PACER, CourtListener, OneDrive rclone remote, Console, DigitalOcean); (4) Gmail working threads forwarded; (5) Brad names the incoming operator, who sets data_root here and opens an enterprise Claude Code session that reads CLAUDE.md + the handover + this board. CLOSE when section 5 'Done means' is all true. (added 2026-11-10)
+
+```bat
+REM laptop, final forward (then: git remote remove old)
+cd /d C:\Users\treyr\medicaid-fraud-detection && git fetch old claude/happy-mccarthy-3skrn3 && git push origin old/claude/happy-mccarthy-3skrn3:claude/happy-mccarthy-3skrn3 && git checkout -- docs/OPERATOR_REMINDERS.md docs/reminders.json && git pull --ff-only origin claude/happy-mccarthy-3skrn3
+python -m src.reminders --done-task operator_handover_2026_11
+```
 
 - [ ] **lanes_dispatch_3** — THE VERIFICATION PASS, READ (2026-11-02 02:44 UTC, seven minutes): 322 research rows had a readable cited page; 161 named the defendant and 161 did not (one in two: the agents' defendant names are a coin flip even on a readable page); 1,809 pages were unreachable (404 / 403 / reset / truncated PDF / no URL) and those rows are UNVERIFIED, usable=0. The honest research label is now: MFCU 137 usable of 228, commercial 90 of 134, state audits 49 of 1,979 (the OMIG audit PDFs mostly did not fetch). The chain went on to the resolver and v28 (task v28_run). Line 1 (free, read-only, runs beside everything) tallies the unreachable pages by host and status so the next move is known: a host that blocks the VM (OMIG, mass.gov, ncdoj) is a read for a person or a browser agent; a 404 is a dead citation. Close this task when line 1 is pasted; the two lane tasks lanes_dispatch_3 / lanes_dispatch_records close together. (added 2026-11-01)
 
