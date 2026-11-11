@@ -1,6 +1,6 @@
 # OPERATOR REMINDERS (auto-generated — edit docs/reminders.json, not this file)
 
-_As of 2026-11-10. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
+_As of 2026-11-11. Regenerate/update: `python -m src.reminders` (`--done <key>` after you fetch something)._
 
 ## DUE NOW
 
@@ -422,6 +422,32 @@ REM then drag the OneDrive folders (step 5) and the READMEs (step 3); share the 
 python -m src.reminders --done-task research_assets_to_drive
 ```
 
+- [ ] **run_packet__frozen_2023-12_v30** — Send the run packet for frozen_2023-12_v30 (every report + audit file, zero raw data) — Claude cannot see the run finished, so this zip IS the run's arrival (added 2026-11-11)
+
+```bat
+set RUN_DIR=C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v30
+powershell -Command "Compress-Archive -Force -Path '%RUN_DIR%\*.md','%RUN_DIR%\*.json' -DestinationPath '%USERPROFILE%\Desktop\run_packet.zip'"
+REM then upload run_packet.zip to the chat
+python -m src.reminders --done-task run_packet__frozen_2023-12_v30
+```
+
+- [ ] **pursuit_dossier__frozen_2023-12_v30** — Build + dispatch the pursuit dossier for frozen_2023-12_v30 (skip if the run script already did — check for PURSUIT_DOSSIER.md in the run folder) (added 2026-11-11)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v30" --dispatch
+python -m src.reminders --done-task pursuit_dossier__frozen_2023-12_v30
+```
+
+- [ ] **dossier_poll__frozen_2023-12_v30** — ~30 min after dispatch: collect Manus research into the frozen_2023-12_v30 dossier and send PURSUIT_DOSSIER.md (added 2026-11-11)
+
+```bat
+cd /d C:\Users\treyr\medicaid-fraud-detection
+python -m src.model_a.pursuit_dossier --run-dir "C:\Users\treyr\OneDrive\Desktop\data\model_a\frozen_2023-12_v30" --poll
+python -m src.reminders --done-task dossier_poll__frozen_2023-12_v30
+```
+
+- [ ] **registry_verdict__frozen_2023-12_v30** — Open until Claude reads the packet and returns the release-registry verdict (PROMOTE/HOLD) + scheme-triage follow-ups for frozen_2023-12_v30 — close only when you have them (added 2026-11-11)
 
 ## After ANY download session (standing rule)
 
